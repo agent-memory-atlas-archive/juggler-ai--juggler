@@ -304,6 +304,18 @@ func writeManifest(t *testing.T, dir, manifest string) {
 	}
 }
 
+// jsonPath renders a path as a JSON string literal, quotes included. A Windows
+// root is full of backslashes, and a backslash pasted straight into a manifest
+// is an escape sequence: "C:\Users\..." is not the path, it is a parse error.
+func jsonPath(t *testing.T, path string) string {
+	t.Helper()
+	quoted, err := json.Marshal(path)
+	if err != nil {
+		t.Fatalf("marshal path %q: %v", path, err)
+	}
+	return string(quoted)
+}
+
 // loadFresh loads through a new store, as a newly opened window would.
 func loadFresh(t *testing.T, dir string) *Session {
 	t.Helper()
@@ -332,9 +344,9 @@ func TestLoad_VerifiesWorkspaceRootsAndStaleProvisions(t *testing.T) {
 	  "activeConversationId": "",
 	  "messageHistory": [],
 	  "workspaces": [
-	    {"id":"ws_live","kind":"local","root":"`+live+`","state":"ready","available":true},
-	    {"id":"ws_gone","kind":"local","root":"`+filepath.Join(live, "removed-by-hand")+`","state":"ready","available":true},
-	    {"id":"ws_half","kind":"local","root":"`+filepath.Join(live, "never-finished")+`","state":"provisioning"}
+	    {"id":"ws_live","kind":"local","root":`+jsonPath(t, live)+`,"state":"ready","available":true},
+	    {"id":"ws_gone","kind":"local","root":`+jsonPath(t, filepath.Join(live, "removed-by-hand"))+`,"state":"ready","available":true},
+	    {"id":"ws_half","kind":"local","root":`+jsonPath(t, filepath.Join(live, "never-finished"))+`,"state":"provisioning"}
 	  ]
 	}`)
 
