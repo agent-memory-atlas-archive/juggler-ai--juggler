@@ -259,6 +259,33 @@ export async function runTests(_ctx) {
       `a missing blob and no blob to miss are different facts, got "${host.textContent}"`);
   });
 
+  await run('a blob whose input was stripped still renders everything else', () => {
+    // Binning a conversation drops the replayed history from its blobs — it is
+    // ~99% of the bytes, and doc.yjs already holds every one of them — leaving
+    // the rest. A restored conversation's round-trips are this shape, so they
+    // have to stay readable without the input rather than fall back to the
+    // missing-blob placeholder.
+    const stripped = { ...makeBlob(), timestamp: Date.now() };
+    delete stripped.input;
+    const host = render(stripped);
+
+    assert(host.textContent.includes('No input recorded.'),
+      `expected the stripped input to say so, got "${host.textContent.slice(0, 120)}"`);
+    assert(!host.textContent.includes('No transaction data.'),
+      'a stripped blob is not a missing one');
+
+    const chips = [...host.querySelectorAll('.meta-item')].map((c) => c.textContent);
+    const expected = ['Tokens: 1k in → 42 out', 'Duration: 1.23s', 'Stop: end_turn', 'Model: mock-model'];
+    for (const chip of expected) {
+      assert(chips.includes(chip), `expected chip "${chip}", got ${JSON.stringify(chips)}`);
+    }
+    assert(chips.some((c) => c.startsWith('Time: ')), `expected a Time chip, got ${JSON.stringify(chips)}`);
+
+    const body = host.querySelector('.tx-out-block .tx-text');
+    assert(body?.textContent === 'All fixed.\nReally.',
+      'the model output is what the strip keeps, and it still renders');
+  });
+
   await run('the header chip estimates the selected item', () => {
     const panel = panelWithItem({ type: 'user', content: 'x'.repeat(400) });
     const chip = panel._buildTokenChip();

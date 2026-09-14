@@ -22,7 +22,7 @@
 
 import { MAX_CONVERSATIONS, CONVERSATION_LIMIT_MESSAGE } from '../model/session.js';
 import { UNTITLED_BASE } from '../model/conversation-naming.js';
-import { MAX_CONVERSATION_NAME_LENGTH } from '../utils/constants.js';
+import { BIN_LARGE_BYTES, MAX_CONVERSATION_NAME_LENGTH } from '../utils/constants.js';
 import { setupColumnResize, applyColumnWidthPx } from '../utils/column-resize.js';
 import { startReorderDrag } from '../utils/reorder-drag.js';
 import { formatBytes } from '../utils/format.js';
@@ -727,6 +727,9 @@ class ConversationBar extends JugglerElement {
       const sizeText = showSize ? formatBytes(sizeBytes) : '';
       if (sizeEl.textContent !== sizeText) sizeEl.textContent = sizeText;
       sizeEl.hidden = !showSize;
+      // Nothing empties the bin on a timer, so a large one is only ever noticed
+      // if the number stops looking like a label.
+      sizeEl.classList.toggle('is-large', showSize && sizeBytes >= BIN_LARGE_BYTES);
     }
     let binTitle = 'View binned conversations';
     if (count > 0) {

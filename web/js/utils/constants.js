@@ -82,6 +82,22 @@ export const YJS_SYNC_BATCH_MAX_MS = 250;
  */
 export const MAX_CONVERSATION_NAME_LENGTH = 48;
 
+// ===== Bin =====
+
+/**
+ * Bin size (bytes) past which the UI stops stating the number and starts
+ * drawing attention to it.
+ *
+ * Nothing in the bin is ever removed on a timer or a threshold — a binned
+ * conversation stays until the user empties it — so the only defence against a
+ * bin quietly growing to gigabytes is that the user can see it has. Binning
+ * strips each conversation's replayed transaction inputs, which is the bulk of
+ * what a conversation costs, and what is left is mostly its transcript; a bin
+ * this size is therefore a real pile of conversations rather than one long one,
+ * and worth mentioning.
+ */
+export const BIN_LARGE_BYTES = 1024 * 1024 * 1024;
+
 // ===== User-facing notices =====
 
 /**

@@ -7,7 +7,7 @@
  * Provides consistent formatting for all status scenarios during LLM processing
  */
 
-import { formatDuration } from '../utils/format.js';
+import { formatDuration, formatTokens } from '../utils/format.js';
 
 /**
  * Non-breaking space. The footer status line wraps freely, so every space that
@@ -171,6 +171,8 @@ export class StatusMessageBuilder {
 
     // Append token counts when available; the lead label stays so the user
     // always sees the activity label, with the running number alongside it.
+    // Counts go through formatTokens, the app-wide compact form, so a status
+    // line reads the same way as the footer pill and the model selector.
     if (data.outputTokens !== undefined && data.outputTokens > 0) {
       const output = data.outputTokens;
       const input = data.inputTokens;
@@ -179,18 +181,18 @@ export class StatusMessageBuilder {
       if (input !== undefined && input > 0) {
         const totalTokens = input + output;
         const tokenWord = totalTokens === 1 ? 'token' : 'tokens';
-        const out = `${output.toLocaleString()}${NBSP}${tokenWord}`;
+        const out = `${formatTokens(output)}${NBSP}${tokenWord}`;
         // The arrow binds to the count before it, so a wrap puts the arrow at
         // the end of the line rather than dangling one at the start of the next.
         if (cached !== undefined && cached > 0) {
           const cachePercent = Math.round((cached / input) * 100);
-          parts.push(`${input.toLocaleString()} (${cachePercent}%${NBSP}cached)${NBSP}→ ${out}`);
+          parts.push(`${formatTokens(input)} (${cachePercent}%${NBSP}cached)${NBSP}→ ${out}`);
         } else {
-          parts.push(`${input.toLocaleString()}${NBSP}→ ${out}`);
+          parts.push(`${formatTokens(input)}${NBSP}→ ${out}`);
         }
       } else {
         const tokenWord = output === 1 ? 'token' : 'tokens';
-        parts.push(`${output.toLocaleString()}${NBSP}${tokenWord}`);
+        parts.push(`${formatTokens(output)}${NBSP}${tokenWord}`);
       }
     }
 

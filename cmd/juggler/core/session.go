@@ -649,6 +649,86 @@ func removeSpillDir(jugglerDir, convID string) {
 	}
 }
 
+// stripConvTxnInputs rewrites every transaction blob in a conversation folder
+// without its "input": the system prompt, the message history replayed that
+// turn, and the tool schemas.
+//
+// That input is around 99% of a blob's bytes and grows with the square of a
+// conversation's length, because turn N carries turns 1..N-1 — and every byte
+// of it is already held, once, in doc.yjs. What remains is what the transaction
+// panel still renders without it: the model's output, the token counts, and the
+// round-trip metadata.
+//
+// Best-effort throughout. An unreadable or unparseable blob is logged and left
+// exactly as it is, its neighbours are still stripped, and a conversation with
+// no transaction directory is not an error.
+func stripConvTxnInputs(convDir string) {
+	txnsDir := ConvTxnsDir(convDir)
+	entries, err := os.ReadDir(txnsDir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".json") {
+			continue
+		}
+		path := filepath.Join(txnsDir, name)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			jlog.Info("[session] failed to read txn blob %s: %v", path, err)
+			continue
+		}
+		// A map rather than a struct: the blob's shape belongs to the worker, and
+		// a key this code has not heard of has to survive the round-trip.
+		var blob map[string]any
+		if err := json.Unmarshal(data, &blob); err != nil {
+			jlog.Info("[session] failed to parse txn blob %s: %v", path, err)
+			continue
+		}
+		if _, present := blob["input"]; !present {
+			continue
+		}
+		delete(blob, "input")
+		stripped, err := json.Marshal(blob)
+		if err != nil {
+			jlog.Info("[session] failed to re-encode txn blob %s: %v", path, err)
+			continue
+		}
+		tmp := path + ".tmp"
+		if err := os.WriteFile(tmp, stripped, 0o644); err != nil {
+			jlog.Info("[session] failed to write stripped txn blob %s: %v", path, err)
+			continue
+		}
+		if err := atomicio.RobustRename(tmp, path); err != nil {
+			os.Remove(tmp)
+			jlog.Info("[session] failed to replace txn blob %s: %v", path, err)
+		}
+	}
+}
+
+// sweepBinTxnInputs strips the transaction inputs of every conversation in
+// .juggler/trash/. Binning strips as it goes, so this finds only what was binned
+// before it did — or a conversation whose strip a crash or a shutdown cut short.
+//
+// It reads the bin from disk rather than the in-memory binIndex and mutates no
+// shared state, so it is safe to run off the actor goroutine; stripConvTxnInputs
+// is idempotent, so repeating it costs a read per blob and nothing else. A
+// missing or unreadable bin is not an error.
+func (fs *FileSessionStore) sweepBinTxnInputs() {
+	binDir := fs.binDir()
+	entries, err := os.ReadDir(binDir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		stripConvTxnInputs(filepath.Join(binDir, e.Name()))
+	}
+}
+
 // sweepUnassignedSpills deletes orphaned full-output spill files — those written
 // with no conversation id, or left behind by a crash mid-command — older than
 // 24h. Best-effort; a missing or unreadable directory is silently ignored.
@@ -823,20 +903,42 @@ func (fs *FileSessionStore) removeConversationFiles(convID string, permanent boo
 
 // BinConversation moves a conversation's folder from .juggler/ to
 // .juggler/trash/. Returns ErrConversationNotFound if the conversation has no
-// active folder. Sets deletedIDs[convID]=true to close the worker-save race
-// window (matches removeConversationFiles); RestoreConversation clears it.
+// active folder. This is the synchronous form used by direct callers and tests;
+// the server bins via binConversationDeferred so the transaction strip runs off
+// the actor goroutine.
 func (fs *FileSessionStore) BinConversation(convID string) error {
+	binnedDir, err := fs.binConversationDeferred(convID)
+	if err != nil {
+		return err
+	}
+	stripConvTxnInputs(binnedDir)
+	return nil
+}
+
+// binConversationDeferred performs the fast half of binning: it renames the
+// conversation's folder into .juggler/trash/ and moves it between the two
+// indexes. All of that is metadata work, cheap to run on the actor goroutine.
+// Sets deletedIDs[convID]=true to close the worker-save race window (matches
+// removeConversationFiles); RestoreConversation clears it.
+//
+// It returns the conversation's new path under .juggler/trash/, whose
+// transaction blobs the caller strips with stripConvTxnInputs off the hot path —
+// that is the one part of binning whose cost scales with the conversation.
+// A strip lost to a crash or a shutdown costs only the space it would have
+// freed: the blobs are still readable, and the next sweep of the bin finishes
+// the job.
+func (fs *FileSessionStore) binConversationDeferred(convID string) (binnedDir string, err error) {
 	oldDir, ok := fs.ConvDir(convID)
 	if !ok {
-		return fmt.Errorf("%w: %s", ErrConversationNotFound, convID)
+		return "", fmt.Errorf("%w: %s", ErrConversationNotFound, convID)
 	}
 	if err := os.MkdirAll(fs.binDir(), 0o755); err != nil {
-		return fmt.Errorf("create bin dir: %w", err)
+		return "", fmt.Errorf("create bin dir: %w", err)
 	}
 	basename := filepath.Base(oldDir)
 	newDir := filepath.Join(fs.binDir(), basename)
 	if err := atomicio.RobustRename(oldDir, newDir); err != nil {
-		return fmt.Errorf("bin conv dir: %w", err)
+		return "", fmt.Errorf("bin conv dir: %w", err)
 	}
 	name := fs.index.Names[convID]
 	delete(fs.index.ByID, convID)
@@ -855,7 +957,7 @@ func (fs *FileSessionStore) BinConversation(convID string) error {
 	// removes them immediately and RestoreConversation does not resurrect them —
 	// spills are recoverable command output, not conversation state.
 	removeSpillDir(fs.jugglerDir(), convID)
-	return nil
+	return newDir, nil
 }
 
 // RestoreConversation moves a conversation's folder from .juggler/trash/ back

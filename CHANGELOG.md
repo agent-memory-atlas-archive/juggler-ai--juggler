@@ -6,6 +6,7 @@ of changes; this project follows semantic versioning.
 ## [Unreleased]
 
 - An SVG or HTML block in a reply now finishes drawing as it streams, instead of stalling part-way
+- Binning a conversation drops the replayed prompts from its round-trips, reclaiming most of its disk
 
 ## [0.6.3] - 2026-09-12
 

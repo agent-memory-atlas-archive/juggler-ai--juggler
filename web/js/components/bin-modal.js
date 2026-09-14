@@ -3,6 +3,7 @@
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
 import { formatRelativeDateTime, formatBytes } from '../utils/format.js';
+import { BIN_LARGE_BYTES } from '../utils/constants.js';
 import { markPopupOpen } from '../utils/popup-manager.js';
 import { presentPopup } from '../utils/popup-surface.js';
 import { showAlert, showConfirm } from './modal-dialog.js';
@@ -97,6 +98,7 @@ class BinModal extends JugglerElement {
         </header>
         <div class="modal-body bin-body">
             <div class="bin-empty hidden">The bin is empty.</div>
+            <div class="bin-size-notice hidden" role="status"></div>
           <ul class="bin-list" role="list"></ul>
         </div>
       </modal-panel>
@@ -127,6 +129,8 @@ class BinModal extends JugglerElement {
     const list = /** @type {HTMLUListElement|null} */ (this.querySelector('.bin-list'));
     const empty = /** @type {HTMLElement|null} */ (this.querySelector('.bin-empty'));
     const emptyBtn = /** @type {HTMLButtonElement|null} */ (this.querySelector('.bin-empty-now'));
+    const notice = /** @type {HTMLElement|null} */ (this.querySelector('.bin-size-notice'));
+    if (notice) notice.classList.add('hidden');
     if (!list || !empty) return;
 
     /** @type {BinnedConvRow[]} */
@@ -172,6 +176,15 @@ class BinModal extends JugglerElement {
       return;
     }
     empty.classList.add('hidden');
+
+    // A bin nothing ever empties on its own is worth naming once it is large:
+    // the size alone reads as a label, and the second sentence is the part the
+    // user cannot infer — that it will sit there until they act.
+    const noticeBytes = this._session.binSizeBytes || 0;
+    if (notice && noticeBytes >= BIN_LARGE_BYTES) {
+      notice.textContent = `The bin is holding ${formatBytes(noticeBytes)}. Nothing here is deleted automatically.`;
+      notice.classList.remove('hidden');
+    }
 
     for (const row of binned) {
       const li = document.createElement('li');

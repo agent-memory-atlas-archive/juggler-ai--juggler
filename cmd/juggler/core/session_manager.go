@@ -201,6 +201,13 @@ func (m *SessionManager) runBinSizeMonitor(store *FileSessionStore) {
 		}
 	}
 
+	// Reclaim anything binned before binning stripped transaction inputs, or by a
+	// strip a shutdown cut short. It belongs here rather than on the load path:
+	// the first pass over a long-accumulated bin reads every blob in it, which is
+	// gigabytes on a project that has been in use for a while, and this goroutine
+	// is already where the bin's slow filesystem work happens.
+	store.sweepBinTxnInputs()
+
 	recompute() // seed the cache promptly after startup
 	for {
 		select {
@@ -591,19 +598,27 @@ func (m *SessionManager) ResolveAutoName(base, excludeID string) string {
 // the windows that were watching it, and a board window left open over a
 // conversation the user has put away has nothing to show.
 func (m *SessionManager) BinConversation(convID string) error {
-	_, err := runWrite(m, func(s *sessionState) (struct{}, error) {
+	binnedDir, err := runWrite(m, func(s *sessionState) (string, error) {
 		removeConvIDFromSession(s.session, convID)
 		s.session.removeBoardsForConversation(convID)
-		if err := s.store.BinConversation(convID); err != nil {
-			return struct{}{}, err
+		dir, binErr := s.store.binConversationDeferred(convID)
+		if binErr != nil {
+			return "", binErr
 		}
 		if err := s.store.Save(s.session); err != nil {
-			return struct{}{}, fmt.Errorf("failed to save session after binning conversation: %w", err)
+			return "", fmt.Errorf("failed to save session after binning conversation: %w", err)
 		}
-		return struct{}{}, nil
+		return dir, nil
 	})
 	if err == nil {
-		m.kickBinSizeRecompute()
+		// Strip the binned conversation's transaction inputs off the actor: it is
+		// the only part of binning whose cost scales with the conversation, and a
+		// long one carries hundreds of megabytes of replayed history. The kick
+		// below then recomputes the bin size over what is left.
+		go func() {
+			stripConvTxnInputs(binnedDir)
+			m.kickBinSizeRecompute()
+		}()
 	}
 	return err
 }

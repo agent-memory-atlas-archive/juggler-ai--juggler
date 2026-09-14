@@ -15,20 +15,22 @@
  */
 
 import { StatusMessageBuilder } from '../../js/services/status-message-builder.js';
+import { formatTokens } from '../../js/utils/format.js';
 import { assert } from '../utilities/test-helpers.js';
 
 /** Non-breaking space, spelled out so the assertions below are readable. */
 const NBSP = '\u00A0';
 
 /**
- * A count as the builder writes it. Grouping is the host locale's business —
- * `toLocaleString` under a POSIX locale (which a CI runner has) groups nothing,
- * and under a European one groups with a dot — and none of that is what these
- * assertions are about. Spelling "1,024" into them tested the runner's locale.
+ * A count as the builder writes it — the app-wide compact form. Below its
+ * thousands threshold that form defers to the host locale, whose grouping is
+ * its own business ("1,024" here, "1024" under POSIX as a CI runner has), and
+ * none of that is what these assertions are about. Spelling "1,024" into them
+ * tested the runner's locale.
  * @param {number} n - The count.
  * @returns {string} The count as it appears in a status message.
  */
-const count = (n) => n.toLocaleString();
+const count = (n) => formatTokens(n);
 
 /**
  * @typedef {object} TestResult
@@ -77,6 +79,11 @@ export async function runTests(_ctx) {
     assert(message.includes(`(90%${NBSP}cached)${NBSP}→ 30${NBSP}tokens`), `status message = "${message}"`);
   });
 
+  test('token counts are compact, not raw integers', () => {
+    const message = StatusMessageBuilder.buildStreamingStatus({ inputTokens: 128000, cachedTokens: 120000, outputTokens: 4096 });
+    assert(message.includes(`128k (94%${NBSP}cached)${NBSP}→ 4k${NBSP}tokens`), `status message = "${message}"`);
+  });
+
   test('an upload size is bound to its unit', () => {
     const message = StatusMessageBuilder.buildUploadingStatus({ payloadSize: 48 * 1024 });
     assert(message.includes(`48${NBSP}KB`), `status message = "${message}"`);
@@ -96,12 +103,13 @@ export async function runTests(_ctx) {
   test('no count in any built message is left splittable from its unit', () => {
     const messages = [
       StatusMessageBuilder.buildStreamingStatus({ inputTokens: 2000, cachedTokens: 1800, outputTokens: 30, elapsedTime: 90000 }),
+      StatusMessageBuilder.buildStreamingStatus({ inputTokens: 1_500_000, cachedTokens: 1_200_000, outputTokens: 12_000, elapsedTime: 3000 }),
       StatusMessageBuilder.buildStreamingStatus({ outputTokens: 5, elapsedTime: 3000 }),
       StatusMessageBuilder.buildUploadingStatus({ payloadSize: 1_500_000, elapsedTime: 3000 }),
       StatusMessageBuilder.buildRetryStatus({ attempt: 2, maxRetries: 3, elapsedTime: 3000 }),
     ];
     for (const message of messages) {
-      const splittable = message.match(/\d[,\d]*%? (tokens?|KB|cached|·|→)/);
+      const splittable = message.match(/\d[,.\d]*[kM]?%? (tokens?|KB|cached|·|→)/);
       assert(!splittable, `"${message}" can wrap between "${splittable?.[0]}" — use a non-breaking space`);
     }
   });
