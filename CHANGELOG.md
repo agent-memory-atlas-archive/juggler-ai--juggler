@@ -5,6 +5,7 @@ of changes; this project follows semantic versioning.
 
 ## [Unreleased]
 
+- Fixed a macOS window on a second display being pulled back to the main one on every drop
 - An SVG or HTML block in a reply now finishes drawing as it streams, instead of stalling part-way
 - Binning a conversation drops the replayed prompts from its round-trips, reclaiming most of its disk
 
