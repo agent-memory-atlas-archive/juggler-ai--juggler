@@ -27,9 +27,10 @@ import (
 // recordingBroadcaster captures the pinboard broadcasts a request produces,
 // each with the board it was about.
 type recordingBroadcaster struct {
-	boards  [][]core.Pin
-	names   []string
-	reveals []pinboardReveal
+	boards     [][]core.Pin
+	names      []string
+	reveals    []pinboardReveal
+	workspaces [][]core.Workspace
 }
 
 type pinboardReveal struct {
@@ -43,6 +44,9 @@ func (b *recordingBroadcaster) BroadcastSessionMetadataChanged(map[string]any)  
 func (b *recordingBroadcaster) BroadcastConversationsChanged(op, id, name string) {}
 func (b *recordingBroadcaster) BroadcastConversationsReordered([]string)          {}
 func (b *recordingBroadcaster) BroadcastConversationFocus(id, from string)        {}
+func (b *recordingBroadcaster) BroadcastWorkspacesChanged(workspaces []core.Workspace) {
+	b.workspaces = append(b.workspaces, workspaces)
+}
 func (b *recordingBroadcaster) BroadcastPinboardChanged(board string, pins []core.Pin) {
 	b.boards = append(b.boards, pins)
 	b.names = append(b.names, board)

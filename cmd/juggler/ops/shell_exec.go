@@ -68,6 +68,12 @@ func capTimeout(timeoutMs int) time.Duration {
 // the store sweeps by age. The directory lives under the project's .juggler/ so
 // the model can read the spill back without an approval prompt, and it stays out
 // of git status.
+//
+// The PROJECT's .juggler/, note, even when the command ran somewhere else: a
+// command in a workspace spills here too. A worktree that grew an untracked
+// .juggler/ would be reported dirty by anything reading `git status`, and
+// removing the tree would take the spill of every conversation bound to it. It
+// also keeps one sweep covering every spill there is.
 func spillDirFor(root, convID string) string {
 	if convID == "" {
 		convID = "_unassigned"
@@ -201,7 +207,7 @@ func (ops *ShellOperations) startBackground(params map[string]any) (any, error) 
 		// head+tail the non-streaming cappedBuffer produces.
 		fwd := newCappedForwarder(outputHeadLimit, outputTailLimit, func(s string) {
 			appendShellOutput(shellID, s)
-		}).withSpill(ops.scope.Root(), newSpillFile(spillDirFor(ops.scope.Root(), convID), shellID))
+		}).withSpill(ops.scope.Root(), newSpillFile(spillDirFor(ops.scope.ProjectRoot(), convID), shellID))
 
 		readerDone := make(chan struct{})
 		go func() {
@@ -364,7 +370,7 @@ func (ops *ShellOperations) execute(ctx context.Context, params map[string]any) 
 	convID, _ := params["conv_id"].(string)
 	spillID := fmt.Sprintf("exec-%d", time.Now().UnixNano())
 	output := newCappedBuffer(outputHeadLimit, outputTailLimit).
-		withSpill(ops.scope.Root(), newSpillFile(spillDirFor(ops.scope.Root(), convID), spillID))
+		withSpill(ops.scope.Root(), newSpillFile(spillDirFor(ops.scope.ProjectRoot(), convID), spillID))
 	cmd.Stdout = output
 	cmd.Stderr = output // Merge stderr into stdout - interleaved naturally
 
@@ -439,7 +445,7 @@ func (ops *ShellOperations) executePythonCode(ctx context.Context, code string, 
 	convID, _ := params["conv_id"].(string)
 	spillID := fmt.Sprintf("pyexec-%d", time.Now().UnixNano())
 	output := newCappedBuffer(outputHeadLimit, outputTailLimit).
-		withSpill(ops.scope.Root(), newSpillFile(spillDirFor(ops.scope.Root(), convID), spillID))
+		withSpill(ops.scope.Root(), newSpillFile(spillDirFor(ops.scope.ProjectRoot(), convID), spillID))
 	cmd.Stdout = output
 	cmd.Stderr = output // Merge stderr into stdout - interleaved naturally
 
@@ -473,8 +479,14 @@ func (ops *ShellOperations) executePythonCode(ctx context.Context, code string, 
 }
 
 // validateCwd resolves a user-supplied shell cwd and rejects anything outside
-// the project workingDir. Empty cwd means "use workingDir". The prefix check
-// appends a separator so siblings like "<workingDir>-evil" cannot pass.
+// workingDir. Empty cwd means "use workingDir". The prefix check appends a
+// separator so siblings like "<workingDir>-evil" cannot pass.
+//
+// workingDir is the scope's ROOT, which is the project for an ordinary request
+// and the workspace for one bound to a workspace. It is deliberately not
+// widened by the allowed roots the scope carries for reads: a conversation
+// working in a worktree may read the tree it branched from, but running a
+// command in it is how you edit the wrong branch by accident.
 func validateCwd(workingDir, cwd string) (string, error) {
 	if cwd == "" {
 		return workingDir, nil
@@ -483,13 +495,13 @@ func validateCwd(workingDir, cwd string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("invalid cwd path: %w", err)
 	}
-	projectDir, err := filepath.Abs(workingDir)
+	rootDir, err := filepath.Abs(workingDir)
 	if err != nil {
 		return "", fmt.Errorf("invalid working directory: %w", err)
 	}
-	projectWithSep := projectDir + string(filepath.Separator)
-	if absPath != projectDir && !strings.HasPrefix(absPath+string(filepath.Separator), projectWithSep) {
-		return "", fmt.Errorf("cwd must be within project directory")
+	rootWithSep := rootDir + string(filepath.Separator)
+	if absPath != rootDir && !strings.HasPrefix(absPath+string(filepath.Separator), rootWithSep) {
+		return "", fmt.Errorf("cwd must be within the working directory: %s", rootDir)
 	}
 	return absPath, nil
 }

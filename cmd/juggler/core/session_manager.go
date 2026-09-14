@@ -68,6 +68,12 @@ type sessionState struct {
 	// and deliberately not persisted: it is a fact about this process, not about
 	// the project. See SessionManager.ClaimDetachedBoards.
 	boardsClaimed bool
+	// workspacesReconciled records that a client has taken on the once-per-run
+	// job of reconciling the workspace table against what is actually on disk.
+	// Read and written only on the actor, and not persisted for the same reason
+	// boardsClaimed isn't: it is a fact about this process. See
+	// SessionManager.ClaimWorkspaceReconcile.
+	workspacesReconciled bool
 }
 
 // sessionTask is the unit of work the actor goroutine runs.

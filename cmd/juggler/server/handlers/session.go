@@ -131,9 +131,16 @@ type WorkerManager interface {
 // viewer can decline to move when it is elsewhere or has a draft in progress.
 // Keeping it separate from the composition event means ordinary pinboard edits
 // never acquire presentation side effects.
+//
+// `BroadcastWorkspacesChanged` carries the whole workspace table after an edit,
+// on the same reasoning as the board: it is short, wholly owned here, and
+// shipping it entire is what converges every viewer without replaying
+// operations. It is also how a window that is merely watching learns that a
+// workspace another window was provisioning has become usable.
 type Broadcaster interface {
 	BroadcastSessionChanged()
 	BroadcastSessionMetadataChanged(metadata map[string]any)
+	BroadcastWorkspacesChanged(workspaces []core.Workspace)
 	BroadcastConversationsChanged(op, id, name string)
 	BroadcastConversationsReordered(order []string)
 	BroadcastConversationFocus(id, from string)
@@ -435,6 +442,7 @@ func (api *SessionAPI) HandleGetSession(w http.ResponseWriter, r *http.Request) 
 		"activeConversationId": sess.ActiveConversationID,
 		"messageHistory":       sess.MessageHistory,
 		"metadata":             sess.Metadata,
+		"workspaces":           api.manager().ListWorkspaces(),
 		"binnedCount":          len(api.manager().ListBinnedConversations()),
 		"binSizeBytes":         api.manager().BinSizeBytes(),
 	}

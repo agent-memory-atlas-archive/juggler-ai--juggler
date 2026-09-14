@@ -399,7 +399,17 @@ func New(cfg Config) (*Server, error) {
 	// must be assigned field-by-field, or the second write wipes the first.
 	skillsAPI := handlers.NewSkillsAPI(s.ProjectPath)
 	s.serverAPIs = serverAPIs{
-		opsAPI: handlers.NewOpsAPI(s.ProjectPath),
+		// Workspaces are resolved through the live session manager on each
+		// request, for the same reason the project path is a provider func: a
+		// project switch retargets both, and a workspace registered a moment
+		// ago must resolve without rebuilding anything.
+		opsAPI: handlers.NewOpsAPI(s.ProjectPath, func(id string) (core.Workspace, bool) {
+			mgr := s.SessionManager()
+			if mgr == nil {
+				return core.Workspace{}, false
+			}
+			return mgr.GetWorkspace(id)
+		}),
 		completionsAPI: handlers.NewCompletionsAPI(s.ProjectPath, func() ops.PathSearcher {
 			if fw := s.FileWatcher(); fw != nil {
 				return fw.Index()

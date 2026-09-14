@@ -173,7 +173,7 @@ func (s *spillFile) close() (path string, bytes int64, truncated bool) {
 // that never attach one behave byte-identically to a plain head+tail cap.
 type spillState struct {
 	spill        *spillFile
-	root         string // project root, for rendering the spill path relative
+	root         string // the working directory the spill path is rendered relative to (the workspace's, when the command ran in one)
 	spillClosed  bool
 	spillPathAbs string
 	spillBytesN  int64
@@ -214,9 +214,14 @@ func (s *spillState) spillPath() string { s.closeSpill(); return s.spillPathAbs 
 // spillBytes returns the complete output byte count when spilled, else 0.
 func (s *spillState) spillBytes() int64 { s.closeSpill(); return s.spillBytesN }
 
-// relSpillPath renders the spill path relative to the project root for the
+// relSpillPath renders the spill path relative to the working directory for the
 // in-band marker (shorter, and `read` resolves it fine). Falls back to the
 // absolute path if a relative form can't be computed.
+//
+// Relative to the WORKING directory rather than the project, because that is
+// what the model's paths mean: a command run in a workspace gets a path back
+// out of it (`../project/.juggler/…`), which is where the spill actually is and
+// which the read tool resolves, the project being in scope for reads.
 func (s *spillState) relSpillPath() string {
 	if s.spillPathAbs == "" {
 		return ""

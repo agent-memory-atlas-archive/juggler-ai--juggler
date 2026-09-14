@@ -20,12 +20,19 @@ import (
 // GenerateConvID returns a fresh `conv_<9-char base36>` id, matching the
 // frontend's id shape. Used as a fallback when callers do not preallocate ids.
 func GenerateConvID() string {
+	return generatePrefixedID("conv_")
+}
+
+// generatePrefixedID returns prefix followed by 9 random base36 characters —
+// the id shape the frontend generates, used for every kind of id the server
+// allocates itself.
+func generatePrefixedID(prefix string) string {
 	const alphabet = "0123456789abcdefghijklmnopqrstuvwxyz"
 	const idLen = 9
 	max := big.NewInt(int64(len(alphabet)))
 	var b strings.Builder
-	b.Grow(len("conv_") + idLen)
-	b.WriteString("conv_")
+	b.Grow(len(prefix) + idLen)
+	b.WriteString(prefix)
 	for i := 0; i < idLen; i++ {
 		n, err := rand.Int(rand.Reader, max)
 		if err != nil {

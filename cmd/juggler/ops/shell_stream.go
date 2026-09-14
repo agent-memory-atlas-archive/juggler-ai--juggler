@@ -136,7 +136,7 @@ func (ops *ShellOperations) ExecuteStreaming(
 	// appears so the watchdog can stand down.
 	fwd := newCappedForwarder(outputHeadLimit, outputTailLimit, func(s string) {
 		output <- ShellStreamChunk{ShellID: shellID, Data: s}
-	}).withSpill(ops.scope.Root(), newSpillFile(spillDirFor(ops.scope.Root(), convID), shellID))
+	}).withSpill(ops.scope.Root(), newSpillFile(spillDirFor(ops.scope.ProjectRoot(), convID), shellID))
 
 	// Stream output chunks
 	readerWG.Go(func() {

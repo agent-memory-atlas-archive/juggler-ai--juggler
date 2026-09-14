@@ -40,6 +40,7 @@ type PathValidationResult struct {
 // the per-call params map and being re-extracted at each callsite.
 type PathScope struct {
 	root         string
+	projectRoot  string
 	allowedRoots []string
 }
 
@@ -58,6 +59,29 @@ func NewPathScope(root string, allowedRoots []string) PathScope {
 // Root returns the working directory this scope is anchored at.
 func (s PathScope) Root() string {
 	return s.root
+}
+
+// WithProjectRoot returns a copy anchored at the same working directory but
+// knowing which project it belongs to. Used when the two differ — an operation
+// running in a workspace rather than the project itself.
+func (s PathScope) WithProjectRoot(projectRoot string) PathScope {
+	s.projectRoot = projectRoot
+	return s
+}
+
+// ProjectRoot returns the project this scope belongs to, which is the working
+// directory itself unless it was told otherwise.
+//
+// It is where Juggler's own scratch storage goes — the full-output spill files,
+// and anything else derived from a root rather than asked for by the user.
+// Nothing of ours may be written into a workspace: a worktree that acquires an
+// untracked .juggler/ is reported dirty by anything reading `git status`, and
+// removing the tree would take the conversations' scratch state with it.
+func (s PathScope) ProjectRoot() string {
+	if s.projectRoot == "" {
+		return s.root
+	}
+	return s.projectRoot
 }
 
 // Resolve validates a requested path for a read/search/tree op, enforcing

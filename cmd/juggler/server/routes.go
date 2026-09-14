@@ -199,6 +199,20 @@ func (s *Server) setupSessionRoutes(sessionAPI *handlers.SessionAPI) {
 	api.HandleFunc(apiRoute(apipaths.SessionPinboardBoards), sessionAPI.HandleCreateBoard).Methods("POST")
 	api.HandleFunc(apiRoute(apipaths.SessionPinboardBoards), sessionAPI.HandleDeleteBoard).Methods("DELETE")
 	api.HandleFunc("/session/pinboard/boards/restore", sessionAPI.HandleRestoreBoards).Methods("POST")
+	// The workspace table: where this project's conversations run, other than
+	// the project itself. Shared project state like the pinboard, so likewise
+	// not gated to the local viewer. Registering comes before building, so a
+	// provision interrupted half way through leaves a row to clean up; `close`
+	// tombstones rather than deletes, because the id outlives the workspace and
+	// a bound conversation must be told it was closed, not that it is unknown.
+	// `reconcile` is a viewer asking whether checking the table against disk is
+	// its job — answered yes once per run, since the check is destructive.
+	api.HandleFunc("/session/workspaces", sessionAPI.HandleListWorkspaces).Methods("GET")
+	api.HandleFunc("/session/workspaces", sessionAPI.HandleRegisterWorkspace).Methods("POST")
+	api.HandleFunc("/session/workspaces/reconcile", sessionAPI.HandleClaimWorkspaceReconcile).Methods("POST")
+	api.HandleFunc("/session/workspaces/{workspaceId}", sessionAPI.HandleUpdateWorkspace).Methods("PATCH")
+	api.HandleFunc("/session/workspaces/{workspaceId}", sessionAPI.HandleUnregisterWorkspace).Methods("DELETE")
+	api.HandleFunc("/session/workspaces/{workspaceId}/close", sessionAPI.HandleCloseWorkspace).Methods("POST")
 	api.HandleFunc("/session/ui-zoom", sessionAPI.HandleGetUIZoom).Methods("GET")
 	api.Handle("/session/ui-zoom", localViewerOnly(sessionAPI.HandleSetUIZoom)).Methods("PUT")
 	// UI theme (light/dark/system mode) also lives with the session (per

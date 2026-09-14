@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"sort"
 	"strings"
@@ -141,6 +142,85 @@ type Session struct {
 	UITheme              string                 `json:"uiTheme,omitempty"`      // Project-wide UI theme mode (system|light|dark), followed by any window without one of its own; "" until first set
 	Pinboard             []Pin                  `json:"pinboard,omitempty"`     // Board written by a Juggler that had one; folded into Boards["main"] on first use (see migrateBoards)
 	Boards               map[string]Board       `json:"boards,omitempty"`       // Pinboard compositions by board id: "main" is the docked panel, the rest are detached windows (see pinboard.go)
+	Workspaces           []Workspace            `json:"workspaces,omitempty"`   // The places conversations run, other than the project itself (see workspace.go); nil until one is made
+
+	// unknown holds the manifest keys this build does not recognise, kept
+	// verbatim so that saving gives them back. See UnmarshalJSON.
+	unknown map[string]json.RawMessage
+}
+
+// sessionJSONKeys is every key this build writes, derived from the struct so it
+// cannot drift from it. A field tagged "-" is in-memory only and is not a
+// manifest key at all.
+var sessionJSONKeys = func() map[string]bool {
+	keys := map[string]bool{}
+	t := reflect.TypeOf(Session{})
+	for i := 0; i < t.NumField(); i++ {
+		tag := t.Field(i).Tag.Get("json")
+		name, _, _ := strings.Cut(tag, ",")
+		if name == "" || name == "-" {
+			continue
+		}
+		keys[name] = true
+	}
+	return keys
+}()
+
+// UnmarshalJSON reads the manifest and remembers any key it does not recognise.
+//
+// Without this, running an older Juggler on a newer project is quietly
+// destructive: it parses what it knows, drops the rest, and writes the loss back
+// on the next save. Nothing announces it — the user downgrades, works for an
+// afternoon, upgrades again, and finds every conversation bound to a workspace
+// pointing at nothing. Keeping the bytes costs one map.
+func (s *Session) UnmarshalJSON(data []byte) error {
+	type manifest Session // no methods, so this does not recurse
+	var parsed manifest
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		return err
+	}
+	*s = Session(parsed)
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	for key := range raw {
+		if sessionJSONKeys[key] {
+			delete(raw, key)
+		}
+	}
+	if len(raw) > 0 {
+		s.unknown = raw
+	}
+	return nil
+}
+
+// MarshalJSON writes the manifest with the unrecognised keys put back.
+//
+// A key this build knows always wins: the kept bytes are what was there when it
+// was read, and anything written since is what the user has actually done.
+func (s Session) MarshalJSON() ([]byte, error) {
+	type manifest Session
+	known, err := json.Marshal(manifest(s))
+	if err != nil {
+		return nil, err
+	}
+	if len(s.unknown) == 0 {
+		return known, nil
+	}
+	merged := map[string]json.RawMessage{}
+	for key, value := range s.unknown {
+		merged[key] = value
+	}
+	var mine map[string]json.RawMessage
+	if err := json.Unmarshal(known, &mine); err != nil {
+		return nil, err
+	}
+	for key, value := range mine {
+		merged[key] = value
+	}
+	return json.Marshal(merged)
 }
 
 // NewSession creates a new session with initial state
@@ -155,8 +235,8 @@ func NewSession() *Session {
 
 // Clone returns a private copy of the session that the caller may read or
 // mutate freely without ever touching the original. Every container the rest of
-// the code mutates — the four slices, the metadata map, the WindowState
-// pointer — is duplicated, so a snapshot handed out by
+// the code mutates — each slice, the maps inside and beside them, the
+// WindowState pointer — is duplicated, so a snapshot handed out by
 // SessionManager.GetSession can never race the actor goroutine that owns the
 // live session. (RawMessage payloads and metadata values are shared by
 // reference: both are only ever replaced wholesale, never mutated in place.)
@@ -173,6 +253,18 @@ func (s *Session) Clone() *Session {
 		c.Boards = make(map[string]Board, len(s.Boards))
 		for id, board := range s.Boards {
 			c.Boards[id] = board.Clone()
+		}
+	}
+	if s.unknown != nil {
+		c.unknown = make(map[string]json.RawMessage, len(s.unknown))
+		for k, v := range s.unknown {
+			c.unknown[k] = v
+		}
+	}
+	if s.Workspaces != nil {
+		c.Workspaces = make([]Workspace, len(s.Workspaces))
+		for i, ws := range s.Workspaces {
+			c.Workspaces[i] = ws.Clone()
 		}
 	}
 	if s.Metadata != nil {
@@ -1302,11 +1394,17 @@ func (fs *FileSessionStore) Load() (*Session, error) {
 	}
 	session.Conversations = []json.RawMessage{}
 
+	// Re-check the workspace table against the world: roots that have gone
+	// since the last run, and provisions that died with the process that
+	// started them. See verifyWorkspaces for why this half runs here rather
+	// than in the browser.
+	workspacesChanged := verifyWorkspaces(&session)
+
 	// Reconcile manifest's ConversationOrder against the on-disk index:
 	// drop ids that no longer have a folder, append orphan folders that
 	// aren't yet in the order. Persist if anything changed, or if the manifest
 	// was rebuilt from scratch (so session.json is re-created on disk).
-	if fs.reconcileConversationOrder(&session) || rebuilt {
+	if fs.reconcileConversationOrder(&session) || workspacesChanged || rebuilt {
 		if err := fs.Save(&session); err != nil {
 			jlog.Error("[session] failed to persist reconciled order: %v", err)
 		}
