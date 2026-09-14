@@ -5,6 +5,8 @@ of changes; this project follows semantic versioning.
 
 ## [Unreleased]
 
+- A conversation can now work in a git worktree of its own or a throwaway copy of the project, and move between them
+- Or in one folder of the project: commands run there, while the rest of the project stays readable
 - A refused or timed-out bash command now tells the agent why, not just "exit code 1"
 - `dd` reading a file is no longer refused; writing to a raw disk device still is
 

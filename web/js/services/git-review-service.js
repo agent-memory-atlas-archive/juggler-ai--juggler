@@ -19,14 +19,16 @@
  * though it were current; the surface showing one already holds what it drew, and
  * it knows when it last asked. So this module holds exactly two things: the
  * request currently out, so that two surfaces asking at once run git once, and
- * which project the questions are about, so that an answer arriving after that
- * changed is refused instead of shown.
+ * which tree the questions are about — the project, or the visible
+ * conversation's workspace — so that an answer arriving after that changed is
+ * refused instead of shown.
  *
  * It never polls. A review happens because someone asked for one.
  * @module services/git-review-service
  */
 
 import api from './api.js';
+import { gitWorkspaceId, onGitWorkspaceChange } from './git-workspace.js';
 import wsService from './websocket.js';
 
 /** @typedef {import('./api.js').GitReview} GitReview */
@@ -34,9 +36,10 @@ import wsService from './websocket.js';
 /** @typedef {import('./api.js').GitFileDiff} GitFileDiff */
 
 /**
- * Bumped whenever the tree these questions are about changes. An answer that
- * comes back after its generation has passed describes a project nobody is
- * looking at, so it is refused rather than handed over.
+ * Bumped whenever the tree these questions are about changes — a project switch,
+ * or the user moving to a conversation that works somewhere else. An answer that
+ * comes back after its generation has passed describes a tree nobody is looking
+ * at, so it is refused rather than handed over.
  */
 let _generation = 0;
 
@@ -45,7 +48,7 @@ let _inFlight = null;
 
 /** @returns {Error} The refusal a stale answer gets. */
 function staleError() {
-  return new Error('The project changed while git was being read.');
+  return new Error('The tree changed while git was being read.');
 }
 
 /** @returns {DOMException} The rejection a caller that cancelled gets. */
@@ -119,7 +122,7 @@ const gitReviewService = {
   async review(options = {}) {
     const generation = _generation;
     if (!_inFlight) {
-      const pending = api.getGitReview().finally(() => {
+      const pending = api.getGitReview({ workspaceId: gitWorkspaceId() }).finally(() => {
         // Only if it is still ours: a project switch in between has already let
         // go of this one, and clearing unconditionally would discard the request
         // that replaced it.
@@ -146,14 +149,16 @@ const gitReviewService = {
    */
   async diff(repo, path, options = {}) {
     const generation = _generation;
-    const data = await api.getGitDiff(repo, path, { signal: options.signal });
+    const data = await api.getGitDiff(repo, path, {
+      signal: options.signal, workspaceId: gitWorkspaceId()
+    });
     if (generation !== _generation) throw staleError();
     return asDiff(data);
   },
 
   /**
-   * Stop expecting answers about the project we were looking at, as a project
-   * switch does. Anything still out is left to arrive and be refused.
+   * Stop expecting answers about the tree we were looking at, as a project
+   * switch or a move to a differently-bound conversation does. Anything still out is left to arrive and be refused.
    *
    * Exported for tests as well, which cannot otherwise get back to the initial
    * state — and cannot use the broadcast, since the session answers that one by
@@ -168,6 +173,13 @@ const gitReviewService = {
 
 // A project switch replaces the tree every one of these questions was about.
 wsService.on('project-changed', () => {
+  gitReviewService.reset();
+});
+
+// And so does moving to a conversation that works in a different one. The
+// manifest a board is holding, and any patch still out against it, describe a
+// tree nobody is looking at any more.
+onGitWorkspaceChange(() => {
   gitReviewService.reset();
 });
 

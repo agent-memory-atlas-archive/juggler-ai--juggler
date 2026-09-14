@@ -47,6 +47,19 @@ import { renderAssistantContentWrapped, decorateCodeBlocks } from '../../sdk/lib
 import { stripThinkingTags } from '../utils/content-utils.js';
 import { itemGoal } from '../model/thread-alias.js';
 import { liveMessageForThread } from '../utils/thread-display.js';
+import { SETUP_PANEL_TAG } from './conversation-setup-panel.js';
+import workspaceProviderRegistry from '../registries/workspace-provider-registry.js';
+import {
+  getSetupState,
+  undoSetup,
+  setupUndoDetail,
+  isSetupProvisioning
+} from '../services/conversation-setup.js';
+import { workspaceStatus } from '../services/workspace-provisioning.js';
+import { showConfirm } from './modal-dialog.js';
+import { rebindConversation } from '../services/workspace-rebinding.js';
+import { openWorkspaceMove } from './workspace-move-dialog.js';
+import { openWorkspaceReconnect } from './workspace-reconnect-dialog.js';
 
 /** @typedef {import('../../sdk/lib/message.js').Message} Message */
 
@@ -66,21 +79,35 @@ const THREAD_RESULT_CLASS = 'thread-result-final';
 // treats them as first-class (select, properties panel, delete).
 const PENDING_ZONE_CLASS = 'pending-messages';
 
+// The tree a bound conversation works in, stated once at the top of its
+// transcript. Synthesized from the binding and the session's workspace table —
+// neither of which is an item — so it too is managed outside the item-diff.
+const WORKSPACE_BANNER_CLASS = 'conversation-workspace-banner';
+
+// On the inner column while the setup card is in it: the column fills the
+// scroller so the card can centre in the space below the seeded items, which is
+// where the reader is looking. Carried as a class rather than measured, because
+// it is a fact about what is in the column, not about how tall anything is.
+const AWAITING_SETUP_CLASS = 'awaiting-setup';
+
 // Corner-up-left "return" arrow — the summary is what the thread came back with.
 const RESULT_ICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" height="14" viewBox="0 -960 960 960" width="14" fill="white"><path d="M280-200v-80h360q33 0 56.5-23.5T720-360q0-33-23.5-56.5T640-440H300l84 84-56 56-180-180 180-180 56 56-84 84h340q66 0 113 47t47 113q0 66-47 113t-113 47H280Z"/></svg>';
 
 /**
- * True for a child managed outside the item-diff: the footer and synthesized
- * terminal thread-result block. These are not conversation items and must not be
- * removed by the message-id diff.
+ * True for a child managed outside the item-diff: the footer, the synthesized
+ * terminal thread-result block, the queued-message zone and the workspace
+ * banner. These are not conversation items and must not be removed by the
+ * message-id diff.
  * @param {Element} child
  * @returns {boolean} True if the element is a managed non-item.
  */
 function isManagedNonItem(child) {
   return child.tagName === FOOTER_TAG ||
     child.tagName === THREAD_ACTIONS_TAG ||
+    child.tagName === SETUP_PANEL_TAG ||
     child.classList.contains(THREAD_RESULT_CLASS) ||
-    child.classList.contains(PENDING_ZONE_CLASS);
+    child.classList.contains(PENDING_ZONE_CLASS) ||
+    child.classList.contains(WORKSPACE_BANNER_CLASS);
 }
 
 /**
@@ -120,8 +147,17 @@ export function ensurePendingMessages(area, messageList) {
     zone.className = PENDING_ZONE_CLASS;
     const label = document.createElement('div');
     label.className = 'pending-messages-label';
-    label.textContent = 'Queued';
     zone.appendChild(label);
+  }
+  // Two reasons a message waits, and they are different things to be told: a
+  // turn is running, or the place this conversation is going to work in is
+  // still being built. Written on every pass rather than only at creation,
+  // because the second becomes the first the moment the workspace is ready.
+  const label = /** @type {HTMLElement|null} */ (zone.querySelector('.pending-messages-label'));
+  if (label) {
+    label.textContent = isSetupProvisioning(area?._conversation)
+      ? 'Waiting for the workspace'
+      : 'Queued';
   }
   // Keep the zone pinned at the very end (after the footer).
   if (messageList.lastElementChild !== zone) {
@@ -207,6 +243,322 @@ export function getItemId(item) {
  */
 function getElementId(element) {
   return `message:${element.getAttribute('message-id') || ''}`;
+}
+
+/**
+ * Ensure the column says where its conversation works: the question at the foot
+ * of the transcript while it is still being asked, the banner above the first
+ * item once it has an answer.
+ *
+ * The two are one state in two places, and never both. A conversation still
+ * being asked has nothing to announce, so the whole of its workspace surface is
+ * the card in the welcome slot — with the starting hint inside it, because a
+ * question and the instructions for answering it are one block. A conversation
+ * that has been told is the reverse: nothing to ask, and a tree its tools,
+ * provider and seeds all resolve against that nothing else on screen names —
+ * the window title, the project chip and the file pins are project chrome and
+ * stay the project, deliberately — so the answer goes at the top of the one
+ * surface that belongs to the conversation, above the items it scopes.
+ *
+ * Idempotent: updates in place, repositions, or removes.
+ *
+ * The banner is silent in three cases, each for its own reason. A conversation
+ * bound to the project is where every conversation worked before workspaces
+ * existed and needs no announcing. A binding that cannot be resolved — still
+ * provisioning, closed, root gone, never registered — says nothing rather than
+ * naming a tree the conversation cannot reach; surfacing that state is phase 3's
+ * tombstone banner, which can also offer the rebind that fixes it. And a
+ * sub-thread or group column is a lens on part of the same conversation, working
+ * in the same tree, so repeating it per column would be noise.
+ * @param {any} area - ConversationArea instance (provides `_conversation`, `_threadYMap`, `_isGroupColumn`).
+ * @param {HTMLElement} messageList - The column's normal-order inner list.
+ */
+export function ensureConversationChrome(area, messageList) {
+  const isRootColumn = !area?._threadYMap && !area?._isGroupColumn;
+  const conversation = isRootColumn ? area?._conversation : null;
+  const panel = /** @type {any} */ (messageList.querySelector('conversation-setup-panel'));
+
+  // A conversation nobody has asked yet, in an app that could offer it
+  // somewhere else to work. With no provider installed there is nothing to ask —
+  // the project is the only answer — and the conversation looks exactly as it
+  // did before any of this existed. A conversation with history behind it is not
+  // asked either: see {@link Conversation#awaitingSetup}.
+  const asking = conversation
+    && conversation.awaitingSetup
+    && workspaceProviderRegistry.getIds().length > 0;
+
+  messageList.classList.toggle(AWAITING_SETUP_CLASS, !!asking);
+
+  if (!asking) {
+    panel?.remove();
+    ensureWorkspaceBanner(area, messageList);
+    return;
+  }
+
+  // The card and the banner are two states of one answer, so only one of them
+  // is ever here: a conversation being asked where it works has nothing to put
+  // in a banner yet.
+  messageList.querySelector(`.${WORKSPACE_BANNER_CLASS}`)?.remove();
+
+  const element = panel || document.createElement('conversation-setup-panel');
+
+  // Last in the transcript rather than first in it. A question pinned above the
+  // seeded items reads as a heading for them — something printed about the
+  // conversation rather than something to answer — so it goes where the reader
+  // is already looking before they type: at the foot of the column, in the
+  // space the starting hint used to have to itself, carrying that hint with it.
+  // The queued-message zone stays below it: a message waiting on a workspace
+  // belongs under the thing it is waiting for.
+  //
+  // Seated before it is told anything, because drawing it raises setup
+  // notifications — a provider's form reports itself as it is built, a sweep
+  // answers — and what listens to those comes straight back here. A panel that
+  // is not in the list yet is not found by that pass, which builds a second one;
+  // and every guard against redundant work is per-element (the identity check in
+  // `set conversation`, the shape comparison in `render`, the in-flight check in
+  // `sweep`), so the second element has released all of them at once.
+  const seat = messageList.querySelector(`.${PENDING_ZONE_CLASS}`);
+  if (element.parentElement !== messageList || element.nextElementSibling !== seat) {
+    messageList.insertBefore(element, seat);
+  }
+
+  element.conversation = conversation;
+  element.render();
+}
+
+/**
+ * The banner half of {@link ensureConversationChrome}, which is also the whole
+ * of it for every conversation that has already been asked.
+ * @param {any} area - ConversationArea instance (provides `_conversation`, `_threadYMap`, `_isGroupColumn`).
+ * @param {HTMLElement} messageList - The column's normal-order inner list.
+ */
+export function ensureWorkspaceBanner(area, messageList) {
+  const existing = /** @type {HTMLElement|null} */ (
+    messageList.querySelector(`.${WORKSPACE_BANNER_CLASS}`));
+
+  const isRootColumn = !area?._threadYMap && !area?._isGroupColumn;
+  const conversation = isRootColumn ? area?._conversation : null;
+  const id = conversation?.workspaceId || '';
+  // The root, not merely the row: `workspaceRoot` makes the same four refusals
+  // the server makes, so a banner exists exactly when an op would be honoured.
+  const root = id ? conversation.workspaceRoot : null;
+  const workspace = id ? conversation.session?.getWorkspace(id) : null;
+
+  // A binding that cannot be honoured is worth a banner of its own. Every
+  // operation of the next turn would fail on its own, each with a true and
+  // useless message, so it is said once here instead — with the things that fix
+  // it. What there is to say is {@link strandedLead}'s to decide.
+  if (!root) {
+    // The project is where a conversation has always worked and needs no
+    // announcing, in any state: it has no row, and a conversation bound to it is
+    // not bound to anything that can go missing.
+    const lead = id ? strandedLead(workspace) : '';
+    if (!lead) {
+      if (existing) existing.remove();
+      return;
+    }
+    // A workspace with no row at all is the one kind of loss that can be undone
+    // rather than merely escaped: the place is very likely still on disk, and
+    // what went missing is the session's record of it.
+    ensureStrandedBanner(conversation, { id, lead, lost: !workspace }, existing, messageList);
+    return;
+  }
+
+  // Its label when the user gave it one, and nothing when they did not — the id
+  // is what the server falls back to in an error, and `ws_k3n8fq2p1` tells a
+  // reader less than the root underneath it already does.
+  const label = conversation.session?.getWorkspace(id)?.label || '';
+  // A workspace made a moment ago can still be given back, and the banner is
+  // where that is said: the line already names the tree, so it grows a button
+  // rather than being shadowed by a second line saying the same thing.
+  const undoable = getSetupState(conversation).undoable === true;
+  const undoDetail = undoable ? setupUndoDetail(conversation) : '';
+  const signature = `${id}\u0000${label}\u0000${root}\u0000${undoable}\u0000${undoDetail}`;
+
+  const banner = existing || document.createElement('div');
+  if (banner.dataset.workspace !== signature) {
+    banner.dataset.workspace = signature;
+    banner.className = WORKSPACE_BANNER_CLASS;
+    banner.replaceChildren();
+    const lead = document.createElement('span');
+    lead.className = 'workspace-banner-lead';
+    // The noun, not a preposition: the menu, the setup panel and the move dialog
+    // all call this thing a workspace, and the banner is where a reader meets it
+    // first.
+    lead.textContent = 'Workspace';
+    banner.appendChild(lead);
+    if (label) {
+      const name = document.createElement('span');
+      name.className = 'workspace-banner-label';
+      name.textContent = label;
+      banner.appendChild(name);
+    }
+    const where = document.createElement('span');
+    where.className = 'workspace-banner-root';
+    where.textContent = root;
+    banner.appendChild(where);
+    if (undoable) {
+      const undo = document.createElement('button');
+      undo.type = 'button';
+      undo.className = 'workspace-banner-undo';
+      undo.textContent = 'Undo';
+      // One word, and what it runs is a removal. The word is right — this is
+      // the undo of the choice just made — but it is not the whole of what
+      // happens, so the rest of it travels with the control rather than being
+      // discovered afterwards.
+      if (undoDetail) {
+        undo.title = `Undo — ${undoDetail}`;
+        undo.setAttribute('aria-label', `Undo: ${undoDetail}`);
+      }
+      undo.addEventListener('click', () => { void undoFromBanner(conversation, undoDetail); });
+      banner.appendChild(undo);
+    }
+  }
+
+  // Kept at the very top, above the items and above the thread actions a column
+  // reused from a sub-thread may still be carrying.
+  if (messageList.firstElementChild !== banner) {
+    messageList.insertBefore(banner, messageList.firstElementChild);
+  }
+}
+
+/**
+ * Undo the setup, asking first when the tree holds work.
+ *
+ * The undo window is open only until the conversation has said anything, so
+ * almost always the tree is exactly as it was built and there is nothing to ask
+ * about — going straight through is what makes it read as an undo rather than
+ * as a third way of finishing with a workspace. The exception is the one that
+ * costs something: a tree somebody has already written in by hand, whose files
+ * go with the directory when the compensation stack removes it.
+ *
+ * The status is asked for here rather than read from the setup panel's cache:
+ * the panel is gone by the time this banner exists, so its cache is whatever
+ * was true before the workspace was built.
+ * @param {any} conversation - The conversation to unbind and roll back.
+ * @param {string} detail - What the provider says the removal takes with it.
+ * @returns {Promise<void>} When it has run, or been called off.
+ */
+async function undoFromBanner(conversation, detail) {
+  const session = conversation?.session;
+  const workspace = session?.getWorkspace?.(conversation?.workspaceId || '');
+  const status = workspace ? await workspaceStatus(session, workspace) : null;
+  if (status?.dirty === true) {
+    const agreed = await showConfirm(
+      [detail, 'It holds uncommitted work, which goes with it.'].filter(Boolean).join(' '),
+      'Undo',
+      { confirmText: 'Undo', danger: true });
+    if (!agreed) return;
+  }
+  await undoSetup(conversation);
+}
+
+/**
+ * What to say about a binding that cannot be honoured, or '' to say nothing.
+ *
+ * Three of the four refusals are worth a line. Finished with by somebody names
+ * them, because that is the whole of the coordination story. A root that is not
+ * where it was is reported and nothing more: a place can come back, and an
+ * unmounted disk is not an accusation. A binding with no row at all is the state
+ * a lost `session.json` leaves behind — the table is deliberately disposable
+ * here, the binding lives in the conversation's own document and survives it —
+ * and there is no label left to name it by, so the line says only what is known.
+ *
+ * The fourth is silence. A workspace still being built is a conversation
+ * waiting, not one stranded, and the parked send already covers it.
+ * @param {any} workspace - The row it is bound to, or null when the table has none.
+ * @returns {string} The line, or '' for a binding that is nobody's problem yet.
+ */
+function strandedLead(workspace) {
+  if (!workspace) return 'There is no record of the workspace this conversation works in.';
+  if (workspace.state === 'provisioning') return '';
+
+  const label = workspace.label || workspace.root;
+  if (workspace.state === 'closed') {
+    // Reached by the conversations that did NOT do it — the one that did is back
+    // in the project before the row is tombstoned. So it says who, and it says
+    // what this conversation's position now is: nothing refuses a message typed
+    // here, and the turn would die in the server.
+    const closedBy = typeof workspace.meta?.closedBy === 'string' ? workspace.meta.closedBy : '';
+    return `The workspace ${label} was finished with${closedBy ? ` by ${closedBy}` : ''}.`
+      + ' This conversation has nowhere to work until you choose.';
+  }
+  return workspace.available === false
+    ? `The workspace ${label} is not where it was.`
+    : '';
+}
+
+/**
+ * The banner a conversation gets when the place it works in cannot be worked in:
+ * finished with by somebody, not where it was, or gone from the table entirely.
+ *
+ * One line of {@link strandedLead}, and two ways out — which is two because there
+ * are two answers. The project is one press and is usually the right one; the
+ * second opens the picker the chip opens, for a conversation whose work belongs
+ * in another tree entirely.
+ *
+ * Neither goes anywhere near the setup panel. Its choice is applied by
+ * `ensureInitialised`, which short-circuits for a conversation that already
+ * holds history, so a stranded conversation sent back there would pick a
+ * workspace and quietly not get it.
+ *
+ * The move itself goes through `rebindConversation` rather than writing the
+ * binding here: what a conversation read out of the tree it is leaving has to
+ * catch up with the one it arrives in, and that is not a thing a click handler
+ * should know how to do half of.
+ * @param {any} conversation - The stranded conversation.
+ * @param {{id: string, lead: string, lost: boolean}} binding - Which workspace,
+ *   what to say about it, and whether the table has lost it outright.
+ * @param {HTMLElement|null} existing - The banner already there, if any.
+ * @param {HTMLElement} messageList - The column's normal-order inner list.
+ */
+function ensureStrandedBanner(conversation, binding, existing, messageList) {
+  const { id: workspaceId, lead, lost } = binding;
+  const signature = `stranded\u0000${workspaceId}\u0000${lead}\u0000${lost}`;
+
+  const banner = existing || document.createElement('div');
+  if (banner.dataset.workspace !== signature) {
+    banner.dataset.workspace = signature;
+    banner.className = `${WORKSPACE_BANNER_CLASS} workspace-banner-stranded`;
+    banner.replaceChildren();
+
+    const said = document.createElement('span');
+    said.className = 'workspace-banner-lead';
+    said.textContent = lead;
+    banner.appendChild(said);
+
+    // First, and only where the record is what went missing: the binding this
+    // conversation still carries is the last trace of that workspace anywhere,
+    // and both of the buttons below spend it by rebinding. Putting the
+    // workspace back is also the only one of the three that fixes it for every
+    // other conversation bound to the same id.
+    if (lost) {
+      const found = document.createElement('button');
+      found.type = 'button';
+      found.className = 'workspace-banner-reconnect';
+      found.textContent = 'Put it back…';
+      found.addEventListener('click', () => { void openWorkspaceReconnect(conversation); });
+      banner.appendChild(found);
+    }
+
+    const rebind = document.createElement('button');
+    rebind.type = 'button';
+    rebind.className = 'workspace-banner-rebind';
+    rebind.textContent = 'Work in the project';
+    rebind.addEventListener('click', () => { void rebindConversation(conversation, ''); });
+    banner.appendChild(rebind);
+
+    const elsewhere = document.createElement('button');
+    elsewhere.type = 'button';
+    elsewhere.className = 'workspace-banner-elsewhere';
+    elsewhere.textContent = 'Another workspace…';
+    elsewhere.addEventListener('click', () => { void openWorkspaceMove(conversation); });
+    banner.appendChild(elsewhere);
+  }
+
+  if (messageList.firstElementChild !== banner) {
+    messageList.insertBefore(banner, messageList.firstElementChild);
+  }
 }
 
 /**

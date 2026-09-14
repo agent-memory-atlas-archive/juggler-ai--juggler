@@ -4,7 +4,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import EditBase from './edit-base.js';
-import { readFile, writeFile } from 'juggler/ops';
 import { formatDisplayPath, normalizeFilePath, basename } from 'juggler/item-utils';
 import { labeledSubsection } from 'juggler/ui';
 import { fileSourceFromText } from 'juggler/file-source';
@@ -143,7 +142,7 @@ class WriteFileContextItem extends EditBase {
     /** @type {string|undefined} */
     let existingHash;
     try {
-      const result = await readFile({ path });
+      const result = await this.ops.readFile({ path });
       if (result.exists && result.content !== undefined) {
         existingContent = result.content;
       }
@@ -169,7 +168,7 @@ class WriteFileContextItem extends EditBase {
     // …) before we ask the user to approve. If it can't, fail at validation
     // and skip the approval modal entirely — mirrors replace-text.
     try {
-      await writeFile({ path, content: params.content, dryRun: true });
+      await this.ops.writeFile({ path, content: params.content, dryRun: true });
     } catch (err) {
       return {
         valid: false,
@@ -265,7 +264,7 @@ class WriteFileContextItem extends EditBase {
         // out-of-band change so the backend still refuses it.
         let currentHash;
         try {
-          const probe = await readFile({ path: anyWrite.path });
+          const probe = await this.ops.readFile({ path: anyWrite.path });
           currentHash = /** @type {any} */ (probe)?.contentHash;
         } catch {
           // Unreadable here (e.g. removed out-of-band): let writeFile surface it.
@@ -279,11 +278,10 @@ class WriteFileContextItem extends EditBase {
       // standing allowed-paths grant, and mark an out-of-root target as
       // user-approved (only reachable here via an explicit modal approval), so the
       // backend's defence-in-depth check admits the write.
-      const { params: sendParams, allowedPaths } = this._authorizeWrite(writeParams);
-      const result = await writeFile(
+      const sendParams = this._authorizeWrite(writeParams);
+      const result = await this.ops.writeFile(
         /** @type {import('../../../js/services/ops-api.js').ReadFileWriteParams} */ (sendParams),
-        this.signal,
-        allowedPaths
+        this.signal
       );
 
       // Remember the post-write hash synchronously so a follow-up mutation of the

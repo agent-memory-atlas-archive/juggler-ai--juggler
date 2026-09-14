@@ -4,6 +4,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import ContextItem from 'juggler/context-item';
+// Memory is the PROJECT's, not the workspace's: `.juggler/MEMORY.md` is a
+// relative path, and a conversation working in a worktree must still remember
+// what the project knows — nothing of Juggler's own is written into a workspace
+// root (a fresh worktree would acquire an untracked `.juggler/`, and removing
+// the tree would destroy the facts). These ops therefore run unscoped, in the
+// project, which is what `this.ops` would refuse to do. `shouldAutoInstantiate`
+// is static besides, and has no item to ask.
+// eslint-disable-next-line no-restricted-imports
 import { readFile, writeFile, stat } from 'juggler/ops';
 import { createElement, injectStylesOnce } from 'juggler/ui';
 import { parseMemory, appendEntry, removeEntry, removeMatching } from '../lib/memory-format.js';

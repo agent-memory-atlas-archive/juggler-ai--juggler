@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
 
 	"juggler/cmd/juggler/core"
@@ -20,6 +22,7 @@ import (
 // session via --resume <uuid> instead of cold-starting from full history.
 type diskSessionState struct {
 	SessionUUID      string   `json:"sessionUUID"`
+	WorkingDir       string   `json:"workingDir,omitempty"` // the tree the session was made in
 	HeldCount        *int     `json:"heldCount,omitempty"`
 	SentCount        int      `json:"sentCount"`
 	SentHash         uint64   `json:"sentHash"` // legacy aggregate; covers system prompt + first SentCount messages
@@ -32,11 +35,15 @@ type diskSessionState struct {
 
 // sessionDiskPath returns the path for the claude_session.json sidecar inside
 // the conversation's own folder. Returns "" if the folder cannot be found.
-func sessionDiskPath(workingDir, convID string) string {
-	if workingDir == "" || convID == "" {
+//
+// stateDir is the PROJECT, not wherever the CLI is running: the conversation
+// folders are only ever there, so a conversation bound to a workspace would
+// otherwise index a tree that has no folders in it and silently stop resuming.
+func sessionDiskPath(stateDir, convID string) string {
+	if stateDir == "" || convID == "" {
 		return ""
 	}
-	idx, err := core.ScanConvDirs(filepath.Join(workingDir, ".juggler"))
+	idx, err := core.ScanConvDirs(filepath.Join(stateDir, ".juggler"))
 	if err != nil {
 		return ""
 	}
@@ -49,16 +56,28 @@ func sessionDiskPath(workingDir, convID string) string {
 
 // legacySessionDiskPath returns the old flat sidecar path used before
 // sessions were moved into per-conversation folders.
-func legacySessionDiskPath(workingDir, convID string) string {
-	if workingDir == "" || convID == "" {
+func legacySessionDiskPath(stateDir, convID string) string {
+	if stateDir == "" || convID == "" {
 		return ""
 	}
-	return filepath.Join(workingDir, ".juggler", convID+".claudecode.json")
+	return filepath.Join(stateDir, ".juggler", convID+".claudecode.json")
 }
 
-func loadDiskSession(workingDir, convID string) *activeSession {
-	p := sessionDiskPath(workingDir, convID)
-	legacy := legacySessionDiskPath(workingDir, convID)
+// loadDiskSession reads the sidecar, and answers nil for a session that belongs
+// to a different tree.
+//
+// The sidecar is the project's and outlives any one workspace; the session it
+// names is not. The CLI files its transcript under the directory it ran in and
+// records that directory in every entry, so resuming the uuid somewhere else
+// asks it to carry on a conversation about files that are not the ones in front
+// of it. A conversation that has moved cold-starts from its own history, and one
+// that moves back finds its session where it left it.
+//
+// A sidecar written before this field existed is read as the project's, which is
+// the only tree there was.
+func loadDiskSession(stateDir, convID, workingDir string) *activeSession {
+	p := sessionDiskPath(stateDir, convID)
+	legacy := legacySessionDiskPath(stateDir, convID)
 
 	var data []byte
 	var err error
@@ -81,6 +100,14 @@ func loadDiskSession(workingDir, convID string) *activeSession {
 		return nil
 	}
 	if d.SessionUUID == "" {
+		return nil
+	}
+	made := d.WorkingDir
+	if made == "" {
+		made = stateDir
+	}
+	if !sameDir(made, workingDir) {
+		jlog.Debug("loadDiskSession: session for %s was made in %s, not %s: cold starting", convID, made, workingDir)
 		return nil
 	}
 	heldCount := d.SentCount
@@ -108,14 +135,15 @@ func loadDiskSession(workingDir, convID string) *activeSession {
 	return s
 }
 
-func saveDiskSession(workingDir, convID string, sess *activeSession) {
-	p := sessionDiskPath(workingDir, convID)
+func saveDiskSession(stateDir, convID, workingDir string, sess *activeSession) {
+	p := sessionDiskPath(stateDir, convID)
 	if p == "" || sess == nil || sess.sessionUUID == "" {
 		return
 	}
 	heldCount := sess.heldCount
 	d := diskSessionState{
 		SessionUUID:    sess.sessionUUID,
+		WorkingDir:     workingDir,
 		HeldCount:      &heldCount,
 		SentCount:      sess.sentCount,
 		SentHash:       sess.sentHash,
@@ -140,11 +168,36 @@ func saveDiskSession(workingDir, convID string, sess *activeSession) {
 	}
 }
 
-func deleteDiskSession(workingDir, convID string) {
-	if p := sessionDiskPath(workingDir, convID); p != "" {
+// sameDir answers whether two paths name the same directory, allowing for the
+// spellings one machine has for itself: a symlinked /var that resolves to
+// /private/var, a trailing separator, a Windows drive letter in either case.
+// Two tree names that differ only in spelling are one tree, and a session made
+// in it may be resumed there.
+func sameDir(a, b string) bool {
+	if a == b {
+		return true
+	}
+	if a == "" || b == "" {
+		return false
+	}
+	resolve := func(p string) string {
+		if real, err := filepath.EvalSymlinks(p); err == nil {
+			p = real
+		}
+		p = filepath.Clean(p)
+		if runtime.GOOS == "windows" {
+			return strings.ToLower(p)
+		}
+		return p
+	}
+	return resolve(a) == resolve(b)
+}
+
+func deleteDiskSession(stateDir, convID string) {
+	if p := sessionDiskPath(stateDir, convID); p != "" {
 		_ = os.Remove(p)
 	}
-	if p := legacySessionDiskPath(workingDir, convID); p != "" {
+	if p := legacySessionDiskPath(stateDir, convID); p != "" {
 		_ = os.Remove(p)
 	}
 }

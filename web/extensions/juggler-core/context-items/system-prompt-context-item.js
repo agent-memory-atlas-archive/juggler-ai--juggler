@@ -305,14 +305,24 @@ injectStylesOnce('system-prompt-styles', SYSTEM_PROMPT_STYLES);
  * Build the auto-appended environment block. Pure: the caller supplies the
  * date so the block is a function of durable conversation state, not the live
  * clock (a conversation resumed across midnight must rebuild identical bytes).
- * @param {string} projectPath - Project working directory
+ *
+ * `projectPath` is stated only when it is somewhere other than the working
+ * directory — which is to say only for a conversation bound to a workspace,
+ * whose reads are widened to the project but whose work is not. A conversation
+ * bound to nothing rebuilds the same three lines it always did, which matters
+ * because these bytes head every prompt and are therefore a cache key.
+ * @param {string} workingDir - Where this conversation's tools run
+ * @param {string} projectPath - The project, when it differs from the working directory
  * @param {string} platform - Platform (darwin/linux/windows)
  * @param {string} today - Date as `YYYY-MM-DD`, pinned to conversation start
  * @returns {string} Environment XML block
  */
-function buildEnvBlock(projectPath, platform, today) {
+function buildEnvBlock(workingDir, projectPath, platform, today) {
+  const project = projectPath && projectPath !== workingDir
+    ? `\nProject directory: ${projectPath}`
+    : '';
   return `<env>
-Working directory: ${projectPath || 'unknown'}
+Working directory: ${workingDir || 'unknown'}${project}
 Platform: ${platform || 'unknown'}
 Today's date: ${today}
 </env>`;
@@ -499,7 +509,8 @@ class SystemPromptContextItem extends ContextItem {
     // the conversation's creation timestamp so the preview matches the bytes
     // that get hashed (a live clock here would diverge from buildPrompt).
     const today = (this.conversation?.created || new Date().toISOString()).split('T')[0] || '';
-    const envBlock = buildEnvBlock(this.session?.projectPath || '', this.session?.platform || '', today);
+    const envBlock = buildEnvBlock(
+      this._workingDir(), this.session?.projectPath || '', this.session?.platform || '', today);
     const envDisplay = envBlock.replace(/^<env>\n?/, '').replace(/\n?<\/env>$/, '');
     this._addPreviewSection(wrapper, 'environment', 'Environment info', envDisplay);
 
@@ -928,6 +939,24 @@ class SystemPromptContextItem extends ContextItem {
   }
 
   /**
+   * Where this conversation's turn will actually run, for the environment block.
+   *
+   * The workspace root when it is bound to one, the project when it is not, and
+   * `''` when the binding cannot be honoured — still being created, closed, its
+   * root gone, or an id the session never heard of. That last case deliberately
+   * does NOT fall back to the project: the block is the one root the model is
+   * handed rather than confined by, so naming the project would have it plan
+   * against a tree its own tools are refusing, which reads as the tool working.
+   * The turn itself is refused server-side for the same reason.
+   * @returns {string} The working directory, or '' when there is no honest answer.
+   * @private
+   */
+  _workingDir() {
+    if (!this.getWorkspaceId()) return this.session?.projectPath || '';
+    return this.getWorkspaceRoot() || '';
+  }
+
+  /**
    * Build the identity and environment block of the system prompt.
    *
    * Called by context builder as the base of the system prompt.
@@ -939,14 +968,17 @@ class SystemPromptContextItem extends ContextItem {
     const identityText = this._getEffectiveText();
     const today = (this.conversation?.created || new Date().toISOString()).split('T')[0] || '';
     const projectPath = this.session?.projectPath || '';
-    if (!projectPath) {
+    const workingDir = this._workingDir();
+    if (!workingDir) {
       // Field diagnostic: an empty working directory makes the env block read
       // "Working directory: unknown", which invites the model to invent an
       // absolute path. The session should be loaded (projectPath set) before
-      // any prompt is built; log if that invariant is ever violated.
-      console.warn('[SystemPrompt] building env block with empty projectPath — "Working directory: unknown"');
+      // any prompt is built; log if that invariant is ever violated. A bound
+      // conversation whose workspace has gone reaches this honestly, and its
+      // turn is refused server-side before the block can mislead anyone.
+      console.warn('[SystemPrompt] building env block with no working directory — "Working directory: unknown"');
     }
-    const envBlock = buildEnvBlock(projectPath, this.session?.platform || '', today);
+    const envBlock = buildEnvBlock(workingDir, projectPath, this.session?.platform || '', today);
     return identityText + '\n\n' + envBlock;
   }
 }

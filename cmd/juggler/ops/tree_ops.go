@@ -41,6 +41,10 @@ func (ops *TreeOperations) Execute(ctx context.Context, operation string, params
 		return ops.expandDirectory(params)
 	case "glob":
 		return ops.glob(ctx, params)
+	case "copy":
+		return ops.copyTree(ctx, params)
+	case "compare":
+		return ops.compareTrees(ctx, params)
 	default:
 		return nil, fmt.Errorf("unknown operation: %s", operation)
 	}

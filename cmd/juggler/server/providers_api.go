@@ -94,8 +94,13 @@ type ProviderStatus struct {
 	// needs both. A toggle drawn from Available alone would flip itself off when
 	// a CLI's sign-in lapsed, telling the user they had disabled something they
 	// had not.
-	Credentialed      bool               `json:"credentialed"`
-	ModelsWithContext []ModelWithContext `json:"modelsWithContext"`
+	Credentialed bool `json:"credentialed"`
+	// SpawnsLocalProcess mirrors ProviderInfo's: this provider is run as a
+	// subprocess in the conversation's directory, so a workspace of a kind this
+	// machine only reaches over a wire cannot host it. The browser pairs it with
+	// the workspace kind's HostsLocalProviders to say so before the turn.
+	SpawnsLocalProcess bool               `json:"spawnsLocalProcess,omitempty"`
+	ModelsWithContext  []ModelWithContext `json:"modelsWithContext"`
 }
 
 // applyModelLimits replaces a published model's token limits with the user's
@@ -259,20 +264,21 @@ func (s *Server) computeProviders(ctx context.Context) []ProviderStatus {
 			}
 
 			providers[idx] = ProviderStatus{
-				Name:              pInfo.Name,
-				DisplayName:       pInfo.DisplayName,
-				Description:       pInfo.Description,
-				AuthType:          authType,
-				AuthSource:        pInfo.AuthSource,
-				SignInMethod:      pInfo.SignInMethod,
-				AuthHint:          authHint,
-				ConfigKeyName:     pInfo.ConfigKeyName,
-				EnvVarName:        pInfo.EnvVarName,
-				APIKeyURL:         pInfo.APIKeyURL,
-				KeySource:         cred.KeySource,
-				Available:         available,
-				Credentialed:      credentialed,
-				ModelsWithContext: modelsWithContext,
+				Name:               pInfo.Name,
+				DisplayName:        pInfo.DisplayName,
+				Description:        pInfo.Description,
+				AuthType:           authType,
+				AuthSource:         pInfo.AuthSource,
+				SignInMethod:       pInfo.SignInMethod,
+				AuthHint:           authHint,
+				ConfigKeyName:      pInfo.ConfigKeyName,
+				EnvVarName:         pInfo.EnvVarName,
+				APIKeyURL:          pInfo.APIKeyURL,
+				KeySource:          cred.KeySource,
+				Available:          available,
+				Credentialed:       credentialed,
+				SpawnsLocalProcess: pInfo.SpawnsLocalProcess,
+				ModelsWithContext:  modelsWithContext,
 			}
 		}(i, info)
 	}

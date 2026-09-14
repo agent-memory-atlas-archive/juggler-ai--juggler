@@ -19,27 +19,38 @@ import (
 // from config when a turn first runs, so listing and initialization never
 // depend on a particular agent being present.
 type Client struct {
-	model      string // the selected agent's name (== its model id), "" when only listing
-	workingDir string
-	approver   Approver
+	model       string // the selected agent's name (== its model id), "" when only listing
+	workingDir  string // where the agent spawns: the bound workspace, or the project
+	projectRoot string // the project: where acp.json is read from, wherever the agent runs
+	approver    Approver
 }
 
 // NewClient is the provider initializer registered with the registry. It does
 // no agent resolution — that is deferred to the first turn — so a stale or
 // placeholder model (as passed when merely listing models) never fails init.
 func NewClient(cfg provider.Config) (provider.Provider, error) {
+	// The agent spawns where the conversation's work is, but its configuration
+	// comes from the project: acp.json lives in <project>/.juggler/, which a
+	// workspace (a worktree, a scratch copy) has no copy of. The two are the
+	// same directory for a conversation bound to the project itself.
+	root := projectDir(cfg.ProjectPath)
+	workingDir := root
+	if cfg.WorkspaceRoot != "" {
+		workingDir = cfg.WorkspaceRoot
+	}
 	return &Client{
-		model:      cfg.Model,
-		workingDir: projectDir(cfg.ProjectPath),
-		approver:   defaultApprover{},
+		model:       cfg.Model,
+		workingDir:  workingDir,
+		projectRoot: root,
+		approver:    defaultApprover{},
 	}, nil
 }
 
-// projectDir is the root used to locate the per-project acp.json and as the
-// spawned agent's working directory. The authoritative source is the project
-// the server has open (cfgProjectPath, from Server.ProjectPath()); it falls
-// back to the legacy env seam and then the process cwd only when no project is
-// carried (e.g. model-listing calls that pass a bare Config).
+// projectDir is the root used to locate the per-project acp.json. The
+// authoritative source is the project the server has open (cfgProjectPath, from
+// Server.ProjectPath()); it falls back to the legacy env seam and then the
+// process cwd only when no project is carried (e.g. model-listing calls that
+// pass a bare Config).
 func projectDir(cfgProjectPath string) string {
 	if cfgProjectPath != "" {
 		return cfgProjectPath
@@ -63,7 +74,7 @@ func (c *Client) Name() string { return providerName }
 // one model per configured agent is the surface. Context window is unknown
 // (0 → the UI shows nothing rather than a guess).
 func (c *Client) ListModelsWithInfo(_ context.Context) ([]provider.ModelInfo, error) {
-	names := enabledAgentNames(c.workingDir)
+	names := enabledAgentNames(c.projectRoot)
 	models := make([]provider.ModelInfo, 0, len(names))
 	for _, name := range names {
 		models = append(models, provider.ModelInfo{

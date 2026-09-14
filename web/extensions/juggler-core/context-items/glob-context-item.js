@@ -4,7 +4,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import ContextItem from 'juggler/context-item';
-import { glob } from 'juggler/ops';
 import { formatPathForStatus } from 'juggler/item-utils';
 import { toolInputPath, isPathAllowed, folderGrantSuggestions, stripInjectedApprovalFlags, gitignoreDisabled } from './path-approval.js';
 import { buildGitignoreSection } from './search-scope-section.js';
@@ -156,7 +155,7 @@ class GlobContextItem extends ContextItem {
     }
     // Conversation-level "search all files" toggle.
     if (gitignoreDisabled(this)) globParams.noIgnore = true;
-    return await glob(globParams, this.signal, this.getToolAllowedRoots());
+    return await this.ops.glob(globParams, this.signal);
   }
 
   /**

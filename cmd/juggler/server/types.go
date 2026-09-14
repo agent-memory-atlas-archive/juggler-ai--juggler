@@ -32,12 +32,13 @@ type ViewerFault struct {
 
 // ShellStartRequest represents a request to start a streaming shell command
 type ShellStartRequest struct {
-	Type    string `json:"type"`              // "shell-start"
-	ShellID string `json:"shellId"`           // Unique ID for this shell execution
-	ConvId  string `json:"convId,omitempty"`  // Conversation that owns this shell (spill-file bucket)
-	Command string `json:"command"`           // Shell command to execute
-	Cwd     string `json:"cwd,omitempty"`     // Working directory
-	Timeout int    `json:"timeout,omitempty"` // Timeout in milliseconds
+	Type        string `json:"type"`                  // "shell-start"
+	ShellID     string `json:"shellId"`               // Unique ID for this shell execution
+	ConvId      string `json:"convId,omitempty"`      // Conversation that owns this shell (spill-file bucket)
+	Command     string `json:"command"`               // Shell command to execute
+	Cwd         string `json:"cwd,omitempty"`         // Working directory
+	Timeout     int    `json:"timeout,omitempty"`     // Timeout in milliseconds
+	WorkspaceID string `json:"workspaceId,omitempty"` // Where to run it; empty is the project, as every shell meant before workspaces existed
 }
 
 // ShellCancelRequest represents a request to cancel a running shell command

@@ -281,7 +281,24 @@ func (s *Server) leaveViewerGroup(clientID string) {
 func (s *Server) registerClient(client RealtimeClient) bool { return s.hub.register(client) }
 
 // unregisterClient removes a client from the process-scoped client hub.
-func (s *Server) unregisterClient(client RealtimeClient) { s.hub.unregister(client) }
+//
+// A viewer leaving empty-handed is told to the session: with no window left,
+// nothing can be provisioning a workspace, so a row still claiming to be is the
+// wreck of a provision that went with the window — a reloaded tab, most often,
+// which the load-time sweep never sees because the server never restarted.
+func (s *Server) unregisterClient(client RealtimeClient) {
+	s.hub.unregister(client)
+	if client.ClientRole() != ClientRoleViewer {
+		return
+	}
+	// viewerCount synchronizes with the hub actor, so the unregister above has
+	// landed by the time it answers.
+	if s.hub.viewerCount() == 0 {
+		if mgr := s.SessionManager(); mgr != nil {
+			mgr.WorkspacesUnwatched()
+		}
+	}
+}
 
 // broadcastToAll sends a message to every connected WebSocket client.
 func (s *Server) broadcastToAll(msg any) { s.hub.broadcast(msg) }

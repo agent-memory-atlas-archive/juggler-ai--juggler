@@ -3,9 +3,9 @@
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
 // Server-side per-conversation Provider Conversation cache. One handle
-// per (convID, providerName, model, credential) tuple, opened lazily, reused across
-// turns. It is the home for long-lived per-conversation state (e.g.
-// claudecode's session bookkeeping).
+// per (convID, providerName, model, credential, workspace) tuple, opened
+// lazily, reused across turns. It is the home for long-lived per-conversation
+// state (e.g. claudecode's session bookkeeping).
 //
 // All state is owned by a single goroutine (runActor); GetOrOpen and
 // Close send ops to it, so the cache itself needs no mutex. The
@@ -32,12 +32,18 @@ type conversationCacheKey struct {
 	model        string
 	credential   string
 	capabilities provider.ModelCapabilities
+	// workspaceRoot is where this conversation's work happens — "" for the
+	// project. It is part of the key because a handle can hold a live CLI
+	// subprocess rooted there: rebinding a conversation to another workspace
+	// must retire that process rather than keep talking to one running in the
+	// tree the conversation has left.
+	workspaceRoot string
 }
 
 // conversationCache stores Conversation handles keyed by (convID,
-// providerName, model, credential). Lifetime is bounded by the server process or an
-// explicit Close(convID). Cache is per-server-instance; not shared
-// across processes.
+// providerName, model, credential, workspace). Lifetime is bounded by the
+// server process or an explicit Close(convID). Cache is per-server-instance;
+// not shared across processes.
 type conversationCache struct {
 	ops  chan cacheOp
 	done chan struct{}
@@ -97,18 +103,24 @@ func newConversationCache(projectPath func() string) *conversationCache {
 
 // GetOrOpen returns the cached Conversation for the key, opening a new
 // one if absent. If a Conversation exists for the same convID but a
-// different (provider, model), the old handle is closed first (the user
-// switched models mid-conversation).
-func (cc *conversationCache) GetOrOpen(ctx context.Context, convID, providerName, model string, credential core.ProviderCredential, capabilities provider.ModelCapabilities) (provider.Conversation, error) {
+// different (provider, model, workspace), the old handle is closed first (the
+// user switched models mid-conversation, or rebound the conversation).
+//
+// workspaceRoot is the directory this conversation works in, already resolved
+// from its binding — "" for the project. The caller resolves it rather than the
+// cache, so a binding that cannot be honoured fails the turn before any handle
+// is opened.
+func (cc *conversationCache) GetOrOpen(ctx context.Context, convID, providerName, model string, credential core.ProviderCredential, capabilities provider.ModelCapabilities, workspaceRoot string) (provider.Conversation, error) {
 	resp := make(chan cacheResult, 1)
 	cc.ops <- cacheOp{
 		kind: cacheOpGetOrOpen,
 		key: conversationCacheKey{
-			convID:       convID,
-			providerName: providerName,
-			model:        model,
-			credential:   credential.CacheKey(),
-			capabilities: capabilities,
+			convID:        convID,
+			providerName:  providerName,
+			model:         model,
+			credential:    credential.CacheKey(),
+			capabilities:  capabilities,
+			workspaceRoot: workspaceRoot,
 		},
 		credential: credential,
 		respCh:     resp,
@@ -228,10 +240,10 @@ func (cc *conversationCache) runActor() {
 				op.respCh <- cacheResult{conv: existing}
 				continue
 			}
-			// Close any other entries for the same convID (provider/model
-			// switch). Conversations are bound to (provider, model) for
-			// the lifetime of the handle; switching either invalidates
-			// the old resource.
+			// Close any other entries for the same convID (provider/model/
+			// workspace switch). Conversations are bound to (provider, model,
+			// workspace) for the lifetime of the handle; switching any of them
+			// invalidates the old resource.
 			for k, conv := range entries {
 				if k.convID == op.key.convID {
 					_ = conv.Close()
@@ -249,6 +261,7 @@ func (cc *conversationCache) runActor() {
 				Headers:           op.credential.Headers,
 				Model:             op.key.model,
 				ProjectPath:       projectPath,
+				WorkspaceRoot:     op.key.workspaceRoot,
 				ModelCapabilities: op.key.capabilities,
 				BudgetContract: provider.BudgetContract{
 					AllowUnknownLimits: info.AllowUnknownLimits,

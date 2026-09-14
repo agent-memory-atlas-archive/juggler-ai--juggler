@@ -93,7 +93,7 @@ const RECONNECT_JITTER = 0.25;
 const LINK_STABLE_AFTER_MS = 10000;
 
 /**
- * @typedef {'open'|'close'|'error'|'message'|'session'|'file-change'|'project-changed'|'plugin-changed'|'retry'|'streaming-error'|'providers-update'|'providers-ready'|'shell-output'|'reconnect-attempt'|'engine-bridge'|'update-status'|'clients-changed'|'pinboard-changed'|'pinboard-reveal'|'viewer-relay'} WSEventType
+ * @typedef {'open'|'close'|'error'|'message'|'session'|'file-change'|'project-changed'|'plugin-changed'|'retry'|'streaming-error'|'providers-update'|'providers-ready'|'shell-output'|'reconnect-attempt'|'engine-bridge'|'update-status'|'clients-changed'|'pinboard-changed'|'pinboard-reveal'|'viewer-relay'|'workspaces-changed'} WSEventType
  */
 
 /**
@@ -262,7 +262,8 @@ class WebSocketService {
       'clients-changed': [],
       'pinboard-changed': [],
       'pinboard-reveal': [],
-      'viewer-relay': []
+      'viewer-relay': [],
+      'workspaces-changed': []
     };
   }
 
@@ -697,6 +698,18 @@ class WebSocketService {
       });
     },
 
+    // The session's workspace table after an edit — the places a conversation
+    // can work other than the project. The whole table rides the event, as the
+    // pinboard's does and for the same reason: it is a short, wholly-owned list,
+    // and shipping it entire is what lets every window converge without
+    // replaying anyone's edits. It is also what carries a workspace's
+    // provisioning → ready flip to a window that is only watching.
+    'workspaces-changed': (ws, data) => {
+      ws._emit('workspaces-changed', {
+        workspaces: Array.isArray(data.workspaces) ? data.workspaces : [],
+      });
+    },
+
     // A message another viewer addressed to this one. `from` is the sending
     // viewer's id as the server saw it, so it can be trusted and answered; the
     // payload is whatever the two viewers agreed between themselves.
@@ -1034,16 +1047,18 @@ class WebSocketService {
    * @param {string} command - Shell command to execute
    * @param {string} [cwd] - Working directory (optional)
    * @param {number} [timeout] - Timeout in milliseconds (optional)
+   * @param {string} [workspaceId] - Workspace the command runs in; '' is the project
    * @returns {boolean} True if sent successfully
    */
-  sendShellStart(shellId, convId, command, cwd, timeout) {
+  sendShellStart(shellId, convId, command, cwd, timeout, workspaceId) {
     return this._sendJson({
       type: 'shell-start',
       shellId,
       convId,
       command,
       cwd,
-      timeout
+      timeout,
+      workspaceId: workspaceId || ''
     }, 'shell-start');
   }
 

@@ -133,6 +133,12 @@ func (s *Server) QuickComplete(ctx context.Context, req QuickCompleteRequest) (Q
 	// Build the provider directly (bypassing conversationCache) so this ephemeral
 	// turn never pollutes the per-conversation handle cache or reuses a user
 	// conversation's provider-side session.
+	//
+	// No WorkspaceRoot, deliberately: a quick completion (naming a conversation,
+	// a one-shot summary) reads no files and runs no tools, so it has nothing to
+	// gain from a workspace and no conversation whose binding to honour. It also
+	// passes no ProjectPath, so a CLI provider reached this way falls back to its
+	// own detection — as it did before workspaces existed.
 	prov, err := provider.InitializeProvider(req.Model.Provider, provider.Config{
 		APIKey:            credential.APIKey,
 		BearerToken:       credential.BearerToken,

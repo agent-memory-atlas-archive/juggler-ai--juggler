@@ -3,9 +3,12 @@
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
 /**
- * Registries-ready gate — an awaitable signal that the three capability
- * registries (context-item, strategy, command) have completed their initial
- * hydration at least once.
+ * Registries-ready gate — an awaitable signal that the capability registries
+ * have completed their initial hydration at least once.
+ *
+ * All of them, whichever they are: this gate is one latch flipped by
+ * `initAllRegistries`, and it has never named them individually in code. The
+ * list it used to name here had drifted to twice its length.
  *
  * System-prompt assembly gates extension contributions on the set of enabled
  * plugin ids, which is only knowable once the registries have loaded. Awaiting

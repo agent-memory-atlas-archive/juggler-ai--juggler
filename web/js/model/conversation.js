@@ -11,9 +11,19 @@ import { DEFAULT_TRUNCATION_BUDGET } from 'juggler/context-item';
 import { CHARS_PER_TOKEN } from '../utils/token-estimate.js';
 import ConversationDocument from './conversation-document.js';
 import slashCommandHandler from '../services/slash-command-handler.js';
+import {
+  pendingSetupPatch,
+  endSetupUndoWindow,
+  settleSetupSeeding,
+  setupSendBlock,
+  flagSetupAttention,
+  isSetupProvisioning,
+  parkSetupSend
+} from '../services/conversation-setup.js';
 import workerManager from '../services/worker-manager.js';
 import toolExecutor from '../services/tool-executor.js';
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
+import { isConversationalItemType } from '../../sdk/lib/message.js';
 import MessageThread from './message-thread.js';
 import { plainToYMap, plain } from './item-accessor.js';
 import { settleRunCancelled } from './run-records.js';
@@ -39,6 +49,27 @@ import {
   waitForApproval as orchestrationWaitForApproval,
   continueThread as orchestrationContinueThread,
 } from './conversation-orchestration.js';
+
+/**
+ * Doc-metadata key naming the workspace a conversation works in. The Go worker
+ * reads the same key and puts it on every LLM request, so the turn's provider
+ * is spawned where the conversation's work is (see `worker/workspace_binding.go`).
+ */
+export const WORKSPACE_ID_KEY = 'workspaceId';
+
+/**
+ * Doc-metadata key recording that a conversation's workspace has been chosen
+ * and its root-relative seeding has run.
+ */
+export const INITIALISED_KEY = 'initialised';
+
+/**
+ * Doc-metadata key naming the tree the seeding pass has already been run
+ * against — `''` for the project, absent for a conversation that has never been
+ * seeded at all. Seeding happens before the binding does, so this is what says
+ * whether the pass that would run at the binding has anything left to do.
+ */
+export const SEEDED_FOR_KEY = 'seededFor';
 
 /**
  * Cancel-settle poll interval: how often _waitForCancellation re-checks
@@ -1018,6 +1049,203 @@ class Conversation {
   }
 
   /**
+   * The workspace this conversation works in — where its tools run and where
+   * its provider is spawned. `''` is the project itself, which is what every
+   * conversation meant before workspaces existed.
+   *
+   * It lives in doc metadata, so it rides a clone (the server copies doc.yjs
+   * whole) and sits outside the UndoManager's `items` scope — no undo can take
+   * a conversation's workspace away from it mid-turn.
+   * @returns {string} The bound workspace id, or '' for the project.
+   */
+  get workspaceId() {
+    const id = this.getMetadata(WORKSPACE_ID_KEY);
+    return typeof id === 'string' ? id : '';
+  }
+
+  /**
+   * Bind this conversation to a workspace. Written once, when the conversation
+   * is initialised — see {@link Session#initialiseConversation}, which is the
+   * only thing that should call this.
+   * @param {string} id - The workspace id, or '' for the project.
+   */
+  set workspaceId(id) {
+    this.setMetadata(WORKSPACE_ID_KEY, typeof id === 'string' ? id : '');
+  }
+
+  /**
+   * The directory this conversation works in, resolved from its binding against
+   * the session's workspace table.
+   *
+   * `null` means the binding cannot be honoured — the workspace is still being
+   * built, was closed, has lost its root, or the session has never heard of it.
+   * That is not the same as the project, and must never be treated as it:
+   * running in the project root because a binding went stale edits the wrong
+   * tree and looks exactly like working. See {@link Session#workspaceRoot},
+   * which refuses the same four ways the server does.
+   * @returns {string|null} The root to work in, or null if the binding is unusable.
+   */
+  get workspaceRoot() {
+    return this.session.workspaceRoot(this.workspaceId);
+  }
+
+  /**
+   * Whether a provider spawned as a subprocess would run in the right place for
+   * this conversation. See {@link Session#workspaceHostsLocalProviders}: it is
+   * the model picker's question, asked of where this conversation works.
+   * @returns {boolean} True when a CLI provider can serve this conversation.
+   */
+  get workspaceHostsLocalProviders() {
+    return this.session.workspaceHostsLocalProviders(this.workspaceId);
+  }
+
+  /**
+   * Whether this conversation has been initialised: its workspace chosen and
+   * its root-relative seeds run.
+   *
+   * An explicit flag rather than an inference from the document, because both
+   * tempting inferences are wrong. An EMPTY system-prompt item is the most
+   * common fully-initialised state (the default preset writes nothing), and an
+   * ABSENT one is what `worker-manager.js`'s merge-race guard exists to treat
+   * as a fault — if absence became legal, that guard could no longer tell a
+   * conversation waiting to be seeded from one that lost its system prompt.
+   * @returns {boolean} True once the conversation has been initialised.
+   */
+  get initialised() {
+    return this.getMetadata(INITIALISED_KEY) === true;
+  }
+
+  /**
+   * @param {boolean} value - True once the seeds have run.
+   */
+  set initialised(value) {
+    this.setMetadata(INITIALISED_KEY, value === true);
+  }
+
+  /**
+   * Whether this conversation has yet to be told where it works: the question
+   * the setup panel asks, and what the root-relative passes wait for.
+   *
+   * Not merely the absence of {@link initialised}, because that absence is also
+   * what every conversation written before the flag existed looks like. Those
+   * have history behind them and a binding that resolves to the project, which
+   * is where they have always worked — the choice was made, and the only thing
+   * left to do about it is {@link ensureInitialised} recording that it was. A
+   * conversation with something in it is never asked this.
+   * @returns {boolean} True while the conversation still has to choose.
+   */
+  get awaitingSetup() {
+    if (this.initialised) return false;
+    return !this._hasConversationalHistory();
+  }
+
+  /**
+   * The tree this conversation's seeds were built for, or null if they never
+   * have been.
+   *
+   * Distinct from {@link initialised}, and deliberately so: the seeds are built
+   * for whichever tree is on offer, which is a question answered long before the
+   * conversation commits to working anywhere. When the two agree at binding
+   * time, the pass has already run against the right tree and must not run
+   * again — re-running it would resurrect seeds the user deleted while looking
+   * at them.
+   * @returns {string|null} A workspace id, `''` for the project, or null.
+   */
+  get seededFor() {
+    const value = this.getMetadata(SEEDED_FOR_KEY);
+    return typeof value === 'string' ? value : null;
+  }
+
+  /**
+   * @param {string|null} value - The tree just seeded for, or null to forget.
+   */
+  set seededFor(value) {
+    this.setMetadata(SEEDED_FOR_KEY, typeof value === 'string' ? value : null);
+  }
+
+  /**
+   * The tree this conversation works in, or — before it is bound to anything —
+   * the one it is about to.
+   *
+   * The binding is the answer for every conversation that has one, and the only
+   * answer anything durable may use. An unbound conversation is a different
+   * case: it is showing the context its first turn would carry, built out of the
+   * tree currently on offer, and a reader of those items that resolved them
+   * against the project instead would show the right filenames holding the wrong
+   * bytes.
+   * @returns {string} A workspace id, or '' for the project.
+   */
+  get workingWorkspaceId() {
+    if (this.initialised) return this.workspaceId;
+    return this.seededFor ?? this.workspaceId;
+  }
+
+  /**
+   * Where {@link workingWorkspaceId} lands on disk, with the same null-means-
+   * refuse contract as {@link workspaceRoot}.
+   * @returns {string|null} The root, or null if it cannot be honoured.
+   */
+  get workingWorkspaceRoot() {
+    const id = this.workingWorkspaceId;
+    return id === this.workspaceId ? this.workspaceRoot : (this.session?.workspaceRoot?.(id) ?? null);
+  }
+
+  /**
+   * Initialise this conversation if it has not been already: the commit hop
+   * every path that puts content into a conversation takes first, so the
+   * seeding runs against the workspace the conversation is going to work in
+   * rather than whichever one it was created next to.
+   *
+   * Idempotent and safe to race — an already-initialised conversation returns
+   * immediately, and concurrent callers share the one in-flight pass.
+   * @returns {Promise<void>}
+   */
+  async ensureInitialised() {
+    // Content arriving is also what closes the undo window on a workspace made
+    // a moment ago: the same trigger list, because it is the same rule — you
+    // can change your mind until the conversation has something in it.
+    endSetupUndoWindow(this);
+
+    if (this.initialised) return;
+
+    // A conversation with history behind it was initialised long before the
+    // flag existed — every conversation already on disk is in exactly this
+    // state, and seeding one again would resurrect the items its user had
+    // deleted and clear the undo history behind their work. Record what is
+    // already true instead, so it is only ever asked once.
+    if (this._hasConversationalHistory()) {
+      this.initialised = true;
+      return;
+    }
+    // A row picked a moment ago may still be rebuilding the seeds it named. Let
+    // that finish first, so that binding and the items in the document are
+    // answers to the same question.
+    await settleSetupSeeding(this);
+
+    // Whatever the setup panel has been told, if anything: a row selected there
+    // binds at this hop rather than when it was clicked, so that picking one
+    // costs nothing until the conversation actually has content.
+    await this.session?.initialiseConversation?.(this, pendingSetupPatch(this));
+  }
+
+  /**
+   * Whether anything has actually been said in this conversation. Counted with
+   * `isConversationalItemType` rather than by item count: a conversation is
+   * never empty in the document — standing context items are seeded into it —
+   * and the mention reads a send makes are context items too, so counting those
+   * would make a first message look like history.
+   * @returns {boolean} True when the conversation holds real history.
+   * @private
+   */
+  _hasConversationalHistory() {
+    const items = this.rootMessageThread?.items || [];
+    for (const item of items) {
+      if (isConversationalItemType(item?.get?.('type'))) return true;
+    }
+    return false;
+  }
+
+  /**
    * Run a Yjs mutation atomically under the conversation's authorId. The
    * sanctioned entry point for any code outside this class that needs to
    * modify the Yjs document — do not reach through `_doc.doc.transact`.
@@ -1406,7 +1634,13 @@ class Conversation {
     const hasCopyableItem = sourceItems.some((/** @type {any} */ it) => this._isRootTopLevelItem(it.toJSON()));
     if (!hasCopyableItem) return null;
 
-    const newId = await this.session.createConversation(options.name || 'Copied items', { activate: !!options.activate, origin: 'copy-items' });
+    const newId = await this.session.createConversation(options.name || 'Copied items', {
+      activate: !!options.activate,
+      origin: 'copy-items',
+      // The copied items are about the tree this conversation works in, so the
+      // tab they land in works there too.
+      workspaceId: this.workspaceId
+    });
     const newConv = this.session.getConversation(newId);
     if (!newConv) return null;
     const snapshots = this._snapshotsForNewRoot(sourceItems, newConv);
@@ -1475,7 +1709,13 @@ class Conversation {
     if (!hasCopyableItem) return null;
 
     const goal = threadYMap.get('goal') || 'Promoted thread';
-    const newId = await this.session.createConversation(options.name || goal, { activate: !!options.activate, origin: 'promote-thread' });
+    const newId = await this.session.createConversation(options.name || goal, {
+      activate: !!options.activate,
+      origin: 'promote-thread',
+      // A promoted thread carries on the work it was already doing, in the
+      // tree it was already doing it in.
+      workspaceId: this.workspaceId
+    });
     const newConv = this.session.getConversation(newId);
     if (!newConv) return null;
 
@@ -1569,6 +1809,24 @@ class Conversation {
   async sendMessage(userMessage, threadItemId = null, messageThread, options = {}) {
     const consumeComposer = options.consumeComposer !== false;
 
+    // Refuse anything that would commit a conversation part way through
+    // answering where it works. This is the sharpest edge in the workspace flow
+    // — the user typed a message and pressed Enter, and we said no — so it fires
+    // for one situation only: a "New…" row picked and the place it describes not
+    // made yet. The message stays in the box and the panel points at whatever is
+    // missing. First of all the guards, above even the slash commands, because
+    // those commit the conversation too: /clear re-seeds and /handoff clones,
+    // and letting either bind the project while a worktree row sits half-filled
+    // is the silent fallback this whole indirection exists to prevent. A
+    // conversation that has picked nothing at all is not blocked and binds the
+    // project, exactly as it always did.
+    const setupBlock = setupSendBlock(this);
+    if (setupBlock) {
+      flagSetupAttention(this);
+      this.showWarning(setupBlock.reason, 5000);
+      return 'workspace not ready';
+    }
+
     // Check for slash commands first (these work even when processing)
     if (options.interpretCommands !== false && userMessage.startsWith('/')) {
       // Capture composer before command runs — commands may change the active column
@@ -1602,6 +1860,9 @@ class Conversation {
           && boundBefore === this._targetThreadId(messageThread, threadItemId)) {
         /** @type {any} */ (composer).clearInput();
       }
+      // A command is content too: /clear re-seeds, /handoff clones, and both
+      // want a conversation that has already chosen where it works.
+      await this.ensureInitialised();
       const result = await slashCommandHandler.execute(userMessage, messageThread);
       if (result.handled) {
         if (result.message) {
@@ -1653,6 +1914,35 @@ class Conversation {
       return 'provider unavailable';
     }
 
+    // Refuse a turn whose provider Juggler would spawn as a subprocess here,
+    // for a conversation that works somewhere this machine only reaches over a
+    // wire. The picker does not offer that pairing, but a selection is sticky
+    // and a rebind never retargets it — and the failure is the quiet kind: the
+    // CLI runs in a directory that is not the one the turn's file operations
+    // use, and the answers merely stop making sense.
+    const strandedProvider = this._providerNeedingALocalWorkspace(messageThread);
+    if (strandedProvider) {
+      this.showWarning(
+        `Can't send: ${strandedProvider.displayName || strandedProvider.name} runs on this machine, and this conversation works in ${this.workspaceRoot || 'another workspace'}. Pick a model that runs over the network.`,
+        8000);
+      return 'provider cannot reach this workspace';
+    }
+
+    // A conversation whose workspace cannot be worked in is refused here, in a
+    // sentence, rather than in the engine. The composer knows nothing about
+    // workspaces, so a message typed after somebody else finished with one went
+    // through, cleared the box, started a turn, and died in the server with
+    // "workspace X was closed" — which is the same refusal, arriving too late to
+    // be any use. The ways out are the two buttons on the banner above the
+    // transcript, which is what the sentence points at.
+    const unusable = this._unusableWorkspace();
+    if (unusable) {
+      this.showWarning(
+        `Can't send: ${unusable}. Use the banner above the transcript to say where this conversation should work.`,
+        8000);
+      return 'workspace cannot be worked in';
+    }
+
     // Refuse an unreachable worker BEFORE the box is cleared below. A send is
     // fire-and-forget over the socket: with the link down `sendWorkerMessage`
     // drops the frame and returns a `false` nobody reads, so clearing first and
@@ -1680,6 +1970,13 @@ class Conversation {
       return `conversation ${this.id} is processing`;
     }
 
+    // The send is going through, so this is the conversation's commit: bind and
+    // seed it before the worker writes the message or starts the turn, so the
+    // turn meets a conversation whose standing context is already there. Placed
+    // after the refusals — a message that was turned away has put nothing into
+    // the conversation, and must not make a choice on the user's behalf.
+    await this.ensureInitialised();
+
     // Save the message before clearing, so a refusal can hand it back or resend
     // it. The WHOLE message: the box is about to be emptied and the worker has
     // written nothing, so this record is the only copy of the images too. It
@@ -1698,6 +1995,27 @@ class Conversation {
     if (composer && typeof (/** @type {any} */ (composer).clearInput) === 'function'
         && this._composerThreadId(composer) === this._targetThreadId(messageThread, threadItemId)) {
       /** @type {any} */ (composer).clearInput();
+    }
+
+    // A send made while the workspace is still being built PARKS rather than
+    // being refused: the composer stays live the whole time a tree is being
+    // made, which is the point of provisioning in the background, and a message
+    // typed during it should go the moment there is somewhere to run it. It
+    // waits in the same queue a message typed mid-turn waits in — visible,
+    // deletable, and labelled with the reason — and the setup state lets it go
+    // when the workspace is ready.
+    if (isSetupProvisioning(this)) {
+      /** @type {any} */
+      const parked = { type: 'user', content: userMessage, attachments: options.attachments || [] };
+      messageThread?.enqueuePendingItem(parked);
+      parkSetupSend(this, {
+        itemId: parked.itemId,
+        // The box has already been emptied on this send's behalf, so the one
+        // that eventually runs must not claim it a second time.
+        send: () => this.sendMessage(userMessage, threadItemId, messageThread,
+          { ...options, consumeComposer: false })
+      });
+      return null;
     }
 
     // Cancel any pending approval dialogs for this conversation — but NOT
@@ -2397,6 +2715,56 @@ class Conversation {
     // unknown → allow, so incomplete local state never blocks a turn.
     if (!entry || entry.available !== false) return null;
     return entry;
+  }
+
+  /**
+   * The selected provider when it is one Juggler spawns as a subprocess and
+   * this conversation works somewhere that cannot host one.
+   *
+   * Asked of the live provider list and the live binding, because both move
+   * independently of the selection: a conversation picks claudecode in the
+   * project and is then bound elsewhere, and nothing retargets the model.
+   * @param {any} messageThread - The thread being sent to, whose config wins.
+   * @returns {import('../services/providers-cache.js').Provider|null} The stranded provider, or null to allow the send.
+   * @private
+   */
+  _providerNeedingALocalWorkspace(messageThread) {
+    if (this.workspaceHostsLocalProviders !== false) return null;
+    const config = messageThread?.modelConfig || this.modelConfig;
+    if (!config?.provider) return null;
+    const entry = providersCache.get().find(p => p.name === config.provider);
+    return /** @type {any} */ (entry)?.spawnsLocalProcess ? entry : null;
+  }
+
+  /**
+   * Why the place this conversation works in cannot be worked in, if it cannot.
+   *
+   * These are the server's own refusals, said early: `workspaceRoot` makes the
+   * same four checks `WorkspaceLookup.Usable` makes, and answers null rather than
+   * the project for exactly the reason a send must not go through — a binding
+   * that quietly resolved to the project would edit the wrong tree and look like
+   * working.
+   *
+   * A workspace still being BUILT is not this: that send parks and goes the
+   * moment there is somewhere to run it, which is the whole point of provisioning
+   * in the background.
+   * @returns {string} The reason, ready to read, or '' when there is nothing wrong.
+   * @private
+   */
+  _unusableWorkspace() {
+    const id = this.workspaceId || '';
+    if (!id || this.workspaceRoot) return '';
+
+    const workspace = this.session?.getWorkspace?.(id) ?? null;
+    if (workspace?.state === 'provisioning' || isSetupProvisioning(this)) return '';
+    if (!workspace) return 'there is no record of the workspace this conversation works in';
+
+    const named = workspace.label || workspace.root || 'it';
+    if (workspace.state === 'closed') {
+      const closedBy = typeof workspace.meta?.closedBy === 'string' ? workspace.meta.closedBy : '';
+      return `the workspace ${named} was finished with${closedBy ? ` by ${closedBy}` : ''}`;
+    }
+    return `the workspace ${named} is not where it was`;
   }
 
   /**

@@ -214,7 +214,7 @@ class FileContentContextItem extends ContextItem {
 
     /**
      * TTL cache for live fetches. See {@link _fetchLive}.
-     * @type {{path: string, ts: number, pending: Promise<LiveFileResult>|null, result: LiveFileResult|null}|null}
+     * @type {{path: string, workspaceId: string, ts: number, pending: Promise<LiveFileResult>|null, result: LiveFileResult|null}|null}
      * @private
      */
     this._lastFetch = null;
@@ -299,7 +299,13 @@ class FileContentContextItem extends ContextItem {
     }
 
     const now = Date.now();
-    if (this._lastFetch && this._lastFetch.path === path) {
+    // The tree is half the key. A relative path means a different file in each
+    // workspace, so a conversation that has just moved would otherwise be served
+    // the tree it left for the rest of the window — and keying on the path alone
+    // cannot be fixed by telling the item the binding moved, because in a second
+    // window the move arrives as a document update with nothing to tell.
+    const where = this.getWorkspaceId();
+    if (this._lastFetch && this._lastFetch.path === path && this._lastFetch.workspaceId === where) {
       if (this._lastFetch.pending) return this._lastFetch.pending;
       if (this._lastFetch.result && (now - this._lastFetch.ts) < 500) {
         return this._lastFetch.result;
@@ -307,10 +313,10 @@ class FileContentContextItem extends ContextItem {
     }
 
     const pending = this._doFetch(path);
-    this._lastFetch = { path, ts: now, pending, result: null };
+    this._lastFetch = { path, workspaceId: where, ts: now, pending, result: null };
     try {
       const result = await pending;
-      this._lastFetch = { path, ts: Date.now(), pending: null, result };
+      this._lastFetch = { path, workspaceId: where, ts: Date.now(), pending: null, result };
       return result;
     } catch (err) {
       this._lastFetch = null;
@@ -325,12 +331,16 @@ class FileContentContextItem extends ContextItem {
    * A pin is always user-initiated — the user explicitly chose this path via
    * `@`-mention or the file picker, so it may legitimately point outside the
    * project root — and the shared reader says so on its behalf.
+   *
+   * The read carries this item's scope, so a relative path resolves in the tree
+   * its conversation works in. That is what makes a seeded AGENTS.md the one the
+   * session probed for, rather than the same name in the project.
    * @param {string} path - File or directory path to load
    * @returns {Promise<LiveFileResult>} Fetched result; `exists:false` on error
    * @private
    */
   async _doFetch(path) {
-    return fetchLiveFile(path, { noIgnore: gitignoreDisabled(this) });
+    return fetchLiveFile(path, { noIgnore: gitignoreDisabled(this), ops: this.ops });
   }
 
   /**
@@ -347,14 +357,17 @@ class FileContentContextItem extends ContextItem {
   }
 
   /**
-   * Get the full absolute path by resolving relative paths against the project root
-   * @returns {string} Absolute file path, or the raw path if no project root is available
+   * Get the full absolute path by resolving a relative one against the tree this
+   * conversation works in — the same root the read itself resolves against, so
+   * the path shown and the bytes shown are the same file.
+   * @returns {string} Absolute file path, or the raw path when there is no root
+   *   to resolve against (no project, or a binding that cannot be honoured).
    */
   getAbsolutePath() {
     const p = this.data.path || '';
     if (!p) return '';
     if (p.startsWith('/')) return p;
-    const root = this.session?.projectPath;
+    const root = this.getWorkspaceRoot();
     if (root) return `${root.replace(/\/+$/, '')}/${p}`;
     return p;
   }
@@ -486,11 +499,65 @@ class FileContentContextItem extends ContextItem {
       // Latch only on a real request. Until one arrives this renders live, so a
       // conversation left open all morning still snapshots the file as it stands
       // when work starts rather than as it stood when the tab was opened.
-      if (contextParams?.forRequest) this.data.content = text;
+      //
+      // The announcement is what makes the snapshot a snapshot. This instance is
+      // a transient wrapper and its `data` a detached copy of what the document
+      // holds, so the bytes reach the document only through the change handler
+      // the thread wires up; without it they would last exactly as long as this
+      // object, and the next turn would render a fresh wrapper and read the file
+      // again. It happens once per item: every later render is served by the
+      // branch above and has nothing to say. What is stored is what is sent —
+      // `_boundSnapshot` is applied before both.
+      if (contextParams?.forRequest) {
+        this.data.content = text;
+        this.onContentChange?.();
+      }
       return text;
     }
 
     return this._renderLive();
+  }
+
+  /**
+   * Take the snapshot again, from the file as it stands now.
+   *
+   * The only way a seeded item's frozen bytes are ever replaced: the properties
+   * panel's Update and a conversation moving to another tree both arrive here,
+   * so neither can produce bytes the other would not have. An item that has not
+   * latched anything yet is left alone — it renders live until its first
+   * transaction, which will snapshot the right tree by itself.
+   * @returns {Promise<boolean>} Whether the snapshot changed.
+   */
+  async refreezeSnapshot() {
+    if (!this.data.seeded || typeof this.data.content !== 'string') return false;
+    // A file that is not there reads as "File does not exist", which is an
+    // answer and not a snapshot. Writing it over the real one would destroy the
+    // conversation's only copy of something its user may well still want, so a
+    // snapshot is only ever replaced by another snapshot. The read is the one
+    // `_renderLive` goes on to share through the TTL cache, not a second trip.
+    if (!(await this._fetchLive()).exists) return false;
+    const text = FileContentContextItem._boundSnapshot(await this._renderLive());
+    if (text === this.data.content) return false;
+    this.data.content = text;
+    // An item instance is a transient wrapper and its `data` a detached copy of
+    // what the document holds, so a snapshot reaches the document only through
+    // the change handler the thread wires up. Without this the new bytes would
+    // live exactly as long as this object.
+    this.onContentChange?.();
+    return true;
+  }
+
+  /**
+   * Follow the conversation into the tree it has moved to.
+   *
+   * A seeded snapshot is this class's one piece of materialised state. The path
+   * beside it resolves live, so after a move the item already names the right
+   * file in the new tree while serving the bytes of the old one — the model
+   * reading one tree's instructions while working in another.
+   * @returns {Promise<void>} When the snapshot is of the tree it now works in.
+   */
+  async onWorkspaceChanged() {
+    await this.refreezeSnapshot();
   }
 
   /**
@@ -610,8 +677,7 @@ class FileContentContextItem extends ContextItem {
       update.addEventListener('click', async (ev) => {
         ev.stopPropagation();
         update.disabled = true;
-        this.data.content = FileContentContextItem._boundSnapshot(await this._renderLive());
-        this.onContentChange?.();
+        await this.refreezeSnapshot();
         container.replaceChildren(...Array.from(this.createPropertiesPanelElement().childNodes));
       });
       row.appendChild(update);

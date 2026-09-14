@@ -8,6 +8,7 @@ import commandRegistry from './command-registry.js';
 import infoCardRegistry from './info-card-registry.js';
 import pinboardItemRegistry from './pinboard-item-registry.js';
 import fileViewerRegistry from './file-viewer-registry.js';
+import workspaceProviderRegistry from './workspace-provider-registry.js';
 import { resetExtensionsCache } from '../services/extensions.js';
 import { resetUserCommandsCache } from '../services/user-commands.js';
 import { resetSkillsCache } from '../services/skills.js';
@@ -129,6 +130,10 @@ export async function initAllRegistries() {
     if (typeof document !== 'undefined') {
       await infoCardRegistry.init();
       await pinboardItemRegistry.init();
+      // Workspace providers are viewer-only for the same reason, one step
+      // removed: their whole lifecycle is user-driven, and the engine resolves a
+      // workspace from the session's row without asking whoever made it.
+      await workspaceProviderRegistry.init();
     }
   } finally {
     markRegistriesReady();
@@ -224,6 +229,7 @@ export function collectFailedModules() {
     fileViewerRegistry,
     infoCardRegistry,
     pinboardItemRegistry,
+    workspaceProviderRegistry,
   ];
   for (const reg of registries) {
     for (const { path, error } of reg.getFailedModules()) {
@@ -266,6 +272,7 @@ async function rebuildRegistriesNow() {
   if (typeof document !== 'undefined') {
     infoCardRegistry.reset();
     pinboardItemRegistry.reset();
+    workspaceProviderRegistry.reset();
   }
   // reset/re-init is deferred to local quiescence, so no turn assembles a
   // prompt against a half-reset registry set.

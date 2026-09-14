@@ -148,7 +148,7 @@ func validateExtensionDir(dir string) (extmanifest.Manifest, []string, error) {
 		return m, nil, err
 	}
 	fsys := os.DirFS(dir)
-	for _, globs := range [][]string{m.Provides.ContextItems, m.Provides.Strategies, m.Provides.Commands, m.Provides.InfoCards, m.Provides.FileViewers, m.Provides.PinboardItems, m.Provides.PinboardItemMeta} {
+	for _, globs := range [][]string{m.Provides.ContextItems, m.Provides.Strategies, m.Provides.Commands, m.Provides.InfoCards, m.Provides.FileViewers, m.Provides.PinboardItems, m.Provides.PinboardItemMeta, m.Provides.WorkspaceProviders} {
 		expanded, err := extmanifest.ExpandGlobs(fsys, globs)
 		if err != nil {
 			return m, nil, err
@@ -197,7 +197,8 @@ func extValidate(args []string) int {
 	}
 
 	caps := len(m.Provides.ContextItems) + len(m.Provides.Strategies) + len(m.Provides.Commands) +
-		len(m.Provides.InfoCards) + len(m.Provides.FileViewers) + len(m.Provides.PinboardItems)
+		len(m.Provides.InfoCards) + len(m.Provides.FileViewers) + len(m.Provides.PinboardItems) +
+		len(m.Provides.WorkspaceProviders)
 	fmt.Printf("✓ %s (%s) — %s, %d capability glob(s), compatible with host engineApi %s\n",
 		m.Name, m.Version, m.ID, caps, hostEngineAPIVersion())
 	for _, w := range warnings {
@@ -584,7 +585,9 @@ export default HelloCommandType;
 		"provide `infoCards` (sidebar tiles, `cards/*-card.js`), `fileViewers`\n"+
 		"(how a file type is shown and extracted, `viewers/*-file-viewer.js`),\n"+
 		"`pinboardItems` (panels the user can pin to the board, `pins/*-pin.js`,\n"+
-		"each with a `pinboardItemMeta` descriptor if the agent is to pin one), a\n"+
+		"each with a `pinboardItemMeta` descriptor if the agent is to pin one),\n"+
+		"`workspaceProviders` (places a conversation can work in — a worktree, a\n"+
+		"scratch copy, a remote directory — `workspaces/*-workspace-provider.js`), a\n"+
 		"`systemPrompt` module, and `tests`. Delete whatever you don't need — a\n"+
 		"`provides` glob that matches nothing is a load error, so remove its\n"+
 		"manifest entry too.\n\n"+

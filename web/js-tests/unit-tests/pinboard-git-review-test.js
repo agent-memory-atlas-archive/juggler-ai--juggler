@@ -413,22 +413,24 @@ export async function runTests() {
       await settle();
     });
 
-    await run('a review that outlived its project is refused rather than shown', async () => {
+    await run('a review that outlived the tree it was about is refused rather than shown', async () => {
       const open = openGate();
       const asked = reviews.length;
       const pending = watch(service().review());
       await waitFor(() => reviews.length > asked, 'the review was never requested');
       // Called directly rather than provoked with the `project-changed`
-      // broadcast that is its real cause: that event is also handled by
+      // broadcast that is one of its causes: that event is also handled by
       // session.js, which answers it with `window.location.reload()`, and firing
-      // it here would take the lane's whole realm down with it.
+      // it here would take the lane's whole realm down with it. The other cause
+      // is the user moving to a conversation bound somewhere else, which resets
+      // this the same way and for the same reason.
       gitReviewService.reset();
       open.release();
       gate = null;
       await waitFor(() => pending.done, 'the review never settled');
       assert(pending.value === null,
-        `another project's manifest must not be handed over: ${JSON.stringify(pending.value)}`);
-      assert(String(pending.error?.message || '').toLowerCase().includes('project'),
+        `another tree's manifest must not be handed over: ${JSON.stringify(pending.value)}`);
+      assert(String(pending.error?.message || '').toLowerCase().includes('tree'),
         `and the caller is told why, got ${JSON.stringify(pending.error?.message)}`);
     });
 
@@ -508,7 +510,7 @@ export async function runTests() {
       await settle();
     });
 
-    await run('a patch that outlived its project is refused rather than shown', async () => {
+    await run('a patch that outlived the tree it was about is refused rather than shown', async () => {
       const open = openGate();
       const asked = diffs.length;
       const pending = watch(service().diff('', 'README.md'));
@@ -518,8 +520,8 @@ export async function runTests() {
       gate = null;
       await waitFor(() => pending.done, 'the diff never settled');
       assert(pending.value === null,
-        `another project's patch must not be handed over: ${JSON.stringify(pending.value)}`);
-      assert(String(pending.error?.message || '').toLowerCase().includes('project'),
+        `another tree's patch must not be handed over: ${JSON.stringify(pending.value)}`);
+      assert(String(pending.error?.message || '').toLowerCase().includes('tree'),
         `and the caller is told why, got ${JSON.stringify(pending.error?.message)}`);
     });
 

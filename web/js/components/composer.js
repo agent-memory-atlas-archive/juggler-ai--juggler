@@ -3,6 +3,7 @@
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
 import './permission-controls.js';
+import './workspace-chip.js';
 
 
 import { DRAFT_SAVE_DEBOUNCE_MS } from '../utils/constants.js';
@@ -1361,6 +1362,12 @@ class Composer extends HTMLElement {
       if (this._messageThread) {
         const mt = this._messageThread;
 
+        // The mention and dropped-file reads below are the first content to
+        // reach the document on this send, and they are read relative to the
+        // conversation's workspace — so the conversation commits to one here,
+        // before them, rather than a moment later in Conversation.sendMessage.
+        await mt.conversation?.ensureInitialised?.();
+
         const snapshot = await getThreadSkillSnapshot(mt);
         const extracted = extractSkillMentions(message, snapshot.map((s) => s.name));
         skillNames = extracted.names;
@@ -1576,6 +1583,10 @@ class Composer extends HTMLElement {
     const modelSelector = this.querySelector('model-selector');
     if (modelSelector && 'setConversation' in modelSelector) {
       /** @type {any} */ (modelSelector).setConversation(this._conversation);
+    }
+    const workspaceChip = this.querySelector('workspace-chip');
+    if (workspaceChip && 'setConversation' in workspaceChip) {
+      /** @type {any} */ (workspaceChip).setConversation(this._conversation);
     }
 
   }
@@ -2554,6 +2565,7 @@ class Composer extends HTMLElement {
                 <input type="file" class="attach-file-input" accept="image/*" multiple hidden />
                 <input-controls>
                     <input-controls-config>
+                        <workspace-chip></workspace-chip>
                         <strategy-selector></strategy-selector>
                         <permission-controls></permission-controls>
                         <model-selector id="conversation-model-selector"></model-selector>

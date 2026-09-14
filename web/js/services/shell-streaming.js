@@ -61,9 +61,14 @@ import { MAX_EXEC_TIMEOUT_MS } from './ops-api.js';
  * @param {ShellExecuteParams} params - Command parameters
  * @param {(chunk: ShellStreamChunk) => void} onOutput - Callback for each output chunk
  * @param {AbortSignal} [signal] - Optional AbortSignal to cancel the execution
+ * @param {string} [workspaceId] - Workspace to run in; '' (or omitted) is the
+ *   project. The id travels rather than the directory for the same reason it
+ *   does on /api/ops/call — this command's text was composed by an LLM, and an
+ *   id only resolves to somewhere the user registered. The server refuses one it
+ *   cannot honour, through the same `Usable` check the ops endpoint uses.
  * @returns {Promise<ShellStreamResult>} Final result when command completes
  */
-export async function shellExecuteStreaming(params, onOutput, signal) {
+export async function shellExecuteStreaming(params, onOutput, signal, workspaceId) {
   // Validate parameters
   if (!params.command && !params.code) {
     throw new TypeError('command or code is required');
@@ -216,7 +221,8 @@ export async function shellExecuteStreaming(params, onOutput, signal) {
       params.conv_id || '',
       command,
       params.cwd,
-      params.timeout
+      params.timeout,
+      workspaceId
     );
 
     if (!sent) {

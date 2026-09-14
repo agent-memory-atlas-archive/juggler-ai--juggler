@@ -17,12 +17,13 @@ import {
   DUPLICATE_WHILE_ACTIVE_NOTICE,
   MAX_CONVERSATION_NAME_LENGTH
 } from '../utils/constants.js';
-import { readFileLoad } from '../services/ops-api.js';
 import { normalizeAttachments } from '../utils/attachments.js';
 import workerManager from '../services/worker-manager.js';
 import ConversationLoadQueue from '../services/conversation-load-queue.js';
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
 import { isEngine } from '../../sdk/lib/client-role.js';
+import { toSandboxRoot } from '../../sdk/lib/sandbox-runner.js';
+import { createBoundOps } from '../../sdk/ops.js';
 import { recordTape } from '../utils/event-tape.js';
 import { isTabReorderEnabled } from '../utils/attention-manager.js';
 import { setupWorkerCallbacks, setupViewerWorkerCallbacks } from './session-worker-callbacks.js';
@@ -30,6 +31,9 @@ import { approvePermittedPendingApprovals } from './conversation-tool-actions.js
 import { ensureUserPresetsLoaded, getDefaultPresetSeed } from '../services/system-prompt-presets.js';
 import { isDefaultFileEditingOn, setFileEditingAllowed } from '../services/file-editing-permission.js';
 import { resolveDefaultStrategyId, BUILTIN_DEFAULT_STRATEGY_ID } from '../services/default-strategy.js';
+import { forgetSetup } from '../services/conversation-setup.js';
+import { isWorkspaceUsable } from '../services/workspaces.js';
+import { workspaceInstructionRoots } from '../services/workspace-provisioning.js';
 import { BUILTIN_DEFAULT_ID } from '../../sdk/lib/system-prompt-registry.js';
 
 
@@ -64,6 +68,29 @@ import { BUILTIN_DEFAULT_ID } from '../../sdk/lib/system-prompt-registry.js';
  * @property {ProviderInfo} providerInfo - Provider information
  * @property {Array<string|HistoryMessage>} [messageHistory] - Session-level message history for input navigation. Entries may be legacy bare strings until normalized.
  * @property {Record<string, any>} [metadata] - General-purpose key-value store for frontend flags
+ * @property {Workspace[]} [workspaces] - The registered workspaces; absent until one is made
+ * @property {Record<string, {hostsLocalProviders?: boolean}>} [workspaceKinds] - What each kind of workspace can do; registered at server startup and fixed for the run
+ */
+
+/**
+ * One registered workspace, as the server reports it — the row, verbatim, from
+ * `cmd/juggler/core/workspace.go`. Kind and Root are carried on the row rather
+ * than asked of whichever extension made it, so a workspace stays resolvable
+ * while its provider is disabled, uninstalled, or simply failing to load.
+ *
+ * The default workspace is NOT one of these: it has no row, its id is '', and
+ * its root is {@link Session#projectPath}.
+ * @typedef {object} Workspace
+ * @property {string} id - Server-assigned, stable for the workspace's life
+ * @property {string} kind - Selects the ops backend; 'local' today
+ * @property {string} root - Absolute path, in terms the kind understands
+ * @property {string} [label] - What the UI calls it, e.g. "feat/tunnels"
+ * @property {string} [providerId] - Extension owning its lifecycle; empty for one nobody manages
+ * @property {string} [baseWorkspaceId] - The workspace it was provisioned from; empty means the default
+ * @property {string} state - 'provisioning' | 'ready' | 'closed'
+ * @property {Record<string, any>} [meta] - The provider's own record of what it built; opaque here
+ * @property {boolean} [available] - Whether its root was there when the server last looked
+ * @property {boolean} [stale] - Provisioning, but nothing is provisioning it
  */
 
 /**
@@ -143,25 +170,6 @@ export function normalizeHistoryEntry(entry) {
 }
 
 /**
- * Forward-slash a project root for the query_code sandbox.
- *
- * `session.projectPath` is the OS-native path (backslash-separated on Windows),
- * because the rest of the client compares it against other native paths. The
- * sandbox's `projectRoot` binding is contracted to be POSIX-style — the `path`
- * built-in beside it is POSIX, and `glob({cwd})` relativizes its results (which
- * the backend always returns forward-slashed) by stripping that `cwd` as a
- * prefix. A native Windows root would never match, so the model would get
- * absolute paths back from a `{cwd: projectRoot}` glob. The Go seams that seed
- * the boot-time root (the sandbox HTML template and JUGGLER_PROJECT_ROOT) apply
- * the same normalization.
- * @param {string} [projectPath] - Project root in OS-native form
- * @returns {string} The root with forward slashes ("" for no project)
- */
-function toSandboxProjectRoot(projectPath) {
-  return (projectPath || '').replace(/\\/g, '/');
-}
-
-/**
  * User-facing message shown when a creation path is blocked by the cap.
  * Lives next to the constant so the number stays in sync; UI entry points
  * render it via window.showAlert (keeping modal UI out of the model layer).
@@ -235,6 +243,17 @@ class Session {
     this._pendingCreates = new Set();
 
     /**
+     * In-flight {@link Session#initialiseConversation} passes, by conversation
+     * id. The commit hop is on every path that puts content into a conversation
+     * — a send, a mention, a drop — so two of them can arrive together on a
+     * conversation that has not been initialised yet. They share the one pass
+     * rather than each seeding the conversation again.
+     * @type {Map<string, Promise<void>>}
+     * @private
+     */
+    this._initialising = new Map();
+
+    /**
      * A server "focus" broadcast this viewer accepted but cannot act on yet,
      * as `{id, from}`. The "focus" op arrives right behind the "created" one it
      * follows, while that create's async load is still in flight, so
@@ -293,6 +312,29 @@ class Session {
      * @type {string}
      */
     this.projectPath = '';
+
+    /**
+     * The workspaces this session has registered — every place a conversation
+     * can work other than the project itself. The server owns the table; this
+     * is a copy of it, replaced whole by the load and by each
+     * `workspaces-changed` broadcast.
+     *
+     * The default workspace is deliberately not in here. It has no row, its id
+     * is '' and its root is {@link Session#projectPath}, so putting it in the
+     * list would make "is this workspace registered" and "is this the project"
+     * the same question.
+     * @type {Workspace[]}
+     */
+    this.workspaces = [];
+
+    /**
+     * What each KIND of workspace can do, keyed by kind name — the part a row
+     * does not carry, because it belongs to the transport rather than to the
+     * place. Sent once with the load: kinds are registered when the server
+     * starts and cannot change under a running client.
+     * @type {Record<string, {hostsLocalProviders?: boolean}>}
+     */
+    this.workspaceKinds = {};
 
     /**
      * Platform (darwin/linux/windows)
@@ -643,6 +685,10 @@ class Session {
     const conv = this.conversations.get(id);
     if (!conv) return null;
     this._loadQueue?.cancel(id);
+    // Anything held for a conversation still being set up goes with it — a
+    // running provision is aborted rather than left building a place for a
+    // conversation that no longer exists.
+    forgetSetup(id);
     await workerManager.destroyConversationAndWorker(conv);
     recordTape('session-mut', id, { op: 'delete', from: '_dropActiveConversation' });
     this.conversations.delete(id);
@@ -944,7 +990,84 @@ class Session {
         }
       };
       services.wsService.on('providers-update', this._providersUpdateHandler);
+
+      // The workspace table is session state like the pinboard, not a per-device
+      // preference: the server owns it and republishes the whole table after
+      // every edit, so a window that is only watching still sees a workspace
+      // appear, become usable, and be finished with. Replaced whole rather than
+      // merged — an empty list is an edit like any other (the last workspace
+      // being unregistered), so it cannot be read as "nothing to say".
+      /** @type {import('../services/websocket.js').WSEventCallback} */
+      this._workspacesChangedHandler = (data) => {
+        const list = /** @type {{workspaces?: Workspace[]}} */ (data)?.workspaces;
+        this.workspaces = Array.isArray(list) ? list : [];
+        this._notify('session:workspaces-changed', this.workspaces);
+      };
+      services.wsService.on('workspaces-changed', this._workspacesChangedHandler);
     }
+  }
+
+  /**
+   * The registered workspace with this id.
+   *
+   * The default workspace is deliberately not one of them: it has no row, and a
+   * caller needing its root already holds {@link Session#projectPath}. Asking
+   * for '' here is a miss, not the project — the same rule the server applies
+   * in `Session.FindWorkspace`.
+   * @param {string} id - Workspace id
+   * @returns {Workspace|null} The workspace, or null when the session has no such row
+   */
+  getWorkspace(id) {
+    if (!id) return null;
+    return this.workspaces.find(ws => ws.id === id) || null;
+  }
+
+  /**
+   * Where a binding says to work: the root a conversation's tools run in, its
+   * provider is spawned in, and its seeds are read from.
+   *
+   * `''` is the project, which is what every conversation meant before
+   * workspaces existed. Any other id must resolve to a workspace that can
+   * actually be worked in, and the answer when it cannot is `null` — never the
+   * project. A stale binding quietly resolving to the project root would edit
+   * the wrong tree and look exactly like working.
+   *
+   * These are the same four refusals the server makes in
+   * `WorkspaceLookup.Usable`, and they have to agree: what the client shows and
+   * what the operation does must not be two different answers. The server's
+   * fourth is a `stat` of the root; here it is `available`, which is that stat,
+   * recomputed at every load and carried on every broadcast.
+   * @param {string} id - Workspace id, '' for the project
+   * @returns {string|null} The root to work in, or null if the binding cannot be honoured
+   */
+  workspaceRoot(id) {
+    if (!id) return this.projectPath;
+    const ws = this.getWorkspace(id);
+    return isWorkspaceUsable(ws) ? ws.root : null;
+  }
+
+  /**
+   * Whether a workspace can host a provider Juggler spawns as a subprocess — a
+   * CLI agent, run in the conversation's own directory.
+   *
+   * The project can, and so can anything on this machine. A workspace reached
+   * over a wire cannot: the CLI would run here, in a directory that is not the
+   * one every file operation of that turn uses, and the user would find out
+   * through answers that made no sense.
+   *
+   * A kind nobody described answers yes. Not a fallback so much as an
+   * acknowledgement: a kind this client has never heard of has no backend
+   * either, so the turn is already going to be refused for a reason the server
+   * can state — and disabling every CLI model over an answer we do not have
+   * would be a refusal we could not explain.
+   * @param {string} id - Workspace id, '' for the project.
+   * @returns {boolean} True when a spawned provider would run in the right place.
+   */
+  workspaceHostsLocalProviders(id) {
+    if (!id) return true;
+    const kind = this.getWorkspace(id)?.kind;
+    if (!kind) return true;
+    return this.workspaceKinds[kind]?.hostsLocalProviders !== false;
   }
 
   /**
@@ -954,10 +1077,11 @@ class Session {
    * JUGGLER_PROJECT_ROOT env var; webview: the sandbox HTML template) and,
    * being persistent across SwitchProject, never reloads to pick up a new one.
    * This updates both `session.projectPath` and the live
-   * `globalThis.__jugglerProjectRoot` that the query_code sandbox delegates
-   * read per run, so a switched project stops leaking the previous root to the
-   * model. No-op-safe for viewers (they hard-reload instead); only the engine
-   * realm calls this.
+   * `globalThis.__jugglerProjectRoot` that the query_code sandbox delegates fall
+   * back to per run (a tool names its conversation's own root, so the global is
+   * what answers a caller with none), so a switched project stops leaking the
+   * previous root to the model. No-op-safe for viewers (they hard-reload
+   * instead); only the engine realm calls this.
    *
    * The path is repointed synchronously (callers and the sandbox read it
    * immediately); the rest of the project-scoped state a viewer gets free from
@@ -970,7 +1094,7 @@ class Session {
   _applyEngineProjectRoot(newPath) {
     this.projectPath = newPath || '';
     /** @type {any} */ (globalThis).__jugglerProjectRoot =
-      toSandboxProjectRoot(this.projectPath);
+      toSandboxRoot(this.projectPath);
     workerManager.setProjectPath(this.projectPath);
     this._releaseProjectScopedConversations();
     return this._reseedProjectScopedState();
@@ -1520,9 +1644,19 @@ class Session {
         // it, and the sandbox never lags the loaded project.
         if (isEngine()) {
           /** @type {any} */ (globalThis).__jugglerProjectRoot =
-            toSandboxProjectRoot(data.projectPath);
+            toSandboxRoot(data.projectPath);
         }
       }
+      // The workspace table belongs in this block for the same reason as the
+      // project root, and is the more dangerous of the two to leave late: it is
+      // what a conversation's binding resolves against, and an unresolved
+      // binding means the work goes to the project instead of the tree it was
+      // meant for. Every edit after this arrives as a workspaces-changed
+      // broadcast; this is the one that sets the table up.
+      this.workspaces = Array.isArray(data.workspaces) ? data.workspaces : [];
+      this.workspaceKinds = data.workspaceKinds && typeof data.workspaceKinds === 'object'
+        ? data.workspaceKinds
+        : {};
       if (data.platform) {
         this.platform = data.platform;
       }
@@ -1662,9 +1796,14 @@ class Session {
 
       // Auto-detect AI assistant files on first load (only once per session).
       // Runs after session:loaded so listeners have updated the visible conversation.
+      //
+      // Skipped for a conversation still waiting to be told where it works:
+      // seeding it here would put the project's assistant files into a
+      // conversation that has not chosen a tree yet, and its own initialisation
+      // seeds the right ones anyway.
       if (!this.metadata.hasScannedAIFiles) {
         const conversation = this.getVisibleConversation();
-        if (conversation) {
+        if (conversation && !conversation.awaitingSetup) {
           this.seedConversationAutoItems(conversation)
             .then(() => {
               this.metadata.hasScannedAIFiles = true;
@@ -1693,7 +1832,9 @@ class Session {
    * @async
    */
   async _createInitialConversation() {
-    const id = await this.createConversation('', { activate: true, origin: 'initial-bootstrap' });
+    // Born uninitialised like any other blank tab: it is a conversation nobody
+    // has chosen anything for yet, and it must never hold up startup to ask.
+    const id = await this.createConversation('', { activate: true, origin: 'initial-bootstrap', initialise: false });
     recordTape('session-mut', id, { op: 'visible', from: '_createInitialConversation' });
     this.visibleConversationId = id;
   }
@@ -1879,9 +2020,24 @@ class Session {
    * @param {string} [options.focusFrom] - Conversation the focus request comes
    *   from. Each viewer follows only when it is watching that conversation with
    *   an empty composer (see {@link shouldFollowRequest}).
+   * @param {string} [options.workspaceId] - The workspace the new conversation
+   *   works in. A conversation born from another is born bound to the same one:
+   *   the work it was spawned to do is about the files in that tree.
+   * @param {boolean} [options.initialise] - Whether to seed the conversation
+   *   now. True (the default) is every path that already knows where the
+   *   conversation will work. The blank tab a user made passes false: it is
+   *   born uninitialised and chooses on its first content, because everything
+   *   the seeding does is relative to a root it has not been told yet.
    * @returns {Promise<string>} New conversation ID
    */
-  async createConversation(name, { activate = false, origin = 'unspecified', focus = false, focusFrom = '' } = {}) {
+  async createConversation(name, {
+    activate = false,
+    origin = 'unspecified',
+    focus = false,
+    focusFrom = '',
+    workspaceId = '',
+    initialise = true
+  } = {}) {
     // A create with no caller-supplied name is a blank "Untitled N" the user will
     // want to name (the + button and the /new command both create this way).
     // When it's also the tab we activate, that's the signal to open inline
@@ -1930,21 +2086,38 @@ class Session {
       this.switchConversation(conversation.id);
     }
 
-    // Seed the system prompt from the user's chosen default preset (an explicit,
-    // user-controlled session default — replaces the old implicit "copy the
-    // prompt forward from the most recent conversation" behaviour).
+    // Seeded here, at creation, where the conversation is nobody's yet and there
+    // is nothing of the user's to write over. A blank tab the user is still
+    // setting up is open for as long as they take over it, and anything seeded
+    // at the far end of that window lands on top of whatever they did in it.
+    // None of these three has a tree to be wrong about in the meantime: a preset
+    // body, a strategy id, and a permission rule whose implicit allowed root is
+    // resolved per authorisation from the live binding rather than stored in the
+    // rule.
     await this._seedDefaultSystemPrompt(conversation);
-
-    // Auto-add AI assistant files + seed always-present items (e.g. memory),
-    // then clear undo stacks so they aren't undoable.
-    // Must await — if clearUndoStacks races with user operations it wipes their undo groups.
-    await this.seedConversationAutoItems(conversation);
     this._seedDefaultFileEditing(conversation);
     this._seedDefaultStrategy(conversation);
-    await workerManager.clearUndoStacks(conversation.id);
+
+    if (initialise) {
+      await this.initialiseConversation(conversation, { workspaceId });
+    } else {
+      // The tree-dependent seeds, for the tree this conversation would work in
+      // if nobody said otherwise — the project, which is what the setup panel
+      // offers pre-selected. Built now rather than at the first send so that the
+      // conversation shows what it is actually about to send while there is
+      // still time to change it; rebuilt against another tree if the user picks
+      // one (see `conversation-setup.js`), and confirmed rather than repeated
+      // when the binding finally lands.
+      await this.seedConversationAutoItems(conversation, null, { workspaceId: '' });
+      conversation.seededFor = '';
+
+      // What has just been seeded is ours rather than the user's — a fresh tab
+      // should no more offer to undo it than it did before.
+      await workerManager.clearUndoStacks(conversation.id);
+    }
 
     // Ask the UI to open inline rename on the freshly-activated blank tab. Fired
-    // last, once the tab is created, active, and seeded, so the editor positions
+    // last, once the tab is created, active, and settled, so the editor positions
     // correctly. Bar-less contexts (the engine worker, the startup initial-
     // conversation created before the bar subscribes) simply have no listener.
     if (wantsRename) {
@@ -1954,6 +2127,70 @@ class Session {
     return conversation.id;
   }
 
+
+  /**
+   * Initialise a conversation: bind it to its workspace, run every seed that
+   * depends on where it works, and record that it has been done.
+   *
+   * The binding is what this step is for. The seeds it runs are root-relative —
+   * the assistant files are the bound tree's, a different branch's in a worktree
+   * — so they are built for a tree before this, and rebuilt whenever the tree on
+   * offer changes; what arrives here is the answer becoming final.
+   *
+   * Which is why the pass is skipped when the conversation has already been
+   * seeded for the tree it is binding to. This runs at the first content of a
+   * conversation the user may have spent a long time setting up, looking at the
+   * very items it would add, and running it again over its own output would
+   * resurrect the ones they deleted.
+   *
+   * Idempotent, and safe for racing triggers: an initialised conversation
+   * returns at once, and concurrent callers all await the one in-flight pass.
+   * @param {import('./conversation.js').default} conversation - The conversation to initialise.
+   * @param {{workspaceId?: string}} [patch] - The choices being committed.
+   * @returns {Promise<void>}
+   */
+  async initialiseConversation(conversation, patch = {}) {
+    if (!conversation || conversation.initialised) return;
+    const inFlight = this._initialising.get(conversation.id);
+    if (inFlight) return inFlight;
+
+    const pass = (async () => {
+      if (patch.workspaceId) conversation.workspaceId = patch.workspaceId;
+
+      // Asked BEFORE the seeds, because the seeds put undo groups on the stack
+      // themselves and would otherwise be the answer.
+      const usersOwnHistory = conversation.canUndo?.() === true;
+
+      // Auto-add the bound tree's AI assistant files + seed always-present
+      // items (e.g. memory) — unless that has already been done for this very
+      // tree, in which case the document is already the answer.
+      const boundTo = conversation.workspaceId || '';
+      if (conversation.seededFor !== boundTo) {
+        await this.seedConversationAutoItems(conversation, null, { workspaceId: boundTo });
+        conversation.seededFor = boundTo;
+      }
+
+      // Clear the undo stacks so what we just seeded is not undoable — but only
+      // when the stack is ours to clear. A blank tab initialises at its first
+      // content, by which time the user may have spent the whole of that window
+      // working in it, and wiping their undo history to hide our own items
+      // costs far more than leaving those items undoable.
+      // Must await — if clearUndoStacks races with user operations it wipes
+      // their undo groups.
+      if (!usersOwnHistory) await workerManager.clearUndoStacks(conversation.id);
+
+      // Last, so a conversation is only ever "initialised" once everything that
+      // word promises is actually in the document.
+      conversation.initialised = true;
+    })();
+
+    this._initialising.set(conversation.id, pass);
+    try {
+      await pass;
+    } finally {
+      this._initialising.delete(conversation.id);
+    }
+  }
 
   /**
    * Seed a freshly created conversation's system prompt from the user's chosen
@@ -2665,14 +2902,16 @@ class Session {
   ];
 
   /**
-   * Add AI assistant files that exist in the project
-   * Checks each file exists before adding, prevents duplicates via ReadFileFactType.mergeOrReplace
+   * Add AI assistant files that exist in the probed tree, and in whatever wider
+   * places its provider says also hold instructions for work done there.
+   * Checks each file exists before adding, prevents duplicates via FileContentContextItem.mergeOrReplace
    * @param {import('./conversation.js').default} conversation - Conversation to add files to
    * @param {import('./message-thread.js').default|null} [messageThread] - Target thread; null means root thread
+   * @param {{workspaceId?: string}} [options] - Which tree to probe; defaults to the conversation's own binding
    * @returns {Promise<number>} Number of files added
    * @async
    */
-  async addAIAssistantFiles(conversation, messageThread = null) {
+  async addAIAssistantFiles(conversation, messageThread = null, options = {}) {
     // This is a best-effort optional operation - log and continue if prerequisites aren't met
     if (!conversation) {
       console.debug('[Session] Skipping AI assistant file detection: conversation not ready');
@@ -2681,14 +2920,50 @@ class Session {
 
     const mt = messageThread || conversation.rootMessageThread;
 
+    // Which tree to look in is the caller's to say, because a conversation is
+    // offered its assistant files before it is bound to anything: the tree on
+    // offer in the setup panel is a workspace this conversation does not work in
+    // yet, and may never. A bound conversation asks about its own tree by
+    // passing nothing.
+    //
+    // What is seeded below survives that gap without knowing about it. A seeded
+    // file-content item persists a path and no bytes, and takes its snapshot at
+    // the first transaction through its own scoped ops — by then the
+    // conversation is bound, so the file that is READ is the one in the tree it
+    // ended up working in. The probe here decides only WHICH names exist, which
+    // is why it is worth doing against the tree currently on offer.
+    const where = options.workspaceId ?? conversation.workspaceId;
+    const ops = createBoundOps(() => ({ workspaceId: where }));
+
+    // The root is not always the only place whose instructions apply: a folder
+    // of the project, and a worktree of one of the project's subrepos, both sit
+    // under instructions written above them. Which other place counts is the
+    // provider's to say — no path walk can tell those two from a worktree of
+    // the project itself, whose parent is the user's home directory — while the
+    // list of names, the dedup and the skip below stay here.
+    //
+    // Widest first, so a tree's own files are probed last and read closest. The
+    // paths are absolute, which the scope allows: reads from a workspace are
+    // widened by the project (handlers.ResolveWorkspaceScope), and a
+    // workspace-relative `../` would read as a file of the workspace's own,
+    // both to the model and in the properties panel.
+    const above = where ? workspaceInstructionRoots(this, this.getWorkspace(where)) : [];
+    const probes = [
+      ...above.flatMap(root => Session.AI_ASSISTANT_FILES.map(
+        // In the separator the root arrived in: a Windows root joined with '/'
+        // is a path the user never sees written that way anywhere else.
+        name => `${root}${root.includes('\\') && !root.includes('/') ? '\\' : '/'}${name}`)),
+      ...Session.AI_ASSISTANT_FILES
+    ];
+
     // Check all candidate files in parallel — sequential awaits on disk-read
     // RTT (one HTTP round trip per filename) were a noticeable bottleneck
     // under iframe-pool load, with N tests racing createConversation and
     // each blocking ~K * RTT before the test could continue.
     const candidates = await Promise.all(
-      Session.AI_ASSISTANT_FILES.map(async (filename) => {
+      probes.map(async (filename) => {
         try {
-          const result = await readFileLoad({ path: filename });
+          const result = await ops.readFile({ path: filename });
           return result && result.content
             ? { filename, contentHash: result.contentHash }
             : null;
@@ -2708,6 +2983,22 @@ class Session {
     // op returns collapses symlinks, hardlinks, and identical copies to one.
     let addedCount = 0;
     const seenHashes = new Set();
+
+    // A candidate the thread already holds claims its hash before the pass adds
+    // anything, so the bytes the user pinned for themselves are not seeded a
+    // second time under the other name they answer to. Path is how the
+    // insert-time dedup matches, so it is how a candidate is recognised here.
+    const pinned = new Set(
+      (mt.contextItems || [])
+        .filter((/** @type {any} */ item) => item.type === 'file-content')
+        .map((/** @type {any} */ item) => (item.data?.path || '').replace(/^\/+/, ''))
+    );
+    for (const candidate of candidates) {
+      if (candidate?.contentHash && pinned.has(candidate.filename.replace(/^\/+/, ''))) {
+        seenHashes.add(candidate.contentHash);
+      }
+    }
+
     for (const candidate of candidates) {
       if (!candidate) continue;
       const { filename, contentHash } = candidate;
@@ -2775,13 +3066,20 @@ class Session {
    * method so the freshly-created and the just-cleared state never drift.
    * Both halves are idempotent (`mergeOrReplace` dedup), so re-seeding a thread
    * that still holds some of the items reuses them.
+   *
+   * Only the first half has a tree to be wrong about. Memory reads through
+   * deliberately unscoped ops because it is the project's rather than the
+   * workspace's, and the skills catalog is served by an endpoint that takes no
+   * workspace at all — so `workspaceId` reaches {@link addAIAssistantFiles} and
+   * stops there.
    * @param {import('./conversation.js').default} conversation - Conversation to seed
    * @param {import('./message-thread.js').default|null} [messageThread] - Target thread; null = root
+   * @param {{workspaceId?: string}} [options] - Which tree to probe; defaults to the conversation's own binding
    * @returns {Promise<void>}
    * @async
    */
-  async seedConversationAutoItems(conversation, messageThread = null) {
-    await this.addAIAssistantFiles(conversation, messageThread);
+  async seedConversationAutoItems(conversation, messageThread = null, options = {}) {
+    await this.addAIAssistantFiles(conversation, messageThread, options);
     await this.seedAutoContextItems(conversation, messageThread);
   }
 
@@ -2824,9 +3122,9 @@ class Session {
       this._loadQueue = null;
     }
 
-    // Remove WebSocket listeners registered in _doLoad (all three, not just
-    // file-change — project-changed and providers-update would otherwise leak
-    // and fire against a destroyed session).
+    // Remove WebSocket listeners registered in setServices (all four, not just
+    // file-change — the others would otherwise leak and fire against a
+    // destroyed session).
     if (this._services?.wsService) {
       const ws = this._services.wsService;
       if (this._fileChangeHandler) {
@@ -2840,6 +3138,10 @@ class Session {
       if (this._providersUpdateHandler) {
         ws.off('providers-update', this._providersUpdateHandler);
         this._providersUpdateHandler = undefined;
+      }
+      if (this._workspacesChangedHandler) {
+        ws.off('workspaces-changed', this._workspacesChangedHandler);
+        this._workspacesChangedHandler = undefined;
       }
     }
 

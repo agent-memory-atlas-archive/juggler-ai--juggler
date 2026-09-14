@@ -123,7 +123,11 @@ type gitDiffResponse struct {
 // refused if they climb out of where they belong: this endpoint reads whatever
 // it is pointed at, so where it may be pointed is the whole of its security.
 func (a *GitStatusAPI) HandleGitDiff(w http.ResponseWriter, r *http.Request) {
-	root := a.pathProvider()
+	root, err := a.gitRoot(r)
+	if err != nil {
+		WriteError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
 	if root == "" {
 		WriteError(w, r, http.StatusBadRequest, "No project is open")
 		return

@@ -720,6 +720,18 @@ type Config struct {
 	// Config and never spawn against a project).
 	ProjectPath string
 
+	// WorkspaceRoot is where THIS conversation's work happens, when it is bound
+	// to a workspace that is not the project itself — a git worktree, a scratch
+	// copy. A CLI-spawning provider roots its subprocess here so the model sees
+	// the tree the conversation is about, while ProjectPath stays the project
+	// and remains the only place Juggler writes its own per-conversation state:
+	// a workspace root holds the user's files and nothing of ours, so that
+	// removing one destroys nothing and leaves no untracked debris behind.
+	//
+	// Empty means the conversation is bound to the project, which is what every
+	// conversation meant before workspaces existed.
+	WorkspaceRoot string
+
 	ModelCapabilities ModelCapabilities
 	BudgetContract    BudgetContract
 }
@@ -819,6 +831,20 @@ type ProviderInfo struct {
 	// across calls, or otherwise unfit for the meter (e.g. the claudecode CLI) must
 	// leave this unset so its bar stays pinned to the last completed turn.
 	StreamsLiveUsage bool
+	// SpawnsLocalProcess marks a provider Juggler runs as a subprocess of its
+	// own, in the conversation's working directory — the CLI agents, not the
+	// HTTP APIs. It is the property a workspace has to be able to host: a
+	// conversation working somewhere this machine only reaches over a wire would
+	// run such a provider *here*, in a directory that is not the one every file
+	// operation of that turn uses. That is silently the wrong thing, and the user
+	// discovers it through results that make no sense — so the workspace kind
+	// declares whether it can host one (ops.WorkspaceKind.HostsLocalProviders)
+	// and the model picker refuses the pairing rather than offering it.
+	//
+	// Deliberately about spawning rather than about locality in general: an HTTP
+	// provider running on this machine is fine anywhere, because the turn reaches
+	// it the same way from any workspace.
+	SpawnsLocalProcess bool
 }
 
 // EffectiveAuthType preserves the legacy convention where an empty

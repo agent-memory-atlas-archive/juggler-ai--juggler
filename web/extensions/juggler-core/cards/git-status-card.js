@@ -4,10 +4,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * The Git status info card — a quiet, live summary of the project's working-tree
- * state. When there's a single repo at the project root the line is just the
- * counts. With multiple repos, or a repo below the root, each line is prefixed
- * with the repo's location (the root repo by the project folder name, nested
+ * The Git status info card — a quiet, live summary of the working tree the
+ * visible conversation works in, which is the project unless that conversation
+ * is bound to a workspace. When there's a single repo at the root the line is
+ * just the counts. With multiple repos, or a repo below the root, each line is
+ * prefixed with the repo's location (the root repo by its folder name, nested
  * repos by their relative path).
  *
  * It is also the way in to the Git pin, which shows the same tree in the room to
@@ -117,7 +118,12 @@ function withLauncher(nodes, review = false) {
 function render(contentEl) {
   const snap = gitStatusCache.get();
   if (snap === null) {
-    contentEl.replaceChildren(...withLauncher([line('Checking…')]));
+    // Nothing known and a reason why: the read is being refused rather than
+    // taking its time, and "Checking…" would say that forever. The likeliest
+    // reason is a conversation bound to a workspace that cannot be reached, and
+    // the server's own words for that are better than any we would invent.
+    const error = gitStatusCache.getError();
+    contentEl.replaceChildren(...withLauncher([line(error || 'Checking…')]));
     return;
   }
   const repos = snap.repos || [];

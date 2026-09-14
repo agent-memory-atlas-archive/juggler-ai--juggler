@@ -130,27 +130,32 @@ class EditBase extends ContextItem {
 
   /**
    * Wrap a backend edit-family write so the backend's defence-in-depth check
-   * (AuthorizeOutOfScopeWrite) admits it. Returns the params to send and the
-   * standing allowed-paths grant to carry as top-level transport:
-   *  - `allowedPaths` puts the user's grant in the backend PathScope, so a write
-   *    to a granted out-of-project root is treated as in-scope;
-   *  - `outOfRootApproved:true` is added to params ONLY when the target is
-   *    outside those roots. Reaching execute() at all means approval was granted
-   *    — {@link isPermitted} rejects out-of-root standing rules, so an
-   *    out-of-root write can only arrive here via an explicit modal approval, and
-   *    the action-executor throws before execute() otherwise. So this marks a
-   *    genuinely user-approved write without ever trusting a standing rule.
+   * (AuthorizeOutOfScopeWrite) admits it: `outOfRootApproved:true` is added to
+   * params ONLY when the target is outside the allowed roots. Reaching execute()
+   * at all means approval was granted — {@link isPermitted} rejects out-of-root
+   * standing rules, so an out-of-root write can only arrive here via an explicit
+   * modal approval, and the action-executor throws before execute() otherwise.
+   * So this marks a genuinely user-approved write without ever trusting a
+   * standing rule.
+   *
+   * The grant itself is not returned, because it is not this call's to describe:
+   * the write goes out through `this.ops`, which carries the explicit grants and
+   * the workspace the item works in. Adding the implicit root on top of those
+   * would be redundant — the backend roots that write's PathScope at the
+   * workspace (or the project) itself — and carries the hazard
+   * `getToolAllowedRoots` exists to avoid: an engine that has outlived a project
+   * switch holds the PREVIOUS root, and would re-authorise writes across the old
+   * tree.
    * @protected
    * @param {Record<string, any>} params - Backend op params (must include `path`)
-   * @returns {{params: Record<string, any>, allowedPaths: string[]}} Call inputs
+   * @returns {Record<string, any>} The params to send
    */
   _authorizeWrite(params) {
-    const allowedPaths = this.getAllowedPaths();
     const path = typeof params?.path === 'string' ? params.path : '';
     if (path && !this._isPathAllowed(path)) {
-      return { params: { ...params, outOfRootApproved: true }, allowedPaths };
+      return { ...params, outOfRootApproved: true };
     }
-    return { params, allowedPaths };
+    return params;
   }
 
   /**

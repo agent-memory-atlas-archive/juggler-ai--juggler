@@ -25,6 +25,28 @@ import { extractErrorMessage } from './error-utils.js';
 let _sandboxFramePromise = null;
 
 /**
+ * Forward-slash a root for the sandbox's `projectRoot` binding.
+ *
+ * The roots a caller has to hand are OS-native (backslash-separated on Windows),
+ * because the rest of the client compares them against other native paths. The
+ * binding is contracted to be POSIX-style — the `path` built-in beside it is
+ * POSIX, and `glob({cwd})` relativizes its results (which the backend always
+ * returns forward-slashed) by stripping that `cwd` as a prefix. A native Windows
+ * root would never match, so the model would get absolute paths back from a
+ * `{cwd: projectRoot}` glob.
+ *
+ * Exported because the boot-time roots are seeded on another path entirely — the
+ * engine's global, from the env var or the sandbox HTML template — and the two
+ * have to agree on the form. The Go seams that fill those apply the same
+ * normalization.
+ * @param {string} [root] - A root in OS-native form
+ * @returns {string} The root with forward slashes ("" for none)
+ */
+export function toSandboxRoot(root) {
+  return (root || '').replace(/\\/g, '/');
+}
+
+/**
  * How long the frame has to signal readiness before the attempt is abandoned.
  *
  * Generous, because this runs on a main thread that is allowed to be throttled:
@@ -103,10 +125,12 @@ function getSandboxFrame() {
  *   sandbox also injects the built-ins `path` and `projectRoot`.
  * @property {number} [timeoutMs] - Reject if the code runs longer than this
  *   (default 30000).
- * @property {string} [projectRoot] - Override for the `projectRoot` built-in.
- *   When omitted, the iframe falls back to its serve-time template value. The
- *   engine passes its live root here so the binding tracks a runtime project
- *   switch instead of the frozen boot value.
+ * @property {string} [projectRoot] - The root the code is working in, exposed as
+ *   the `projectRoot` built-in. Normalized to POSIX form here. When omitted, the
+ *   realm falls back to its own live root (the engine's global) and then to the
+ *   frozen serve-time template value — so a caller that has a root of its own,
+ *   such as a tool running in a conversation's workspace, must pass it rather
+ *   than say nothing.
  * @property {AbortSignal} [signal] - Cancellation. Aborting settles this call
  *   with an AbortError; the sandboxed run itself is not killed, because the
  *   frame protocol is one-shot and the run expires on its own `timeoutMs`. What
@@ -123,6 +147,9 @@ function getSandboxFrame() {
  *   undefined).
  */
 export async function runInSandbox(code, { capabilities = {}, timeoutMs = 30000, projectRoot = undefined, signal = undefined } = {}) {
+  // One normalization for both realms, so a caller passing a native root cannot
+  // hand the sandbox a `projectRoot` its own `path` and `glob` disagree with.
+  const root = projectRoot === undefined ? undefined : toSandboxRoot(projectRoot);
   // Every exit below races against this, so an abort settles the caller even
   // when the run it is waiting on cannot be reached to be stopped.
   const cancelled = signal
@@ -153,7 +180,7 @@ export async function runInSandbox(code, { capabilities = {}, timeoutMs = 30000,
     if (typeof delegate !== 'function') {
       throw new Error('runInSandbox: no host sandbox delegate registered (engine worker)');
     }
-    return withCancel(delegate(code, capabilities, timeoutMs));
+    return withCancel(delegate(code, capabilities, timeoutMs, root));
   }
 
   const iframe = await withCancel(getSandboxFrame());
@@ -196,7 +223,7 @@ export async function runInSandbox(code, { capabilities = {}, timeoutMs = 30000,
   const contentWindow = iframe.contentWindow;
   if (!contentWindow) throw new Error('sandbox iframe has no contentWindow');
   const descriptors = Object.entries(capabilities).map(([name, cap]) => ({ name, callable: typeof cap === 'function' }));
-  contentWindow.postMessage({ type: 'sandbox-execute', code, timeoutMs, capabilities: descriptors, projectRoot }, '*', [channel.port2]);
+  contentWindow.postMessage({ type: 'sandbox-execute', code, timeoutMs, capabilities: descriptors, projectRoot: root }, '*', [channel.port2]);
 
   return withCancel(Promise.race([done, timer]));
 }

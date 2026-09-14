@@ -403,20 +403,14 @@ func New(cfg Config) (*Server, error) {
 		// request, for the same reason the project path is a provider func: a
 		// project switch retargets both, and a workspace registered a moment
 		// ago must resolve without rebuilding anything.
-		opsAPI: handlers.NewOpsAPI(s.ProjectPath, func(id string) (core.Workspace, bool) {
-			mgr := s.SessionManager()
-			if mgr == nil {
-				return core.Workspace{}, false
-			}
-			return mgr.GetWorkspace(id)
-		}),
+		opsAPI: handlers.NewOpsAPI(s.ProjectPath, s.WorkspaceLookup()),
 		completionsAPI: handlers.NewCompletionsAPI(s.ProjectPath, func() ops.PathSearcher {
 			if fw := s.FileWatcher(); fw != nil {
 				return fw.Index()
 			}
 			return nil
 		}),
-		gitStatusAPI:      handlers.NewGitStatusAPI(s.ProjectPath),
+		gitStatusAPI:      handlers.NewGitStatusAPI(s.ProjectPath, s.WorkspaceLookup()),
 		extensionsAPI:     extensionsAPI,
 		userCommandsAPI:   handlers.NewUserCommandsAPI(s.ProjectPath),
 		skillsAPI:         skillsAPI,

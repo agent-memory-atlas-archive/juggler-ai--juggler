@@ -20,6 +20,7 @@
     "pinboardItems": ["pins/*-pin.js"],
     "pinboardItemMeta": ["pins/*-pin.meta.js"],
     "fileViewers": ["viewers/*-file-viewer.js"],
+    "workspaceProviders": ["workspaces/*-workspace-provider.js"],
     "systemPrompt": "system-prompt-contribution.js",
     "tests": ["_tests/*-test.js"]
   }

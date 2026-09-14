@@ -30,7 +30,7 @@ import (
 // askReview calls the manifest endpoint the way the router would.
 func (p *gitProject) askReview(ctx context.Context) (*httptest.ResponseRecorder, gitReviewResponse) {
 	p.t.Helper()
-	api := NewGitStatusAPI(func() string { return p.root })
+	api := NewGitStatusAPI(func() string { return p.root }, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/git/review", nil).WithContext(ctx)
 	rec := httptest.NewRecorder()
 	api.HandleGitReview(rec, req)
@@ -56,7 +56,7 @@ func (p *gitProject) review() gitReviewResponse {
 // card asks the ambient status endpoint, which is the thing the review is not.
 func (p *gitProject) card() gitStatusResponse {
 	p.t.Helper()
-	api := NewGitStatusAPI(func() string { return p.root })
+	api := NewGitStatusAPI(func() string { return p.root }, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/git/status", nil).WithContext(p.t.Context())
 	rec := httptest.NewRecorder()
 	api.HandleGitStatus(rec, req)
@@ -420,7 +420,7 @@ func TestGitReviewFollowsAProjectSwitch(t *testing.T) {
 	second.write("second.txt", "x\n")
 
 	open := first.root
-	api := NewGitStatusAPI(func() string { return open })
+	api := NewGitStatusAPI(func() string { return open }, nil)
 	manifest := func() gitReviewResponse {
 		t.Helper()
 		req := httptest.NewRequest(http.MethodGet, "/api/git/review", nil).WithContext(t.Context())
@@ -565,7 +565,7 @@ func (p *gitProject) snapshot() map[string]string {
 // known: a project nobody opened is not an empty review of one.
 func TestGitReviewWithNothingToReport(t *testing.T) {
 	t.Run("no project", func(t *testing.T) {
-		api := NewGitStatusAPI(func() string { return "" })
+		api := NewGitStatusAPI(func() string { return "" }, nil)
 		req := httptest.NewRequest(http.MethodGet, "/api/git/review", nil).WithContext(t.Context())
 		rec := httptest.NewRecorder()
 		api.HandleGitReview(rec, req)

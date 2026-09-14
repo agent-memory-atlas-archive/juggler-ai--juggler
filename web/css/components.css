@@ -1884,6 +1884,17 @@ composer-box .skill-button .skill-glyph {
     mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M19 9l1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25L19 9zm-7.5.5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5zM19 15l-1.25 2.75L15 19l2.75 1.25L19 23l1.25-2.75L23 19l-2.75-1.25L19 15z'/%3E%3C/svg%3E") center/contain no-repeat;
 }
 
+/* Git branch icon - the workspace chip, and the git-worktree provider's
+   manifest, which names this class. */
+.icon-git-branch {
+    display: inline-block;
+    width: 0.875rem;
+    height: 0.875rem;
+    flex-shrink: 0;
+    background-color: currentcolor;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='6' y1='3' x2='6' y2='15'/%3E%3Ccircle cx='18' cy='6' r='3'/%3E%3Ccircle cx='6' cy='18' r='3'/%3E%3Cpath d='M18 9a9 9 0 0 1-9 9'/%3E%3C/svg%3E") center/contain no-repeat;
+}
+
 /* Shared slash icon - used for commands menu */
 .icon-slash {
     display: inline-block;
@@ -5098,6 +5109,142 @@ composer-box .paste-mirror .paste-token.expanding {
     box-shadow: 0 0 0 0.0625rem color-mix(in srgb, var(--accent-color, #4a9eff) 65%, transparent);
 }
 
+/* Workspace chip: where this conversation works, left of the strategy and the
+   model because it is the scope those two operate inside. Deliberately WITHOUT
+   a min-width floor — it is absent for every conversation working in the
+   project, so reserving width for it would leave a hole in the common case. */
+composer-box .workspace-chip-button {
+    font-size: 0.6875rem;
+    max-width: var(--config-workspace-name-max);
+}
+
+composer-box .workspace-chip-button .workspace-chip-name {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Uncommitted work in the tree. The colour is the whole signal: a second glyph
+   would be a badge on a chip that is already a badge. */
+composer-box .workspace-chip-button.dirty .workspace-chip-icon {
+    background-color: var(--accent-yellow);
+}
+
+/* The chip's menu: which workspace this is, and what can be done about it. Wide
+   enough that a row's consequence wraps to two lines rather than five — there is
+   nothing to be won by making somebody read this one through a slot. */
+.dropdown-menu.workspace-menu.show {
+    min-width: 20rem;
+    max-width: 28rem;
+}
+
+/* The band at the top is information, not a list of choices, so it is a filled
+   block flush with the card's top edge rather than a row among rows: its edge is
+   the boundary, and nothing in it can be pressed. Inline padding restores the
+   text to the same gutter the rows below use, so the column still lines up. */
+.workspace-menu .workspace-menu-header {
+    margin: calc(-1 * var(--popup-padding)) calc(-1 * var(--popup-padding-inline)) 0.25rem;
+    padding: 0.625rem calc(var(--popup-padding-inline) + 0.75rem);
+    background: var(--bg-raised);
+    border-bottom: 0.0625rem solid var(--border-divider);
+    border-radius: var(--radius-popup) var(--radius-popup) 0 0;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    cursor: default;
+    list-style: none;
+}
+
+/* A bottom sheet has a grabber above this, so the band stays inside the padding
+   and keeps its rule. */
+.workspace-menu.popup-sheet .workspace-menu-header {
+    margin-top: 0;
+    border-radius: 0;
+}
+
+.workspace-menu .workspace-menu-detail,
+.workspace-menu .workspace-menu-kind {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.workspace-menu .workspace-menu-kind {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+/* The provider's reason for having nothing to offer, which is not part of the
+   band: it is about the menu, not about the place. */
+.workspace-menu .workspace-menu-note {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    cursor: default;
+    list-style: none;
+}
+
+/* "Workspace" — the noun the setup panel, the banner and the move dialog all
+   use, so the lines under it are read as an answer to something. */
+.workspace-menu .workspace-menu-lead {
+    display: block;
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-tertiary);
+}
+
+/* The endings, under a heading that has to read as a lid on them rather than as
+   another row: a rule the full width of the card, generous space above it, and
+   almost none between it and the first row it governs. */
+.workspace-menu .category-header.workspace-menu-group {
+    margin: 0.5rem calc(-1 * var(--popup-padding-inline)) 0;
+    padding: 0.625rem calc(var(--popup-padding-inline) + 0.75rem) 0.25rem;
+    border-top: 0.0625rem solid var(--border-divider);
+}
+
+/* What a row will do, under what it is called. Wraps, because it is a sentence
+   and not a hint. */
+.workspace-menu .menu-item {
+    display: block;
+}
+
+.workspace-menu .menu-item .menu-item-note {
+    display: block;
+    margin-left: 0;
+    white-space: normal;
+    line-height: 1.35;
+}
+
+/* The path as one line. Its last segment is the name and the rest is the
+   address, so the name keeps the weight and the parents are what give way when
+   there is not room for both. */
+.workspace-menu .workspace-menu-root {
+    display: flex;
+    align-items: baseline;
+}
+
+.workspace-menu .workspace-menu-root-parent {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.workspace-menu .workspace-menu-root-name {
+    flex: none;
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+/* The keyboard cursor, in the vocabulary the model picker already uses:
+   `nav-active` is where the arrow keys are, and only ever one row has it. */
+.workspace-menu .menu-item.nav-active {
+    background: var(--bg-raised);
+}
+
 /* Strategy selector shares the .input-ctrl-btn ghost-pill style; only its
    slightly smaller label and the chevron affordance are unique. The min-width
    floor fits the common names so the label caps and ellipsises past it rather
@@ -5146,6 +5293,7 @@ composer-box input-controls {
        the button width pins to the floor and cycling among common values leaves
        it steady (the slack sits past the trailing chip/chevron). The name-max
        values only cap a pathological outlier, which ellipsises. */
+    --config-workspace-name-max: 10rem;
     --config-perm-min: 6rem;
     --config-strategy-min: 7rem;
     --config-strategy-name-max: 9rem;
@@ -11037,6 +11185,109 @@ update-button .update-btn--attention {
 
 .command-editor-actions .hidden {
     display: none;
+}
+
+/* Where a conversation that has already started should work instead. The setup
+   panel's question asked again, in a dialog rather than at the top of the
+   transcript: by then the transcript belongs to the work. The rows inside it
+   are the panel's own classes, deliberately — the same list of places should
+   look the same wherever it is offered. */
+.workspace-move-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-modal, 1000);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+}
+
+.workspace-move-backdrop {
+    position: absolute;
+    inset: 0;
+    background: var(--modal-scrim);
+}
+
+.workspace-move-dialog {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    width: min(32rem, 100%);
+    max-height: 90vh;
+    padding: 0.9rem 1.1rem 1.1rem;
+    overflow-y: auto;
+    background: var(--bg-raised, #1c2128);
+    border: 1px solid var(--border-floating, var(--border-color));
+    border-radius: 0.6rem;
+    box-shadow: var(--popup-shadow);
+    font-size: 0.75rem;
+}
+
+.workspace-move-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.workspace-move-title {
+    margin: 0;
+    font-size: 1.05rem;
+}
+
+/* Pulled into the padding so the button's box hangs off the corner while its
+   icon stays optically aligned with the title. */
+.workspace-move-close {
+    margin: -0.4rem -0.3rem;
+}
+
+/* Where it works now: stated rather than offered, and so not one of the rows
+   below it. */
+.workspace-move-now {
+    display: flex;
+    align-items: baseline;
+    gap: 0 0.5rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px dashed var(--border-divider, rgb(255 255 255 / 12%));
+    color: var(--text-secondary);
+}
+
+.workspace-move-now-label {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+/* The root gives up its width first and ellipsises, as it does in the banner:
+   it is the longest part, and the one a reader scans rather than reads. */
+.workspace-move-now-root {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: 0.8;
+}
+
+/* What the tree being left still holds, and whether to bring it. It sits under
+   the statement of where the conversation works because it is about that tree,
+   not about the list of places below it. */
+.workspace-move-work {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    color: var(--text-secondary);
+}
+
+.workspace-move-work-lead {
+    color: var(--text-primary);
+}
+
+.workspace-move-carry {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
 }
 
 /* Commands manager. */

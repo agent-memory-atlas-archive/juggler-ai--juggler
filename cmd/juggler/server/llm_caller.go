@@ -158,6 +158,7 @@ func (s *Server) createLLMCaller() worker.LLMCallFunc {
 			Tools                []ToolDefinition     `json:"tools"`
 			ConversationID       string               `json:"conversationId"`
 			ThreadID             string               `json:"threadId"`
+			WorkspaceID          string               `json:"workspaceId,omitempty"`
 			ModelConfig          core.ModelRef        `json:"modelConfig"`
 			TransactionID        string               `json:"transactionId"`
 			ToolChoice           *provider.ToolChoice `json:"toolChoice,omitempty"`
@@ -221,13 +222,23 @@ func (s *Server) createLLMCaller() worker.LLMCallFunc {
 			return nil, fmt.Errorf("%w: %v", worker.ErrProviderUnavailable, err)
 		}
 
+		// Where this conversation works: the project unless it is bound to a
+		// workspace. Resolved before the handle is opened, so a binding that
+		// cannot be honoured (still provisioning, closed, root gone, unknown)
+		// fails the turn saying which — rather than running in the project
+		// root, which would edit the wrong tree and look exactly like working.
+		workspaceRoot, err := s.workspaceRoot(req.WorkspaceID)
+		if err != nil {
+			return nil, err
+		}
+
 		// Open (or reuse) the per-conversation handle. The cache binds
-		// state to (convID, providerName, model); a mid-conversation
+		// state to (convID, providerName, model, workspace); a mid-conversation
 		// model switch closes the old handle and opens a fresh one. The
 		// turn's ThreadID rides on the MessageRequest below — a stateful
 		// provider (claudecode) keys its per-thread session off it.
 		capabilities := s.resolveModelCapabilities(req.ModelConfig.Provider, req.ModelConfig.Model)
-		conv, err := s.conversationCache.GetOrOpen(ctx, req.ConversationID, req.ModelConfig.Provider, req.ModelConfig.Model, credential, capabilities)
+		conv, err := s.conversationCache.GetOrOpen(ctx, req.ConversationID, req.ModelConfig.Provider, req.ModelConfig.Model, credential, capabilities, workspaceRoot)
 		if err != nil {
 			return nil, fmt.Errorf("open conversation: %w", err)
 		}

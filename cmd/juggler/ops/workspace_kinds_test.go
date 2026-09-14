@@ -34,6 +34,31 @@ func TestLocalWorkspaceKind_ServesTheRegisteredTools(t *testing.T) {
 	}
 }
 
+// What the browser is told about the kinds, since a workspace row says only
+// which kind it is. Without this the model picker has no way to know that a
+// conversation working elsewhere cannot run a provider we spawn here.
+func TestWorkspaceKindCapabilities_ReportsEveryKind(t *testing.T) {
+	registerLocalWorkspaceKind()
+	RegisterWorkspaceKind(WorkspaceKind{
+		Name:                "test-elsewhere",
+		HostsLocalProviders: false,
+		New:                 func(ws WorkspaceRef) KindBackend { return fixtureBackend{ref: ws} },
+	})
+	t.Cleanup(func() { delete(workspaceKinds, "test-elsewhere") })
+
+	capabilities := WorkspaceKindCapabilities()
+	if !capabilities[localKindName].HostsLocalProviders {
+		t.Fatalf("the local machine is reported as unable to host a local provider: %+v", capabilities)
+	}
+	elsewhere, ok := capabilities["test-elsewhere"]
+	if !ok {
+		t.Fatalf("a registered kind is missing from the report: %+v", capabilities)
+	}
+	if elsewhere.HostsLocalProviders {
+		t.Fatalf("a kind that cannot host a local provider is reported as able to")
+	}
+}
+
 // A kind nobody registered is an error rather than a fallback to the local
 // machine: a request naming a transport this build does not have must not
 // quietly run the command here instead.

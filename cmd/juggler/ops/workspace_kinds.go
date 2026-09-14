@@ -68,6 +68,28 @@ func RegisterWorkspaceKind(kind WorkspaceKind) {
 	workspaceKinds[kind.Name] = kind
 }
 
+// KindCapabilities is what a client needs to know about a kind whose backend it
+// will never itself reach: today only whether the kind can host a provider
+// Juggler spawns as a subprocess, which is what lets the model picker refuse
+// that pairing rather than let a user discover it through a turn that ran on the
+// wrong machine.
+type KindCapabilities struct {
+	HostsLocalProviders bool `json:"hostsLocalProviders"`
+}
+
+// WorkspaceKindCapabilities reports every registered kind, keyed by name.
+//
+// Published once, in the session bootstrap, because kinds are registered at
+// startup and never change while the process runs — so a client holding this
+// cannot be holding a stale copy of it.
+func WorkspaceKindCapabilities() map[string]KindCapabilities {
+	capabilities := make(map[string]KindCapabilities, len(workspaceKinds))
+	for name, kind := range workspaceKinds {
+		capabilities[name] = KindCapabilities{HostsLocalProviders: kind.HostsLocalProviders}
+	}
+	return capabilities
+}
+
 // LookupWorkspaceKind returns the registration for a kind name.
 func LookupWorkspaceKind(name string) (WorkspaceKind, error) {
 	kind, ok := workspaceKinds[name]

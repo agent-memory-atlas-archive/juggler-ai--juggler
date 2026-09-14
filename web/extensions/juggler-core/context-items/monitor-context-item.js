@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import ContextItem from 'juggler/context-item';
-import { shellBackground, MAX_EXEC_TIMEOUT_MS } from 'juggler/ops';
+import { MAX_EXEC_TIMEOUT_MS } from 'juggler/ops';
 import { createSummaryWithSubtitle } from 'juggler/ui';
 import { renderLiveTaskOutput } from '../../../sdk/lib/live-task-output.js';
 import { renderTaskDeliveryControl } from '../../../sdk/lib/task-delivery-control.js';
@@ -191,7 +191,7 @@ class MonitorContextItem extends ContextItem {
       ? MAX_EXEC_TIMEOUT_MS
       : (params.timeout_ms !== undefined ? Math.min(Number(params.timeout_ms), MAX_EXEC_TIMEOUT_MS) : undefined);
 
-    const result = await shellBackground({
+    const result = await this.ops.shellBackground({
       command,
       timeout: timeoutMs,
       conv_id: this.conversation.id,

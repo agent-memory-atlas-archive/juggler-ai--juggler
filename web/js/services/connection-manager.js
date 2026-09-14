@@ -8,6 +8,8 @@ import workerManager from './worker-manager.js';
 import Session from '../model/session.js';
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
 import { isEngine } from '../../sdk/lib/client-role.js';
+import { followSession } from './git-workspace.js';
+import { reconcileWorkspaces } from './workspace-reconcile.js';
 
 /**
  * @typedef {object} ConnectionManagerOptions
@@ -49,6 +51,9 @@ class ConnectionManager {
 
     /** @type {function|null} @private */
     this._unsubscribe = null;
+
+    /** @type {(() => void)|null} @private - Stops the git surfaces following this window's visible conversation */
+    this._unfollowGit = null;
 
     /** @type {Map<string, import('./websocket.js').WSEventCallback>} @private */
     this._wsCallbacks = new Map();
@@ -265,6 +270,11 @@ class ConnectionManager {
     // Setup session subscription
     this._setupSessionSubscription();
 
+    // Point this window's git surfaces at whichever tree the visible
+    // conversation works in. Here rather than in a card or a pin because it is
+    // the window's answer, not any one surface's: they share it, and they must.
+    this._unfollowGit = followSession(this._session);
+
     // Load session data from backend
     // If session doesn't exist (404), clear localStorage and reload to get a new session
     let loadError = null;
@@ -289,6 +299,17 @@ class ConnectionManager {
       // explicitly below rather than silently bricking with no controls.
       console.error('[ConnectionManager] Session load failed:', errorMessage);
       loadError = errorMessage;
+    }
+
+    // Square the workspace table with what is actually on disk — interrupted
+    // provisions undone, vanished trees reported. Deliberately not awaited: it
+    // waits on the registries and then talks to providers, and none of that
+    // should stand between the user and their conversations. It claims the job
+    // from the server, so however many windows are open it happens once.
+    if (!loadError) {
+      reconcileWorkspaces(this._session).catch((error) => {
+        console.warn('[ConnectionManager] Workspace reconcile failed:', error);
+      });
     }
 
     // Release anything holding for a realm it can run in — with the reason, if
@@ -383,6 +404,11 @@ class ConnectionManager {
     if (this._unsubscribe) {
       this._unsubscribe();
       this._unsubscribe = null;
+    }
+
+    if (this._unfollowGit) {
+      this._unfollowGit();
+      this._unfollowGit = null;
     }
 
     // Remove every WebSocket listener registered in setup(). Iterating the map

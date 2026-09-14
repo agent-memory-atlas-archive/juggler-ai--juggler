@@ -77,10 +77,17 @@ export class FileSystem {
    *   transport arg to the read/search/tree ops (NOT inside params) so this
    *   filesystem can reach user-approved locations outside the project root.
    *   Defaults to project-root-only when omitted.
+   * @param {string} [workspaceId] - The workspace this filesystem is rooted in,
+   *   carried on every op as the dedicated top-level transport arg. Omitted (or
+   *   '') is the project, which is what every filesystem meant before
+   *   workspaces existed; relative paths then resolve against the project root
+   *   rather than the caller's tree.
    */
-  constructor(allowedPaths = []) {
+  constructor(allowedPaths = [], workspaceId = '') {
     /** @type {string[]} */
     this._allowedPaths = Array.isArray(allowedPaths) ? allowedPaths : [];
+    /** @type {string} */
+    this._workspaceId = typeof workspaceId === 'string' ? workspaceId : '';
     /**
      * Files successfully read through this instance: path → the backend's
      * contentHash of the raw on-disk bytes (null when the backend reported
@@ -113,7 +120,7 @@ export class FileSystem {
       }
       if (options.raw) params.raw = true;
     }
-    const result = await readFileLoad(/** @type {any} */ (params), undefined, this._allowedPaths);
+    const result = await readFileLoad(/** @type {any} */ (params), undefined, this._allowedPaths, this._workspaceId);
     if (!result.exists) {
       throw new FileSystemError('ENOENT', `no such file or directory: ${filePath}`);
     }
@@ -130,7 +137,7 @@ export class FileSystem {
    * @returns {Promise<void>}
    */
   async writeFile(filePath, content) {
-    await writeFileOp({ path: filePath, content: String(content) });
+    await writeFileOp({ path: filePath, content: String(content) }, undefined, undefined, this._workspaceId);
   }
 
   /**
@@ -140,7 +147,7 @@ export class FileSystem {
    * @returns {Promise<string[]|Dirent[]>} Directory entry names or Dirent objects
    */
   async readdir(dirPath, options) {
-    const result = await treeExpandDirectory({ path: dirPath }, this._allowedPaths);
+    const result = await treeExpandDirectory({ path: dirPath }, this._allowedPaths, this._workspaceId);
     const items = result.items || [];
     if (options?.withFileTypes) {
       return items.map(i => new Dirent(i.name, i.isDir));
@@ -154,7 +161,7 @@ export class FileSystem {
    * @returns {Promise<Stats>} Stats object with size, mtime, isFile/isDirectory
    */
   async stat(filePath) {
-    const result = await statOp({ path: filePath }, this._allowedPaths);
+    const result = await statOp({ path: filePath }, this._allowedPaths, this._workspaceId);
     if (!result.exists) {
       throw new FileSystemError('ENOENT', `no such file or directory: ${filePath}`);
     }
@@ -167,7 +174,7 @@ export class FileSystem {
    * @returns {Promise<void>}
    */
   async access(filePath) {
-    const result = await statOp({ path: filePath }, this._allowedPaths);
+    const result = await statOp({ path: filePath }, this._allowedPaths, this._workspaceId);
     if (!result.exists) {
       throw new FileSystemError('ENOENT', `no such file or directory: ${filePath}`);
     }
@@ -180,7 +187,7 @@ export class FileSystem {
    * @returns {Promise<void>}
    */
   async mkdir(dirPath, options) {
-    await mkdirOp({ path: dirPath, recursive: options?.recursive ?? false }, this._allowedPaths);
+    await mkdirOp({ path: dirPath, recursive: options?.recursive ?? false }, this._allowedPaths, this._workspaceId);
   }
 }
 

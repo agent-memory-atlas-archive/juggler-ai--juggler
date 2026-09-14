@@ -39,6 +39,9 @@ type ExtensionCapabilities struct {
 	// PinboardItemMeta holds the served URLs of the agent-facing descriptors for
 	// those item types. Loaded in the engine worker, unlike the item types.
 	PinboardItemMeta []string `json:"pinboardItemMeta"`
+	// WorkspaceProviders holds the served URLs of the extension's workspace
+	// providers — what can make and look after a place a conversation works in.
+	WorkspaceProviders []string `json:"workspaceProviders"`
 	// SystemPrompt is the single served URL of the extension's system-prompt
 	// contribution module (empty when the manifest declares none).
 	SystemPrompt string `json:"systemPrompt,omitempty"`
@@ -336,6 +339,10 @@ func expandCapabilities(root extensionRoot, p ExtensionProvides) (ExtensionCapab
 	if err != nil {
 		return ExtensionCapabilities{}, nil, err
 	}
+	workspaceProviders, err := expandGlobs(root, p.WorkspaceProviders, files)
+	if err != nil {
+		return ExtensionCapabilities{}, nil, err
+	}
 	// systemPrompt is a single module path, not a glob list. Resolve it through
 	// the same expander (traversal guard + disk-path mapping) and take the one
 	// match, if any.
@@ -350,14 +357,15 @@ func expandCapabilities(root extensionRoot, p ExtensionProvides) (ExtensionCapab
 		}
 	}
 	return ExtensionCapabilities{
-		ContextItems:     contextItems,
-		Strategies:       strategies,
-		Commands:         commands,
-		InfoCards:        infoCards,
-		FileViewers:      fileViewers,
-		PinboardItems:    pinboardItems,
-		PinboardItemMeta: pinboardItemMeta,
-		SystemPrompt:     systemPrompt,
+		ContextItems:       contextItems,
+		Strategies:         strategies,
+		Commands:           commands,
+		InfoCards:          infoCards,
+		FileViewers:        fileViewers,
+		PinboardItems:      pinboardItems,
+		PinboardItemMeta:   pinboardItemMeta,
+		WorkspaceProviders: workspaceProviders,
+		SystemPrompt:       systemPrompt,
 	}, files, nil
 }
 

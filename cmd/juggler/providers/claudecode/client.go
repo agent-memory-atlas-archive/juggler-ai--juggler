@@ -22,8 +22,10 @@ const cacheMissWarningTokens int64 = 25_000
 // per-client HTTP MCP server. See control_protocol.go for the
 // dispatcher that fields the CLI's mcp_message control_requests.
 type Client struct {
-	model         string
-	workingDir    string
+	model      string
+	workingDir string // where the CLI spawns: the bound workspace, or the project
+	stateDir   string // the project: where OUR per-conversation files live, wherever the CLI runs
+
 	threadID      string         // "" = root thread; sub-threads are in-memory only (no disk sidecar)
 	activeSession *activeSession // Persisted between StreamMessage calls for continuation
 
@@ -86,27 +88,35 @@ type Client struct {
 
 // NewClient creates a new Claude Code provider client
 func NewClient(cfg provider.Config) (provider.Provider, error) {
-	// The spawned CLI must run in the project the server has open, so the
-	// authoritative source is cfg.ProjectPath (filled from Server.ProjectPath()
-	// at the conversation-cache call site). Fall back to the legacy env seam and
-	// then the process cwd only when no project is carried — the path taken by
-	// model-listing calls that pass a bare Config and never spawn against a
-	// project.
-	workingDir := cfg.ProjectPath
-	if workingDir == "" {
-		workingDir = os.Getenv("JUGGLER_PROJECT_PATH")
+	// The project the server has open is the authoritative source, so it is
+	// cfg.ProjectPath (filled from Server.ProjectPath() at the conversation-cache
+	// call site). Fall back to the legacy env seam and then the process cwd only
+	// when no project is carried — the path taken by model-listing calls that
+	// pass a bare Config and never spawn against a project.
+	stateDir := cfg.ProjectPath
+	if stateDir == "" {
+		stateDir = os.Getenv("JUGGLER_PROJECT_PATH")
 	}
-	if workingDir == "" {
+	if stateDir == "" {
 		var err error
-		workingDir, err = os.Getwd()
+		stateDir, err = os.Getwd()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get working directory: %w", err)
 		}
 	}
 
+	// The two diverge only for a conversation bound to a workspace: the CLI runs
+	// where the work is, our own files stay with the project. Unbound, they are
+	// the same directory and this client behaves as it always did.
+	workingDir := stateDir
+	if cfg.WorkspaceRoot != "" {
+		workingDir = cfg.WorkspaceRoot
+	}
+
 	c := &Client{
 		model:      cfg.Model,
 		workingDir: workingDir,
+		stateDir:   stateDir,
 		own:        make(chan struct{}, 1),
 	}
 	c.own <- struct{}{} // token starts available: no turn in flight
@@ -207,6 +217,7 @@ func (base *Client) newThreadSession(threadID string) *Client {
 	s := &Client{
 		model:      base.model,
 		workingDir: base.workingDir,
+		stateDir:   base.stateDir,
 		threadID:   threadID,
 		own:        make(chan struct{}, 1),
 	}
@@ -219,25 +230,37 @@ func (base *Client) newThreadSession(threadID string) *Client {
 // and in-memory only, so it must never touch (read, overwrite, or delete) the
 // conversation-level sidecar keyed by convID. Gating here keeps that invariant
 // in one place.
+//
+// All three address stateDir, never workingDir: the sidecar lives beside the
+// conversation it belongs to, in the project, however far from it the CLI is
+// running. A workspace holds the user's files and nothing of ours — it can be
+// deleted the moment its branch is merged, and doing so must not cost a
+// conversation its warm resume.
+//
+// Where it lives and what it is valid for are different questions, though. The
+// session inside it was made in one tree and the CLI files it under that tree,
+// so `workingDir` goes in as what the session is FOR: a conversation that has
+// moved cold-starts rather than resuming a transcript about another tree's
+// files.
 func (c *Client) loadSidecar(convID string) *activeSession {
 	if c.threadID != "" {
 		return nil
 	}
-	return loadDiskSession(c.workingDir, convID)
+	return loadDiskSession(c.stateDir, convID, c.workingDir)
 }
 
 func (c *Client) saveSidecar(convID string, sess *activeSession) {
 	if c.threadID != "" {
 		return
 	}
-	saveDiskSession(c.workingDir, convID, sess)
+	saveDiskSession(c.stateDir, convID, c.workingDir, sess)
 }
 
 func (c *Client) deleteSidecar(convID string) {
 	if c.threadID != "" {
 		return
 	}
-	deleteDiskSession(c.workingDir, convID)
+	deleteDiskSession(c.stateDir, convID)
 }
 
 // streamMessage drives one LLM turn against the CLI. The Conversation

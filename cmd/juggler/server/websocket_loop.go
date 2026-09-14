@@ -7,9 +7,11 @@ package server
 import (
 	"compress/flate"
 	"context"
+	"fmt"
 	"net/http"
 
 	"juggler/cmd/juggler/ops"
+	"juggler/cmd/juggler/server/handlers"
 	"juggler/internal/jlog"
 
 	"github.com/gorilla/websocket"
@@ -147,9 +149,33 @@ func (s *Server) processShellRequest(
 		}
 	}()
 
-	// Create shell operations rooted at the project path. The requested cwd is
-	// validated against that root inside ExecuteStreaming.
-	shellOps := ops.NewShellOperations(ops.NewPathScope(s.SessionManager().GetProjectPath(), nil))
+	// Create shell operations rooted where the requesting conversation works —
+	// its workspace, or the project when it named none. The requested cwd is
+	// validated against that root inside ExecuteStreaming, so this is what stops
+	// a bound conversation's command running in the wrong tree. The boundary is
+	// resolved by the same func /api/ops/call uses: a streaming command and a
+	// one-shot one must be confined identically.
+	ref, kind, scope, err := handlers.ResolveWorkspaceScope(
+		s.WorkspaceLookup(), req.WorkspaceID, s.SessionManager().GetProjectPath(), nil)
+	if err == nil && !kind.HostsLocalProviders {
+		// Streaming runs a process on this machine, in that root. A kind that
+		// only reaches its files over a wire has no such root to run in, and
+		// running on the laptop instead is silently the wrong thing.
+		err = fmt.Errorf("workspace %s is a %s workspace, which cannot run a command here", ref.ID, ref.Kind)
+	}
+	if err != nil {
+		// Refuse to the requester in the shape it is waiting for: a done chunk
+		// carrying the reason, so the engine's shellExecuteStreaming settles with
+		// the refusal instead of sitting at `running` until its safety timeout.
+		requester.Send(map[string]any{
+			"type":    "shell-output",
+			"shellId": req.ShellID,
+			"done":    true,
+			"error":   err.Error(),
+		})
+		return
+	}
+	shellOps := ops.NewShellOperations(scope)
 
 	// Create output channel for streaming chunks
 	outputChan := make(chan ops.ShellStreamChunk, 100)

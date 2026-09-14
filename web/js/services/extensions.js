@@ -51,6 +51,7 @@ import { fetchJson } from './http.js';
  * @property {string[]} fileViewers - Served URLs of file-viewer modules
  * @property {string[]} pinboardItems - Served URLs of pinboard-item modules
  * @property {string[]} pinboardItemMeta - Served URLs of pinboard-item agent descriptors
+ * @property {string[]} workspaceProviders - Served URLs of workspace-provider modules
  * @property {string} [systemPrompt] - Served URL of the extension's system-prompt contribution module (omitted when none declared)
  */
 
@@ -145,6 +146,7 @@ const TYPE_TO_KEY = /** @type {const} */ ({
   'file-viewer': 'fileViewers',
   'pinboard-item': 'pinboardItems',
   'pinboard-item-meta': 'pinboardItemMeta',
+  'workspace-provider': 'workspaceProviders',
 });
 
 /**
@@ -172,7 +174,9 @@ export async function fetchExtensions() {
  * can attribute the loaded class to its extension. Extensions whose manifest
  * failed to validate (`error` set) are skipped — their capabilities are not
  * served.
- * @param {'context-item'|'strategy'|'command'|'info-card'|'file-viewer'|'pinboard-item'} type - Plugin type
+ * @param {keyof typeof TYPE_TO_KEY} type - Plugin type. Derived from the map
+ *   rather than written out again: spelled as a literal union it had already
+ *   drifted, missing `pinboard-item-meta` for as long as that type has existed.
  * @returns {Promise<CapabilityRef[]>} Capability references in extension order
  */
 export async function getExtensionCapabilities(type) {

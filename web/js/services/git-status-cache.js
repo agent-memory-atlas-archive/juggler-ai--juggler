@@ -3,8 +3,14 @@
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
 /**
- * Client-side cache of the project's git working-tree status, shared by every
- * surface that shows it — the sidebar info card and the pinboard's Git pin.
+ * Client-side cache of a git working-tree's status, shared by every surface that
+ * shows it — the sidebar info card and the pinboard's Git pin.
+ *
+ * Which tree is not this module's question: it reads the answer from
+ * {@link module:services/git-workspace}, which is the visible conversation's
+ * workspace, so a window looking at a worktree conversation counts that worktree
+ * and not the project. One answer, because the review service reads the same one
+ * and the two sit on top of each other in the pin.
  *
  * Git status is pull-based: the file watcher never reports anything under `.git`
  * (it skips dot-directories before fsnotify ever sees them), so there is nothing
@@ -20,11 +26,12 @@
 
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
 import api from './api.js';
+import { gitWorkspaceId, onGitWorkspaceChange } from './git-workspace.js';
 import wsService from './websocket.js';
 
 /**
  * @typedef {object} GitStatusSnapshot
- * @property {string} root - Absolute project root path.
+ * @property {string} root - Absolute path of the tree that was read.
  * @property {import('./api.js').GitRepoStatus[]} repos - Every repo found under it.
  */
 
@@ -159,7 +166,7 @@ const gitStatusCache = {
     const id = ++_inFlightId;
     const pending = (async () => {
       try {
-        const data = await api.getGitStatus();
+        const data = await api.getGitStatus(gitWorkspaceId());
         if (generation !== _generation) return _snapshot;
         _snapshot = {
           root: (data && data.root) || '',
@@ -198,12 +205,22 @@ const gitStatusCache = {
   },
 };
 
-// A project switch replaces the tree this describes. Drop what we know rather
-// than showing another project's counts until the next poll comes round, and
-// fetch at once so the gap is short.
-wsService.on('project-changed', () => {
+/**
+ * Start again against a different tree. Whatever is known describes the previous
+ * one, and showing another tree's counts until the next poll comes round would
+ * be wrong for as long as twenty seconds — so drop it and ask at once.
+ * @returns {void}
+ */
+function retarget() {
   gitStatusCache.reset();
   if (_listeners.size > 0) void gitStatusCache.refresh();
-});
+}
+
+// A project switch replaces the tree this describes.
+wsService.on('project-changed', retarget);
+
+// So does the user moving to a conversation that works somewhere else. The same
+// event, in every way this module cares about.
+onGitWorkspaceChange(retarget);
 
 export default gitStatusCache;

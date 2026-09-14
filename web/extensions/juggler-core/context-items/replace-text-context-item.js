@@ -4,7 +4,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import EditBase from './edit-base.js';
-import { editFile, readFile } from 'juggler/ops';
 import { normalizeFilePath, basename } from 'juggler/item-utils';
 import { checkFileFreshness, recordWrittenHash, restageBaseline, acquirePathLock } from './read-history.js';
 import { absolutePathKey } from './path-approval.js';
@@ -164,7 +163,7 @@ class ReplaceTextContextItem extends EditBase {
     /** @type {import('../../../js/services/ops-api.js').ReadFileEditResult} */
     let result;
     try {
-      result = await editFile(
+      result = await this.ops.editFile(
         /** @type {import('../../../js/services/ops-api.js').ReadFileEditParams} */ ({ ...params, dryRun: true })
       );
     } catch (err) {
@@ -292,7 +291,7 @@ class ReplaceTextContextItem extends EditBase {
         // out-of-band change so the backend still refuses it.
         let currentHash;
         try {
-          const probe = await readFile({ path: anyParams.path });
+          const probe = await this.ops.readFile({ path: anyParams.path });
           currentHash = /** @type {any} */ (probe)?.contentHash;
         } catch {
           // Unreadable here (e.g. removed out-of-band): let editFile surface it.
@@ -302,15 +301,13 @@ class ReplaceTextContextItem extends EditBase {
         );
       }
 
-      // Carry the allowed-paths grant and mark an out-of-root target as approved so
-      // the backend's defence-in-depth check admits the edit (see EditBase._authorizeWrite).
-      const { params: sendParams, allowedPaths } = this._authorizeWrite(normalizedParams);
+      // Mark an out-of-root target as approved so the backend's defence-in-depth
+      // check admits the edit (see EditBase._authorizeWrite).
+      const sendParams = this._authorizeWrite(normalizedParams);
 
-      // Call typed ops API
-      const result = await editFile(
+      const result = await this.ops.editFile(
         /** @type {import('../../../js/services/ops-api.js').ReadFileEditParams} */ (sendParams),
-        this.signal,
-        allowedPaths
+        this.signal
       );
 
       // Remember the post-edit hash synchronously so a follow-up edit of the same

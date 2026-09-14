@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -161,6 +162,120 @@ func TestWorkspaceRoutes_UnknownIDIsNotFound(t *testing.T) {
 	rec = pinboardRequest(t, s, http.MethodPost, "/api/session/workspaces/ws_nope/close", "")
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("POST close of unknown workspace: got %d, want 404", rec.Code)
+	}
+}
+
+// A tree removed while the app is running stops reading as available.
+//
+// Availability is otherwise settled at load and on each register or update, so
+// a worktree deleted mid-session leaves the flag saying the tree is there.
+// Everything that protects the user from a place that has gone keys off that
+// one boolean — the rows the setup panel offers, the chip, and the banner that
+// tells a bound conversation its tree is not where it was — so a stale true is
+// three silent failures at once. Listing re-stats, and broadcasts when the
+// answer has moved so that every viewer's mirror is corrected with it.
+func TestWorkspaceRoutes_ListRestatsAVanishedRoot(t *testing.T) {
+	s, bc, _ := newWorkspaceTestServer(t)
+
+	tree := t.TempDir()
+	rec := pinboardRequest(t, s, http.MethodPost, "/api/session/workspaces",
+		fmt.Sprintf(`{"kind":"local","root":%q,"label":"feat/tunnels","state":"ready"}`, tree))
+	ws := decodeWorkspace(t, rec)
+	if !ws.Available {
+		t.Fatalf("registered workspace = %+v, want it available while its tree is there", ws)
+	}
+	edits := len(bc.workspaces)
+
+	if err := os.RemoveAll(tree); err != nil {
+		t.Fatalf("removing the tree: %v", err)
+	}
+
+	rec = pinboardRequest(t, s, http.MethodGet, "/api/session/workspaces", "")
+	listed := decodeWorkspaces(t, rec)
+	if len(listed) != 1 || listed[0].ID != ws.ID {
+		t.Fatalf("listed = %+v, want the one row still on the table", listed)
+	}
+	if listed[0].Available {
+		t.Fatalf("workspace = %+v, want available:false once its root has gone", listed[0])
+	}
+	// Unavailable, not closed. A tree can come back — an unmounted disk, a
+	// prune somebody regrets — and tombstoning is one-way.
+	if listed[0].State != core.WorkspaceStateReady {
+		t.Fatalf("state = %q, want it left ready: a missing root is not a tombstone", listed[0].State)
+	}
+	if len(bc.workspaces) != edits+1 {
+		t.Fatalf("%d broadcasts, want one more so every viewer's mirror is corrected", len(bc.workspaces))
+	}
+
+	// Nothing has moved on the second look, so nothing is said. This sweep sits
+	// on a read path and must stay silent when it has nothing to report, or
+	// every list turns into a broadcast to every window.
+	pinboardRequest(t, s, http.MethodGet, "/api/session/workspaces", "")
+	if len(bc.workspaces) != edits+1 {
+		t.Fatalf("%d broadcasts, want the unchanged re-list to stay quiet", len(bc.workspaces))
+	}
+}
+
+// Tombstones are capped, so finishing with workspaces cannot grow session.json
+// without bound.
+//
+// A closed row is kept to tell the conversations bound to it what became of
+// their workspace, which is worth keeping for the ones somebody might go back
+// to and worth nothing for the hundredth. Past the cap the oldest go, and a
+// conversation bound to one that has gone falls back to the banner for a
+// binding the table has lost — which offers to put it back.
+//
+// A ready row is never evicted to make room. The cap is on the dead ones; a
+// workspace somebody is still working in is not a candidate however full the
+// table is.
+func TestWorkspaceRoutes_ClosedWorkspacesAreCapped(t *testing.T) {
+	s, _, dir := newWorkspaceTestServer(t)
+
+	live := pinboardRequest(t, s, http.MethodPost, "/api/session/workspaces",
+		fmt.Sprintf(`{"kind":"local","root":%q,"label":"still-working-here","state":"ready"}`, dir))
+	liveID := decodeWorkspace(t, live).ID
+
+	over := core.MaxClosedWorkspaces + 2
+	closed := make([]string, 0, over)
+	for i := range over {
+		rec := pinboardRequest(t, s, http.MethodPost, "/api/session/workspaces",
+			fmt.Sprintf(`{"kind":"local","root":%q,"label":"finished-%d","state":"ready"}`, dir, i))
+		id := decodeWorkspace(t, rec).ID
+		if rec = pinboardRequest(t, s, http.MethodPost,
+			"/api/session/workspaces/"+id+"/close", ""); rec.Code != http.StatusOK {
+			t.Fatalf("closing workspace %d: got %d (%s)", i, rec.Code, rec.Body.String())
+		}
+		closed = append(closed, id)
+	}
+
+	listed := decodeWorkspaces(t, pinboardRequest(t, s, http.MethodGet, "/api/session/workspaces", ""))
+	tombstones := make(map[string]bool)
+	liveRows := 0
+	for _, ws := range listed {
+		if ws.State == core.WorkspaceStateClosed {
+			tombstones[ws.ID] = true
+			continue
+		}
+		liveRows++
+	}
+
+	if len(tombstones) != core.MaxClosedWorkspaces {
+		t.Fatalf("%d tombstones kept, want the cap of %d", len(tombstones), core.MaxClosedWorkspaces)
+	}
+	// Oldest first: the two closed before any others are the two that went.
+	for _, gone := range closed[:2] {
+		if tombstones[gone] {
+			t.Fatalf("workspace %s survived, want the oldest tombstones evicted first", gone)
+		}
+	}
+	for _, kept := range closed[2:] {
+		if !tombstones[kept] {
+			t.Fatalf("workspace %s was evicted, want the most recent %d kept", kept, core.MaxClosedWorkspaces)
+		}
+	}
+	if liveRows != 1 || listed[0].ID != liveID {
+		t.Fatalf("live rows = %d (first %q), want the one ready workspace untouched by the cap",
+			liveRows, listed[0].ID)
 	}
 }
 

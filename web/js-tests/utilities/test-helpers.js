@@ -92,12 +92,35 @@ async function createMockServices() {
       stopThinking: () => {}
     },
     actionExecutor: realActionExecutor,
-    wsService: {
-      sendCancel: () => {},
-      on: () => {},
-      off: () => {}
-    }
+    wsService: createMockWebSocketService()
   });
+}
+
+/**
+ * A stand-in for the WebSocket service that actually remembers what subscribed
+ * to it, so a test can deliver the server broadcast a behaviour is built on
+ * (`workspaces-changed`, `providers-update`, …) and watch what it does.
+ *
+ * No socket is involved: `emit` is the test playing the server's part. Nothing
+ * else emits, so a suite that never calls it sees exactly the silence the old
+ * no-op stub gave it.
+ * @returns {{sendCancel: () => void, on: (type: string, cb: Function) => void, off: (type: string, cb: Function) => void, emit: (type: string, data?: any) => void}} The stub
+ */
+function createMockWebSocketService() {
+  /** @type {Map<string, Set<Function>>} */
+  const handlers = new Map();
+  return {
+    sendCancel: () => {},
+    on: (type, cb) => {
+      let set = handlers.get(type);
+      if (!set) handlers.set(type, set = new Set());
+      set.add(cb);
+    },
+    off: (type, cb) => { handlers.get(type)?.delete(cb); },
+    emit: (type, data) => {
+      for (const cb of handlers.get(type) || []) cb(data);
+    }
+  };
 }
 
 /**

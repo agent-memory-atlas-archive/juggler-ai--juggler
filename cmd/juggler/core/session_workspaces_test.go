@@ -28,6 +28,62 @@ func workspaceForTest(t *testing.T, id, root string) Workspace {
 	}
 }
 
+// No caller can be handed a stale answer about whether a root is there.
+//
+// Availability used to be a cache: stat'd at load and at each register or
+// update, then persisted and broadcast. `Usable` meanwhile stat'd afresh on
+// every call, so the same question had two answers that were free to disagree
+// — and a tree removed while the app ran left the cached one saying yes for
+// the rest of the session. Every row that leaves the actor now carries a live
+// answer, so the cache cannot be read back.
+//
+// Nothing here calls RefreshWorkspaceAvailability: that exists to notice a
+// change worth broadcasting, and if the reads below depended on it having run
+// the cache would simply have a longer fuse.
+func TestWorkspaces_AvailabilityIsNeverServedFromTheCache(t *testing.T) {
+	project := t.TempDir()
+	mgr, err := NewSessionManagerForPath(project)
+	if err != nil {
+		t.Fatalf("NewSessionManagerForPath: %v", err)
+	}
+	t.Cleanup(mgr.Shutdown)
+
+	tree := filepath.Join(project, "a-worktree")
+	if err := os.MkdirAll(tree, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	ws, err := mgr.RegisterWorkspace(Workspace{
+		Kind: WorkspaceKindLocal, Root: tree, Label: "feat/tunnels", State: WorkspaceStateReady,
+	})
+	if err != nil {
+		t.Fatalf("RegisterWorkspace: %v", err)
+	}
+	if !ws.Available {
+		t.Fatalf("registered = %+v, want available while its tree is there", ws)
+	}
+
+	if err := os.RemoveAll(tree); err != nil {
+		t.Fatalf("removing the tree: %v", err)
+	}
+
+	if listed := mgr.ListWorkspaces(); len(listed) != 1 || listed[0].Available {
+		t.Fatalf("ListWorkspaces = %+v, want the row reporting its root has gone", listed)
+	}
+	if got, ok := mgr.GetWorkspace(ws.ID); !ok || got.Available {
+		t.Fatalf("GetWorkspace = %+v (ok=%v), want the row reporting its root has gone", got, ok)
+	}
+
+	// And back again, because a place that returns is usable again. This is the
+	// half a tombstone could never give back, and the reason a missing root is
+	// not one.
+	if err := os.MkdirAll(tree, 0o755); err != nil {
+		t.Fatalf("remaking the tree: %v", err)
+	}
+	if got, _ := mgr.GetWorkspace(ws.ID); !got.Available {
+		t.Fatalf("GetWorkspace = %+v, want it available once its tree is back", got)
+	}
+}
+
 // A registered workspace survives a trip through session.json. The table is the
 // only record of where a conversation's files are, so anything dropped here
 // strands every conversation bound to it.
@@ -143,6 +199,51 @@ func managerForWorkspaceTest(t *testing.T) (*SessionManager, string) {
 	m := startManager(store, dir, "")
 	t.Cleanup(m.Shutdown)
 	return m, dir
+}
+
+// Every write to the table is refused when no project is open.
+//
+// A workspace is a place a conversation works, and in no-project mode there is
+// no conversation and nowhere for a row to live: the session is backed by a
+// scratch directory this process deletes on the way out. Accepting a
+// registration would file it there and report success, telling the user a
+// workspace exists that goes away when the window closes.
+//
+// The refusal has to be keyed on the project path rather than on the session,
+// because there IS one — NewSessionManagerForPath("") makes a real session over
+// the scratch dir, precisely so the rest of the server need not special-case a
+// nil manager.
+func TestWorkspaceWrites_RefusedWithNoProjectOpen(t *testing.T) {
+	m, err := NewSessionManagerForPath("")
+	if err != nil {
+		t.Fatalf("NewSessionManagerForPath(\"\"): %v", err)
+	}
+	t.Cleanup(m.Shutdown)
+
+	if _, err := m.RegisterWorkspace(Workspace{Root: t.TempDir(), State: WorkspaceStateReady}); err == nil {
+		t.Fatal("RegisterWorkspace succeeded with no project open")
+	} else if !strings.Contains(err.Error(), "no project") {
+		t.Fatalf("RegisterWorkspace error = %q, want it to say no project is open", err)
+	}
+	if listed := m.ListWorkspaces(); len(listed) != 0 {
+		t.Fatalf("ListWorkspaces = %+v, want nothing registered", listed)
+	}
+
+	// The other writes go the same way. Readers are left alone: asking an empty
+	// table a question is harmless, and refusing List would make every surface
+	// that shows workspaces handle an error it could do nothing about.
+	if _, err := m.UpdateWorkspace("ws_anything", WorkspacePatch{}); err == nil {
+		t.Fatal("UpdateWorkspace succeeded with no project open")
+	}
+	if _, err := m.CloseWorkspace("ws_anything"); err == nil {
+		t.Fatal("CloseWorkspace succeeded with no project open")
+	}
+	if err := m.UnregisterWorkspace("ws_anything"); err == nil {
+		t.Fatal("UnregisterWorkspace succeeded with no project open")
+	}
+	if m.ClaimWorkspaceReconcile() {
+		t.Fatal("ClaimWorkspaceReconcile handed out the once-per-run job with no project to reconcile")
+	}
 }
 
 // A workspace is registered before it is built, so the row that describes a
@@ -295,6 +396,31 @@ func TestRegisterWorkspace_RejectsDuplicateID(t *testing.T) {
 	}
 }
 
+// An id offered by the caller is kept rather than replaced with a fresh one.
+//
+// This is what recovering a lost table is made of. A conversation's binding
+// survives in its own document when session.json does not, and it is an opaque
+// id: nothing on disk says which tree it meant. So the way back is to register
+// the place again UNDER that id, at which point every conversation bound to it
+// resolves once more — rather than adopting the tree under a new id and moving
+// each conversation to it by hand.
+func TestRegisterWorkspace_KeepsASuppliedID(t *testing.T) {
+	m, dir := managerForWorkspaceTest(t)
+
+	ws, err := m.RegisterWorkspace(Workspace{ID: "ws_stranded", Root: dir, State: WorkspaceStateReady})
+	if err != nil {
+		t.Fatalf("RegisterWorkspace: %v", err)
+	}
+	if ws.ID != "ws_stranded" {
+		t.Fatalf("ID = %q, want the id the caller asked for", ws.ID)
+	}
+
+	found, ok := m.GetWorkspace("ws_stranded")
+	if !ok || found.Root != dir {
+		t.Fatalf("GetWorkspace(ws_stranded) = %+v, %v; want the row that was just registered", found, ok)
+	}
+}
+
 // writeManifest hand-writes a session.json, as an older build (or another
 // machine) would have left one.
 func writeManifest(t *testing.T, dir, manifest string) {
@@ -330,11 +456,17 @@ func loadFresh(t *testing.T, dir string) *Session {
 	return sess
 }
 
-// A root that has gone since the last run — a hand-run `git worktree remove`, a
-// reprovisioned machine — is caught once, at load, so the user sees one banner
-// instead of discovering it through a cascade of failing operations mid-turn.
-// A provisioning row is stale by definition: no provisioner survives a restart.
-func TestLoad_VerifiesWorkspaceRootsAndStaleProvisions(t *testing.T) {
+// A provisioning row is stale by definition: no provisioner survives a
+// restart, so a row still in that state at load is the wreckage of one and is
+// flagged for the reconcile pass to clear up.
+//
+// Roots are deliberately NOT checked here. Availability is computed on every
+// read (see availableNow), so a load-time stat would decide, persist and
+// broadcast an answer that the very next read re-derives — which is how the
+// two could disagree, and how a tree removed mid-session went on reading as
+// present for the rest of the session. That property is tested against the
+// reads themselves, in TestWorkspaces_AvailabilityIsNeverServedFromTheCache.
+func TestLoad_FlagsStaleProvisions(t *testing.T) {
 	_, dir := newStoreForTest(t)
 	live := t.TempDir()
 
@@ -358,12 +490,6 @@ func TestLoad_VerifiesWorkspaceRootsAndStaleProvisions(t *testing.T) {
 	for _, ws := range sess.Workspaces {
 		byID[ws.ID] = ws
 	}
-	if !byID["ws_live"].Available {
-		t.Fatalf("ws_live = %+v, want it available", byID["ws_live"])
-	}
-	if byID["ws_gone"].Available {
-		t.Fatalf("ws_gone = %+v, want available:false — its root is not there", byID["ws_gone"])
-	}
 	if !byID["ws_half"].Stale {
 		t.Fatalf("ws_half = %+v, want it flagged stale — nothing is provisioning it", byID["ws_half"])
 	}
@@ -376,9 +502,6 @@ func TestLoad_VerifiesWorkspaceRootsAndStaleProvisions(t *testing.T) {
 	// that was already dealt with.
 	again := loadFresh(t, dir)
 	for _, ws := range again.Workspaces {
-		if ws.ID == "ws_gone" && ws.Available {
-			t.Fatalf("ws_gone came back available after a second load")
-		}
 		if ws.ID == "ws_half" && !ws.Stale {
 			t.Fatalf("ws_half came back unflagged after a second load")
 		}
@@ -484,6 +607,49 @@ func TestClaimWorkspaceReconcile_AnswersOncePerRun(t *testing.T) {
 	t.Cleanup(m2.Shutdown)
 	if !m2.ClaimWorkspaceReconcile() {
 		t.Fatalf("the next run was not offered the reconcile")
+	}
+}
+
+// A provision does not need a restart to be abandoned — a reloaded tab is
+// enough, and the server is up throughout it. The load-time sweep never runs,
+// the claim was spent by the window that has gone, and the half-built tree and
+// its row sit there until the app is restarted.
+//
+// When the last window goes, nothing is provisioning anything: the same
+// argument the load-time sweep makes, at the only other moment it holds. So the
+// rows still marked provisioning are flagged stale, and the reconcile is
+// offered again to whoever opens next.
+func TestWorkspacesUnwatched_StalesProvisionsAndReoffersTheReconcile(t *testing.T) {
+	m, dir := managerForWorkspaceTest(t)
+
+	half, err := m.RegisterWorkspace(Workspace{Root: filepath.Join(dir, "never-finished")})
+	if err != nil {
+		t.Fatalf("RegisterWorkspace: %v", err)
+	}
+	ready, err := m.RegisterWorkspace(Workspace{Root: dir, State: WorkspaceStateReady})
+	if err != nil {
+		t.Fatalf("RegisterWorkspace: %v", err)
+	}
+	if !m.ClaimWorkspaceReconcile() {
+		t.Fatalf("the window that started the provision was not given the reconcile")
+	}
+
+	m.WorkspacesUnwatched()
+
+	abandoned, ok := m.GetWorkspace(half.ID)
+	if !ok || !abandoned.Stale {
+		t.Fatalf("the interrupted provision = %+v, want it flagged stale", abandoned)
+	}
+	if built, _ := m.GetWorkspace(ready.ID); built.Stale {
+		t.Fatalf("a ready workspace = %+v, want it left unflagged", built)
+	}
+	if !m.ClaimWorkspaceReconcile() {
+		t.Fatalf("the next window was not offered the reconcile, so nothing will ever clear the half-built tree")
+	}
+	// Still one window at a time: the claim that was just taken is spent, and
+	// a second window opening beside it is told no.
+	if m.ClaimWorkspaceReconcile() {
+		t.Fatalf("the re-offer became a standing offer; two windows would race the same cleanup")
 	}
 }
 

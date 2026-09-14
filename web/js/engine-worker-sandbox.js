@@ -44,7 +44,7 @@ export const SANDBOX_DELEGATE_GRACE_MS = 30000;
  * @param {object} opts - Bridge options
  * @param {(message: any) => void} opts.post - Post a message to the main-thread host
  * @param {number} [opts.graceMs] - Override for {@link SANDBOX_DELEGATE_GRACE_MS} (tests)
- * @returns {{delegate: (code: string, capabilities: Record<string, any>, timeoutMs: number) => Promise<unknown>,
+ * @returns {{delegate: (code: string, capabilities: Record<string, any>, timeoutMs: number, callerRoot?: string) => Promise<unknown>,
  *   handleResult: (data: any) => void, handleCap: (data: any) => Promise<void>, pendingCount: () => number}}
  *   The delegate to install on globalThis, and the two inbound message handlers.
  */
@@ -76,20 +76,23 @@ export function createSandboxBridge({ post, graceMs = SANDBOX_DELEGATE_GRACE_MS 
      * @param {string} code - Untrusted JavaScript
      * @param {Record<string, any>} capabilities - Named fs/grep/glob closures
      * @param {number} timeoutMs - The script's own wall-clock budget
+     * @param {string} [callerRoot] - The root the caller works in, POSIX-form
      * @returns {Promise<unknown>} The script's return value
      */
-    delegate(code, capabilities, timeoutMs) {
+    delegate(code, capabilities, timeoutMs, callerRoot) {
       const id = `sbx_${++sandboxSeq}`;
       const descriptors = Object.entries(capabilities).map(([name, cap]) => ({
         name,
         callable: typeof cap === 'function'
       }));
-      // The project root the sandbox exposes as `projectRoot` comes from the live
+      // What the sandbox exposes as `projectRoot` is the caller's own root when
+      // it has one — a tool's is its conversation's workspace, which is not
+      // necessarily the project. A caller that names none falls back to the live
       // engine value (updated on a runtime project switch — see session.js
       // _applyEngineProjectRoot), NOT the frozen sandbox.html template. This realm
       // (the engine worker) is where the session runs and keeps it current; the
       // main-thread iframe host can't read this worker's global, so pass it across.
-      const projectRoot = /** @type {any} */ (globalThis).__jugglerProjectRoot;
+      const projectRoot = callerRoot || /** @type {any} */ (globalThis).__jugglerProjectRoot;
       return new Promise((resolve, reject) => {
         const timer = setTimeout(
           () => settle(id, false, new Error(

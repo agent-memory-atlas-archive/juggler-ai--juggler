@@ -7,12 +7,12 @@
  * worker_threads sandbox.
  *
  * sandbox-runner.js (web/sdk/lib) calls `globalThis.__hostSandboxDelegate(code,
- * capabilities, timeoutMs)` when it has no `document`. In the webview worker that
- * delegate forwards to the main-thread iframe host; here — the Node engine runs
- * on this very thread, where the real fs/grep/glob closures live — it spawns an
- * isolated worker_threads Worker (engine-sandbox-worker.mjs) to run the untrusted
- * code, services each capability call the worker RPCs back, and terminates the
- * worker on timeout. The untrusted code never runs on this thread.
+ * capabilities, timeoutMs, callerRoot)` when it has no `document`. In the webview
+ * worker that delegate forwards to the main-thread iframe host; here — the Node
+ * engine runs on this very thread, where the real fs/grep/glob closures live —
+ * it spawns an isolated worker_threads Worker (engine-sandbox-worker.mjs) to run
+ * the untrusted code, services each capability call the worker RPCs back, and
+ * terminates the worker on timeout. The untrusted code never runs on this thread.
  */
 
 /**
@@ -25,10 +25,11 @@ export function installNodeSandboxDelegate({ origin, token, projectRoot }) {
    * @param {string} code - Untrusted JavaScript to run
    * @param {Record<string, any>} capabilities - Named fs/grep/glob closures
    * @param {number} timeoutMs - Wall-clock budget
+   * @param {string} [callerRoot] - The root the caller works in, POSIX-form
    * @returns {Promise<unknown>} The script's return value
    */
-  /** @type {any} */ (globalThis).__hostSandboxDelegate = (code, capabilities, timeoutMs) =>
-    runInWorkerSandbox(code, capabilities, timeoutMs, { origin, token, projectRoot });
+  /** @type {any} */ (globalThis).__hostSandboxDelegate = (code, capabilities, timeoutMs, callerRoot) =>
+    runInWorkerSandbox(code, capabilities, timeoutMs, { origin, token, projectRoot }, callerRoot);
 }
 
 /**
@@ -37,20 +38,24 @@ export function installNodeSandboxDelegate({ origin, token, projectRoot }) {
  * @param {Record<string, any>} capabilities
  * @param {number} timeoutMs
  * @param {{ origin: string, token: string, projectRoot: string }} env
+ * @param {string} [callerRoot]
  * @returns {Promise<unknown>}
  */
-async function runInWorkerSandbox(code, capabilities, timeoutMs, env) {
+async function runInWorkerSandbox(code, capabilities, timeoutMs, env, callerRoot) {
   const { Worker } = await import('node:worker_threads');
   const descriptors = Object.entries(capabilities).map(([name, cap]) => ({
     name,
     callable: typeof cap === 'function',
   }));
 
-  // Read the LIVE project root (kept current across a runtime project switch by
-  // session.js _applyEngineProjectRoot), falling back to the boot value from the
-  // delegate closure. The Node engine runs on this same thread, so the global is
-  // in step with the loaded project.
-  const liveProjectRoot = /** @type {any} */ (globalThis).__jugglerProjectRoot ?? env.projectRoot;
+  // The caller's own root when it named one — a tool's is its conversation's
+  // workspace, which is not necessarily the project. Otherwise the LIVE project
+  // root (kept current across a runtime project switch by session.js
+  // _applyEngineProjectRoot), falling back to the boot value from the delegate
+  // closure. The Node engine runs on this same thread, so the global is in step
+  // with the loaded project.
+  const liveProjectRoot =
+    callerRoot || (/** @type {any} */ (globalThis).__jugglerProjectRoot ?? env.projectRoot);
 
   const worker = new Worker(new URL('./engine-sandbox-worker.mjs', import.meta.url), {
     workerData: {

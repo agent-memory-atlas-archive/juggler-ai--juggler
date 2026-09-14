@@ -1334,7 +1334,10 @@ class ConversationBar extends JugglerElement {
     // is an activated unnamed create, asks the bar to open inline rename (see the
     // 'conversation:rename-requested' branch in setSession). The /new command
     // creates the same way, so both share one "name it now" behaviour.
-    await this._session.createConversation('', { activate: true, origin: 'plus-button' });
+    // initialise:false — a blank tab the user made is the one conversation
+    // nobody has told where it works yet. It seeds itself on its first content
+    // (Conversation.ensureInitialised), by which time the answer is known.
+    await this._session.createConversation('', { activate: true, origin: 'plus-button', initialise: false });
   }
 
   /**

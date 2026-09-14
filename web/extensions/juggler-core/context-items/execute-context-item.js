@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import ContextItem from 'juggler/context-item';
-import { shell, shellStreaming, shellBackground, shellKill, MAX_EXEC_TIMEOUT_MS, DEFAULT_EXEC_TIMEOUT_MS } from 'juggler/ops';
+import { shellKill, MAX_EXEC_TIMEOUT_MS, DEFAULT_EXEC_TIMEOUT_MS } from 'juggler/ops';
 import { createHighlightedCode, createSummaryWithSubtitle } from 'juggler/ui';
 import { renderLiveTaskOutput } from '../../../sdk/lib/live-task-output.js';
 import { resolveAgainstCwd, posixNormalize } from 'juggler/utils/path-containment';
@@ -767,7 +767,7 @@ class ExecuteContextItem extends ContextItem {
 
     // Handle background execution
     if (runInBackground) {
-      const result = await shellBackground(
+      const result = await this.ops.shellBackground(
         {
           command,
           timeout: params.timeout ? Number(params.timeout) : undefined,
@@ -842,7 +842,7 @@ class ExecuteContextItem extends ContextItem {
 
     // Try streaming execution first, fall back to blocking if WebSocket unavailable
     try {
-      const result = await shellStreaming(
+      const result = await this.ops.shellStreaming(
         execParams,
         (chunk) => {
           // Check for cancellation during streaming
@@ -928,7 +928,7 @@ class ExecuteContextItem extends ContextItem {
 
       // If streaming fails due to WebSocket issues, fall back to blocking execution
       if (streamError instanceof Error && streamError.message.includes('WebSocket')) {
-        const result = await shell(execParams);
+        const result = await this.ops.shell(execParams);
 
         if (this.signal?.aborted) {
           const error = new Error('Command execution cancelled');

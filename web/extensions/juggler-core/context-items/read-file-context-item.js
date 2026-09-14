@@ -4,7 +4,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import ContextItem from 'juggler/context-item';
-import { readFile } from 'juggler/ops';
 import { formatDisplayPath, formatFileSize, formatFileContentForLLM, normalizeFilePath, injectFileContentStyles, basename } from 'juggler/item-utils';
 import { addFilePath } from 'juggler/ui';
 import { fileSourceFromReadResult } from 'juggler/file-source';
@@ -220,7 +219,7 @@ class ReadFileContextItem extends ContextItem {
       readParams.outOfRootApproved = true;
     }
     const result = /** @type {ReadFileResult & {imageBase64?: string}} */ (
-      await readFile(readParams, this.signal, this.getToolAllowedRoots())
+      await this.ops.readFile(readParams, this.signal)
     );
 
     // Extraction runs HERE rather than in getSummary because getSummary is

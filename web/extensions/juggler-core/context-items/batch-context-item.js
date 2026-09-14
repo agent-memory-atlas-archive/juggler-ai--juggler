@@ -4,7 +4,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import ContextItem from 'juggler/context-item';
-import { readFile, grep } from 'juggler/ops';
 import { createTextBlock, formatFileContentForLLM } from 'juggler/item-utils';
 import { formatGrepResults } from './search/grep-format.js';
 
@@ -235,7 +234,7 @@ class BatchContextItem extends ContextItem {
             const limit = f.limit || 2000;
             readParams.lineRange = { start: offset, end: offset + limit - 1 };
           }
-          const result = await readFile(/** @type {any} */ (readParams), this.signal, this.getToolAllowedRoots());
+          const result = await this.ops.readFile(/** @type {any} */ (readParams), this.signal);
           return { file: f.file_path, success: true, result };
         } catch (err) {
           return { file: f.file_path, success: false, error: err instanceof Error ? err.message : String(err) };
@@ -259,7 +258,7 @@ class BatchContextItem extends ContextItem {
           const searchParams = { pattern: s.pattern };
           if (s.path) searchParams.path = s.path;
           if (s.glob) searchParams.include = s.glob;
-          const result = await grep(/** @type {any} */ (searchParams), this.signal, this.getToolAllowedRoots());
+          const result = await this.ops.grep(/** @type {any} */ (searchParams), this.signal);
           return { pattern: s.pattern, success: true, result, outputMode: s.output_mode || 'files_with_matches' };
         } catch (err) {
           return { pattern: s.pattern, success: false, error: err instanceof Error ? err.message : String(err) };

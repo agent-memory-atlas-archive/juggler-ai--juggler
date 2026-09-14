@@ -123,7 +123,7 @@ func (p *gitProject) commit(message string) {
 // and the decoded body, whatever the status.
 func (p *gitProject) ask(ctx context.Context, fileRel string) (*httptest.ResponseRecorder, gitDiffResponse) {
 	p.t.Helper()
-	api := NewGitStatusAPI(func() string { return p.root })
+	api := NewGitStatusAPI(func() string { return p.root }, nil)
 	target := "/api/git/diff?repo=" + url.QueryEscape(p.rel) + "&path=" + url.QueryEscape(fileRel)
 	req := httptest.NewRequest(http.MethodGet, target, nil).WithContext(ctx)
 	rec := httptest.NewRecorder()

@@ -10,18 +10,20 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+
+	"juggler/cmd/juggler/core"
 )
 
-// sandboxImportRoot normalises the project path for the query_code sandbox's
-// absolute-path module loader: forward slashes so it matches the worker's
-// origin-resolved import URLs on every OS (a Windows ProjectPath uses
-// backslashes, but the sandbox and its URLs are POSIX-style throughout).
-func sandboxImportRoot(projectPath string) string {
-	return filepath.ToSlash(projectPath)
+// sandboxImportRoot normalises a root (the project's, or a workspace's) for the
+// query_code sandbox's absolute-path module loader: forward slashes so it
+// matches the worker's origin-resolved import URLs on every OS (a Windows path
+// uses backslashes, but the sandbox and its URLs are POSIX-style throughout).
+func sandboxImportRoot(root string) string {
+	return filepath.ToSlash(root)
 }
 
 // sandboxImportPath aligns a request URL path with sandboxImportRoot. A POSIX
-// project root is itself absolute ("/Users/…"), so the worker's origin+spec
+// root is itself absolute ("/Users/…"), so the worker's origin+spec
 // already yields a matching "/Users/…/web/…" path. A Windows drive-letter root
 // ("C:/…") has no leading slash, so the worker resolves it against the origin as
 // "/C:/…/web/…"; drop that synthetic leading slash so the prefix lines up.
@@ -32,15 +34,42 @@ func sandboxImportPath(urlPath, root string) string {
 	return urlPath
 }
 
-// sandboxProjectFile maps an query_code sandbox import URL to a real file on
-// disk inside the project root, or reports ok=false. The sandbox worker resolves
-// user code's `import('<projectRoot>/rel/path')` against its http origin, so the
-// request path is the absolute project path. We serve it only when it (a) stays
-// strictly inside the project root and (b) is an importable module, so the
-// ACAO=* response never exposes arbitrary project files (secrets, source) to a
-// cross-origin reader — only JavaScript/JSON modules the sandbox can import().
-func (s *Server) sandboxProjectFile(urlPath string) (string, bool) {
-	root := sandboxImportRoot(s.ProjectPath())
+// sandboxImportFile maps a query_code sandbox import URL to a real file on disk
+// inside a tree the sandbox may import from, or reports ok=false. The sandbox
+// worker resolves user code's `import('<projectRoot>/rel/path')` against its
+// http origin, so the request path is that absolute path. We serve it only when
+// it (a) stays strictly inside one of those trees and (b) is an importable
+// module, so the ACAO=* response never exposes arbitrary files (secrets, source)
+// to a cross-origin reader — only JavaScript/JSON modules the sandbox can
+// import().
+//
+// The trees are the project and every ready workspace, because `projectRoot` is
+// the root of the tree the asking CONVERSATION works in: a bound one builds its
+// module paths inside its workspace, and clamping this to the project would 404
+// every one of them. Nothing widens on its own — a workspace is on the table
+// only because the user registered it through the flow that also authorises ops
+// there — and neither the module-extension list nor the containment check moves.
+func (s *Server) sandboxImportFile(urlPath string) (string, bool) {
+	// Cheapest filter first: this runs as a route matcher, so every request that
+	// reaches the fallthrough asks it, and almost none of them name a module.
+	if !sandboxImportableExt(urlPath) {
+		return "", false
+	}
+	if diskPath, ok := sandboxFileUnder(urlPath, sandboxImportRoot(s.ProjectPath())); ok {
+		return diskPath, true
+	}
+	// Only now ask the session for its workspaces, so an ordinary project import
+	// still costs nothing but the stat it always did.
+	for _, root := range s.sandboxWorkspaceRoots() {
+		if diskPath, ok := sandboxFileUnder(urlPath, root); ok {
+			return diskPath, true
+		}
+	}
+	return "", false
+}
+
+// sandboxFileUnder resolves an import URL against one root, or reports ok=false.
+func sandboxFileUnder(urlPath, root string) (string, bool) {
 	if root == "" {
 		return "", false
 	}
@@ -50,15 +79,31 @@ func (s *Server) sandboxProjectFile(urlPath string) (string, bool) {
 	if p != root && !strings.HasPrefix(p, root+"/") {
 		return "", false
 	}
-	if !sandboxImportableExt(p) {
-		return "", false
-	}
 	diskPath := filepath.FromSlash(p)
 	info, err := os.Stat(diskPath)
 	if err != nil || info.IsDir() {
 		return "", false
 	}
 	return diskPath, true
+}
+
+// sandboxWorkspaceRoots are the registered workspace roots a sandbox may import
+// from. Ready ones only: a workspace still being provisioned is half a tree, and
+// a closed one is finished with — both refuse every other operation, and serving
+// their files would be the one way to keep reading a workspace after it was
+// tombstoned.
+func (s *Server) sandboxWorkspaceRoots() []string {
+	mgr := s.SessionManager()
+	if mgr == nil {
+		return nil
+	}
+	var roots []string
+	for _, ws := range mgr.ListWorkspaces() {
+		if ws.State == core.WorkspaceStateReady && ws.Root != "" {
+			roots = append(roots, sandboxImportRoot(ws.Root))
+		}
+	}
+	return roots
 }
 
 // sandboxImportableExt reports whether p has an extension the sandbox may load
@@ -73,11 +118,11 @@ func sandboxImportableExt(p string) bool {
 	}
 }
 
-// serveSandboxProjectFile writes a project file resolved by sandboxProjectFile.
+// serveSandboxImportFile writes a file resolved by sandboxImportFile.
 // It sets an explicit JavaScript/JSON MIME because .mjs/.cjs are absent from
 // Go's mime table and a module import() requires a JavaScript media type — a
 // sniffed text/plain would make the browser reject the module.
-func serveSandboxProjectFile(w http.ResponseWriter, r *http.Request, diskPath string) {
+func serveSandboxImportFile(w http.ResponseWriter, r *http.Request, diskPath string) {
 	f, err := os.Open(diskPath)
 	if err != nil {
 		http.NotFound(w, r)
@@ -109,7 +154,7 @@ func serveSandboxProjectFile(w http.ResponseWriter, r *http.Request, diskPath st
 // check, which silently breaks the app's entire ES-module graph (e.g.
 // web/js/vendor/yjs.mjs) while leaving unrelated standalone modules loading — so
 // we set these types explicitly rather than trust the OS. Mirrors the explicit
-// Content-Type in serveSandboxProjectFile.
+// Content-Type in serveSandboxImportFile.
 func staticAssetContentType(p string) string {
 	switch strings.ToLower(path.Ext(p)) {
 	case ".js", ".mjs", ".cjs":

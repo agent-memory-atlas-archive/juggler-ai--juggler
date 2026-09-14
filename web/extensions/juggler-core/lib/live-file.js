@@ -59,13 +59,20 @@ injectFileContentStyles();
  * Only the read op takes a signal; `stat` and `getTree` do not, so a caller that
  * can be torn down mid-read must check its own signal before using what comes
  * back rather than assuming this rejected.
+ *
+ * A relative path is resolved by whoever performs the read, so `ops` decides
+ * WHICH tree this is a live view of. A context item passes its own scoped ops
+ * and gets its conversation's workspace; a pin passes none and gets the project,
+ * which is what a pin is — board furniture showing the project, not a view into
+ * whatever conversation happens to be open.
  * @param {string} path - File or directory path. A trailing "/" means directory.
- * @param {{signal?: AbortSignal, noIgnore?: boolean, head?: number, whole?: boolean, userInitiated?: boolean}} [options] - Abort
+ * @param {{signal?: AbortSignal, noIgnore?: boolean, head?: number, whole?: boolean,
+ *   userInitiated?: boolean, ops?: import('juggler/ops').BoundOps}} [options] - Abort
  *   signal for the file read, whether a directory listing ignores .gitignore, a line
  *   ceiling for a caller showing a preview rather than the whole file, whether the
- *   path came from a user gesture, and `whole` for a caller that wants every line.
- *   With neither the read op's own default cap applies, which is generous but is
- *   still a cap.
+ *   path came from a user gesture, `whole` for a caller that wants every line, and
+ *   the scope to read in. With neither of the line options the read op's own
+ *   default cap applies, which is generous but is still a cap.
  * @returns {Promise<LiveFileResult>} What disk said; `exists: false` on any failure.
  */
 export async function fetchLiveFile(path, options = {}) {
@@ -73,6 +80,9 @@ export async function fetchLiveFile(path, options = {}) {
     return { path: '', isDirectory: false, exists: false, content: '' };
   }
   const userInitiated = options.userInitiated !== false;
+  // All three reads go through one scope, so the probe below cannot answer for a
+  // different tree than the read it is deciding.
+  const ops = options.ops || { readFile, getTree, stat };
 
   // Completion paths conventionally carry a trailing slash for directories, but a
   // user may type or paste an absolute directory path without one. Probe first in
@@ -80,7 +90,7 @@ export async function fetchLiveFile(path, options = {}) {
   let isDirectory = path.endsWith('/');
   if (!isDirectory) {
     try {
-      const metadata = await stat({ path, userInitiated });
+      const metadata = await ops.stat({ path, userInitiated });
       isDirectory = metadata.isDirectory === true;
     } catch (err) {
       // Preserve the read operation's error/result behavior when metadata is
@@ -93,7 +103,7 @@ export async function fetchLiveFile(path, options = {}) {
       const treeParams = /** @type {Record<string, unknown>} */ (
         { path, depth: 2, maxTokens: 4000, userInitiated });
       if (options.noIgnore) treeParams.noIgnore = true;
-      const r = await getTree(treeParams);
+      const r = await ops.getTree(treeParams);
       return {
         path,
         isDirectory: true,
@@ -118,7 +128,7 @@ export async function fetchLiveFile(path, options = {}) {
     if (options.head && options.head > 0) readParams.head = options.head;
     else if (options.whole) readParams.maxLines = 0;
 
-    const r = await readFile(readParams, options.signal);
+    const r = await ops.readFile(readParams, options.signal);
     return {
       path: r.path || path,
       isDirectory: false,

@@ -4,10 +4,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import ContextItem from 'juggler/context-item';
-import { ReadOnlyFileSystem } from 'juggler/ops';
 // Aliased on import: this item exposes its own `grep`/`glob` helpers to sandboxed
 // code (below), so the ops primitives are bound under distinct local names.
-import { grep as grepOp, glob as globOp } from 'juggler/ops';
 import { runInSandbox } from 'juggler/sandbox';
 import { createLlmDescription } from 'juggler/ui';
 import { gitignoreDisabled } from './path-approval.js';
@@ -54,7 +52,7 @@ class QueryCodeContextItem extends ContextItem {
         properties: {
           code: {
             type: 'string',
-            description: 'JavaScript to execute (async/await OK; must return a value). Browser realm, NOT Node: no `process`/`require`/`Buffer`. In-scope bindings:\n- `fs` — read-only fs.promises subset\n- `path` — POSIX path (forward-slash, even on Windows)\n- `grep(pattern, {cwd?, glob?, maxResults?, ignoreCase?})` → [{file, line, content}]\n- `glob(pattern, {cwd?})` → string[]\n- `projectRoot` — absolute project root (forward-slashed). `import()` any JavaScript/JSON module in the project by absolute path (e.g. `${projectRoot}/src/foo.js`) to call its real exports.'
+            description: 'JavaScript to execute (async/await OK; must return a value). Browser realm, NOT Node: no `process`/`require`/`Buffer`. In-scope bindings:\n- `fs` — read-only fs.promises subset\n- `path` — POSIX path (forward-slash, even on Windows)\n- `grep(pattern, {cwd?, glob?, maxResults?, ignoreCase?})` → [{file, line, content}]\n- `glob(pattern, {cwd?})` → string[]\n- `projectRoot` — absolute root of the tree you are working in (forward-slashed). `import()` any JavaScript/JSON module under it by absolute path (e.g. `${projectRoot}/src/foo.js`) to call its real exports.'
           },
           description: {
             type: 'string',
@@ -95,8 +93,8 @@ class QueryCodeContextItem extends ContextItem {
   /**
    * Execute the query script via the host sandbox (juggler/sandbox),
    * exposing a read-only filesystem plus grep/glob search to the code. The
-   * sandbox also injects `path` and `projectRoot`. Only the script's return
-   * value enters context.
+   * sandbox also injects `path` and `projectRoot` — the root of the tree this
+   * conversation works in. Only the script's return value enters context.
    *
    * The result also carries `filesRead` — path → contentHash for every file
    * the script's `fs.readFile` pulled — so the read-before-mutate freshness
@@ -112,7 +110,20 @@ class QueryCodeContextItem extends ContextItem {
     const code = /** @type {string} */ (params.code);
     const timeoutMs = params.timeout ? Number(params.timeout) : 120000;
 
-    const fs = new ReadOnlyFileSystem(this.getToolAllowedRoots());
+    // `projectRoot` is the one root the script is given rather than confined by:
+    // its fs/grep/glob already follow this conversation's workspace, but the
+    // paths the script BUILDS are only as right as this string. A binding that
+    // cannot be resolved therefore refuses the run instead of falling back to
+    // the project — the ops would refuse anyway, but a root is believed, and a
+    // script told the wrong tree looks like a tool that worked.
+    const workspaceRoot = this.getWorkspaceRoot();
+    if (workspaceRoot === null) {
+      throw new Error(
+        'Couldn\'t run: this conversation\'s workspace is unavailable — it is still being '
+        + 'created, was closed, or its directory has gone.');
+    }
+
+    const fs = this.ops.readOnlyFileSystem();
     const { grep, glob } = this._createSearchHelpers();
 
     // The signal is what makes Escape mean anything here. Without it the script
@@ -121,6 +132,7 @@ class QueryCodeContextItem extends ContextItem {
     const result = await runInSandbox(code, {
       capabilities: { fs, grep, glob },
       timeoutMs,
+      projectRoot: workspaceRoot,
       signal: this.signal,
     });
 
@@ -146,7 +158,7 @@ class QueryCodeContextItem extends ContextItem {
     // they run. Forwarding the signal makes the sandbox's grep/glob calls
     // cancellable along with the rest of the query_code action.
     const signal = this.signal;
-    const allowedPaths = this.getToolAllowedRoots();
+    const ops = this.ops;
     // The conversation's "search all files" toggle applies to the sandbox's
     // grep/glob delegates too (the raw `fs` helper stays unfiltered — direct
     // listing, same stance as the file panel).
@@ -166,7 +178,7 @@ class QueryCodeContextItem extends ContextItem {
         if (options?.maxResults) params.maxResults = options.maxResults;
         if (options?.ignoreCase !== undefined) params.ignoreCase = options.ignoreCase;
         if (noIgnore) params.noIgnore = true;
-        const result = await grepOp(/** @type {any} */ (params), signal, allowedPaths);
+        const result = await ops.grep(/** @type {any} */ (params), signal);
         return result.matches || [];
       },
       /**
@@ -180,7 +192,7 @@ class QueryCodeContextItem extends ContextItem {
         const params = { pattern };
         if (options?.cwd) params.path = options.cwd;
         if (noIgnore) params.noIgnore = true;
-        const result = await globOp(/** @type {any} */ (params), signal, allowedPaths);
+        const result = await ops.glob(/** @type {any} */ (params), signal);
         const files = result.files || [];
         if (!options?.cwd) return files;
 

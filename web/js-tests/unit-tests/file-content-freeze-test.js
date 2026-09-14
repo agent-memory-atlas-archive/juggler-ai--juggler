@@ -24,13 +24,28 @@
  * distinguishes the dispatch path (session-worker-callbacks.js) from a
  * properties-panel render (properties-panel.js), which must not freeze anything.
  *
- * `_fetchLive` is stubbed throughout, so no backend is needed.
+ * Taking the snapshot is only half of it: an item instance is a transient
+ * wrapper over a detached copy of the document's data, so a snapshot that is not
+ * announced to the thread lasts exactly as long as the object that took it, and
+ * the next turn reads the file again. Most cases here stub `_fetchLive` and
+ * count announcements; the one that renders a real conversation's item through
+ * two separate wrappers is what holds the guarantee itself down.
  * @module unit-tests/file-content-freeze-test
  */
 
 import FileContentContextItem from '../../extensions/juggler-core/context-items/file-content-context-item.js';
 import DroppedFileContextItem from '../../extensions/juggler-core/context-items/dropped-file-context-item.js';
-import { assert } from '../utilities/test-helpers.js';
+import {
+  assert,
+  initializeRegistries,
+  createTestSession,
+  createTestConversation,
+  releaseTestConversation,
+  waitFor
+} from '../utilities/test-helpers.js';
+import contextItemRegistry from '../../js/registries/context-item-registry.js';
+import { writeFileOp } from '../../js/services/ops-api.js';
+import { createBoundOps } from '../../sdk/ops.js';
 
 /**
  * @typedef {object} TestResult
@@ -42,9 +57,11 @@ import { assert } from '../utilities/test-helpers.js';
 /**
  * Build a FileContentContextItem with stub dependencies and a mutable stubbed
  * `_fetchLive`, so a test can change what "disk" says between renders and count
- * reads. `fetches` records each call.
+ * reads. `fetches` records each call, and `announced` counts the times the item
+ * told its thread that its data changed — the one channel by which anything it
+ * writes into `data` reaches the document.
  * @param {string} body - Initial file body the stub serves
- * @returns {{item: any, fetches: string[], setBody: (s: string) => void}} Item, call log, and a disk-mutator
+ * @returns {{item: any, fetches: string[], announced: () => number, setBody: (s: string) => void}} Item, call log, announcement count, and a disk-mutator
  */
 function makeItem(body) {
   const item = new FileContentContextItem({
@@ -55,6 +72,8 @@ function makeItem(body) {
     messageThread: /** @type {any} */ ({}),
   });
   let current = body;
+  let announcements = 0;
+  item.onContentChange = () => { announcements++; };
   /** @type {string[]} */
   const fetches = [];
   item._fetchLive = async () => {
@@ -72,7 +91,7 @@ function makeItem(body) {
       warning: null,
     };
   };
-  return { item, fetches, setBody: (s) => { current = s; } };
+  return { item, fetches, announced: () => announcements, setBody: (s) => { current = s; } };
 }
 
 /** A render coming from the real dispatch path. */
@@ -145,6 +164,44 @@ export async function runTests(_ctx) {
       'first request render stores the snapshot');
     assert(item.data.content === text, 'the stored snapshot is exactly what was sent');
     assert(fetches.length === 1, `exactly one read to take the snapshot, got ${fetches.length}`);
+  });
+
+  await test('a dispatch render announces the snapshot it took', async () => {
+    // An item instance is a transient wrapper and its `data` a detached copy of
+    // what the document holds, so a snapshot that is written and not announced
+    // lives exactly as long as the object that took it — and the next turn,
+    // rendering a fresh wrapper, reads the file again. The announcement is the
+    // whole of the freeze.
+    const { item, announced } = makeItem('rule one\n');
+    await item.onToolCall('file-content', { path: 'AGENTS.md', seeded: true });
+    assert(announced() === 0, 'nothing announced before the first request render');
+
+    await item.createContextText(REQUEST);
+    assert(announced() === 1,
+      `the render that takes the snapshot announces it, got ${announced()}`);
+
+    // Every later render is served from the latch, so there is nothing to say.
+    await item.createContextText(REQUEST);
+    await item.createContextText(PANEL);
+    assert(announced() === 1,
+      `a snapshot already taken is announced once and never again, got ${announced()}`);
+  });
+
+  await test('a panel render announces nothing, because it wrote nothing', async () => {
+    const { item, announced } = makeItem('rule one\n');
+    await item.onToolCall('file-content', { path: 'AGENTS.md', seeded: true });
+    await item.createContextText(PANEL);
+    assert(announced() === 0,
+      `looking at an item must not write to the conversation, got ${announced()}`);
+  });
+
+  await test('a user pin announces nothing on any render', async () => {
+    const { item, announced } = makeItem('v1\n');
+    await item.onToolCall('file-content', { path: 'src/main.go' });
+    await item.createContextText(REQUEST);
+    await item.createContextText(PANEL);
+    assert(announced() === 0,
+      `a pin persists no bytes, so it has nothing to announce, got ${announced()}`);
   });
 
   await test('seeded item serves the snapshot and never re-reads', async () => {
@@ -229,6 +286,60 @@ export async function runTests(_ctx) {
       `snapshot must be bounded, got ${item.data.content.length} chars`);
     assert(item.data.content === text,
       'the bound applies to what is SENT as well as what is stored, or turn 1 and turn 2 differ');
+  });
+
+  // ---- THE FREEZE HOLDS ACROSS WRAPPERS -----------------------------------
+
+  await test('the snapshot the first turn takes is the one every later turn sends', async () => {
+    // The cases above all hold one instance and ask it twice, which is not what
+    // a conversation does. An item instance is a transient wrapper rebuilt on
+    // every read of `contextItems`, and its `data` a detached copy of the
+    // document's, so a snapshot that does not reach the document is gone by the
+    // next turn and the file is read live again — the prefix re-priced by the
+    // very edit the freeze exists to absorb. This case therefore renders a
+    // conversation's own item, twice, through two different wrappers.
+    await initializeRegistries();
+    const session = await createTestSession();
+    const conversation = await createTestConversation(session);
+    const stamp = Math.random().toString(36).slice(2, 8);
+    const dir = `freeze-${stamp}`;
+    const path = `${dir}/AGENTS.md`;
+    const itemId = `FILE_FROZEN_${stamp}`;
+    const project = createBoundOps(() => ({ workspaceId: '' }));
+    /** @returns {any} The conversation's item as it stands now, never the one held before. */
+    const fromDocument = () => conversation.rootMessageThread.contextItems.find(
+      (/** @type {any} */ i) => i.id === itemId);
+
+    try {
+      await writeFileOp({ path, content: `# as it stood when work began ${stamp}\n` });
+      conversation.rootMessageThread.addContextItem(contextItemRegistry.createItem({
+        id: itemId,
+        type: 'file-content',
+        data: { path, isDirectory: false, seeded: true }
+      }, session, conversation, conversation.rootMessageThread));
+
+      const sent = await fromDocument().createContextText({ forRequest: true });
+      assert(sent.includes(`as it stood when work began ${stamp}`),
+        `the first turn sends the file as it stands, got ${JSON.stringify(sent)}`);
+
+      // Item data reaches the document through a batch on a zero timeout, so
+      // the barrier is the document holding it — not a wait long enough to
+      // look like one.
+      await waitFor(() => typeof fromDocument()?.data.content === 'string',
+        { description: 'the snapshot to reach the document' });
+
+      // The agent rewrites the instructions it was handed, which is the routine
+      // case and the expensive one.
+      await writeFileOp({ path, content: `# rewritten mid-conversation ${stamp}\n` });
+      const later = await fromDocument().createContextText({ forRequest: true });
+      assert(later === sent,
+        `a later turn sends byte-identical bytes, so the cached prefix still hits, got ${JSON.stringify(later)}`);
+      assert(!later.includes('rewritten mid-conversation'),
+        'and the rewrite does not reach a conversation that was handed the file before it');
+    } finally {
+      await releaseTestConversation(session, conversation.id, 'file-content-freeze');
+      await project.copyTree({ to: '.', delete: [dir] });
+    }
   });
 
   // ---- THE REFRESH AFFORDANCE --------------------------------------------

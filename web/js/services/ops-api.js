@@ -411,14 +411,22 @@ export function __setOpCallTimeoutForTest(ms) {
  *   assembles it into a PathScope once, rather than re-reading it from the
  *   params map at each op callsite. Read/search/tree ops widen their
  *   containment boundary to these roots; ops that ignore it are unaffected.
+ * @param {string} [workspaceId] - WHERE the operation runs: the id of the
+ *   workspace the calling conversation is bound to, `''`/omitted for the
+ *   project. Carried at the top level for the same reason as `allowedPaths`,
+ *   and sent as an id rather than a root because the engine executes tool calls
+ *   an LLM composed — an id only resolves to somewhere the user registered,
+ *   where a raw path would let a prompt-injected model choose its own scope.
+ *   The server refuses an id it cannot honour rather than falling back to the
+ *   project (see handlers.OpsAPI.resolveWorkspace).
  * @param {number} [timeoutMs] - Backstop deadline for this request, overriding
  *   {@link OP_CALL_TIMEOUT_MS}. Passed by an op whose own server-side budget
  *   reaches that ceiling, so the backstop stays above the op's real timeout.
  * @returns {Promise<T>} Operation result of the specified type T
  * @throws {Error} If operation fails or parameters are invalid
  */
-async function callOp(toolId, operation, params, signal, allowedPaths, timeoutMs = _opCallTimeoutMs) {
-  /** @type {{toolId: string, operation: string, params: object, allowedPaths?: string[]}} */
+async function callOp(toolId, operation, params, signal, allowedPaths, workspaceId, timeoutMs = _opCallTimeoutMs) {
+  /** @type {{toolId: string, operation: string, params: object, allowedPaths?: string[], workspaceId?: string}} */
   const requestBody = {
     toolId,
     operation,
@@ -426,6 +434,11 @@ async function callOp(toolId, operation, params, signal, allowedPaths, timeoutMs
   };
   if (allowedPaths !== undefined) {
     requestBody.allowedPaths = allowedPaths;
+  }
+  // An empty id is the project, which is what the server assumes when the field
+  // is absent — so it is left off the wire rather than sent as "".
+  if (workspaceId) {
+    requestBody.workspaceId = workspaceId;
   }
 
   const headers = /** @type {Record<string, string>} */ ({ 'Content-Type': 'application/json' });
@@ -497,13 +510,14 @@ async function callOp(toolId, operation, params, signal, allowedPaths, timeoutMs
  * @param {ReadFileLoadParams} params
  * @param {AbortSignal} [signal] - Abort signal for cancellation
  * @param {string[]} [allowedPaths] - Standing allowed-paths grant (top-level transport)
+ * @param {string} [workspaceId] - Where to run it (top-level transport; see callOp)
  * @returns {Promise<ReadFileLoadResult>} File content and metadata
  */
-export async function readFileLoad(params, signal, allowedPaths) {
+export async function readFileLoad(params, signal, allowedPaths, workspaceId) {
   if (!params.path) {
     throw new TypeError('path is required');
   }
-  return callOp('read-file', 'loadFile', params, signal, allowedPaths);
+  return callOp('read-file', 'loadFile', params, signal, allowedPaths, workspaceId);
 }
 
 /**
@@ -560,9 +574,10 @@ export async function uploadAssetBase64(convId, base64, mime, signal) {
  *   transport). The backend assembles it into the write op's PathScope so a
  *   user-granted out-of-project root counts as in-scope; combined with the
  *   `outOfRootApproved` param it forms the write defence-in-depth boundary.
+ * @param {string} [workspaceId] - Where to run it (top-level transport; see callOp)
  * @returns {Promise<ReadFileWriteResult>} Write operation result with path and metadata
  */
-export async function writeFileOp(params, signal, allowedPaths) {
+export async function writeFileOp(params, signal, allowedPaths, workspaceId) {
   if (!params.path) {
     throw new TypeError('path is required');
   }
@@ -572,7 +587,7 @@ export async function writeFileOp(params, signal, allowedPaths) {
   if (typeof params.content !== 'string') {
     throw new TypeError('content must be a string');
   }
-  return callOp('read-file', 'writeFile', params, signal, allowedPaths);
+  return callOp('read-file', 'writeFile', params, signal, allowedPaths, workspaceId);
 }
 
 /**
@@ -580,9 +595,10 @@ export async function writeFileOp(params, signal, allowedPaths) {
  * @param {ReadFileEditParams} params
  * @param {AbortSignal} [signal] - Abort signal for cancellation
  * @param {string[]} [allowedPaths] - Standing allowed-paths grant (top-level transport; see writeFileOp)
+ * @param {string} [workspaceId] - Where to run it (top-level transport; see callOp)
  * @returns {Promise<ReadFileEditResult>} Edit operation result with file metadata
  */
-export async function readFileEdit(params, signal, allowedPaths) {
+export async function readFileEdit(params, signal, allowedPaths, workspaceId) {
   if (!params.path) {
     throw new TypeError('path is required');
   }
@@ -594,7 +610,7 @@ export async function readFileEdit(params, signal, allowedPaths) {
   if (params.new_str === undefined && params.newContent === undefined && params.new === undefined && params.replacement === undefined && params.replace === undefined) {
     throw new TypeError('new_str (or alias: newContent, new, replacement, replace) is required');
   }
-  return callOp('read-file', 'editFile', params, signal, allowedPaths);
+  return callOp('read-file', 'editFile', params, signal, allowedPaths, workspaceId);
 }
 
 /**
@@ -602,9 +618,10 @@ export async function readFileEdit(params, signal, allowedPaths) {
  * @param {ReadFileEditLinesParams} params
  * @param {AbortSignal} [signal] - Abort signal for cancellation
  * @param {string[]} [allowedPaths] - Standing allowed-paths grant (top-level transport; see writeFileOp)
+ * @param {string} [workspaceId] - Where to run it (top-level transport; see callOp)
  * @returns {Promise<ReadFileEditLinesResult>} Line edit operation result with file metadata
  */
-export async function readFileEditLines(params, signal, allowedPaths) {
+export async function readFileEditLines(params, signal, allowedPaths, workspaceId) {
   if (!params.path) {
     throw new TypeError('path is required');
   }
@@ -625,46 +642,49 @@ export async function readFileEditLines(params, signal, allowedPaths) {
       throw new TypeError('newContent is required');
     }
   }
-  return callOp('read-file', 'editFileLines', params, signal, allowedPaths);
+  return callOp('read-file', 'editFileLines', params, signal, allowedPaths, workspaceId);
 }
 
 /**
  * Get file hash for staleness detection (lightweight, doesn't read full content)
  * @param {{path: string}} params
  * @param {string[]} [allowedPaths] - Standing allowed-paths grant (top-level transport)
+ * @param {string} [workspaceId] - Where to run it (top-level transport; see callOp)
  * @returns {Promise<{path: string, exists: boolean, contentHash?: string, fileModifiedAt?: number}>} File hash and metadata for change detection
  */
-export async function readFileGetHash(params, allowedPaths) {
+export async function readFileGetHash(params, allowedPaths, workspaceId) {
   if (!params.path) {
     throw new TypeError('path is required');
   }
-  return callOp('read-file', 'getFileHash', params, undefined, allowedPaths);
+  return callOp('read-file', 'getFileHash', params, undefined, allowedPaths, workspaceId);
 }
 
 /**
  * Get file/directory metadata without reading content
  * @param {{path: string, userInitiated?: boolean}} params
  * @param {string[]} [allowedPaths] - Standing allowed-paths grant (top-level transport)
+ * @param {string} [workspaceId] - Where to run it (top-level transport; see callOp)
  * @returns {Promise<{path: string, exists: boolean, isFile?: boolean, isDirectory?: boolean, size?: number, modified?: number}>} File/directory metadata
  */
-export async function statOp(params, allowedPaths) {
+export async function statOp(params, allowedPaths, workspaceId) {
   if (!params.path) {
     throw new TypeError('path is required');
   }
-  return callOp('read-file', 'stat', params, undefined, allowedPaths);
+  return callOp('read-file', 'stat', params, undefined, allowedPaths, workspaceId);
 }
 
 /**
  * Create a directory
  * @param {{path: string, recursive?: boolean}} params
  * @param {string[]} [allowedPaths] - Standing allowed-paths grant (top-level transport)
+ * @param {string} [workspaceId] - Where to run it (top-level transport; see callOp)
  * @returns {Promise<{path: string}>} Created directory path
  */
-export async function mkdirOp(params, allowedPaths) {
+export async function mkdirOp(params, allowedPaths, workspaceId) {
   if (!params.path) {
     throw new TypeError('path is required');
   }
-  return callOp('read-file', 'mkdir', params, undefined, allowedPaths);
+  return callOp('read-file', 'mkdir', params, undefined, allowedPaths, workspaceId);
 }
 
 // ============================================================================
@@ -675,9 +695,10 @@ export async function mkdirOp(params, allowedPaths) {
  * Get directory tree structure
  * @param {TreeGetTreeParams} params
  * @param {string[]} [allowedPaths] - Standing allowed-paths grant (top-level transport)
+ * @param {string} [workspaceId] - Where to run it (top-level transport; see callOp)
  * @returns {Promise<TreeGetTreeResult>} Directory tree structure and metadata
  */
-export async function treeGetTree(params, allowedPaths) {
+export async function treeGetTree(params, allowedPaths, workspaceId) {
   // Validate depth if provided
   if (params.depth !== undefined) {
     if (typeof params.depth !== 'number' || params.depth < 1 || params.depth > 5) {
@@ -690,20 +711,21 @@ export async function treeGetTree(params, allowedPaths) {
       throw new TypeError('fileType must be "all", "files", or "dirs"');
     }
   }
-  return callOp('tree', 'getTree', params, undefined, allowedPaths);
+  return callOp('tree', 'getTree', params, undefined, allowedPaths, workspaceId);
 }
 
 /**
  * Expand directory to show contents
  * @param {TreeExpandDirParams} params
  * @param {string[]} [allowedPaths] - Standing allowed-paths grant (top-level transport)
+ * @param {string} [workspaceId] - Where to run it (top-level transport; see callOp)
  * @returns {Promise<TreeExpandDirResult>} Directory contents with file and folder items
  */
-export async function treeExpandDirectory(params, allowedPaths) {
+export async function treeExpandDirectory(params, allowedPaths, workspaceId) {
   if (!params.path) {
     throw new TypeError('path is required');
   }
-  return callOp('tree', 'expandDirectory', params, undefined, allowedPaths);
+  return callOp('tree', 'expandDirectory', params, undefined, allowedPaths, workspaceId);
 }
 
 /**
@@ -729,13 +751,92 @@ export async function treeExpandDirectory(params, allowedPaths) {
  * @param {TreeGlobParams} params
  * @param {AbortSignal} [signal] - Abort signal for cancellation
  * @param {string[]} [allowedPaths] - Standing allowed-paths grant (top-level transport)
+ * @param {string} [workspaceId] - Where to run it (top-level transport; see callOp)
  * @returns {Promise<TreeGlobResult>} Matching files sorted by modification time
  */
-export async function treeGlob(params, signal, allowedPaths) {
+export async function treeGlob(params, signal, allowedPaths, workspaceId) {
   if (!params.pattern) {
     throw new TypeError('pattern is required');
   }
-  return callOp('tree', 'glob', params, signal, allowedPaths);
+  return callOp('tree', 'glob', params, signal, allowedPaths, workspaceId);
+}
+
+/**
+ * Parameters for the copy operation
+ * @typedef {object} TreeCopyParams
+ * @property {string} [from] - The tree to copy, relative to the root; omit it to only delete
+ * @property {string} to - Where to put it
+ * @property {boolean} [respectIgnore] - Leave out what .gitignore leaves out (default true)
+ * @property {string[]} [paths] - Copy only these, relative to `from` (default: all of it)
+ * @property {string[]} [delete] - Remove these from `to` first, relative to `to`
+ */
+
+/**
+ * Result from the copy operation
+ * @typedef {object} TreeCopyResult
+ * @property {number} copied - Files written
+ * @property {number} deleted - Paths removed first
+ * @property {number} skipped - Symlinks the platform refused to recreate
+ * @property {number} bytes - Bytes written
+ */
+
+/**
+ * Copy one tree onto another, and remove what it is told to remove first.
+ *
+ * A call with no `from` is a removal — the inverse of a copy, so that whatever
+ * built a tree can unbuild it without reaching for a shell.
+ *
+ * Both ends are contained within the root, and the ignore rules are the ones
+ * every other surface uses — read from `.gitignore` directly, so they hold on a
+ * machine with no git at all. A destination inside the source is skipped rather
+ * than descended into, which is what makes a copy into `.juggler/…` finite.
+ * @param {TreeCopyParams} params
+ * @param {AbortSignal} [signal] - Abort signal for cancellation
+ * @param {string[]} [allowedPaths] - Standing allowed-paths grant (top-level transport)
+ * @param {string} [workspaceId] - Where to run it (top-level transport; see callOp)
+ * @returns {Promise<TreeCopyResult>} What was copied
+ */
+export async function treeCopy(params, signal, allowedPaths, workspaceId) {
+  if (!params.to) {
+    throw new TypeError('to is required');
+  }
+  return callOp('tree', 'copy', params, signal, allowedPaths, workspaceId);
+}
+
+/**
+ * Parameters for the compare operation
+ * @typedef {object} TreeCompareParams
+ * @property {string} left - One tree
+ * @property {string} right - The other
+ * @property {boolean} [respectIgnore] - Leave out what .gitignore leaves out (default true)
+ */
+
+/**
+ * Result from the compare operation
+ * @typedef {object} TreeCompareResult
+ * @property {string[]} changed - Paths both hold and disagree about
+ * @property {string[]} added - Paths only the right-hand tree holds
+ * @property {string[]} removed - Paths only the left-hand tree holds
+ * @property {boolean} truncated - Whether the lists were cut short
+ */
+
+/**
+ * Say how two trees differ, by path.
+ *
+ * Same size and same modification time counts as unchanged, so comparing a tree
+ * against a copy of it reads almost nothing; everything else is compared byte by
+ * byte.
+ * @param {TreeCompareParams} params
+ * @param {AbortSignal} [signal] - Abort signal for cancellation
+ * @param {string[]} [allowedPaths] - Standing allowed-paths grant (top-level transport)
+ * @param {string} [workspaceId] - Where to run it (top-level transport; see callOp)
+ * @returns {Promise<TreeCompareResult>} What differs
+ */
+export async function treeCompare(params, signal, allowedPaths, workspaceId) {
+  if (!params.left || !params.right) {
+    throw new TypeError('left and right are required');
+  }
+  return callOp('tree', 'compare', params, signal, allowedPaths, workspaceId);
 }
 
 // ============================================================================
@@ -747,9 +848,10 @@ export async function treeGlob(params, signal, allowedPaths) {
  * @param {GrepSearchParams} params
  * @param {AbortSignal} [signal] - Abort signal for cancellation
  * @param {string[]} [allowedPaths] - Standing allowed-paths grant (top-level transport)
+ * @param {string} [workspaceId] - Where to run it (top-level transport; see callOp)
  * @returns {Promise<GrepSearchResult>} Search results with matching files and lines
  */
-export async function grepSearch(params, signal, allowedPaths) {
+export async function grepSearch(params, signal, allowedPaths, workspaceId) {
   if (!params.pattern) {
     throw new TypeError('pattern is required');
   }
@@ -759,20 +861,21 @@ export async function grepSearch(params, signal, allowedPaths) {
       throw new TypeError('maxResults must be a number between 1 and 1000');
     }
   }
-  return callOp('grep', 'grep', params, signal, allowedPaths);
+  return callOp('grep', 'grep', params, signal, allowedPaths, workspaceId);
 }
 
 /**
  * Find symbol definition (function, class, etc.)
  * @param {GrepFindSymbolParams} params
  * @param {AbortSignal} [signal] - Abort signal for cancellation
+ * @param {string} [workspaceId] - Where to run it (top-level transport; see callOp)
  * @returns {Promise<GrepFindSymbolResult>} Symbol definitions found across files
  */
-export async function grepFindSymbol(params, signal) {
+export async function grepFindSymbol(params, signal, workspaceId) {
   if (!params.symbol) {
     throw new TypeError('symbol is required');
   }
-  return callOp('grep', 'findSymbol', params, signal);
+  return callOp('grep', 'findSymbol', params, signal, undefined, workspaceId);
 }
 
 // ============================================================================
@@ -782,9 +885,19 @@ export async function grepFindSymbol(params, signal) {
 /**
  * Execute shell command
  * @param {ShellExecuteParams} params
+ * @param {string} [workspaceId] - Where to run it (top-level transport; see callOp).
+ *   This is the command's working directory as well as its containment boundary:
+ *   the scope's root is what `ops.validateCwd` measures a requested cwd against.
+ * @param {AbortSignal} [signal] - Abort signal. Aborting it cancels the server's
+ *   request context, and the backend kills the command's whole process group
+ *   from there (`ops/shell_exec.go`, `killProcessGroup`) — so a caller that
+ *   gives up on a long build stops the build, rather than stopping only its own
+ *   waiting for it. Without one a command runs to completion whatever the
+ *   caller does, which is indistinguishable from cancelling right up until the
+ *   moment it writes something.
  * @returns {Promise<ShellExecuteResult>} Command execution result with stdout, stderr, and exit code
  */
-export async function shellExecute(params) {
+export async function shellExecute(params, workspaceId, signal) {
   // Must have either command or code
   if (!params.command && !params.code) {
     throw new TypeError('command or code is required');
@@ -816,7 +929,7 @@ export async function shellExecute(params) {
   // budget — always wins, and the backstop only ever catches a request that
   // never came back at all.
   const budget = params.timeout ?? DEFAULT_EXEC_TIMEOUT_MS;
-  return callOp('python', 'execute', params, undefined, undefined, budget + OP_CALL_TIMEOUT_GRACE_MS);
+  return callOp('python', 'execute', params, signal, undefined, workspaceId, budget + OP_CALL_TIMEOUT_GRACE_MS);
 }
 
 // ============================================================================
@@ -846,14 +959,22 @@ export async function shellExecute(params) {
 
 /**
  * Start a command in the background
+ *
+ * Deliberately takes no `AbortSignal`, unlike {@link shellExecute}. A background
+ * shell owns its own cancellation (`shell.cancel`, `ops/shell_registry.go`) and
+ * is meant to outlive the request that started it, so aborting that request
+ * would abandon the reply without stopping the process — leaving a task running
+ * that the caller no longer has the id of. Stopping one is `stop(taskId)`, which
+ * is also what a provider pushes onto its compensation stack after starting one.
  * @param {ShellStartBackgroundParams} params
+ * @param {string} [workspaceId] - Where to run it (top-level transport; see callOp)
  * @returns {Promise<ShellStartBackgroundResult>} Background task info
  */
-export async function shellStartBackground(params) {
+export async function shellStartBackground(params, workspaceId) {
   if (!params.command) {
     throw new TypeError('command is required');
   }
-  return callOp('shell', 'startBackground', params);
+  return callOp('shell', 'startBackground', params, undefined, undefined, workspaceId);
 }
 
 /**

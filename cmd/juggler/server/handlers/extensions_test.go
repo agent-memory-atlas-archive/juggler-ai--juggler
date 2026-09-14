@@ -96,6 +96,28 @@ func TestExtensionsValidCore(t *testing.T) {
 	assertURLs(t, "pinboardItemMeta", ext.Capabilities.PinboardItemMeta, []string{"/extensions/juggler-core/pins/file-pin.meta.js"})
 }
 
+// TestExtensionsWorkspaceProviderOnly pins that a workspace provider is a
+// capability in its own right.
+//
+// An extension that ships only a way to make workspaces — a worktree provider,
+// say — provides nothing else, so if the "provides no capabilities" check does
+// not count it, the whole extension is rejected at load with a message about
+// providing nothing while its manifest plainly provides something.
+func TestExtensionsWorkspaceProviderOnly(t *testing.T) {
+	manifest := `{
+	  "id":"@you/worktrees","name":"Worktrees","version":"1.0.0","engineApi":"^1.0.0",
+	  "provides":{"workspaceProviders":["workspaces/*-workspace-provider.js"]}
+	}`
+	fsys := coreFS(manifest, "1.0.0")
+	fsys["extensions/juggler-core/workspaces/git-worktree-workspace-provider.js"] = &fstest.MapFile{Data: []byte("//")}
+	ext := loadOne(t, fsys)
+	if ext.Error != "" {
+		t.Fatalf("unexpected error: %s", ext.Error)
+	}
+	assertURLs(t, "workspaceProviders", ext.Capabilities.WorkspaceProviders,
+		[]string{"/extensions/juggler-core/workspaces/git-worktree-workspace-provider.js"})
+}
+
 // assertURLs compares two URL slices as sets (glob order is filesystem-dependent).
 func assertURLs(t *testing.T, label string, got, want []string) {
 	t.Helper()

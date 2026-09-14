@@ -14,7 +14,8 @@ import wsService from './websocket.js';
 import { fetchJson } from './http.js';
 
 /** @typedef {{ id: string, contextWindow: number, maxOutputTokens: number, fromAPI: boolean, inputModalities?: string[], streamsLiveUsage?: boolean }} ModelWithContext */
-/** @typedef {{ name: string, displayName: string, description: string, authType: string, authSource?: string, authHint?: string, configKeyName: string, envVarName: string, apiKeyURL: string, keySource: string, available: boolean, modelsWithContext: ModelWithContext[] }} Provider */
+/** `spawnsLocalProcess` marks a provider Juggler runs as a subprocess in the conversation's own directory (the CLI agents), so it can only serve a workspace this machine can spawn into. */
+/** @typedef {{ name: string, displayName: string, description: string, authType: string, authSource?: string, authHint?: string, configKeyName: string, envVarName: string, apiKeyURL: string, keySource: string, available: boolean, spawnsLocalProcess?: boolean, modelsWithContext: ModelWithContext[] }} Provider */
 
 /** @type {Provider[]} */
 let _cache = [];

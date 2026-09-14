@@ -199,24 +199,39 @@ const pathsStore = createScopedStore({
 });
 
 /**
- * The project root is an implicit, always-present, session-wide allowed path
- * derived from `session.projectPath`. It is never persisted and cannot be
- * toggled or removed — every conversation in the project shares it.
+ * Where this conversation works is implicitly allowed: an always-present entry
+ * that is never persisted and cannot be toggled or removed.
+ *
+ * For a conversation bound to the default workspace that is `session.projectPath`,
+ * shared by every conversation in the project — which is what it meant before
+ * workspaces existed. A bound conversation's is its workspace root instead, and
+ * NOT the project as well: a worktree conversation may read the main tree (the
+ * server widens reads for that), but writing to it is a different tree's
+ * business and should be asked about like any other out-of-root write.
+ *
+ * A binding that cannot be honoured yields no implicit root at all, rather than
+ * falling back to the project. Every operation this conversation makes is going
+ * to be refused by the server anyway, and quietly granting it the project root
+ * meanwhile would describe a permission it does not have.
  * @param {any} mt @returns {AllowedPathEntry|null}
  */
-function getProjectRootEntry(mt) {
-  const projectPath = mt.conversation?.session?.projectPath;
-  if (!projectPath) return null;
-  return { id: defaultPathId(projectPath), path: projectPath, scope: SCOPE_SESSION, implicit: true };
+function getWorkspaceRootEntry(mt) {
+  const conversation = mt.conversation;
+  if (!conversation) return null;
+  const root = conversation.workspaceId
+    ? conversation.workspaceRoot
+    : conversation.session?.projectPath;
+  if (!root) return null;
+  return { id: defaultPathId(root), path: root, scope: SCOPE_SESSION, implicit: true };
 }
 
 /** @param {any} mt @returns {AllowedPathEntry[]} */
 export function getAllowedPathEntries(mt) {
-  const root = getProjectRootEntry(mt);
+  const root = getWorkspaceRootEntry(mt);
   const stored = pathsStore.all(mt).filter(p => p.path);
   if (!root) return stored;
-  // The implicit project root is listed first; any stored entry equal to it
-  // (e.g. a legacy per-tab copy) collapses into the implicit one.
+  // The implicit root is listed first; any stored entry equal to it (e.g. a
+  // legacy per-tab copy) collapses into the implicit one.
   return [root, ...stored.filter(p => p.path !== root.path)];
 }
 
@@ -227,12 +242,13 @@ export function getAllowedPaths(mt) {
 
 /**
  * The explicit (user-added) allowed-path grants only — session- and
- * conversation-scoped entries WITHOUT the implicit project-root entry.
+ * conversation-scoped entries WITHOUT the implicit root the conversation works
+ * in.
  *
- * This is what travels to the non-approval-gated read/search/tree backend ops
- * as `allowedPaths`. Those ops build their PathScope rooted at the server's
- * LIVE project path (handlers.NewOpsAPI(s.ProjectPath)), so the project root is
- * already supplied authoritatively server-side and re-sending a client copy is
+ * This is what travels to the backend ops as `allowedPaths`. Those ops build
+ * their PathScope rooted at wherever the request's `workspaceId` resolves to
+ * server-side — the session's LIVE project path when it names none — so the
+ * root is already supplied authoritatively there and re-sending a client copy is
  * redundant — and, after a runtime project switch, unsafe: the engine is
  * persistent across SwitchProject and keeps its boot-time `session.projectPath`,
  * so the implicit root here would be the PREVIOUS project and would re-authorise
@@ -301,7 +317,8 @@ function syntheticRuleId(r) {
 
 /**
  * Strategy-provided default conversation paths. The project root is NOT included
- * here — it is surfaced implicitly and session-wide by `getProjectRootEntry`.
+ * here — the root a conversation works in is surfaced implicitly by
+ * `getWorkspaceRootEntry`.
  * @param {any} mt @returns {string[]}
  */
 export function getDefaultAllowedPaths(mt) {

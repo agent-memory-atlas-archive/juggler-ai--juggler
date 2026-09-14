@@ -186,6 +186,41 @@ export async function runTests(_ctx) {
     m.teardown();
   });
 
+  await test('a read that is being refused says why, rather than looking forever', async () => {
+    // "Checking…" is the right thing to say while an answer is on its way, and
+    // the wrong thing to say once the server has declined to give one — which is
+    // what a conversation bound to a workspace that cannot be reached produces,
+    // on every poll, indefinitely. The server's own words for the four refusals
+    // are better than any this card would invent.
+    const m = await mount({ root: '/tmp/proj', repos: [] });
+    const original = window.fetch;
+    window.fetch = /** @type {any} */ (async (/** @type {any} */ url, /** @type {any} */ opts) => {
+      if (String(url).includes('/git/status')) {
+        return {
+          ok: false,
+          status: 400,
+          statusText: 'Bad Request',
+          text: async () => JSON.stringify({ error: 'workspace ws_gone was closed' })
+        };
+      }
+      return original(url, opts);
+    });
+    try {
+      // What moving to a conversation bound somewhere unreachable does: the tree
+      // changed, so what was known is dropped, and the read of the new one is
+      // refused. Nothing is held back to fall back on.
+      gitStatusCache.reset();
+      await gitStatusCache.refresh();
+    } finally {
+      window.fetch = original;
+    }
+    assert(m.text().includes('was closed'),
+      `expected the refusal, got ${JSON.stringify(m.text())}`);
+    assert(!m.text().includes('Checking…'),
+      `and not a claim that it is still looking, got ${JSON.stringify(m.text())}`);
+    m.teardown();
+  });
+
   await test('a project without git says so', async () => {
     const m = await mount({ root: '/tmp/proj', repos: [] });
     assert(m.text().includes('No git repository'), `got ${JSON.stringify(m.text())}`);

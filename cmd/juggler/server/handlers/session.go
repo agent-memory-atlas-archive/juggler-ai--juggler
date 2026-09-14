@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"juggler/cmd/juggler/core"
+	"juggler/cmd/juggler/ops"
 	"juggler/internal/jlog"
 
 	"github.com/gorilla/mux"
@@ -443,8 +444,13 @@ func (api *SessionAPI) HandleGetSession(w http.ResponseWriter, r *http.Request) 
 		"messageHistory":       sess.MessageHistory,
 		"metadata":             sess.Metadata,
 		"workspaces":           api.manager().ListWorkspaces(),
-		"binnedCount":          len(api.manager().ListBinnedConversations()),
-		"binSizeBytes":         api.manager().BinSizeBytes(),
+		// What each KIND of workspace can do, which the rows themselves do not
+		// say. Sent once beside the table, because kinds are registered at
+		// startup and cannot change under a running client — unlike the table,
+		// which is republished on every edit.
+		"workspaceKinds": ops.WorkspaceKindCapabilities(),
+		"binnedCount":    len(api.manager().ListBinnedConversations()),
+		"binSizeBytes":   api.manager().BinSizeBytes(),
 	}
 
 	WriteJSON(w, r, 0, response)

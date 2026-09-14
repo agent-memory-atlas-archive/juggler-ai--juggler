@@ -4,7 +4,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import ContextItem from 'juggler/context-item';
-import { grep } from 'juggler/ops';
 import { formatPathForStatus } from 'juggler/item-utils';
 import { toolInputPath, isPathAllowed, folderGrantSuggestions, stripInjectedApprovalFlags, gitignoreDisabled } from './path-approval.js';
 import { buildGitignoreSection } from './search-scope-section.js';
@@ -310,7 +309,7 @@ class SearchContextItem extends ContextItem {
     }
 
     // @ts-ignore - params validated above
-    return await grep(searchParams, this.signal, this.getToolAllowedRoots());
+    return await this.ops.grep(searchParams, this.signal);
   }
 
   /**

@@ -583,15 +583,23 @@ class UIEventManager {
     divider.setAttribute('role', 'separator');
     menu.appendChild(divider);
 
-    // "AI assistant files" special action
-    const aiFilesItem = document.createElement('li');
-    aiFilesItem.className = 'menu-item';
-    aiFilesItem.textContent = 'AI assistant files';
-    aiFilesItem.addEventListener('click', async () => {
-      await this._addAIAssistantFiles(threadItemId);
-      close();
-    });
-    menu.appendChild(aiFilesItem);
+    // "AI assistant files" special action, offered once the conversation is
+    // bound. Before that it is both redundant and wrong: the assistant files are
+    // already there, built for whichever tree the setup panel has on offer and
+    // rebuilt whenever that answer changes, while this pass would read the
+    // project — and then stand in the way of the real ones, because the
+    // insert-time dedup matches on path and would reuse what it had added.
+    const visible = this._getSession()?.getVisibleConversation?.();
+    if (visible?.awaitingSetup !== true) {
+      const aiFilesItem = document.createElement('li');
+      aiFilesItem.className = 'menu-item';
+      aiFilesItem.textContent = 'AI assistant files';
+      aiFilesItem.addEventListener('click', async () => {
+        await this._addAIAssistantFiles(threadItemId);
+        close();
+      });
+      menu.appendChild(aiFilesItem);
+    }
 
     // Get all user-addable context items
     const contextItemRegistry = (await import('../registries/context-item-registry.js')).default;

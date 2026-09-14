@@ -23,8 +23,9 @@ An extension bundles any mix of six capability types — each a class you
 | **Strategy** | Controls how the agentic loop runs — turns, tools, stopping | `juggler/strategy-type` | `default`, `read-only`, `yolo` |
 | **Command** | A user-invoked slash command (`/clear`, `/compact`) | `juggler/command-type` | `clear`, `compact`, `thread` |
 | **Info Card** | An ambient tile in the sidebar's spare space | `juggler/info-card-type` | `tips`, `usage`, `git-status` |
-| **Pinboard Item** | A tab on the Pinboard, the workspace behind the right edge | `juggler/pinboard-item-type` | `file` |
+| **Pinboard Item** | A tab on the Pinboard, the workbench behind the right edge | `juggler/pinboard-item-type` | `file` |
 | **File Viewer** | How a file type is shown to you and extracted for the model | `juggler/file-viewer` | `text`, `pdf`, `image` |
+| **Workspace Provider** | Makes and looks after a place a conversation works in | `juggler/workspace-provider` | — |
 
 An extension may **also** contribute a **system-prompt contribution** — not a
 class but a single module whose default export adds terse, durable guidance to
@@ -128,6 +129,7 @@ core extension does (`context-items/edit/`, `context-items/execute/`).
     "infoCards":    ["cards/*-card.js"],
     "pinboardItems": ["pins/*-pin.js"],
     "fileViewers":  ["viewers/*-file-viewer.js"],
+    "workspaceProviders": ["workspaces/*-workspace-provider.js"],
     "systemPrompt": "system-prompt-contribution.js",  // optional; single module path
     "tests":        ["_tests/*-test.js"]              // optional; test-only, never served
   }
@@ -138,7 +140,7 @@ core extension does (`context-items/edit/`, `context-items/execute/`).
 |-------|----------|-------|
 | `id` | Yes | Scoped, e.g. `@you/name`. The unit of enable/disable. |
 | `name`, `version` | Yes | Display name and semver. |
-| `provides` | Yes | At least one capability. `contextItems`/`strategies`/`commands`/`infoCards`/`pinboardItems`/`fileViewers` are root-relative globs; `systemPrompt` is a single module path (see [System-prompt contribution](#system-prompt-contribution)); `tests` is test-only (see [Testing your extension](#testing-your-extension)) and does not count as a capability. None may escape the extension root. |
+| `provides` | Yes | At least one capability. `contextItems`/`strategies`/`commands`/`infoCards`/`pinboardItems`/`fileViewers`/`workspaceProviders` are root-relative globs; `systemPrompt` is a single module path (see [System-prompt contribution](#system-prompt-contribution)); `tests` is test-only (see [Testing your extension](#testing-your-extension)) and does not count as a capability. None may escape the extension root. |
 | `engineApi` | Recommended | Semver range (`^1.0.0`, `1.2.3`, or `*`). Omitting it disables the compat check and earns a validation warning. The host SDK version lives in `web/sdk/version.js`. |
 | `permissions` | As needed | **Declares** the host access this extension's code uses. Surfaced to the user in the catalog and the install prompt — a disclosure, not a sandbox (see [Trust model](#trust-model)). See the vocabulary below. |
 | `settings` | As needed | User-configurable values, rendered in the extensions catalog. See [Settings and secrets](#settings-and-secrets). |
@@ -228,6 +230,7 @@ The full set of specifiers, and what each is for:
 | `juggler/info-card-type` | `InfoCardType` |
 | `juggler/pinboard-item-type` | `PinboardItemType` |
 | `juggler/file-viewer` | `FileViewer` |
+| `juggler/workspace-provider` | `WorkspaceProvider` — the workspace lifecycle base class |
 | `juggler/file-source` | `FileSource`/`FileAccess` types, `toDescriptor`, `fetchFileBytes` — what a file viewer is handed |
 | `juggler/ops` | The privileged host operations (below) |
 | `juggler/ui` | Render/format helpers — `createElement`, `smartTruncate`, markdown, syntax highlighting, `FormattingHelpers` |
@@ -252,7 +255,7 @@ The full set of specifiers, and what each is for:
   | Area | Exports |
   |------|---------|
   | Filesystem | `readFile`, `writeFile`, `editFile`, `editFileLines`, `fileHash`, `stat`, `mkdir`, `uploadAssetBase64` |
-  | Tree & search | `glob`, `getTree`, `expandDirectory`, `grep`, `findSymbol` |
+  | Tree & search | `glob`, `getTree`, `expandDirectory`, `grep`, `findSymbol`, `copyTree`, `compareTrees` |
   | Shell | `shell`, `shellBackground`, `shellOutput`, `shellOutputDelta`, `shellKill`, `shellStreaming`, `cancelShellStreaming` |
   | Web | `httpRequest` (generic server-side HTTP), `webFetch`, `webSearch` |
   | Extension settings | `extensionConfigGet`, `extensionConfigSet`, `extensionConfigResolve` |
@@ -882,6 +885,110 @@ fallback, and the `claims()` veto), `viewers/pdf-file-viewer.js` (lazy `import()
 of a heavy dependency, teardown), `viewers/image-file-viewer.js` (attachments
 instead of text).
 
+### Workspace Provider — somewhere else for a conversation to work
+
+A **workspace** is the environment a conversation's tools run in: somewhere to
+run commands and read and write files, plus the identity it is shown under. Every
+project already has one — itself. A provider makes the others: a git worktree, a
+throwaway copy of the tree, a directory on another machine.
+
+| Method | Job |
+|--------|-----|
+| `renderSetup(container, ctx)` / `getSetupValue()` | Draw the fields in the new-conversation panel, and report what they say |
+| `provision(values, ctx)` | **Headless.** Build the place from those values alone |
+| `status(workspace, ctx)` | How it is doing. **Must be cheap** — asked of every row the panel lists |
+| `finishOptions(workspace)` / `finish(workspace, id, ctx)` | The ways to be done with it, and doing one |
+| `status().kind` | What kind of place it is, in full — `'Git worktree of juggler-pro'` |
+| `reconcile(workspaces, ctx)` | What exists, set against what the session thinks it has. Only looks |
+| `cleanupPartial(workspace, ctx)` | Undo a provision that died with the tab, from `workspace.meta` alone |
+
+Three rules carry most of the weight.
+
+**Say what each option does to the conversation, not just to the files.** Every
+`finishOptions()` entry is shown with its `description` under it, and finishing
+sends the conversation that asked back to the project folder — so a description
+that stops at "removes the tree" leaves the reader guessing at the half they
+actually feel. An option that is *not* a way of being done — committing, pushing,
+reinstalling — sets `keepsWorkspace: true` and returns `done: false`; the host
+shows it apart from the endings, above the heading that warns what the rest of
+them are.
+
+**Setup and provisioning are separate on purpose.** `provision()` runs from
+collected values and never asks a question of its own, which is what makes a
+whole lifecycle testable as a sequence of commands rather than as UI puppetry.
+
+**Record how to undo each irreversible step *before* taking it** — twice, because
+the two undos happen in different worlds. `ctx.checkpoint({…})` persists what you
+are about to do, and `cleanupPartial()` can then unwind a provision whose tab
+died; `ctx.rollback.push(…)` is the live stack the host runs in reverse on
+cancel, on failure, and on Undo. Declaring intent first is what leaves no gap: an
+abort can land between a step and the line after it, and a compensation pushed on
+that line is never pushed at all. The price is that a compensation routinely runs
+for a step that never happened, so every one of them must tolerate absence —
+`rm -rf`, not `rm`.
+
+```javascript
+import WorkspaceProvider from 'juggler/workspace-provider';
+
+class GitWorktreeProvider extends WorkspaceProvider {
+  static MANIFEST = {
+    id: 'git-worktree',
+    name: 'Git Worktree',
+    version: '1.0.0',
+    description: 'Another branch of this repository, checked out in a tree of its own',
+    setupLabel: 'New git worktree'
+  };
+
+  plannedRoot(values) { return values.location; }   // the host registers the row first
+
+  async provision(values, ctx) {
+    const { branch, base, treeRel } = places(values, ctx);
+    ctx.progress('Creating the worktree', values.location);
+    await ctx.checkpoint({ branch, treeRel });
+    ctx.rollback.push(async () => {
+      await ctx.ops.shell({ command: `git worktree remove --force "${treeRel}"` }, ctx.signal);
+      await ctx.ops.shell({ command: `git branch -D "${branch}"` }, ctx.signal);
+    });
+    await ctx.ops.shell(
+      { command: `git worktree add -b "${branch}" "${treeRel}" "${base}"` }, ctx.signal);
+    return {
+      workspace: { root: values.location, label: `${branch} (worktree)`, meta: { branch, treeRel } }
+    };
+  }
+}
+
+export default GitWorktreeProvider;
+```
+
+`ctx.ops` is the only way a provider touches anything, and it arrives already
+rooted: at the **base** workspace during `provision` (the repository — the tree
+does not exist yet), and at the workspace itself everywhere else. That is what
+lets a worktree provider know nothing whatever about ssh and still be able to
+build a worktree on another machine.
+
+`ctx.baseOps` is the other end of the same thread: operations rooted at the
+workspace this one was **made from**. An ending that lands work back where it
+came from writes through those, and so does anything whose own artifacts live
+beside the base rather than beside the project — a path outside an operation's
+root is refused, not sanitised, so the copy's own operations cannot reach the
+tree it is a copy of.
+
+A finish option that needs a line of text from the user — a commit message, a
+reason — says so with `prompt: { hint }`, and it arrives as `ctx.input.message`.
+An option with no `prompt` is confirmed rather than asked.
+
+**A provider may be absent when its workspaces come back.** `kind` and `root` are
+the session's, so an extension that is disabled or broken cannot strand a
+conversation: its operations keep resolving. Only what the provider supplies
+degrades — status becomes "provider unavailable", the finish menu renders empty
+with that reason, and reconcile does not run for its rows, which are left
+strictly alone because nothing present understands them.
+
+Full reference: **`web/sdk/workspace-provider.js`**. Template:
+`workspaces/git-worktree-workspace-provider.js` in `@juggler/core` — every hook,
+a real cancellation story, and the reason no absolute path is ever put in a
+command.
+
 ### System-prompt contribution
 
 Add durable guidance to the prompt. Not a class: a **single module** named by the manifest's `provides.systemPrompt`
@@ -1018,6 +1125,16 @@ ordinary work, so it should freeze (see the seeded agents files above). The
 guiding line is the same one that governs `system`: **content sourced from
 outside the conversation should not be able to re-price the conversation without
 anyone asking it to.**
+
+**An item that freezes anything read out of the tree should implement
+`onWorkspaceChanged()`.** A conversation can be moved to another workspace after
+it has started, and a snapshot taken from the tree it left would otherwise go on
+being served in the tree it arrives in. The default does nothing, which is right
+for an item that reads through `this.ops` and resolves its paths at use time —
+those follow a move on their own. The built-in `file-content` item overrides it
+to take its snapshot again, and to leave it alone when the new tree has no such
+file: a snapshot is only ever replaced by another snapshot, never by the
+"file does not exist" that reading one would return.
 
 There is deliberately **no trailing/tail position**. Standing content is either
 cacheable (`system`/`prefix`) or lives in the model's own tool history (`none`);

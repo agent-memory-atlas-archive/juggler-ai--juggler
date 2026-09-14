@@ -1,0 +1,1130 @@
+//     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+//     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+//   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   Apache-2.0 - see LICENSE
+// SPDX-License-Identifier: Apache-2.0
+
+/**
+ * A workspace that is a git worktree: another branch of the same repository,
+ * checked out somewhere else, so a conversation can work on it without
+ * disturbing the tree you are looking at.
+ *
+ * ## Everything is relative, on purpose
+ *
+ * Commands run through a POSIX shell — `sh` on Unix, WSL or Git-for-Windows on
+ * Windows — while the roots this provider registers are the server's own native
+ * paths. On Windows those two disagree about what an absolute path looks like
+ * (`C:\src\app` against `/c/src/app` or `/mnt/c/src/app`), and which of the two
+ * is right depends on which shell happens to be installed. So no absolute path
+ * is ever put in a command: the repository is named relative to the operations'
+ * root, the tree is named relative to the repository, and the absolute location
+ * is computed here, for registration and for display only.
+ *
+ * ## What it does not do
+ *
+ * It does not pretend a worktree is an isolated machine. The filesystem is
+ * separate; ports, databases, GPUs and everything else on the box are not. The
+ * setup hook is the escape hatch for the per-tree part of that, not a feature.
+ * @module workspaces/git-worktree-workspace-provider
+ */
+
+import WorkspaceProvider from 'juggler/workspace-provider';
+import api from '../../../js/services/api.js';
+import { branchPhrase, countsPhrase, divergencePhrase } from '../lib/git-status.js';
+import { baseName, join, parentOf, relativePath } from '../lib/workspace-paths.js';
+import { choice, field, nextFormSequence, showNote } from '../lib/setup-fields.js';
+
+/**
+ * How long a setup hook may take before it is killed.
+ *
+ * The default of thirty seconds is right for a command someone is waiting on and
+ * wrong for the hook, whose entire reason for existing is the fifteen-minute
+ * dependency install. Cancel remains the way to stop it early — the signal is
+ * threaded through, and the backend kills the process group.
+ * @type {number}
+ */
+const HOOK_TIMEOUT_MS = 20 * 60 * 1000;
+
+/**
+ * The hook a repository may carry to finish off a new tree, run with the new
+ * tree as its working directory.
+ * @type {string}
+ */
+const SETUP_HOOK = '.juggler/worktree-setup';
+
+/**
+ * How long to let a branch name settle before asking git what it makes of it.
+ *
+ * One command per keystroke is one round trip per letter, and git's opinion of
+ * half a name is not worth having.
+ * @type {number}
+ */
+const BRANCH_CHECK_DELAY_MS = 200;
+
+/**
+ * Characters that would not survive being quoted into a command.
+ * @type {RegExp}
+ */
+const UNQUOTABLE = /["'`$\\\n\r]/;
+
+/**
+ * Whether a changed path is Juggler's own rather than the user's work.
+ *
+ * Nothing of ours is written into a workspace root — spill and the CLI's resume
+ * sidecars were moved to the project's `.juggler/` when workspaces were built —
+ * so this is defensive. A tree made by an older build may still hold one, and a
+ * status that read it as the user's work would send them down the
+ * commit-before-discard path over a directory they never made.
+ * @param {string} path - A path git reported, relative to the repository.
+ * @returns {boolean} Whether to leave it out of the counts.
+ */
+function isOurs(path) {
+  return path === '.juggler' || path.startsWith('.juggler/');
+}
+
+/**
+ * A branch name as a directory name: `feat/tunnels` becomes `feat-tunnels`.
+ * @param {string} branch - The branch.
+ * @returns {string} Something that can be a single path segment.
+ */
+function slug(branch) {
+  return branch.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'worktree';
+}
+
+/**
+ * Refuse a value that would not survive being quoted into a command.
+ *
+ * Every path and branch name below is interpolated into a shell string inside
+ * double quotes. These values come from a form rather than from the model, so
+ * this is not the boundary the app's safety rests on — but a provider that
+ * builds shell commands should still decline to be talked out of its own
+ * quoting, and the refusal costs one line.
+ * @param {string} value - What is about to be quoted.
+ * @param {string} what - What to call it if it is refused.
+ * @returns {string} The value, when it is safe.
+ * @throws {Error} When it is not.
+ */
+function shellSafe(value, what) {
+  if (UNQUOTABLE.test(value)) {
+    throw new Error(`Couldn't use that ${what}: ${JSON.stringify(value)} contains a character that cannot appear in a command.`);
+  }
+  return value;
+}
+
+/**
+ * One worktree as `git worktree list --porcelain` describes it.
+ * @typedef {object} ListedWorktree
+ * @property {string} path - Where it is, in the shell's terms rather than the server's
+ * @property {string} branch - The branch it is on, '' when there is none
+ * @property {boolean} detached - Whether it is on no branch at all
+ * @property {boolean} bare - Whether it is the bare repository itself
+ */
+
+/**
+ * Read what git says about a repository's worktrees.
+ *
+ * The porcelain format is blocks of `key value` lines separated by blank lines,
+ * the first block being the main worktree. Its paths are ABSOLUTE and in the
+ * shell's terms — which on Windows is not the server's — so nothing here
+ * compares them with anything the workspace table holds. They are only ever
+ * measured against each other.
+ * @param {string} text - The command's output.
+ * @returns {ListedWorktree[]} What it listed, main worktree first.
+ */
+function parseWorktrees(text) {
+  /** @type {ListedWorktree[]} */
+  const trees = [];
+  for (const block of String(text ?? '').split(/\r?\n\s*\r?\n/)) {
+    /** @type {ListedWorktree} */
+    const tree = { path: '', branch: '', detached: false, bare: false };
+    for (const line of block.split(/\r?\n/)) {
+      const said = line.trim();
+      if (said.startsWith('worktree ')) tree.path = said.slice('worktree '.length).trim();
+      else if (said.startsWith('branch ')) tree.branch = said.slice('branch '.length).trim().replace(/^refs\/heads\//, '');
+      else if (said === 'detached') tree.detached = true;
+      else if (said === 'bare') tree.bare = true;
+    }
+    if (tree.path) trees.push(tree);
+  }
+  return trees;
+}
+
+/**
+ * A value wrapped in single quotes for a POSIX shell, with any single quotes in
+ * it escaped the only way that works.
+ *
+ * Used for a commit message and nothing else. The values everywhere else in this
+ * file are branch names and paths, which go in double quotes and are refused
+ * outright if they hold anything awkward — but a commit message is prose, and
+ * refusing an apostrophe would be absurd.
+ * @param {string} value - Anything at all.
+ * @returns {string} A single shell word.
+ */
+function singleQuoted(value) {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+/**
+ * Where a worktree for this branch goes by default: beside the repository,
+ * named after it and the branch.
+ *
+ * Siblings are the common layout rather than the only one — a bare repository
+ * with its trees as children is just as usual — which is why the setup form
+ * shows this and lets it be changed. Nothing below assumes it.
+ *
+ * What "beside" means is the third argument, and it is the repository itself
+ * for the repository that stands on its own. A nested one — a submodule, or a
+ * repository that is one of several under a project — has an enclosing
+ * repository, and beside it is *inside* that: a tree put there is reported as
+ * untracked by the outer repository and discovered as a third by anything
+ * scanning for them. So a nested repository is placed beside the tree it is
+ * nested in, and keeps its own name.
+ * @param {string} repoRoot - The repository's absolute path.
+ * @param {string} branch - The branch the tree is for.
+ * @param {string} [beside] - What to put it next to; the repository, when nothing else is nested around it.
+ * @returns {string} An absolute path.
+ */
+export function defaultLocation(repoRoot, branch, beside = repoRoot) {
+  return join(parentOf(beside), `${baseName(repoRoot)}-${slug(branch)}`);
+}
+
+/**
+ * A git worktree, as a place a conversation can work.
+ */
+class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
+  static MANIFEST = {
+    id: 'git-worktree',
+    name: 'Git Worktree',
+    version: '1.0.0',
+    description: 'Another branch of this repository, checked out in a tree of its own',
+    setupLabel: 'New git worktree',
+    icon: 'icon-git-branch',
+    recommendations: {
+      bestFor: 'work on a branch that should not disturb the tree you are looking at',
+      avoidFor: 'a quick edit to the branch you are already on',
+      notes: [
+        'The files are separate; ports, databases and anything else on this machine are not.',
+        'A fresh tree is empty of build output, so the first build is a full one.'
+      ]
+    }
+  };
+
+  /**
+   * @param {{session?: any}} [context] - What is known before any hook runs.
+   */
+  constructor(context = {}) {
+    super(context);
+
+    /** @type {any} The rendered form, while there is one. */
+    this._form = null;
+  }
+
+  // ==========================================================================
+  // The setup form
+  // ==========================================================================
+
+  /**
+   * Three fields: where to branch from, what to call the branch, and where the
+   * tree goes — and a fourth, when there is more than one repository to make a
+   * tree of.
+   *
+   * Only the branch is normally touched. The base fills itself in from wherever
+   * the repository is standing, and the location is derived from the branch —
+   * but it is **shown**, and it is editable, because placement is a convention
+   * rather than a constant: trees beside the repository are usual and a bare
+   * repository with its trees as children is just as usual. Deriving it silently
+   * would be deciding that for everyone.
+   *
+   * The location follows the branch only until somebody types in it. From then
+   * on it is theirs; emptying it hands the decision back, since an empty
+   * location provisions to the derived default.
+   * @param {HTMLElement} container - The panel section's body.
+   * @param {any} ctx - Session, operations pinned to the base workspace, and the rest.
+   */
+  renderSetup(container, ctx) {
+    const seq = nextFormSequence();
+    const ids = {
+      repo: `git-worktree-repo-${seq}`,
+      base: `git-worktree-base-${seq}`,
+      branch: `git-worktree-branch-${seq}`,
+      location: `git-worktree-location-${seq}`
+    };
+
+    container.replaceChildren();
+    const base = field(container, ids.base, 'base', 'Base', 'HEAD');
+    const branch = field(container, ids.branch, 'branch', 'Branch', 'feat/tunnels');
+    const location = field(container, ids.location, 'location', 'Location', 'beside the repository');
+
+    // What the section last reported, when there is any: a provision that was
+    // cancelled or failed puts the form back, and re-filling it by hand is a
+    // poor reward for a typo in one field of it.
+    const restored = ctx?.values ?? {};
+    base.input.value = String(restored?.base ?? '');
+    branch.input.value = String(restored?.branch ?? '');
+    location.input.value = String(restored?.location ?? '');
+
+    const repoRel = String(restored?.repo ?? '');
+    const { repoRoot, beside } = this._formPlaces(ctx, repoRel);
+    const form = {
+      ctx,
+      container,
+      ids,
+      repoRel,
+      repoRoot,
+      beside,
+      /** @type {HTMLSelectElement|null} The repository field, once there is a reason for one. */
+      repo: null,
+      base: base.input,
+      branch: branch.input,
+      location: location.input,
+      branchNote: branch.note,
+      baseEdited: base.input.value !== '',
+      // A restored location that is not the one the branch would have derived is
+      // one the user chose, and it must not start following the branch again.
+      locationEdited: location.input.value !== ''
+        && location.input.value !== defaultLocation(repoRoot, branch.input.value.trim(), beside),
+      /** @type {Map<string, boolean>} What git said about a name, once it has said it. */
+      verdicts: new Map(),
+      timer: 0
+    };
+    this._form = form;
+
+    base.input.addEventListener('input', () => { form.baseEdited = true; });
+    location.input.addEventListener('input', () => { form.locationEdited = true; });
+    branch.input.addEventListener('input', () => {
+      this._deriveLocation();
+      this._showBranchVerdict();
+      this._scheduleBranchCheck();
+    });
+
+    // Nobody waits for any of these: the form is usable without them, and a
+    // repository that cannot say what it is standing on is one the provision
+    // will refuse anyway, with its own words.
+    void this._offerRepositories();
+    void this._fillBaseFromHead();
+  }
+
+  /**
+   * Offer a repository to choose, when choosing is a thing the user can usefully
+   * do — and say nothing at all when it is not.
+   *
+   * The base workspace is usually the repository, and then there is one answer
+   * and a field asking for it is a field in the way. Two things make it worth
+   * asking: more than one repository under the base workspace, and a single one
+   * that is not the base workspace itself — a project holding a checkout, or the
+   * submodule of a project whose own root is not a repository. That second case
+   * is not cosmetic: without the field, the provision runs against the base
+   * workspace and refuses.
+   *
+   * The list is the one the git surfaces already discover, so a repository
+   * offered here is a repository the status card is already reporting on, and
+   * neither has to learn what the other means by a repository.
+   * @returns {Promise<void>} When the field is there, or has been decided against.
+   */
+  async _offerRepositories() {
+    const form = this._form;
+    if (!form) return;
+
+    let found;
+    try {
+      found = await api.getGitStatus(form.ctx?.baseWorkspaceId ?? '', { signal: form.ctx?.signal });
+    } catch {
+      return; // A form without the field is the form as it has always been.
+    }
+    const repos = (found?.repos ?? []).map((/** @type {any} */ repo) => String(repo?.path ?? ''));
+    if (this._form !== form || form.repo || repos.length === 0) return;
+    if (repos.length === 1 && repos[0] === '') return;
+
+    // Each is named the way it was found, relative to the base workspace — and
+    // the one that IS the base workspace has no such name, so it borrows the
+    // directory's.
+    const baseRoot = this._formPlaces(form.ctx, '').repoRoot;
+    const { select } = choice(form.container, form.ids.repo, 'repo', 'Repository',
+      repos.map(path => ({ value: path, label: path || baseName(baseRoot) || '.' })));
+    // Above the three fields it scopes, which means moving it: the rest of the
+    // form was built while this was still being asked about.
+    form.container.prepend(/** @type {HTMLElement} */ (select.parentElement));
+    form.repo = select;
+
+    // What was restored, when it is still on offer; otherwise the repository at
+    // the base workspace, and failing that the first one found.
+    select.value = repos.includes(form.repoRel) ? form.repoRel : (repos.includes('') ? '' : repos[0]);
+    select.addEventListener('change', () => { this._repositoryChosen(); });
+    // Only when it lands somewhere other than where the form already was: the
+    // rest of it was built, and a base already asked for, against `form.repoRel`.
+    if (select.value !== form.repoRel) this._repositoryChosen();
+  }
+
+  /**
+   * Follow a repository being chosen: everything below the field is about that
+   * repository, and the fields below were filled in for another one.
+   */
+  _repositoryChosen() {
+    const form = this._form;
+    if (!form?.repo) return;
+
+    form.repoRel = form.repo.value;
+    Object.assign(form, this._formPlaces(form.ctx, form.repoRel));
+    this._deriveLocation();
+    // The base names a commit in the repository that was chosen before, which is
+    // not a commit in this one. A base the user typed is theirs and stays; one
+    // that filled itself in is cleared, so that it can fill itself in again —
+    // and the fill in flight for the old repository lands on a `repoRel` that
+    // has moved, and drops what it was carrying.
+    if (!form.baseEdited) {
+      form.base.value = '';
+      void this._fillBaseFromHead();
+    }
+    this._report();
+  }
+
+  /**
+   * What the form currently says, and whether Create may be pressed.
+   *
+   * A name git has not been asked about yet counts as usable. The check exists
+   * to catch a bad name a moment earlier than `git worktree add` would, not to
+   * be the only thing that catches it — so a fast typist pressing Create is
+   * answered by git rather than made to wait for us to ask it.
+   * @returns {any} Validity, values, and which field to go back to.
+   */
+  getSetupValue() {
+    const form = this._form;
+    if (!form) return { valid: false, values: {}, invalidFieldId: '' };
+
+    const branch = form.branch.value.trim();
+    const values = {
+      // '' when the base workspace is the repository, which is the usual case
+      // and the one the field is left out of altogether.
+      repo: form.repoRel,
+      base: form.base.value.trim(),
+      branch,
+      location: form.location.value.trim()
+    };
+    return branch !== '' && form.verdicts.get(branch) !== false
+      ? { valid: true, values }
+      : { valid: false, values, invalidFieldId: form.ids.branch };
+  }
+
+  /**
+   * Keep the location under the branch, while the location is still ours to set.
+   */
+  _deriveLocation() {
+    const form = this._form;
+    if (!form || form.locationEdited) return;
+    const named = form.branch.value.trim();
+    form.location.value = named && form.repoRoot
+      ? defaultLocation(form.repoRoot, named, form.beside)
+      : '';
+  }
+
+  /**
+   * Fill the base in from where the repository is standing.
+   *
+   * A detached HEAD has no branch name to offer, so it offers the commit
+   * instead — which is what `git worktree add` wants either way.
+   * @returns {Promise<void>} When it has an answer, or has given up on having one.
+   */
+  async _fillBaseFromHead() {
+    const form = this._form;
+    if (!form) return;
+    const asked = form.repoRel;
+    const head = await this._inRepo(form.ctx, asked, 'git rev-parse --abbrev-ref HEAD');
+    if (!head?.success) return;
+    let named = String(head?.stdout ?? '').trim();
+    if (named === 'HEAD') {
+      const detached = await this._inRepo(form.ctx, asked, 'git rev-parse --short HEAD');
+      named = String(detached?.stdout ?? '').trim();
+    }
+    // Asked again on the way back: the user may have typed a base of their own
+    // while this was in flight, may have chosen a different repository — for
+    // which this answer is a commit that does not exist — and may have closed
+    // the form altogether.
+    if (!named || this._form !== form || form.repoRel !== asked) return;
+    if (form.baseEdited || form.base.value) return;
+    form.base.value = named;
+    this._report();
+  }
+
+  /**
+   * Ask git about the branch name, once the typing has stopped.
+   */
+  _scheduleBranchCheck() {
+    const form = this._form;
+    if (!form) return;
+    clearTimeout(form.timer);
+    form.timer = setTimeout(() => { void this._checkBranch(); }, BRANCH_CHECK_DELAY_MS);
+  }
+
+  /**
+   * What git makes of the name in the branch field.
+   *
+   * `git check-ref-format` rather than a regular expression of our own: the
+   * rules for a ref name are git's, they are longer than they look, and a second
+   * set of them here would be a second set to keep up to date.
+   * @returns {Promise<void>} When git has answered, and the form has been told.
+   */
+  async _checkBranch() {
+    const form = this._form;
+    if (!form) return;
+    const named = form.branch.value.trim();
+    if (!named || form.verdicts.has(named)) return;
+
+    const usable = UNQUOTABLE.test(named)
+      ? false
+      : Boolean((await this._inRepo(form.ctx, '', `git check-ref-format "refs/heads/${named}"`))?.success);
+    if (this._form !== form) return;
+    form.verdicts.set(named, usable);
+    this._showBranchVerdict();
+    this._report();
+  }
+
+  /**
+   * Say what is wrong with the branch name, when git has said there is something.
+   */
+  _showBranchVerdict() {
+    const form = this._form;
+    if (!form) return;
+    const named = form.branch.value.trim();
+    showNote(
+      form.branchNote,
+      named && form.verdicts.get(named) === false ? 'git will not take that as a branch name.' : '',
+      { error: true }
+    );
+  }
+
+  /**
+   * Tell the host the form has moved without anyone having typed in it — the
+   * base that filled itself in, the name git has just turned down. The host
+   * listens for `input` and `change` on the container it handed over and reads
+   * the form when it hears either.
+   */
+  _report() {
+    this._form?.container.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  /**
+   * Where the repository is and what a tree of it goes beside, for a form that
+   * is being filled in rather than a provision that is being run.
+   *
+   * Answers with empty paths rather than throwing: a form whose base workspace
+   * cannot be resolved still renders, and the provision is what refuses. It asks
+   * {@link _repoRoot}, which is what the provision asks, so the location the
+   * user is shown and the location the command builds cannot be two places.
+   * @param {any} ctx - The form's context.
+   * @param {string} repoRel - The repository chosen, relative to the base workspace.
+   * @returns {{repoRoot: string, beside: string}} Where it is, and what a tree of it sits next to.
+   */
+  _formPlaces(ctx, repoRel) {
+    try {
+      const { repoRoot, beside } = this._repoRoot({ repo: repoRel }, ctx);
+      return { repoRoot, beside };
+    } catch {
+      return { repoRoot: '', beside: '' };
+    }
+  }
+
+  // ==========================================================================
+  // Lifecycle
+  // ==========================================================================
+
+  /**
+   * Where the tree will be, before anything has been built.
+   *
+   * The host registers the row before running a single command and a row must
+   * have a root, so the destination has to be known up front. The form works it
+   * out (it shows the user the same answer); a caller that supplies values
+   * literally and names no location gets '' and a row registered at the base
+   * root, which is harmless because a provisioning row refuses every operation.
+   * @param {any} values - What the setup form collected.
+   * @returns {string} The intended root, or '' when nothing named one.
+   */
+  plannedRoot(values) {
+    return values?.location ?? '';
+  }
+
+  /**
+   * Which repository this is about, and how to reach it from where commands run.
+   *
+   * The base workspace usually IS the repository, and then `repo` is ''. It
+   * exists for the project that holds several — which is not exotic here, since
+   * the git surfaces already discover repositories under a root rather than
+   * assuming the root is one. The form and the provision ask this the same way
+   * so that the path shown and the path built cannot be two different places.
+   * @param {any} values - What the setup form collected; only `repo` is read.
+   * @param {any} ctx - The hook's context, for the session and the base workspace.
+   * @returns {{repoRel: string, repoRoot: string, beside: string}} The repository, relative and absolute, and what a tree of it goes next to.
+   * @throws {Error} When the base workspace cannot be resolved.
+   */
+  _repoRoot(values, ctx) {
+    const baseRoot = ctx?.session?.workspaceRoot?.(ctx?.baseWorkspaceId ?? '');
+    if (!baseRoot) throw new Error("Couldn't make a worktree: the base workspace has no root.");
+    const repoRel = shellSafe(String(values?.repo ?? '').trim(), 'repository path');
+    const repoRoot = join(baseRoot, repoRel);
+    // A repository under the base workspace rather than at it is nested in
+    // something, and a tree beside it would land inside whatever that is. The
+    // base workspace is as far out as this knows how to go, which is far enough:
+    // it is the tree the conversation was working in when it asked.
+    return { repoRel, repoRoot, beside: repoRel ? baseRoot : repoRoot };
+  }
+
+  /**
+   * Work out where everything is, from values and the base workspace.
+   *
+   * Shared by `provision` and the setup form so that the path the user is shown
+   * and the path the command builds cannot drift apart.
+   * @param {any} values - repo, branch, base, location.
+   * @param {any} ctx - The hook's context, for the session and the base workspace.
+   * @returns {{repoRoot: string, repoRel: string, location: string, treeRel: string, branch: string, base: string}} Everywhere involved.
+   */
+  _places(values, ctx) {
+    const branch = shellSafe(String(values?.branch ?? '').trim(), 'branch name');
+    if (!branch) throw new Error("Couldn't make a worktree: no branch was named.");
+    const base = shellSafe(String(values?.base ?? 'HEAD').trim() || 'HEAD', 'base');
+
+    const { repoRel, repoRoot, beside } = this._repoRoot(values, ctx);
+    const location = shellSafe(String(values?.location ?? '').trim() || defaultLocation(repoRoot, branch, beside), 'location');
+    const treeRel = relativePath(repoRoot, location);
+    if (!treeRel) {
+      throw new Error(`Couldn't make a worktree at ${location}: it is not on the same drive as ${repoRoot}.`);
+    }
+    return { repoRoot, repoRel, location, treeRel, branch, base };
+  }
+
+  /**
+   * Run a command as though standing in the repository.
+   *
+   * `git -C` would do for git alone, but the hook has to run in the new tree and
+   * the probes have to look at paths relative to the repository, so one wrapper
+   * serves all three. The operations' own root is the boundary; where a command
+   * goes from there is the command's business.
+   * @param {any} ctx - The hook's context, for `ops` and `signal`.
+   * @param {string} repoRel - The repository, relative to the operations' root.
+   * @param {string} command - What to run there.
+   * @param {object} [params] - Anything else for the shell operation, e.g. a timeout.
+   * @returns {Promise<any>} The shell result, success or not.
+   */
+  _inRepo(ctx, repoRel, command, params = {}) {
+    const full = repoRel && repoRel !== '.' ? `cd "${repoRel}" && ${command}` : command;
+    return ctx.ops.shell({ command: full, ...params }, ctx.signal);
+  }
+
+  /**
+   * Run a command there and insist it worked, quoting git's own words when it
+   * did not: `fatal: invalid reference: develop` is the whole of what the user
+   * needs, and anything we would write instead is worse.
+   * @param {any} ctx - The hook's context.
+   * @param {string} repoRel - The repository, relative to the operations' root.
+   * @param {string} command - What to run.
+   * @param {object} [params] - Anything else for the shell operation.
+   * @returns {Promise<any>} The result, once it has succeeded.
+   * @throws {Error} With the command's own error text.
+   */
+  async _mustRun(ctx, repoRel, command, params = {}) {
+    const result = await this._inRepo(ctx, repoRel, command, params);
+    if (!result?.success) {
+      const said = String(result?.stderr || result?.stdout || '').trim();
+      throw new Error(said || `\`${command}\` failed with no output (exit ${result?.exitCode}).`);
+    }
+    return result;
+  }
+
+  /**
+   * Make the tree.
+   *
+   * Two irreversible steps, and only the first has an inverse: the hook's
+   * effects live inside the tree that removing the worktree takes away with it,
+   * so a second compensation would have nothing left to undo by the time it ran.
+   * @param {any} values - repo, branch, base, location.
+   * @param {any} ctx - Operations pinned to the base workspace, signal, rollback, checkpoint, progress.
+   * @returns {Promise<any>} The workspace that now exists.
+   */
+  async provision(values, ctx) {
+    const { repoRoot, repoRel, location, treeRel, branch, base } = this._places(values, ctx);
+
+    const isRepo = await this._inRepo(ctx, repoRel, 'git rev-parse --git-dir');
+    if (!isRepo?.success) {
+      throw new Error(`Couldn't make a worktree: ${repoRoot} is not a git repository.`);
+    }
+
+    // Refuse rather than write into something that is already there. This is
+    // what makes the compensation below safe to run unconditionally: it removes
+    // a path that did not exist a moment ago, so it can never take away a tree
+    // somebody else made and we merely failed to add to.
+    const occupied = await this._inRepo(ctx, repoRel, `test -e "${treeRel}"`);
+    if (occupied?.success) {
+      throw new Error(`Couldn't make a worktree at ${location}: there is already something there.`);
+    }
+
+    // A branch that already exists is checked out rather than created, and is
+    // never deleted when undoing — it was the user's before we touched it.
+    const existing = await this._inRepo(ctx, repoRel, `git rev-parse --verify --quiet "refs/heads/${branch}"`);
+    const branchCreatedByUs = !existing?.success;
+
+    const meta = {
+      repoDir: repoRoot,
+      dir: location,
+      treeRel,
+      branch,
+      base,
+      branchCreatedByUs
+    };
+
+    ctx.progress('Creating the worktree', location);
+    // Both records of how to undo this go in before the step, so there is no
+    // instant in which a tree exists that nothing knows how to remove. The cost
+    // is that this compensation routinely runs for a tree that was never made,
+    // which is why every command in it tolerates absence.
+    await ctx.checkpoint(meta);
+    ctx.rollback.push(async () => {
+      await this._inRepo(ctx, repoRel, `git worktree remove --force "${treeRel}"`);
+      await this._inRepo(ctx, repoRel, `rm -rf "${treeRel}"`);
+      await this._inRepo(ctx, repoRel, 'git worktree prune');
+      if (branchCreatedByUs) {
+        await this._inRepo(ctx, repoRel, `git branch -D "${branch}"`);
+      }
+    });
+    const create = branchCreatedByUs ? `-b "${branch}" "${treeRel}" "${base}"` : `"${treeRel}" "${branch}"`;
+    await this._mustRun(ctx, repoRel, `git worktree add -q ${create}`);
+
+    // The hook is the repository's, not the tree's: it usually lives under a
+    // gitignored `.juggler/`, so a fresh checkout would not have a copy of it.
+    const hasHook = await this._inRepo(ctx, repoRel, `test -f "${SETUP_HOOK}"`);
+    if (hasHook?.success) {
+      const backToRepo = relativePath(location, repoRoot) ?? '..';
+      ctx.progress(`Running ${SETUP_HOOK}`, location);
+      await this._mustRun(
+        ctx,
+        repoRel,
+        `cd "${treeRel}" && sh "${backToRepo}/${SETUP_HOOK}"`,
+        { timeout: HOOK_TIMEOUT_MS }
+      );
+    }
+
+    return {
+      workspace: {
+        root: location,
+        label: `${branch} (worktree)`,
+        meta
+      }
+    };
+  }
+
+  /**
+   * How the tree is doing: which branch it is on, whether it holds work, and how
+   * far that branch has drifted from what it tracks.
+   *
+   * Answered by `GET /api/git/status?workspace=`, not by parsing porcelain here.
+   * That endpoint already resolves any ready workspace through the same four
+   * refusals an operation makes, and returns branch, divergence and counts in one
+   * round trip — which is what makes this cheap enough for the setup panel to ask
+   * it of every row it lists, including ones the user has not selected.
+   * @param {any} workspace - The row to report on.
+   * @param {any} ctx - Operations pinned to that workspace, and a signal.
+   * @returns {Promise<any>} What to show for it.
+   */
+  async status(workspace, ctx) {
+    const named = workspace.label || baseName(workspace.root);
+    // What this place IS, said in full and said first: the repository is half of
+    // it, and a worktree named only by its branch leaves a reader who has three
+    // checkouts open no way to tell which one they are about to commit into.
+    const repoDir = String(workspace?.meta?.repoDir ?? '');
+    const kind = repoDir ? `Git worktree of ${baseName(repoDir)}` : 'Git worktree';
+    if (workspace.available === false) {
+      return { label: named, kind, detail: 'The tree is missing.', available: false };
+    }
+
+    const answer = await api.getGitStatus(workspace.id, { signal: ctx.signal });
+    const repo = /** @type {any} */ ((answer?.repos ?? []).find(candidate => !candidate.path));
+    if (!repo) {
+      // A registered root that is no longer a repository: removed by hand, or
+      // never one. Worth saying rather than reporting a clean tree.
+      return { label: named, kind, detail: 'No git repository there.', available: true };
+    }
+
+    let changed = repo.changed;
+    let staged = repo.staged;
+    let total = repo.total;
+    for (const file of repo.files ?? []) {
+      if (!isOurs(file.path)) continue;
+      if (file.worktree && file.worktree !== '.') changed--;
+      if (file.index && file.index !== '.') staged--;
+      total--;
+    }
+    const mine = { ...repo, changed: Math.max(0, changed), staged: Math.max(0, staged) };
+    const dirty = Math.max(0, total) > 0;
+
+    return {
+      // The branch, because that is the name of the place as far as the user is
+      // concerned; the row's own label is the fallback for a tree with no branch
+      // to name it by.
+      label: repo.branch || named,
+      kind,
+      // "branch feat/x · clean" rather than "feat/x · clean": read on its own,
+      // in a chip's menu or a row of a list, a bare name is a word with no job.
+      // A detached head or no branch at all is already a phrase and says itself.
+      detail: [
+        repo.detached || !repo.branch ? branchPhrase(repo) : `branch ${repo.branch}`,
+        countsPhrase(mine) || 'clean',
+        divergencePhrase(repo)
+      ].filter(Boolean).join(' · '),
+      badge: dirty ? 'dirty' : '',
+      dirty,
+      available: true
+    };
+  }
+
+  /**
+   * The project, when the tree is of a repository the project merely holds.
+   *
+   * A worktree of the project itself needs nothing here: it is a checkout of the
+   * same repository and carries its own copy of every instruction file, on the
+   * branch being worked on, so seeding the main checkout's alongside would put
+   * two answers to the same question in front of the model. A worktree of a
+   * subrepo is the opposite case — the project's own instructions are house
+   * rules that a tree of one of its repositories never had a copy of, and
+   * nothing below that tree will ever mention them.
+   * @param {any} workspace - The row about to be seeded for.
+   * @param {any} ctx - The hook's context, for the session.
+   * @returns {string[]} The project, or nothing.
+   */
+  instructionRoots(workspace, ctx) {
+    const project = String(ctx?.session?.projectPath ?? '');
+    const repoDir = String(workspace?.meta?.repoDir ?? '');
+    if (!project || !repoDir) return [];
+    // `.` is the repository the project IS; null is another drive, where nothing
+    // here stands above anything there.
+    const fromProject = relativePath(project, repoDir);
+    if (fromProject === null || fromProject === '.') return [];
+    return [project];
+  }
+
+  /**
+   * Committing, and the two ways to be done with a worktree.
+   *
+   * Committing is not one of the endings and says so: it is the thing you do
+   * *while* working here, several times, and the workspace is still in use
+   * afterwards. It sat among the endings once, where it both closed the
+   * workspace and did not, depending on whether a message had been typed into
+   * the box — one field, two unrelated outcomes, neither of them stated.
+   *
+   * Merging, rebasing and opening a pull request are deliberately absent. The
+   * common ending is a bare commit or nothing at all — one commit is often
+   * several tasks — and an ending that lands work is a flow with conflicts in
+   * it, which is its own feature rather than a fourth line in a menu.
+   * @param {any} workspace - The row being finished with.
+   * @returns {any[]} What can be done, the endings last and safest first.
+   */
+  finishOptions(workspace) {
+    const meta = workspace?.meta ?? {};
+    const branch = String(meta?.branch ?? '');
+    return [
+      {
+        id: 'commit',
+        label: 'Commit the changes',
+        keepsWorkspace: true,
+        description: `Commits everything here onto ${branch || 'its branch'}. You carry on working in this workspace either way.`,
+        prompt: { hint: 'Leave it empty and this conversation writes the message on its next turn.' }
+      },
+      {
+        id: 'unbind',
+        label: 'Stop using this workspace',
+        description: `Nothing is deleted: the tree and ${branch || 'its branch'} stay exactly where they are, and you can pick them up again whenever you like. This conversation goes back to the project folder.`
+      },
+      {
+        id: 'discard',
+        label: 'Delete this workspace',
+        danger: true,
+        description: meta.branchCreatedByUs && branch
+          ? `Deletes the tree and the branch ${branch}, with everything in them. This conversation goes back to the project folder.`
+          : 'Deletes the tree and everything in it; the branch was not ours to make, so it stays. This conversation goes back to the project folder.'
+      }
+    ];
+  }
+
+  /**
+   * Carry one of them out.
+   *
+   * These operations are pinned to the workspace itself, which is the tree —
+   * right for a commit, and the reason discarding is written the way it is.
+   * @param {any} workspace - The row being finished with.
+   * @param {string} actionId - One of {@link finishOptions}.
+   * @param {any} ctx - Operations pinned to the tree, the conversation, and whatever the host collected.
+   * @returns {Promise<any>} Whether the workspace is finished with, and what to say.
+   */
+  async finish(workspace, actionId, ctx) {
+    const meta = workspace?.meta ?? {};
+    const branch = String(meta?.branch ?? '');
+
+    if (actionId === 'unbind') {
+      return {
+        done: true,
+        message: `Stopped using ${meta.dir ?? 'the tree'}. It and ${branch || 'its branch'} are still there.`
+          + ' This conversation is back in the project folder.'
+      };
+    }
+    if (actionId === 'commit') return this._commit(workspace, ctx);
+    if (actionId === 'discard') return this._discard(workspace, ctx);
+    return { done: false, message: `${this.getManifest().name} has no action "${actionId}".` };
+  }
+
+  /**
+   * Commit everything in the tree.
+   *
+   * With no message, the conversation is asked to write one — it is the only
+   * thing here that has read the work — and the commit happens in its next turn.
+   * Either way the workspace is left in use: being done with the place is a
+   * second, deliberate act, chosen from the endings below this row.
+   * @param {any} workspace - The row being finished with.
+   * @param {any} ctx - Operations pinned to the tree, and the conversation.
+   * @returns {Promise<any>} Whether it is committed.
+   */
+  async _commit(workspace, ctx) {
+    const meta = workspace?.meta ?? {};
+    const branch = String(meta?.branch ?? '');
+    const message = String(ctx?.input?.message ?? '').trim();
+
+    if (!message) {
+      const conversation = ctx?.conversation;
+      if (!conversation?.sendMessage) {
+        return { done: false, message: 'There is no message to commit under, and nobody here to write one.' };
+      }
+      await conversation.sendMessage(
+        `Commit the work in this worktree${branch ? ` (branch ${branch})` : ''}, with a message describing it.`,
+        null,
+        conversation.rootMessageThread,
+        { consumeComposer: false }
+      );
+      return { done: false, message: 'Asked this conversation to write the commit.' };
+    }
+
+    // No identity of ours is passed: this is the user's commit, in the user's
+    // repository, and git's own complaint about an unconfigured one is a better
+    // thing to read than a commit authored by a tool they did not choose.
+    const staged = await ctx.ops.shell({ command: 'git add -A' }, ctx.signal);
+    if (!staged?.success) {
+      return { done: false, message: String(staged?.stderr || '').trim() || 'Nothing could be staged.' };
+    }
+    const committed = await ctx.ops.shell(
+      { command: `git commit -q -m ${singleQuoted(message)}` }, ctx.signal);
+    if (!committed?.success) {
+      return {
+        done: false,
+        message: String(committed?.stderr || committed?.stdout || '').trim() || 'The commit did not go through.'
+      };
+    }
+    // Never `done`: a commit is not a way of being finished with the place it
+    // was made in. The workspace stays in use, which is what the menu promised
+    // when it put this row outside the endings.
+    return { done: false, message: `Committed on ${branch || 'its branch'}.` };
+  }
+
+  /**
+   * Remove the tree, and the branch when it was ours to make.
+   *
+   * One command, which is the whole trick: these operations are pinned to the
+   * tree, so the first thing removed is the ground every later command would
+   * have to stand on — a second call would fail before it ran, in the shell's
+   * own chdir. So this steps out of the tree first and does everything from the
+   * repository, in one shell, ending with a question whose answer is the only
+   * one the host needs: is there anything left.
+   *
+   * The steps are separated by `;` rather than `&&` deliberately: each tolerates
+   * the one before it having failed, because a tree may be half-there in more
+   * ways than there are commands here.
+   * @param {any} workspace - The row being finished with.
+   * @param {any} ctx - Operations pinned to the tree.
+   * @returns {Promise<any>} Whether anything is left.
+   */
+  async _discard(workspace, ctx) {
+    const meta = workspace?.meta ?? {};
+    const treeRel = String(meta?.treeRel ?? '');
+    const branch = String(meta?.branch ?? '');
+    if (!meta.repoDir || !treeRel) {
+      return {
+        done: false,
+        message: 'There is no record of where this tree came from, so it is not ours to remove.'
+      };
+    }
+
+    const back = relativePath(String(meta?.dir ?? ''), String(meta?.repoDir)) ?? '..';
+    const steps = [
+      `cd "${back}" || exit 1`,
+      `git worktree remove --force "${treeRel}"`,
+      `rm -rf "${treeRel}"`,
+      'git worktree prune',
+      meta.branchCreatedByUs && branch ? `git branch -D "${branch}"` : '',
+      `test -e "${treeRel}" && echo STILL-THERE || echo REMOVED`
+    ].filter(Boolean).join('; ');
+
+    const result = await ctx.ops.shell({ command: steps }, ctx.signal);
+    if (/REMOVED/.test(String(result?.stdout ?? ''))) {
+      return {
+        done: true,
+        message: `Removed ${meta.dir}${meta.branchCreatedByUs && branch ? ` and ${branch}` : ''}.`
+      };
+    }
+    return {
+      done: false,
+      message: String(result?.stderr || '').trim() || `${meta.dir} is still there.`
+    };
+  }
+
+  /**
+   * Square the rows against what git actually has, and report both kinds of
+   * orphan without touching anything.
+   *
+   * It looks in the project and in every repository the rows came from, and
+   * matches by each tree's path **relative to its own main worktree** — which is
+   * the one comparison that holds on Windows, where git reports `/c/src/app` for
+   * a root the server calls `C:\src\app`. Everything compared here comes out of
+   * the same listing, so the two path worlds never meet.
+   *
+   * Three findings, and one of them is the reason this exists at all. A tree
+   * that has moved to another branch is the only failure nothing downstream
+   * catches: the directory is there, every operation succeeds, and the work goes
+   * onto a branch the conversation never chose. That one asks to be tombstoned.
+   * A tree that is simply gone does not — the server's own `stat` marks it
+   * unavailable and the conversation is told, and a tree can come back.
+   * @param {any[]} workspaces - This provider's rows.
+   * @param {any} ctx - Operations rooted at the project, and a signal.
+   * @returns {Promise<any>} What matches, what does not, and what has no row.
+   */
+  async reconcile(workspaces, ctx) {
+    const projectPath = ctx?.session?.projectPath ?? '';
+    if (!projectPath) return { orphanedWorkspaces: [], orphanedArtifacts: [], confirmed: [] };
+
+    // The project is always looked in — it is where a pooled tree's repository
+    // usually is, and the rows that would name it may not exist yet.
+    /** @type {Map<string, string>} repository relative to the project → its absolute path */
+    const repos = new Map([['', projectPath]]);
+    for (const workspace of workspaces) {
+      const repoDir = workspace?.meta?.repoDir;
+      if (typeof repoDir !== 'string' || !repoDir) continue;
+      const rel = relativePath(projectPath, repoDir);
+      if (rel !== null) repos.set(rel === '.' ? '' : rel, repoDir);
+    }
+
+    /** @type {string[]} */
+    const confirmed = [];
+    /** @type {any[]} */
+    const orphanedWorkspaces = [];
+    /** @type {any[]} */
+    const orphanedArtifacts = [];
+
+    for (const [repoRel, repoDir] of repos) {
+      const listed = await this._inRepo(ctx, repoRel, 'git worktree list --porcelain');
+      if (!listed?.success) continue;
+      const trees = parseWorktrees(listed.stdout);
+      const main = trees[0];
+      if (!main) continue;
+
+      /** @type {Map<string, ListedWorktree>} */
+      const found = new Map();
+      for (const tree of trees.slice(1)) {
+        const rel = relativePath(main.path, tree.path);
+        if (rel) found.set(rel, tree);
+      }
+
+      for (const workspace of workspaces) {
+        if (workspace?.meta?.repoDir !== repoDir) continue;
+        // A row that has been finished with contributed its repository to the
+        // scan above and nothing else. It claims no tree, so the tree it used to
+        // be about stays in `found` and is offered again — and it is reported as
+        // no kind of orphan, because a parked row is not a fault.
+        if (workspace.state === 'closed') continue;
+        const treeRel = String(workspace?.meta?.treeRel ?? '');
+        const tree = found.get(treeRel);
+        if (!tree) {
+          orphanedWorkspaces.push({
+            ...workspace,
+            reason: `${workspace.meta?.dir ?? workspace.root} is not a worktree of ${repoDir} any more.`
+          });
+          continue;
+        }
+        found.delete(treeRel);
+        const expected = String(workspace?.meta?.branch ?? '');
+        if (expected && tree.branch !== expected) {
+          orphanedWorkspaces.push({
+            ...workspace,
+            tombstone: true,
+            reason: `${workspace.meta?.dir ?? workspace.root} is on ${tree.branch || 'no branch'} now, not ${expected}.`
+          });
+          continue;
+        }
+        confirmed.push(workspace.id);
+      }
+
+      // Whatever git still has and the table does not: somebody else's trees,
+      // and the pool a heavy user lives in. Offered, never taken.
+      for (const [rel, tree] of found) {
+        if (tree.bare) continue;
+        const dir = join(repoDir, rel);
+        orphanedArtifacts.push({
+          id: `${repoDir}\u0000${rel}`,
+          label: tree.branch || baseName(dir),
+          detail: `${dir} — a worktree of ${baseName(repoDir)} with no workspace`,
+          workspace: {
+            root: dir,
+            label: `${tree.branch || baseName(dir)} (worktree)`,
+            meta: {
+              repoDir,
+              dir,
+              treeRel: rel,
+              branch: tree.branch,
+              base: '',
+              // Adopting a tree is not making one. Its branch was somebody
+              // else's before we ever saw it, so finishing with it can never be
+              // a reason to delete that branch.
+              branchCreatedByUs: false
+            }
+          }
+        });
+      }
+    }
+
+    return { orphanedWorkspaces, orphanedArtifacts, confirmed };
+  }
+
+  /**
+   * Undo a provision that died with the tab it was running in.
+   *
+   * Written out separately from the compensation above rather than sharing an
+   * implementation with it: the two run in different places — that one from the
+   * base workspace with paths it computed, this one from the project with
+   * nothing but what reached `meta` — and a provider whose two undo paths drift
+   * apart is exactly the fault the tests exist to catch. A fixture that could
+   * not drift could not catch it.
+   *
+   * Everything here tolerates absence, because a checkpoint is written before
+   * the step it describes: `meta` routinely names a tree that was never made.
+   * @param {any} workspace - The half-built row.
+   * @param {any} ctx - Operations rooted at the project, and a signal.
+   * @returns {Promise<any>} Whether anything is left.
+   */
+  async cleanupPartial(workspace, ctx) {
+    const meta = workspace?.meta ?? {};
+    if (!meta.repoDir || !meta.treeRel) {
+      return { removed: false, message: 'Nothing was checkpointed, so there is nothing to undo.' };
+    }
+
+    const projectPath = ctx.session?.projectPath ?? '';
+    const repoRel = (projectPath && relativePath(projectPath, meta.repoDir)) || meta.repoDir;
+    const treeRel = String(meta?.treeRel);
+
+    await this._inRepo(ctx, repoRel, `git worktree remove --force "${treeRel}"`);
+    await this._inRepo(ctx, repoRel, `rm -rf "${treeRel}"`);
+    await this._inRepo(ctx, repoRel, 'git worktree prune');
+    if (meta.branchCreatedByUs && meta.branch) {
+      await this._inRepo(ctx, repoRel, `git branch -D "${String(meta?.branch)}"`);
+    }
+
+    // Asked rather than assumed: `remove` fails for a tree that was never made
+    // and for a tree that will not go, and those are opposite answers to the one
+    // question the host has — is there anything left to worry about.
+    const left = await this._inRepo(ctx, repoRel, `test -e "${treeRel}"`);
+    return left?.success
+      ? { removed: false, message: `${meta.dir} is still there and could not be removed.` }
+      : { removed: true, message: `Removed ${meta.dir}.` };
+  }
+}
+
+export default GitWorktreeWorkspaceProvider;

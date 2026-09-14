@@ -576,25 +576,26 @@ func (s *Server) setupRoutes() {
 	// Project-file module loader for the query_code sandbox worker. The worker
 	// (opaque origin, no import map) resolves user code's
 	// `import('<projectRoot>/...')` against its own http origin, so it arrives
-	// here as a request for the absolute project path. We serve the real file
-	// straight off disk when it exists inside the project root and is an
+	// here as a request for that absolute path. We serve the real file straight
+	// off disk when it exists inside the project root (or a ready workspace root,
+	// which is where a bound conversation's `projectRoot` points) and is an
 	// importable module — this is what lets query_code load and test ANY
-	// JavaScript module in the user's own project, not just the app's own web/
+	// JavaScript module in the user's own tree, not just the app's own web/
 	// assets. Registered before the web-root fallback below so a real on-disk
 	// file wins; when no such file exists the matcher declines and the request
 	// falls through. Only .js/.mjs/.cjs/.json are served (never arbitrary
 	// source/secrets) even though the response carries ACAO=* for the opaque
 	// worker, and path traversal outside the root is rejected.
 	s.router.MatcherFunc(func(r *http.Request, _ *mux.RouteMatch) bool {
-		_, ok := s.sandboxProjectFile(r.URL.Path)
+		_, ok := s.sandboxImportFile(r.URL.Path)
 		return ok
 	}).HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		diskPath, ok := s.sandboxProjectFile(r.URL.Path)
+		diskPath, ok := s.sandboxImportFile(r.URL.Path)
 		if !ok {
 			http.NotFound(w, r)
 			return
 		}
-		serveSandboxProjectFile(w, r, diskPath)
+		serveSandboxImportFile(w, r, diskPath)
 	})
 
 	// Web-root fallback for the sandbox worker. When the absolute import path is

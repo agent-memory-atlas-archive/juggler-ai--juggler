@@ -9,6 +9,7 @@ import { isEngine, isViewer } from './lib/client-role.js';
 import { coerceToolInputToSchema } from './coerce-schema-types.js';
 import { smartTruncate } from './lib/smart-truncate.js';
 import { validateManifest } from './lib/manifest.js';
+import { createBoundOps } from './ops.js';
 
 /**
  * Fallback character budget for LLM-facing tool output (~7500 tokens). The live
@@ -328,6 +329,12 @@ class ContextItem {
      */
     this.data = {};
 
+    /**
+     * Lazily built by the {@link ContextItem#ops} getter.
+     * @type {import("./ops.js").BoundOps|null}
+     */
+    this._ops = null;
+
     // Validate the manifest only when the subclass defines one: the abstract
     // bases other items extend (edit-base.js, subagent-item.js) declare none of
     // their own, and it is their concrete subclasses the registry checks.
@@ -379,6 +386,79 @@ class ContextItem {
   getToolAllowedRoots() {
     return this.messageThread?.getExplicitAllowedPaths?.() || [];
   }
+
+  /**
+   * The workspace this item's operations run in — its conversation's binding,
+   * or, for one not yet bound, the tree it is about to work in.
+   *
+   * `''` is the project, which is what every tool meant before workspaces
+   * existed. The id travels to the backend rather than the root it resolves to:
+   * the root is the server's to decide, and an id is the only form that cannot
+   * be pointed somewhere the user never authorised.
+   * @returns {string} The workspace id, or '' for the project.
+   */
+  getWorkspaceId() {
+    return this.conversation?.workingWorkspaceId ?? this.conversation?.workspaceId ?? '';
+  }
+
+  /**
+   * Where this item's operations land on disk — its conversation's workspace
+   * root, and the project when it is bound to nothing.
+   *
+   * Ops do not need this: they travel by id and the server resolves it, which is
+   * the form that cannot be pointed somewhere the user never authorised. It is
+   * for the rare caller that must hand a root to something else — query_code's
+   * `projectRoot` binding, the one root the model is given rather than confined
+   * by.
+   *
+   * `null` means the binding cannot be honoured: still being created, closed,
+   * its root gone, or an id the session has never heard of. Such a caller must
+   * refuse on `null` rather than substitute the project, for the reason the
+   * whole indirection exists — work that quietly went to the project would look
+   * exactly like work that succeeded.
+   * @returns {string|null} The root, or null if the binding is unusable.
+   */
+  getWorkspaceRoot() {
+    return this.conversation?.workingWorkspaceRoot ?? this.conversation?.workspaceRoot ?? null;
+  }
+
+  /**
+   * The host operations, already scoped to where this item works: its
+   * conversation's workspace, and the roots its user has granted.
+   *
+   * Use this rather than importing the operations from `juggler/ops` directly.
+   * Both halves of an op's scope belong to the item, not to the call, and a call
+   * site that omits them does not fail — it runs in the project and looks like
+   * it worked. Inside this repo's own `context-items/` an ESLint rule makes the
+   * direct import an error for exactly that reason.
+   * @returns {import("./ops.js").BoundOps} Operations scoped to this item.
+   */
+  get ops() {
+    // Built once per item, but the scope inside it is read per call: an item
+    // outlives a permission being granted, and can outlive a rebind.
+    if (!this._ops) {
+      this._ops = createBoundOps(() => ({
+        allowedPaths: this.getToolAllowedRoots(),
+        workspaceId: this.getWorkspaceId()
+      }));
+    }
+    return this._ops;
+  }
+
+  /**
+   * Called when this item's conversation moves to another workspace.
+   *
+   * Almost nothing needs it, which is why the default does nothing: an item that
+   * reads through {@link ContextItem#ops} or resolves its paths at use time
+   * follows the binding on its own. It is for the item that has materialised
+   * something root-derived into its own `data` — a frozen snapshot of a file, a
+   * cached listing — which would otherwise go on describing a tree the
+   * conversation has left.
+   *
+   * Best-effort: a move must not fail because one item could not catch up.
+   * @returns {Promise<void>} When it has caught up.
+   */
+  async onWorkspaceChanged() {}
 
   // ============================================================================
   // TITLES AND SUMMARIES

@@ -65,6 +65,38 @@ func (s *Server) ProjectPath() string {
 	return st.projectPath
 }
 
+// WorkspaceLookup resolves workspace ids against the live session, rather than
+// against a table captured when something was built: a project switch retargets
+// it, and a workspace registered a moment ago resolves without rebuilding
+// anything. Everything that acts on a conversation's binding — the ops API, the
+// directory a turn's provider spawns in — asks through this one func.
+func (s *Server) WorkspaceLookup() core.WorkspaceLookup {
+	return func(id string) (core.Workspace, bool) {
+		mgr := s.SessionManager()
+		if mgr == nil {
+			return core.Workspace{}, false
+		}
+		return mgr.GetWorkspace(id)
+	}
+}
+
+// workspaceRoot is the directory a conversation's turn runs in: the project
+// when it is bound to nothing, and the workspace's own root otherwise. An
+// unusable workspace (still provisioning, closed, root gone, never registered)
+// returns the error that says which — failing the turn rather than quietly
+// running it in the project, where it would edit the wrong tree and look
+// exactly like working.
+func (s *Server) workspaceRoot(workspaceID string) (string, error) {
+	if workspaceID == core.DefaultWorkspaceID {
+		return "", nil
+	}
+	ws, err := s.WorkspaceLookup().Usable(workspaceID)
+	if err != nil {
+		return "", err
+	}
+	return ws.Root, nil
+}
+
 // FileWatcher returns the current file watcher, or nil in no-project mode.
 func (s *Server) FileWatcher() *core.FileWatcher {
 	st := s.projectState.Load()

@@ -102,7 +102,11 @@ func reviewScanLimits() repoScanLimits {
 // from it is a change that never gets reviewed — so nothing is quietly left out
 // here, and what cannot be included says so.
 func (a *GitStatusAPI) HandleGitReview(w http.ResponseWriter, r *http.Request) {
-	root := a.pathProvider()
+	root, err := a.gitRoot(r)
+	if err != nil {
+		WriteError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
 	if root == "" {
 		// An empty manifest would be a complete review of nothing, which is a
 		// stronger claim than "there is no project open".

@@ -25,6 +25,7 @@ import { fetchJson } from './http.js';
  * @property {{provider: string, model: string, contextWindow: number}} providerInfo - Provider information
  * @property {Array<string|import('../model/session.js').HistoryMessage>} [messageHistory] - Session-level message history for input navigation (legacy entries may be bare strings)
  * @property {Record<string, any>} [metadata] - General-purpose key-value store for frontend flags
+ * @property {import('../model/session.js').Workspace[]} [workspaces] - The registered workspaces; absent until one is made
  */
 
 /**
@@ -159,6 +160,18 @@ function newWindowParams() {
     mode: getMode(),
     zoom: String(getCurrentZoom()),
   });
+}
+
+/**
+ * The `?workspace=` a git read carries, or nothing at all.
+ *
+ * Absent means the project server-side, exactly as it does for an operation, so
+ * an unbound conversation's reads are the same requests they always were.
+ * @param {string} [workspaceId] - Workspace to read, '' or omitted for the project.
+ * @returns {string} The query string to append, or ''.
+ */
+function gitWorkspaceQuery(workspaceId) {
+  return workspaceId ? `?workspace=${encodeURIComponent(workspaceId)}` : '';
 }
 
 class APIService {
@@ -518,13 +531,16 @@ class APIService {
   }
 
   /**
-   * Summarise the working tree of every git repo under the project (root repo
+   * Summarise the working tree of every git repo under the tree named (root repo
    * plus nested subrepos/submodules). Best-effort: repos whose status can't be
    * read are omitted, and an empty repo list means no git repository was found.
-   * @returns {Promise<{root: string, repos: GitRepoStatus[]}>} Project root and per-repo status.
+   * @param {string} [workspaceId] - Workspace to read, '' or omitted for the project.
+   * @param {{signal?: AbortSignal}} [options] - Cancellation, for a speculative read nobody is waiting on any more.
+   * @returns {Promise<{root: string, repos: GitRepoStatus[]}>} The root read and its per-repo status.
    */
-  async getGitStatus() {
-    return await this.request('/git/status');
+  async getGitStatus(workspaceId = '', options = {}) {
+    return await this.request(`/git/status${gitWorkspaceQuery(workspaceId)}`,
+      { signal: options.signal });
   }
 
   /**
@@ -533,11 +549,12 @@ class APIService {
    * question asked in earnest — nothing is skipped for being expensive, and
    * whatever it still could not reach comes back as `complete: false` and a
    * warning saying so rather than as a shorter list.
-   * @param {{signal?: AbortSignal}} [options] - Cancellation.
+   * @param {{signal?: AbortSignal, workspaceId?: string}} [options] - Cancellation, and which tree to read.
    * @returns {Promise<GitReview>} The manifest.
    */
   async getGitReview(options = {}) {
-    return await this.request('/git/review', { signal: options.signal });
+    return await this.request(`/git/review${gitWorkspaceQuery(options.workspaceId)}`,
+      { signal: options.signal });
   }
 
   /**
@@ -546,11 +563,12 @@ class APIService {
    * come from.
    * @param {string} repo - Repository relative to the project root, "" for the root repo.
    * @param {string} path - File relative to that repository.
-   * @param {{signal?: AbortSignal}} [options] - Cancellation.
+   * @param {{signal?: AbortSignal, workspaceId?: string}} [options] - Cancellation, and which tree to read.
    * @returns {Promise<GitFileDiff>} The file's patch and what happened to it.
    */
   async getGitDiff(repo, path, options = {}) {
     const query = new URLSearchParams({ repo, path });
+    if (options.workspaceId) query.set('workspace', options.workspaceId);
     return await this.request(`/git/diff?${query.toString()}`, { signal: options.signal });
   }
 

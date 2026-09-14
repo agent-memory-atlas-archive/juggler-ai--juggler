@@ -1,0 +1,504 @@
+//     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+//     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+//   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+
+/**
+ * The host side of the workspace-provider contract: running a provider's
+ * `provision()`, unwinding it when it does not finish, and answering for a
+ * provider that is not there at all.
+ *
+ * This is the host half of the workspace-provider contract. A provider says what
+ * to build and how to undo each step of it; everything else — registering the
+ * row before the first command, holding the compensation stack, running it in
+ * reverse, flipping the row to ready — belongs here, so that every provider
+ * inherits one cancellation story instead of writing its own.
+ *
+ * It is deliberately headless. Cancel, failure part-way through, and Undo are
+ * one mechanism and they are all testable without a single click; the setup
+ * panel is a view onto this module rather than a second copy of it.
+ * @module services/workspace-provisioning
+ */
+
+import { createBoundOps } from '../../sdk/ops.js';
+import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
+import workspaceProviderRegistry from '../registries/workspace-provider-registry.js';
+import { registerWorkspace, patchWorkspace, unregisterWorkspace } from './workspaces.js';
+import { rebindConversation } from './workspace-rebinding.js';
+
+/**
+ * @typedef {object} ProvisionRequest
+ * @property {any} session - The session the workspace belongs to
+ * @property {any} [conversation] - The conversation it is being made for
+ * @property {string} providerId - Which registered provider builds it
+ * @property {object} [values] - What its setup section collected
+ * @property {string} [baseWorkspaceId] - What to build it relative to; '' is the project
+ * @property {string} [label] - What to call the row before the provider names it
+ * @property {AbortSignal} [signal] - Cancels the provision, for real
+ * @property {(step: string, detail?: string) => void} [onProgress] - One line per step
+ */
+
+/**
+ * @typedef {object} ProvisionOutcome
+ * @property {import('../model/session.js').Workspace} workspace - The ready row
+ * @property {object[]} seedItems - Items to seed the conversation with
+ * @property {() => Promise<string>} undo - Unwind it again, answering what it could not take back; see {@link provisionWorkspace}
+ */
+
+/**
+ * What to say about a workspace whose provider is not loaded.
+ *
+ * Extensions get disabled, uninstalled, and broken, while the workspaces they
+ * made stay on the table with conversations bound to them. Those conversations
+ * keep working — `kind` and `root` are the session's, not the provider's — so
+ * the absence must read as a missing *feature*, never as a missing place.
+ * @type {string}
+ */
+export const PROVIDER_UNAVAILABLE = 'Provider unavailable';
+
+/**
+ * How a workspace is doing, asked of its provider when there is one.
+ *
+ * Without one it answers from the row, flagged, rather than throwing or
+ * returning nothing: a caller rendering a list of workspaces must be able to
+ * render this one too.
+ * @param {any} session - The session the workspace belongs to.
+ * @param {import('../model/session.js').Workspace} workspace - The row to report on.
+ * @param {AbortSignal} [signal] - Cancels a speculative probe when the view closes.
+ * @returns {Promise<import('../../sdk/workspace-provider.js').WorkspaceStatus & {providerMissing?: boolean, statusFailed?: boolean}>} What to show. A
+ *   failure arrives as `problem`, never as `detail`.
+ */
+export async function workspaceStatus(session, workspace, signal) {
+  const provider = workspaceProviderRegistry.createProvider(workspace.providerId ?? '', session);
+  const fallback = {
+    label: workspace.label || workspace.root,
+    available: workspace.available !== false
+  };
+  if (!provider) {
+    // Also a problem rather than a detail: with nobody to ask, there is nothing
+    // to say about the place itself, and the row keeps its own description.
+    return { ...fallback, problem: PROVIDER_UNAVAILABLE, providerMissing: true };
+  }
+  try {
+    return await provider.status(workspace, {
+      session,
+      ops: createBoundOps(() => ({ workspaceId: workspace.id })),
+      baseOps: createBoundOps(() => ({ workspaceId: workspace.baseWorkspaceId ?? '' })),
+      baseWorkspaceId: workspace.baseWorkspaceId ?? '',
+      signal: signal ?? new AbortController().signal,
+      rollback: { push: () => {} },
+      checkpoint: async () => {},
+      progress: () => {}
+    });
+  } catch (error) {
+    // A provider that throws while merely reporting must not take the row's
+    // name off the screen with it — and must not take its description either.
+    // The reason goes in `problem`, which is the field for it: "nothing in this
+    // tree" and "nobody could say" are different answers, and a surface that
+    // printed the second where it prints the first would be describing our
+    // failure to somebody choosing where to work.
+    return { ...fallback, problem: extractErrorMessage(error), statusFailed: true };
+  }
+}
+
+/**
+ * The ways this workspace can be finished with, and why there are none.
+ *
+ * The reason is returned rather than the list simply being empty, because
+ * "this provider offers no endings" and "the extension that knew how to end
+ * this is gone" are different things to tell someone.
+ * @param {any} session - The session the workspace belongs to.
+ * @param {import('../model/session.js').Workspace} workspace - The row being finished with.
+ * @returns {{options: import('../../sdk/workspace-provider.js').FinishOption[], unavailableReason?: string}} What can be done.
+ */
+export function workspaceFinishOptions(session, workspace) {
+  const provider = workspaceProviderRegistry.createProvider(workspace.providerId ?? '', session);
+  if (!provider) {
+    return { options: [], unavailableReason: PROVIDER_UNAVAILABLE };
+  }
+  return { options: provider.finishOptions(workspace) };
+}
+
+/**
+ * Which other directories hold instructions that apply in a workspace.
+ *
+ * Asked of the provider because only it knows what the place was made from: the
+ * project sits above a folder of it and above a worktree of one of its
+ * subrepos, but it sits nowhere near a worktree of the project itself, and no
+ * amount of walking up a path tells the three apart. Widest first, so the
+ * workspace's own files are seeded last and read closest.
+ *
+ * A missing or throwing provider answers with none. Losing an extension must
+ * cost a conversation some of its instructions, never its ability to be seeded
+ * at all — the same degradation contract the rest of this file keeps.
+ * @param {any} session - The session the workspace belongs to.
+ * @param {import('../model/session.js').Workspace|null} [workspace] - The row about to be seeded for.
+ * @returns {string[]} Absolute directories, widest first.
+ */
+export function workspaceInstructionRoots(session, workspace) {
+  if (!workspace) return [];
+  const provider = workspaceProviderRegistry.createProvider(workspace.providerId ?? '', session);
+  if (!provider) return [];
+  try {
+    return provider.instructionRoots(workspace, {
+      session,
+      ops: createBoundOps(() => ({ workspaceId: workspace.id })),
+      baseOps: createBoundOps(() => ({ workspaceId: workspace.baseWorkspaceId ?? '' })),
+      baseWorkspaceId: workspace.baseWorkspaceId ?? '',
+      signal: new AbortController().signal,
+      rollback: { push: () => {} },
+      checkpoint: async () => {},
+      progress: () => {}
+    }).filter(root => typeof root === 'string' && root !== '');
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * What kind of place a workspace is, in the words of whatever made it.
+ *
+ * The path says where the work happens and the status says how it is going;
+ * neither says what the place *is*, and a directory beside your project with a
+ * branch checked out in it is not self-explanatory. The provider's own name is
+ * the answer — it is the name the user picked the thing by in the first place.
+ * @param {any} session - The session the workspace belongs to.
+ * @param {any} workspace - The row to describe.
+ * @returns {string} The provider's name, or '' when it is not loaded.
+ */
+export function workspaceKind(session, workspace) {
+  const provider = workspaceProviderRegistry.createProvider(workspace?.providerId ?? '', session);
+  return provider?.getManifest?.()?.name ?? '';
+}
+
+/**
+ * What to put in front of someone before a workspace is finished with.
+ *
+ * Nobody owns a workspace — any bound conversation may end it — so this warning
+ * is the entire coordination story, and it has two halves. The peers are told
+ * about: several conversations working in one tree is a legitimate thing to be
+ * doing, and the only wrong thing about it is not knowing. A turn in flight is
+ * refused outright, because removing a tree under a running agent is the one
+ * case here that loses work rather than merely surprising someone.
+ * @typedef {object} FinishWarning
+ * @property {string[]} peers - The other conversations bound to it, by name
+ * @property {string[]} busy - Bound conversations with a turn in flight, by name
+ * @property {string} refusal - Why this cannot be done at all right now, or ''
+ * @property {string} warning - What to know before agreeing to it, or ''
+ */
+
+/**
+ * The names of every conversation bound to a workspace, and which of them are
+ * in the middle of a turn.
+ * @param {any} session - The session holding the conversations.
+ * @param {string} workspaceId - The workspace they would be bound to.
+ * @returns {{name: string, busy: boolean, isSelf: boolean}[]} One entry per bound conversation.
+ * @param {any} [self] - The conversation doing the finishing, which is not a peer of itself.
+ */
+function boundConversations(session, workspaceId, self) {
+  /** @type {{name: string, busy: boolean, isSelf: boolean}[]} */
+  const bound = [];
+  for (const conversation of session?.conversations?.values?.() ?? []) {
+    if (conversation.workspaceId !== workspaceId) continue;
+    bound.push({
+      name: conversation.name || conversation.id,
+      busy: conversation.isProcessing === true,
+      isSelf: conversation === self
+    });
+  }
+  return bound;
+}
+
+/**
+ * See {@link FinishWarning}.
+ * @param {any} session - The session the workspace belongs to.
+ * @param {any} workspace - The row being finished with.
+ * @param {{conversation?: any, action?: any, status?: any}} [options] - Who is
+ *   asking, which ending they picked, and what the workspace last said about
+ *   itself — the dirty flag is what makes a destructive ending worth a sentence.
+ * @returns {FinishWarning} What to say, and whether to say no.
+ */
+export function workspaceFinishWarning(session, workspace, options = {}) {
+  const { conversation, action, status } = options;
+  const bound = boundConversations(session, workspace?.id ?? '', conversation);
+  const peers = bound.filter(entry => !entry.isSelf).map(entry => entry.name);
+  const busy = bound.filter(entry => entry.busy).map(entry => entry.name);
+
+  const parts = [];
+  if (peers.length) {
+    parts.push(`Also worked in by ${peers.join(', ')}.`);
+  }
+  if (action?.danger && status?.dirty) {
+    parts.push('It holds uncommitted work, which goes with it.');
+  }
+
+  return {
+    peers,
+    busy,
+    refusal: busy.length
+      ? `${busy.join(', ')} ${busy.length === 1 ? 'is' : 'are'} in the middle of a turn.`
+      : '',
+    warning: parts.join(' ')
+  };
+}
+
+/**
+ * Carry out one of a workspace's endings, and tombstone it if that ended it.
+ *
+ * The refusal is checked here rather than only in the dialog that asked: a
+ * service whose safety lives in its caller has no safety. What the provider does
+ * is its own — unbind touches nothing, discard removes the tree — and what
+ * happens to the row afterwards is the host's: `done` tombstones it, which keeps
+ * the id resolving to an attributable reason instead of turning every bound
+ * conversation's next operation into an unknown-workspace error, and sends the
+ * conversation that asked back to the project.
+ *
+ * `closedBy` rides in `meta` beside the provider's own keys (the patch merges
+ * key by key) so the peers' banner can name who closed it.
+ * @param {{session: any, workspace: any, conversation?: any, actionId: string,
+ *   input?: object, signal?: AbortSignal}} request - What to do, and for whom.
+ * @returns {Promise<{done: boolean, message?: string, workspace?: any}>} What happened.
+ */
+export async function finishWorkspace(request) {
+  const { session, workspace, conversation, actionId, input, signal } = request;
+
+  const provider = workspaceProviderRegistry.createProvider(workspace?.providerId ?? '', session);
+  if (!provider) return { done: false, message: PROVIDER_UNAVAILABLE };
+
+  const { refusal } = workspaceFinishWarning(session, workspace, { conversation });
+  if (refusal) return { done: false, message: refusal };
+
+  const result = await provider.finish(workspace, actionId, {
+    session,
+    conversation,
+    ops: createBoundOps(() => ({ workspaceId: workspace.id })),
+    // An ending that lands work writes into the tree the workspace came from,
+    // which its own operations cannot reach: they are rooted at the workspace,
+    // and a path outside that root is refused rather than sanitised.
+    baseOps: createBoundOps(() => ({ workspaceId: workspace.baseWorkspaceId ?? '' })),
+    baseWorkspaceId: workspace.baseWorkspaceId ?? '',
+    input: input ?? {},
+    signal: signal ?? new AbortController().signal,
+    rollback: { push: () => {} },
+    checkpoint: async () => {},
+    progress: () => {}
+  });
+
+  if (!result?.done) return { done: false, message: result?.message };
+
+  // The conversation that finished with it goes back to the project, before the
+  // row is tombstoned so that it never sees its own workspace close under it.
+  // Left bound, it would point at a workspace that no longer exists while its
+  // composer still looked ready — nothing refuses the send, and the turn dies in
+  // the server with "workspace X was closed". Peers are a different case and
+  // keep their banner: they did not ask for this, and being told is the point.
+  const moved = conversation && (conversation.workspaceId || '') === workspace.id
+    ? await rebindConversation(conversation, '')
+    : { done: true, message: '' };
+
+  const closed = await patchWorkspace(workspace.id, {
+    state: 'closed',
+    meta: { closedBy: conversation?.name || conversation?.id || '' }
+  });
+  // A move that could not be made is said rather than swallowed: the workspace
+  // is finished with either way, and the difference is whether this conversation
+  // still has somewhere to work.
+  return {
+    done: true,
+    message: [result.message, moved.done ? '' : moved.message].filter(Boolean).join(' '),
+    workspace: closed
+  };
+}
+
+/**
+ * Run every compensation, latest first.
+ *
+ * Each is attempted even when an earlier one throws. A compensation that fails
+ * is a step that could not be undone, which is worth knowing about, but it must
+ * not strand the steps beneath it — those are the ones that made the mess the
+ * user can see.
+ * @param {Array<() => Promise<void>|void>} compensations - The stack, oldest first
+ * @returns {Promise<Error[]>} Whatever went wrong on the way back down
+ */
+async function unwind(compensations) {
+  /** @type {Error[]} */
+  const failures = [];
+  for (const compensation of [...compensations].reverse()) {
+    try {
+      await compensation();
+    } catch (error) {
+      failures.push(error instanceof Error ? error : new Error(extractErrorMessage(error)));
+    }
+  }
+  compensations.length = 0;
+  return failures;
+}
+
+/**
+ * What a compensation stack could not take back, as one sentence.
+ *
+ * Empty when it took everything back, which is the ordinary case and says
+ * nothing. The underlying reasons are kept verbatim: they name the tree, the
+ * branch or the permission, and nothing here can say it better.
+ * @param {Error[]} failures - Compensations that themselves failed
+ * @returns {string} What to add to whatever is already being said
+ */
+function leftBehindSentence(failures) {
+  if (!failures.length) return '';
+  return `Couldn't undo all of it: ${failures.map(failure => extractErrorMessage(failure)).join('; ')}`;
+}
+
+/**
+ * What a failed provision could not take back, from the error it threw.
+ *
+ * Carried on the error rather than folded into its message so that a cancel can
+ * use it too: a cancel is told apart by its signal and says nothing on screen,
+ * and "nothing on screen" must still not swallow a tree that is still there.
+ * @param {any} error - What `provisionWorkspace` threw
+ * @returns {string} The sentence, or '' when it undid everything
+ */
+export function provisionLeftBehind(error) {
+  return typeof error?.leftBehind === 'string' ? error.leftBehind : '';
+}
+
+/**
+ * Build a workspace with a provider, and leave nothing behind if it does not
+ * finish.
+ *
+ * The order is the whole point. The row is registered in `provisioning` state
+ * **before** any command runs, so an interrupted provision leaves something the
+ * app knows about rather than unrecorded debris on disk. The provider then
+ * builds, checkpointing what it has done as it goes and pushing each step's
+ * inverse onto a stack this function holds. Only when it returns does the row
+ * take the real root and flip to `ready`.
+ *
+ * Anything other than that — a rejection, a failure, an abort, even an abort
+ * that lands after `provision()` has returned but before the row is ready —
+ * runs the stack in reverse and unregisters the row. The error is then
+ * re-thrown: a caller must never be able to mistake a provision that was undone
+ * for one that worked.
+ *
+ * The returned `undo` runs that same stack, for the window after success in
+ * which a user may still say they picked the wrong thing. It is in-memory
+ * closures and so dies with the tab; the durable equivalent is the provider's
+ * `cleanupPartial`, driven from the checkpointed `meta`.
+ * @param {ProvisionRequest} request - What to build, and where
+ * @returns {Promise<ProvisionOutcome>} The ready workspace, and how to take it back
+ */
+export async function provisionWorkspace(request) {
+  const {
+    session,
+    conversation,
+    providerId,
+    values = {},
+    baseWorkspaceId = '',
+    label,
+    signal,
+    onProgress
+  } = request;
+
+  const provider = workspaceProviderRegistry.createProvider(providerId, session);
+  if (!provider) {
+    throw new Error(`Couldn't provision a workspace: no provider "${providerId}" is loaded.`);
+  }
+
+  const effectiveSignal = signal ?? new AbortController().signal;
+  effectiveSignal.throwIfAborted();
+
+  // The base workspace decides two things: where the provider's commands run,
+  // and what transport the new workspace inherits. Both come from the row rather
+  // than from the provider, which is what lets a provider that knows nothing
+  // about ssh build a worktree on another machine.
+  const base = baseWorkspaceId ? session.getWorkspace(baseWorkspaceId) : null;
+  const baseRoot = session.workspaceRoot(baseWorkspaceId);
+  if (!baseRoot) {
+    throw new Error(`Couldn't provision a workspace: its base workspace is not usable.`);
+  }
+
+  const row = await registerWorkspace({
+    kind: base?.kind || 'local',
+    root: provider.plannedRoot(values) || baseRoot,
+    label: label || provider.getSetupLabel(),
+    providerId,
+    baseWorkspaceId,
+    state: 'provisioning'
+  });
+
+  /** @type {Array<() => Promise<void>|void>} */
+  const compensations = [];
+
+  // Undoing is not cancelled by the thing it is undoing. A compensation is a
+  // closure written during the provision, so the obvious line inside it —
+  // `ctx.ops.shell(…, ctx.signal)` — would carry the signal that has just been
+  // aborted, and every compensation would refuse to run at the exact moment it
+  // was needed, silently, leaving on disk the mess it was written to clear up.
+  // So `ctx.signal` answers differently once unwinding starts, and the obvious
+  // line is the correct one in both phases.
+  let unwinding = false;
+  const unwindSignal = new AbortController().signal;
+
+  /** @type {import('../../sdk/workspace-provider.js').ProviderContext} */
+  const ctx = {
+    session,
+    conversation,
+    // Pinned to the BASE workspace: `git worktree add` runs in the repository,
+    // not in the tree it is about to create — which does not exist yet. This is
+    // the one hook where `ops` and `baseOps` are the same operations, and they
+    // are both offered so that a provider never has to ask which hook it is in.
+    ops: createBoundOps(() => ({ workspaceId: baseWorkspaceId })),
+    baseOps: createBoundOps(() => ({ workspaceId: baseWorkspaceId })),
+    baseWorkspaceId,
+    get signal() { return unwinding ? unwindSignal : effectiveSignal; },
+    rollback: { push: (compensation) => { compensations.push(compensation); } },
+    checkpoint: async (metaPatch) => { await patchWorkspace(row.id, { meta: metaPatch }); },
+    progress: (step, detail) => { onProgress?.(step, detail); }
+  };
+
+  /**
+   * Run the stack back down, with the signal switched over first.
+   * @returns {Promise<Error[]>} Compensations that themselves failed
+   */
+  const unwindAll = async () => {
+    unwinding = true;
+    return unwind(compensations);
+  };
+
+  try {
+    const result = await provider.provision(values, ctx);
+    // A provision that completed while the user was cancelling is still
+    // cancelled. Without this the abort would be silently outrun by a fast
+    // provider, and the user would be left bound to a thing they stopped.
+    effectiveSignal.throwIfAborted();
+
+    const descriptor = result?.workspace ?? {};
+    const workspace = await patchWorkspace(row.id, {
+      root: descriptor.root || row.root,
+      label: descriptor.label || row.label,
+      state: 'ready',
+      ...(descriptor.meta ? { meta: descriptor.meta } : {})
+    });
+
+    return {
+      workspace,
+      seedItems: result?.seedItems ?? [],
+      undo: async () => {
+        const failures = await unwindAll();
+        await unregisterWorkspace(workspace.id);
+        return leftBehindSentence(failures);
+      }
+    };
+  } catch (error) {
+    const failures = await unwindAll();
+    // Unregistering is tolerant: the row may already be gone (a compensation
+    // that unregistered it, a second window), and a failure to tidy up must not
+    // replace the error that explains why we are here at all.
+    await unregisterWorkspace(row.id).catch(() => {});
+    // What the unwinding could not take back rides along with the error rather
+    // than replacing it. Both matter and they are different sentences: one says
+    // why there is no workspace, the other says what is on the disk anyway.
+    const leftBehind = leftBehindSentence(failures);
+    if (leftBehind && error instanceof Error) {
+      /** @type {any} */ (error).leftBehind = leftBehind;
+    }
+    throw error;
+  }
+}

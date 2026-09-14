@@ -65,11 +65,11 @@ func TestConversationCacheCapabilitiesArePartOfIdentity(t *testing.T) {
 	t.Cleanup(cache.Shutdown)
 	credential := core.ProviderCredential{APIKey: "test-key"}
 	firstCapabilities := provider.ModelCapabilities{ContextWindowTokens: 1000, MaxOutputTokens: 100}
-	first, err := cache.GetOrOpen(context.Background(), "conv", providerName, "model", credential, firstCapabilities)
+	first, err := cache.GetOrOpen(context.Background(), "conv", providerName, "model", credential, firstCapabilities, "")
 	if err != nil {
 		t.Fatalf("first GetOrOpen: %v", err)
 	}
-	reused, err := cache.GetOrOpen(context.Background(), "conv", providerName, "model", credential, firstCapabilities)
+	reused, err := cache.GetOrOpen(context.Background(), "conv", providerName, "model", credential, firstCapabilities, "")
 	if err != nil {
 		t.Fatalf("reused GetOrOpen: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestConversationCacheCapabilitiesArePartOfIdentity(t *testing.T) {
 	}
 
 	secondCapabilities := provider.ModelCapabilities{ContextWindowTokens: 2000, MaxOutputTokens: 200}
-	second, err := cache.GetOrOpen(context.Background(), "conv", providerName, "model", credential, secondCapabilities)
+	second, err := cache.GetOrOpen(context.Background(), "conv", providerName, "model", credential, secondCapabilities, "")
 	if err != nil {
 		t.Fatalf("changed GetOrOpen: %v", err)
 	}
@@ -96,6 +96,54 @@ func TestConversationCacheCapabilitiesArePartOfIdentity(t *testing.T) {
 	}
 }
 
+// A conversation's workspace is part of its handle identity. Rebinding one to
+// another workspace must retire the old handle: it can hold a live CLI
+// subprocess rooted in the tree the conversation has just left, and a turn that
+// kept talking to it would be working in the wrong place with no sign of it.
+func TestConversationCacheWorkspaceIsPartOfIdentity(t *testing.T) {
+	const providerName = "test_workspace_cache"
+	var configs []provider.Config
+	var opened []*capabilityCacheConversation
+	provider.RegisterProvider(provider.ProviderInfo{Name: providerName}, func(cfg provider.Config) (provider.Provider, error) {
+		configs = append(configs, cfg)
+		return &capabilityCacheProvider{opened: &opened}, nil
+	})
+
+	cache := newConversationCache(nil)
+	t.Cleanup(cache.Shutdown)
+	credential := core.ProviderCredential{APIKey: "test-key"}
+	capabilities := provider.ModelCapabilities{ContextWindowTokens: 1000, MaxOutputTokens: 100}
+
+	first, err := cache.GetOrOpen(context.Background(), "conv", providerName, "model", credential, capabilities, "/tmp/worktree-a")
+	if err != nil {
+		t.Fatalf("first GetOrOpen: %v", err)
+	}
+	reused, err := cache.GetOrOpen(context.Background(), "conv", providerName, "model", credential, capabilities, "/tmp/worktree-a")
+	if err != nil {
+		t.Fatalf("reused GetOrOpen: %v", err)
+	}
+	if reused != first {
+		t.Fatal("the same workspace did not reuse the cached conversation")
+	}
+	if len(configs) != 1 || configs[0].WorkspaceRoot != "/tmp/worktree-a" {
+		t.Fatalf("configs = %+v, want one config rooted at /tmp/worktree-a", configs)
+	}
+
+	second, err := cache.GetOrOpen(context.Background(), "conv", providerName, "model", credential, capabilities, "/tmp/worktree-b")
+	if err != nil {
+		t.Fatalf("rebound GetOrOpen: %v", err)
+	}
+	if second == first {
+		t.Fatal("a rebound conversation reused the handle rooted in its old workspace")
+	}
+	if len(configs) != 2 || configs[1].WorkspaceRoot != "/tmp/worktree-b" {
+		t.Fatalf("configs = %+v, want a second config rooted at /tmp/worktree-b", configs)
+	}
+	if len(opened) != 2 || !opened[0].closed {
+		t.Fatalf("opened conversations = %+v, want the old handle closed before replacement", opened)
+	}
+}
+
 func TestConversationCacheCancelDoesNotBlockOtherConversations(t *testing.T) {
 	const providerName = "test_nonblocking_cancel_cache"
 	var opened []*capabilityCacheConversation
@@ -106,7 +154,7 @@ func TestConversationCacheCancelDoesNotBlockOtherConversations(t *testing.T) {
 	cache := newConversationCache(nil)
 	credential := core.ProviderCredential{APIKey: "test-key"}
 	capabilities := provider.ModelCapabilities{ContextWindowTokens: 1000, MaxOutputTokens: 100}
-	if _, err := cache.GetOrOpen(context.Background(), "stuck", providerName, "model", credential, capabilities); err != nil {
+	if _, err := cache.GetOrOpen(context.Background(), "stuck", providerName, "model", credential, capabilities, ""); err != nil {
 		t.Fatalf("open stuck conversation: %v", err)
 	}
 
@@ -130,7 +178,7 @@ func TestConversationCacheCancelDoesNotBlockOtherConversations(t *testing.T) {
 
 	openDone := make(chan error, 1)
 	go func() {
-		_, err := cache.GetOrOpen(context.Background(), "unrelated", providerName, "model", credential, capabilities)
+		_, err := cache.GetOrOpen(context.Background(), "unrelated", providerName, "model", credential, capabilities, "")
 		openDone <- err
 	}()
 	select {
@@ -144,7 +192,7 @@ func TestConversationCacheCancelDoesNotBlockOtherConversations(t *testing.T) {
 
 	sameDone := make(chan error, 1)
 	go func() {
-		_, err := cache.GetOrOpen(context.Background(), "stuck", providerName, "other-model", credential, capabilities)
+		_, err := cache.GetOrOpen(context.Background(), "stuck", providerName, "other-model", credential, capabilities, "")
 		sameDone <- err
 	}()
 	select {
@@ -179,7 +227,7 @@ func TestConversationCacheAdmissionContractFlowsFromProviderInfo(t *testing.T) {
 
 	cache := newConversationCache(nil)
 	t.Cleanup(cache.Shutdown)
-	_, err := cache.GetOrOpen(context.Background(), "conv", providerName, "model", core.ProviderCredential{APIKey: "test-key"}, provider.ModelCapabilities{})
+	_, err := cache.GetOrOpen(context.Background(), "conv", providerName, "model", core.ProviderCredential{APIKey: "test-key"}, provider.ModelCapabilities{}, "")
 	if err != nil {
 		t.Fatalf("GetOrOpen: %v", err)
 	}
@@ -211,7 +259,7 @@ func TestConversationCacheAllowUnknownLimitsFlowsToAdmission(t *testing.T) {
 	// out must keep failing closed.
 	closedName := "test_unknown_limits_closed_" + t.Name()
 	register(closedName, false)
-	closedConv, err := newCache().GetOrOpen(context.Background(), "conv", closedName, "model", credential, provider.ModelCapabilities{})
+	closedConv, err := newCache().GetOrOpen(context.Background(), "conv", closedName, "model", credential, provider.ModelCapabilities{}, "")
 	if err != nil {
 		t.Fatalf("closed GetOrOpen: %v", err)
 	}
@@ -228,7 +276,7 @@ func TestConversationCacheAllowUnknownLimitsFlowsToAdmission(t *testing.T) {
 	// unchecked, or every one of its turns would die at admission.
 	openName := "test_unknown_limits_open_" + t.Name()
 	opened := register(openName, true)
-	openConv, err := newCache().GetOrOpen(context.Background(), "conv", openName, "model", credential, provider.ModelCapabilities{})
+	openConv, err := newCache().GetOrOpen(context.Background(), "conv", openName, "model", credential, provider.ModelCapabilities{}, "")
 	if err != nil {
 		t.Fatalf("open GetOrOpen: %v", err)
 	}

@@ -51,6 +51,13 @@ type Provides struct {
 	// descriptor describes an item type, so it never satisfies the "provides
 	// something" check by itself.
 	PinboardItemMeta []string `json:"pinboardItemMeta,omitempty"`
+	// WorkspaceProviders declares the workspace providers the extension
+	// contributes — what can create and look after a place a conversation works
+	// in: a git worktree, a throwaway copy of the tree, a directory on another
+	// machine. Viewer-only, like pinboard items: the lifecycle is user-driven,
+	// and the engine resolves a workspace from the session's own row without
+	// asking whoever made it.
+	WorkspaceProviders []string `json:"workspaceProviders,omitempty"`
 	// SystemPrompt is a single module path (not a glob) whose default export
 	// `({enabledPluginIds}) => string` contributes terse, durable guidance to
 	// the system prompt — the extension's voice on how to use its tools. It is
@@ -135,6 +142,7 @@ func Validate(m Manifest, engineVersion string) error {
 		len(m.Provides.InfoCards) == 0 &&
 		len(m.Provides.FileViewers) == 0 &&
 		len(m.Provides.PinboardItems) == 0 &&
+		len(m.Provides.WorkspaceProviders) == 0 &&
 		strings.TrimSpace(m.Provides.SystemPrompt) == "" {
 		return fmt.Errorf("manifest %q provides no capabilities", m.ID)
 	}

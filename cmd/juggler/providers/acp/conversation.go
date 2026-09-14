@@ -298,7 +298,7 @@ func (t *threadSession) ensureSession(ctx context.Context) (*session, error) {
 	}
 
 	c := t.conversation
-	agent, err := resolveAgent(c.client.workingDir, c.client.model)
+	agent, err := resolveAgent(c.client.projectRoot, c.client.model)
 	if err != nil {
 		return nil, err
 	}

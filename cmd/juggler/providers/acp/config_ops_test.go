@@ -153,7 +153,7 @@ func TestListModelsWithInfoFromConfig(t *testing.T) {
 		"zed":    {Command: "zed"},
 		"off":    {Command: "x", Enabled: boolp(false)},
 	})
-	c := &Client{workingDir: project}
+	c := &Client{workingDir: project, projectRoot: project}
 	models, err := c.ListModelsWithInfo(context.Background())
 	if err != nil {
 		t.Fatalf("list: %v", err)

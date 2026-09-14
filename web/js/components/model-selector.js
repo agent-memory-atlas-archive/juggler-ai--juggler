@@ -51,6 +51,14 @@ import './model-picker/model-picker.js';
  */
 const RUNNING_TURN_NOTE = 'A turn is running. A change takes effect on its next request — no need to stop it.';
 
+/**
+ * Why a CLI provider is not offered to a conversation working somewhere this
+ * machine only reaches over a wire. Juggler spawns such a provider as a
+ * subprocess here, in a directory that would not be the one the turn's file
+ * operations use — which goes wrong quietly, so it is refused loudly.
+ */
+export const WORKSPACE_ELSEWHERE_HINT = 'Runs on this machine; this conversation works elsewhere';
+
 class ModelSelector extends HTMLElement {
   constructor() {
     super();
@@ -340,11 +348,34 @@ class ModelSelector extends HTMLElement {
    */
   _refreshPicker() {
     if (!this._picker) return;
-    this._picker.providers = this.providers;
+    this._picker.providers = this._offerableProviders();
     this._picker.noneLabel = this._noneLabel();
     this._picker.loading = this.loadingProviders;
     this._picker.value = this._currentConfig;
     this._picker.note = this._turnNote();
+  }
+
+  /**
+   * The provider list as this conversation may use it.
+   *
+   * The picker is deliberately told nothing about conversations — it renders
+   * what it is handed — so a constraint that depends on where this conversation
+   * works is applied here, on the way in. A provider Juggler spawns as a
+   * subprocess would run on this machine while every file operation of the turn
+   * ran somewhere else, so for a workspace of a kind that cannot host one it is
+   * marked unavailable with that reason, which the picker already knows how to
+   * render and how to refuse.
+   * @returns {Provider[]} What may be offered.
+   * @private
+   */
+  _offerableProviders() {
+    const conversation = this._messageThread?.conversation || this.conversation;
+    if (!conversation || conversation.workspaceHostsLocalProviders !== false) return this.providers;
+    return this.providers.map((provider) => (
+      /** @type {any} */ (provider).spawnsLocalProcess
+        ? { ...provider, available: false, authHint: WORKSPACE_ELSEWHERE_HINT }
+        : provider
+    ));
   }
 
   /**
@@ -371,7 +402,7 @@ class ModelSelector extends HTMLElement {
     this.dropdownOpen = true;
 
     const picker = /** @type {any} */ (document.createElement('model-picker'));
-    picker.providers = this.providers;
+    picker.providers = this._offerableProviders();
     picker.value = this._currentConfig;
     picker.noneLabel = this._noneLabel();
     picker.loading = this.loadingProviders;

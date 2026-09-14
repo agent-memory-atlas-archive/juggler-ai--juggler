@@ -16,20 +16,27 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"juggler/cmd/juggler/core"
 )
 
 // GitStatusAPI summarises the working-tree state of every git repository found
-// under the current project — the root repo plus any nested subrepos/submodules
-// — for the "Git status" info card and pinboard pin. The project path is read
-// through a provider func so a runtime project switch retargets the scan.
+// under the tree a request names — the root repo plus any nested
+// subrepos/submodules — for the "Git status" info card and pinboard pin. The
+// project path is read through a provider func so a runtime project switch
+// retargets the scan, and the workspace lookup resolves a request that names a
+// conversation's own tree instead.
 type GitStatusAPI struct {
 	pathProvider func() string
+	workspaces   core.WorkspaceLookup
 }
 
 // NewGitStatusAPI creates a new GitStatusAPI. pathProvider must return the
-// current project path on each call ("" when no project is loaded).
-func NewGitStatusAPI(pathProvider func() string) *GitStatusAPI {
-	return &GitStatusAPI{pathProvider: pathProvider}
+// current project path on each call ("" when no project is loaded); workspaces
+// resolves a workspace id to the tree it names, and may be nil in a server with
+// no session, in which case only the project can be asked about.
+func NewGitStatusAPI(pathProvider func() string, workspaces core.WorkspaceLookup) *GitStatusAPI {
+	return &GitStatusAPI{pathProvider: pathProvider, workspaces: workspaces}
 }
 
 // The card's bounds. Its walk is deliberately shallow — a git repo lives at the
@@ -96,13 +103,46 @@ type gitStatusResponse struct {
 	Repos []gitRepoStatus `json:"repos"`
 }
 
+// gitRoot is the tree a git request is about: the workspace named by the
+// `workspace` query parameter, or the project when it names none.
+//
+// All three git endpoints resolve it through here, because every git surface in
+// the app shows one conversation's view of one tree. The card's counts, the
+// review's file list and a file's diff sit on top of one another in the pin, so
+// two of them answering about different trees would show the name of one and the
+// bytes of another.
+//
+// The refusals are `WorkspaceLookup.Usable`'s, shared with the ops API so the
+// words match, and there is deliberately no fall back to the project: a status
+// that quietly reported the project for a binding that could not be honoured
+// would show a clean tree for a conversation whose own tree has gone.
+func (a *GitStatusAPI) gitRoot(r *http.Request) (string, error) {
+	id := r.URL.Query().Get("workspace")
+	if id == core.DefaultWorkspaceID {
+		return a.pathProvider(), nil
+	}
+	if a.workspaces == nil {
+		return "", fmt.Errorf("no session is loaded, so workspace %s cannot be resolved", id)
+	}
+	ws, err := a.workspaces.Usable(id)
+	if err != nil {
+		return "", err
+	}
+	return ws.Root, nil
+}
+
 // HandleGitStatus handles GET /api/git/status. It discovers repositories under
-// the project root and reports each one's branch, divergence from its upstream,
-// changed/staged counts and bounded file list. Results are best-effort: a repo
-// whose `git status` fails (git missing, bare repo) is simply omitted rather
-// than failing the whole response.
+// the tree the request names — a workspace, or the project by default — and
+// reports each one's branch, divergence from its upstream, changed/staged counts
+// and bounded file list. Results are best-effort: a repo whose `git status`
+// fails (git missing, bare repo) is simply omitted rather than failing the whole
+// response.
 func (a *GitStatusAPI) HandleGitStatus(w http.ResponseWriter, r *http.Request) {
-	root := a.pathProvider()
+	root, err := a.gitRoot(r)
+	if err != nil {
+		WriteError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
 	resp := gitStatusResponse{Root: root, Repos: []gitRepoStatus{}}
 	if root == "" {
 		WriteJSON(w, r, 0, resp)

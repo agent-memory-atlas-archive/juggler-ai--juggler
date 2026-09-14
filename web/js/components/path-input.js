@@ -11,6 +11,8 @@
  * Attributes:
  *   placeholder  — forwarded to the inner <input>
  *   dirs-only    — if present, only directory completions are shown
+ *   project-relative — complete within the project, and answer in paths
+ *                  relative to it, rather than anywhere on the machine
  *   value        — initial value (also readable/writable as a property)
  *
  * Events:
@@ -18,7 +20,7 @@
  *                  detail: { value: string }
  */
 
-import { fetchPathCompletions } from '../services/completions-api.js';
+import { fetchPathCompletions, fetchFileCompletions } from '../services/completions-api.js';
 
 /**
  * Matching quote pairs that can wrap a copied path. macOS Finder's "Copy as
@@ -107,14 +109,20 @@ class PathInput extends HTMLElement {
     this._closeMenu();
   }
 
-  /** @returns {string} Current path value */
+  /**
+   * Before the element is in the document there is no inner field yet, so the
+   * value lives on the attribute `connectedCallback` reads — which is what makes
+   * a form that fills itself in while it is still detached work.
+   * @returns {string} Current path value
+   */
   get value() {
-    return this._input ? this._input.value : '';
+    return this._input ? this._input.value : (this.getAttribute('value') || '');
   }
 
   /** @param {string} v */
   set value(v) {
     if (this._input) this._input.value = v;
+    else this.setAttribute('value', v);
     // Any explicit value change supersedes the initial-prefill suppression.
     this._pristinePrefill = false;
   }
@@ -168,7 +176,13 @@ class PathInput extends HTMLElement {
    */
   async _fetch(query) {
     const dirsOnly = this.hasAttribute('dirs-only');
-    let results = await fetchPathCompletions(query);
+    // "Somewhere on this machine" and "somewhere in this project" are different
+    // questions with different answers: the first completes anywhere and answers
+    // with absolute paths, the second stays in the project and answers relative
+    // to it, which is the form a project-relative field stores and shows.
+    let results = this.hasAttribute('project-relative')
+      ? await fetchFileCompletions(query)
+      : await fetchPathCompletions(query);
     if (results === null) return; // aborted — a newer fetch is already in flight
     if (dirsOnly) {
       results = results.filter((p) => p.endsWith('/'));

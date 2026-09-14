@@ -31,6 +31,8 @@ import {
   hasUnsettledToolInTree,
   runningToolsInTree,
 } from '../model/thread-navigation.js';
+import { WORKSPACE_ID_KEY, INITIALISED_KEY } from '../model/conversation.js';
+import { subscribeSetup } from '../services/conversation-setup.js';
 import { itemGoal } from '../model/thread-alias.js';
 import { liveMessageForThread } from '../utils/thread-display.js';
 import { appendDeleteControls } from '../utils/panel-delete-controls.js';
@@ -44,13 +46,14 @@ import {
   removeDeletedElements,
   positionElements,
   ensurePendingMessages,
+  ensureConversationChrome,
   getItemId,
 } from './conversation-area-rendering.js';
 import * as scroll from './conversation-area-scroll.js';
 import * as selection from './conversation-area-selection.js';
 import { StatusMessageBuilder } from '../services/status-message-builder.js';
 import { guarded } from '../utils/fault-report.js';
-import { formatBindingForPlatform, isMac } from '../services/key-shortcut-manager.js';
+import { emptyHintStackMarkup } from './empty-hint-stack.js';
 import { isFileDrag, installFileDropGuard, markFileDropAccepted } from '../utils/file-drop.js';
 import { ReplySuggestionsController } from '../services/reply-suggestions-controller.js';
 
@@ -83,46 +86,16 @@ function prefersReducedMotion() {
 const EMPTY_HINT_CLEARANCE_PX = 32;
 
 /**
- * The starting hint shown on the empty background of a conversation with no
- * history yet — the four composer gestures a first-time user has no way to
- * guess, and nothing else. It is read every time a conversation is opened
- * before its first message, so it stays plain instruction rather than voice;
- * the composer's own placeholder carries that.
- *
- * The key glyphs come from the shortcut formatter, so they read ↵ / ⇧↵ on macOS
- * and Enter / Shift+Enter elsewhere. Neither row is true on a touch composer,
- * where Enter inserts a newline and sending is a button — those rows and the
- * drag-and-drop line are hidden by the same `(hover: none) and (pointer:
- * coarse)` media query the composer keys its behaviour off.
- *
- * Everything sits in one `.empty-hint-stack` so the fit test in
- * _positionEmptyHint can measure the content as a single block.
+ * The starting hint, laid over the empty background of a conversation with no
+ * history yet. The stack inside it is {@link emptyHintStackMarkup}'s, shared
+ * with the setup card that carries the same lines while a new conversation is
+ * still being asked where it works.
  * @returns {string} The hint's markup.
  */
 function emptyHintMarkup() {
-  const mac = isMac();
-  const send = formatBindingForPlatform({ key: 'Enter' }, mac);
-  const newline = formatBindingForPlatform({ key: 'Enter', shift: true }, mac);
   return `
     <conversation-empty-hint class="hidden">
-      <div class="empty-hint-stack">
-        <p class="empty-hint-lead">Type your message below</p>
-        <div class="empty-hint-keys">
-          <div class="empty-hint-row empty-hint-pointer">
-            <span class="empty-hint-key">${send}</span><span>Send</span>
-          </div>
-          <div class="empty-hint-row empty-hint-pointer">
-            <span class="empty-hint-key">${newline}</span><span>New line</span>
-          </div>
-          <div class="empty-hint-row">
-            <span class="empty-hint-key">@</span><span>Reference a file</span>
-          </div>
-          <div class="empty-hint-row">
-            <span class="empty-hint-key">/</span><span>Run a command</span>
-          </div>
-        </div>
-        <p class="empty-hint-lead empty-hint-pointer">Drag-and-drop a file or image to attach it</p>
-      </div>
+      ${emptyHintStackMarkup()}
     </conversation-empty-hint>
   `;
 }
@@ -244,6 +217,10 @@ class ConversationArea extends HTMLElement {
     this._groupItems = null;
     /** @type {Map<string, string>} @private - itemId of a folded tool row → display id of the group standing in for it */
     this._memberToGroup = new Map();
+    /** @type {(() => void)|null} @private - Unsubscribe from the session feed the workspace banner rides, held alongside the Yjs observers and torn down with them */
+    this._unsubscribeSession = null;
+    /** @type {(() => void)|null} @private - Unsubscribe from the setup-state feed the panel rides, torn down with the rest */
+    this._unsubscribeSetup = null;
   }
 
   /**
@@ -264,6 +241,14 @@ class ConversationArea extends HTMLElement {
       this._streamingScrollObserver = null;
       this._observedContainer = null;
     }
+    if (this._unsubscribeSession) {
+      this._unsubscribeSession();
+      this._unsubscribeSession = null;
+    }
+    if (this._unsubscribeSetup) {
+      this._unsubscribeSetup();
+      this._unsubscribeSetup = null;
+    }
     selection.teardownSelectionVisibilityWatcher(this);
     if (this._replySuggestionsCtl) this._replySuggestionsCtl.detach();
     this._conversation = conversation;
@@ -278,9 +263,34 @@ class ConversationArea extends HTMLElement {
         if (event.keysChanged.has('nextSteps')) {
           this._refreshNextStepsIndicator();
         }
+        // The binding is written once, when the conversation is initialised —
+        // which for a blank tab is its first send, long after this column was
+        // built around it. The flag beside it is what decides between the setup
+        // panel and the banner, and it moves on the same hop.
+        if (event.keysChanged.has(WORKSPACE_ID_KEY) || event.keysChanged.has(INITIALISED_KEY)) {
+          this._refreshConversationTop();
+        }
         // Selection is local per-column, tracked in _localSelectedItemId.
       };
       conversation.observeMetadata(this._metadataObserver);
+
+      // The other half of what the banner reads: the session's workspace table,
+      // replaced whole by every `workspaces-changed` broadcast. A binding can
+      // become resolvable (a provision finishing) or stop being one (a peer
+      // closing the workspace) with nothing in this conversation's doc moving,
+      // so the item path would never hear about it.
+      this._unsubscribeSession = /** @type {(() => void)|null} */ (
+        conversation.session?.subscribe((/** @type {any} */ event) => {
+          if (event?.type === 'session:workspaces-changed') this._refreshConversationTop();
+        }) || null);
+
+      // The third input: what the setup panel has been told so far. It is
+      // deliberately not in the document — a selection costs nothing and a
+      // provision does not survive the tab — so it reaches the transcript
+      // through the state module rather than through Yjs.
+      this._unsubscribeSetup = subscribeSetup((/** @type {string} */ conversationId) => {
+        if (!conversationId || conversationId === this._conversation?.id) this._refreshConversationTop();
+      });
 
       this._getReplySuggestionsController().attach(conversation);
 
@@ -602,6 +612,22 @@ class ConversationArea extends HTMLElement {
       ensureThreadResult(this, content, footer);
       ensurePendingMessages(this, content);
     }
+  }
+
+  /**
+   * Re-render the block at the top of the transcript alone — the setup panel or
+   * the workspace banner, whichever this conversation is owed.
+   *
+   * Its inputs all change without an item changing: the binding and the
+   * `initialised` flag are written once, the workspace table is replaced by a
+   * broadcast, and the panel's own state is not in the document at all. None of
+   * them would reach the transcript on the item path. Cheap enough to call on
+   * every edge: both helpers rewrite nothing when the answer has not moved.
+   * @private
+   */
+  _refreshConversationTop() {
+    const content = /** @type {HTMLElement|null} */ (this.querySelector('#message-list-inner'));
+    if (content) ensureConversationChrome(this, content);
   }
 
   /**
@@ -1145,6 +1171,13 @@ class ConversationArea extends HTMLElement {
           }
         }
 
+        // A control that belongs to the column rather than to an item — the
+        // setup card's fields and rows, the workspace banner — is not the
+        // background, and owns its click. The press has already put the caret
+        // where the user aimed it, so treating this as a background click would
+        // take the keyboard straight back out of the field they clicked into.
+        if (onControl) return;
+
         // Clicked on the background — deselect any current item in this column,
         // then focus the input so the next keystroke starts composing.
         selection.clearSelection(this);
@@ -1676,6 +1709,7 @@ class ConversationArea extends HTMLElement {
     if (!content) return;
 
     const footer = ensureFooterExists(this, content);
+    ensureConversationChrome(this, content);
 
     if (!items || items.length === 0) {
       this._memberToGroup = new Map();
@@ -1763,6 +1797,12 @@ class ConversationArea extends HTMLElement {
    * Only the root column qualifies: a thread column is opened from work that has
    * already happened, so its reader is past needing this.
    *
+   * A conversation still being asked where it works is the other silence: its
+   * setup card sits in this very slot and carries the same four lines inside it
+   * (see ConversationSetupPanel), so the overlay would be a second copy laid
+   * over the first. ensureConversationChrome settles the card's presence earlier
+   * in the same render pass, so there is no frame showing neither.
+   *
    * This owns one bit only: whether the hint applies at all. Where it sits and
    * whether it fits are _positionEmptyHint's.
    * @param {Array<any>} items - The column's items, before display grouping.
@@ -1781,8 +1821,9 @@ class ConversationArea extends HTMLElement {
         }
       }
     }
-    hint.classList.toggle('hidden', hasHistory);
-    if (hasHistory) {
+    const spokenFor = hasHistory || this.querySelector('conversation-setup-panel') !== null;
+    hint.classList.toggle('hidden', spokenFor);
+    if (spokenFor) {
       // Retired: drop the band measurements too, so a later re-show starts from
       // the element's layout, not a band staler than the DOM.
       hint.classList.remove('no-room');

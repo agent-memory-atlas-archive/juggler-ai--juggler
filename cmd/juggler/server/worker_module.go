@@ -26,6 +26,7 @@ var workerSDKImports = map[string]string{
 	"juggler/pinboard":               "/sdk/pinboard.js",
 	"juggler/pinboard-item-type":     "/sdk/pinboard-item-type.js",
 	"juggler/file-viewer":            "/sdk/file-viewer.js",
+	"juggler/workspace-provider":     "/sdk/workspace-provider.js",
 	"juggler/file-source":            "/sdk/file-source.js",
 	"juggler/ops":                    "/sdk/ops.js",
 	"juggler/sandbox":                "/sdk/sandbox.js",

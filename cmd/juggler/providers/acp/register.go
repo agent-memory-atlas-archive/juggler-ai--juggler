@@ -37,5 +37,8 @@ func Info() provider.ProviderInfo {
 		// limits. Without this, fail-closed admission would reject every ACP
 		// turn with UnknownContextLimitError.
 		AllowUnknownLimits: true,
+		// Each agent is spawned over stdio, in the conversation's own directory,
+		// so it can only serve a workspace this machine is able to spawn into.
+		SpawnsLocalProcess: true,
 	}
 }

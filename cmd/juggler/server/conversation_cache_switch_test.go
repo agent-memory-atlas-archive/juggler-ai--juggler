@@ -37,11 +37,11 @@ func TestConversationCacheCloseAllReopensUnderNewProject(t *testing.T) {
 	caps := provider.ModelCapabilities{ContextWindowTokens: 1000, MaxOutputTokens: 100}
 
 	// Open two distinct conversations under project A.
-	firstA, err := cache.GetOrOpen(context.Background(), "conv-1", providerName, "model", cred, caps)
+	firstA, err := cache.GetOrOpen(context.Background(), "conv-1", providerName, "model", cred, caps, "")
 	if err != nil {
 		t.Fatalf("open conv-1 under A: %v", err)
 	}
-	if _, err := cache.GetOrOpen(context.Background(), "conv-2", providerName, "model", cred, caps); err != nil {
+	if _, err := cache.GetOrOpen(context.Background(), "conv-2", providerName, "model", cred, caps, ""); err != nil {
 		t.Fatalf("open conv-2 under A: %v", err)
 	}
 	if configs[0].ProjectPath != "/project/A" {
@@ -63,7 +63,7 @@ func TestConversationCacheCloseAllReopensUnderNewProject(t *testing.T) {
 	}
 
 	// Reopening the same convID must build a fresh handle rooted at project B.
-	secondA, err := cache.GetOrOpen(context.Background(), "conv-1", providerName, "model", cred, caps)
+	secondA, err := cache.GetOrOpen(context.Background(), "conv-1", providerName, "model", cred, caps, "")
 	if err != nil {
 		t.Fatalf("reopen conv-1 under B: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestSwitchProjectInvalidatesConversationCache(t *testing.T) {
 	cred := core.ProviderCredential{APIKey: "k"}
 	caps := provider.ModelCapabilities{ContextWindowTokens: 1000, MaxOutputTokens: 100}
 
-	first, err := s.conversationCache.GetOrOpen(context.Background(), "conv", providerName, "model", cred, caps)
+	first, err := s.conversationCache.GetOrOpen(context.Background(), "conv", providerName, "model", cred, caps, "")
 	if err != nil {
 		t.Fatalf("open before switch: %v", err)
 	}
@@ -133,7 +133,7 @@ func TestSwitchProjectInvalidatesConversationCache(t *testing.T) {
 		t.Fatalf("SwitchProject did not close the previous conversation: opened=%+v", opened)
 	}
 
-	second, err := s.conversationCache.GetOrOpen(context.Background(), "conv", providerName, "model", cred, caps)
+	second, err := s.conversationCache.GetOrOpen(context.Background(), "conv", providerName, "model", cred, caps, "")
 	if err != nil {
 		t.Fatalf("reopen after switch: %v", err)
 	}

@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 
 	"juggler/cmd/juggler/core"
 	"juggler/cmd/juggler/ops"
@@ -42,16 +41,11 @@ type OperationResponse struct {
 	Error   string `json:"error,omitempty"`
 }
 
-// WorkspaceLookup answers what a request's workspaceId means. It returns false
-// for an id the session has never registered — which must stay a refusal, never
-// a fall back to the project.
-type WorkspaceLookup func(id string) (core.Workspace, bool)
-
 // OpsAPI handles the unified native operations API. The project path is
 // looked up via a provider func so runtime project switches retarget ops.
 type OpsAPI struct {
 	pathProvider func() string
-	workspaces   WorkspaceLookup
+	workspaces   core.WorkspaceLookup
 	// Operation handlers are stateless and recreated per request.
 }
 
@@ -59,7 +53,7 @@ type OpsAPI struct {
 // the current project path on each call; workspaces resolves a request's
 // workspace id against the session's table, and may be nil in setups that have
 // no session (every request then runs in the project, as it always did).
-func NewOpsAPI(pathProvider func() string, workspaces WorkspaceLookup) *OpsAPI {
+func NewOpsAPI(pathProvider func() string, workspaces core.WorkspaceLookup) *OpsAPI {
 	return &OpsAPI{pathProvider: pathProvider, workspaces: workspaces}
 }
 
@@ -116,87 +110,62 @@ func (api *OpsAPI) routeOperation(ctx context.Context, req OperationRequest, pro
 	return result, err
 }
 
-// resolveWorkspace turns a request's workspace id into the backend that will
-// serve it and the path boundary it is confined to.
+// ResolveWorkspaceScope turns a workspace id into the workspace it names, the
+// kind that serves it, and the path boundary an operation there is confined to.
 //
-// The five answers, and why each is what it is:
+// No id at all is the project, exactly as before workspaces existed: that is
+// every request today, and it must stay byte-identical. Any other id is put to
+// core.WorkspaceLookup.Usable, which owns the refusals — the same ones the turn
+// path gets, so an operation and the CLI it belongs to can never disagree about
+// whether a workspace can be worked in.
 //
-//   - No id at all is the project, exactly as before workspaces existed. This
-//     is every request today, and it must stay byte-identical.
-//   - A ready workspace roots the scope at the workspace, and widens the READ
-//     boundary with the project. A conversation working in a worktree still
-//     needs to read the tree it branched from — to diff against it, to read a
-//     doc that only exists on the main branch — and refusing that would make
-//     the feature's first hour miserable. Writes are unaffected: they are gated
-//     by approval, not by the scope (see PathScope.Sanitize).
-//   - One still being provisioned refuses, saying so. The UI parks a send until
-//     its workspace is ready, so this is the inherited binding and the second
-//     window, not the common path.
-//   - A closed one refuses too, and differently: the id still resolves, so the
-//     conversation can be told the workspace was finished with rather than that
-//     it never existed.
-//   - An id the session does not know is an error and never a fall back to the
-//     project. A stale binding that silently ran in the project root would edit
-//     the wrong tree, and look exactly like working.
-func (api *OpsAPI) resolveWorkspace(req OperationRequest, projectPath string) (ops.KindBackend, ops.PathScope, error) {
+// A ready workspace roots the scope at the workspace, and widens the READ
+// boundary with the project. A conversation working in a worktree still needs
+// to read the tree it branched from — to diff against it, to read a doc that
+// only exists on the main branch — and refusing that would make the feature's
+// first hour miserable. Writes are unaffected: they are gated by approval, not
+// by the scope (see PathScope.Sanitize).
+//
+// It is exported because /api/ops/call is not the only way a command reaches a
+// workspace: a streaming shell rides the WebSocket instead (Server.processShellRequest),
+// and the two must confine a command identically. One of them deciding this
+// twice is how they would come to disagree.
+func ResolveWorkspaceScope(workspaces core.WorkspaceLookup, workspaceID, projectPath string, allowedPaths []string) (ops.WorkspaceRef, ops.WorkspaceKind, ops.PathScope, error) {
 	ref := ops.WorkspaceRef{Kind: core.WorkspaceKindLocal, Root: projectPath}
-	scope := ops.NewPathScope(projectPath, req.AllowedPaths)
+	scope := ops.NewPathScope(projectPath, allowedPaths)
 
-	if req.WorkspaceID != core.DefaultWorkspaceID {
-		ws, err := api.lookupWorkspace(req.WorkspaceID)
+	if workspaceID != core.DefaultWorkspaceID {
+		if workspaces == nil {
+			return ops.WorkspaceRef{}, ops.WorkspaceKind{}, ops.PathScope{},
+				fmt.Errorf("no session is loaded, so workspace %s cannot be resolved", workspaceID)
+		}
+		ws, err := workspaces.Usable(workspaceID)
 		if err != nil {
-			return nil, ops.PathScope{}, err
+			return ops.WorkspaceRef{}, ops.WorkspaceKind{}, ops.PathScope{}, err
 		}
 		ref = ops.WorkspaceRef{ID: ws.ID, Kind: ws.Kind, Root: ws.Root, Meta: ws.Meta}
 		// The project joins the allowed roots so reads can reach it; the scope
 		// is still ROOTED at the workspace, which is what confines a shell's
 		// cwd (see ops.validateCwd, which consults the root alone).
-		scope = ops.NewPathScope(ws.Root, append(append([]string{}, req.AllowedPaths...), projectPath)).
+		scope = ops.NewPathScope(ws.Root, append(append([]string{}, allowedPaths...), projectPath)).
 			WithProjectRoot(projectPath)
 	}
 
 	kind, err := ops.LookupWorkspaceKind(ref.Kind)
 	if err != nil {
+		return ops.WorkspaceRef{}, ops.WorkspaceKind{}, ops.PathScope{}, err
+	}
+	return ref, kind, scope, nil
+}
+
+// resolveWorkspace turns a request's workspace id into the backend that will
+// serve it and the path boundary it is confined to.
+func (api *OpsAPI) resolveWorkspace(req OperationRequest, projectPath string) (ops.KindBackend, ops.PathScope, error) {
+	ref, kind, scope, err := ResolveWorkspaceScope(api.workspaces, req.WorkspaceID, projectPath, req.AllowedPaths)
+	if err != nil {
 		return nil, ops.PathScope{}, err
 	}
 	return kind.New(ref), scope, nil
-}
-
-// lookupWorkspace resolves a registered workspace and reports why it cannot be
-// used, if it cannot.
-func (api *OpsAPI) lookupWorkspace(id string) (core.Workspace, error) {
-	if api.workspaces == nil {
-		return core.Workspace{}, fmt.Errorf("unknown workspace: %s", id)
-	}
-	ws, ok := api.workspaces(id)
-	if !ok {
-		return core.Workspace{}, fmt.Errorf("unknown workspace: %s", id)
-	}
-	switch ws.State {
-	case core.WorkspaceStateReady:
-	case core.WorkspaceStateProvisioning:
-		return core.Workspace{}, fmt.Errorf("workspace %s is still being created", workspaceName(ws))
-	case core.WorkspaceStateClosed:
-		return core.Workspace{}, fmt.Errorf("workspace %s was closed", workspaceName(ws))
-	default:
-		return core.Workspace{}, fmt.Errorf("workspace %s is in an unknown state: %s", workspaceName(ws), ws.State)
-	}
-	// One stat, so a workspace whose tree was removed behind our back fails
-	// once and legibly, rather than as a run of cryptic errors from whichever
-	// operation happened to touch it first.
-	if info, err := os.Stat(ws.Root); err != nil || !info.IsDir() {
-		return core.Workspace{}, fmt.Errorf("workspace %s is missing its root: %s", workspaceName(ws), ws.Root)
-	}
-	return ws, nil
-}
-
-// workspaceName is what to call a workspace in an error: its label when it has
-// one, since that is what the user named it, and its id otherwise.
-func workspaceName(ws core.Workspace) string {
-	if ws.Label != "" {
-		return ws.Label
-	}
-	return ws.ID
 }
 
 // sendSuccess sends a success response

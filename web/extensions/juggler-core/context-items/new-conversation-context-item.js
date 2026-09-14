@@ -144,7 +144,10 @@ class NewConversationContextItem extends ContextItem {
     const newId = await session.createConversation(name, {
       origin: 'new-conversation-tool',
       focus: true,
-      focusFrom: this.conversation?.id || ''
+      focusFrom: this.conversation?.id || '',
+      // The new conversation is spawned to carry on work that is about the
+      // files in this one's workspace, so it is born working there too.
+      workspaceId: this.conversation?.workspaceId || ''
     });
 
     const conv = session.getConversation(newId);

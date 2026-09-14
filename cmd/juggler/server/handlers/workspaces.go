@@ -63,7 +63,14 @@ func (api *SessionAPI) broadcastWorkspaces() {
 // It has no row, every client already knows the project path, and putting it in
 // the list would make "is this workspace registered" and "is this the project"
 // the same question.
+// Listing is also when the table's availability is re-checked, and the only
+// time it is: a place can go while the app runs, and nothing else looks. The
+// broadcast is conditional on something having actually moved, so an unchanged
+// list stays a read.
 func (api *SessionAPI) HandleListWorkspaces(w http.ResponseWriter, r *http.Request) {
+	if api.manager().RefreshWorkspaceAvailability() {
+		api.broadcastWorkspaces()
+	}
 	WriteJSON(w, r, 0, map[string]any{"workspaces": api.manager().ListWorkspaces()})
 }
 

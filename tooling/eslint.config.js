@@ -368,6 +368,28 @@ export default [
   {
     files: ['web/extensions/**/*-context-item.js'],
     rules: {
+      // ===================================================================
+      // Tools reach the rooted ops through their item, never directly
+      // ===================================================================
+      // Every op below runs somewhere, and where is a property of the ITEM —
+      // its conversation's workspace, and the roots its user has granted — not
+      // of the call. Imported directly they take those as optional arguments,
+      // so forgetting them was silent: the op ran in the project and looked
+      // exactly like it had worked. `this.ops` cannot be built without them.
+      // An item that genuinely means the project (memory, whose file is the
+      // project's and never a worktree's) disables this by name, with a reason.
+      'no-restricted-imports': ['error', {
+        paths: [{
+          name: 'juggler/ops',
+          importNames: [
+            'readFile', 'writeFile', 'editFile', 'editFileLines', 'fileHash',
+            'stat', 'mkdir', 'getTree', 'expandDirectory', 'glob', 'grep',
+            'findSymbol', 'shell', 'shellBackground', 'shellStreaming',
+            'FileSystem', 'ReadOnlyFileSystem'
+          ],
+          message: 'Use this.ops.<name>() instead — the item carries the workspace and allowed-paths grant these ops run under. Importing them directly makes both optional, and an op that quietly ran in the project looks exactly like one that worked. See ContextItem#ops.'
+        }]
+      }],
       'no-restricted-syntax': [
         'error',
         {

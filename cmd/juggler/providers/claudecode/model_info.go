@@ -55,6 +55,9 @@ func Info() provider.ProviderInfo {
 		// The CLI's bare Haiku alias — a first-class entry in ListModelsWithInfo,
 		// so it matches exactly. Fast/cheap tier for out-of-band micro-tasks.
 		CheapModel: "haiku",
+		// The provider IS a subprocess, run in the conversation's own directory,
+		// so it can only serve a workspace this machine is able to spawn into.
+		SpawnsLocalProcess: true,
 	}
 }
 

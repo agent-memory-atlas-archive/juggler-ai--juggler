@@ -161,6 +161,9 @@ import { runTests as runUIPrefScopeTests } from '../unit-tests/ui-pref-scope-tes
 import { runTests as runThemeToggleTests } from '../unit-tests/theme-toggle-test.js';
 import { runTests as runToolNameResolutionTests } from '../unit-tests/tool-name-resolution-test.js';
 import { runTests as runNewTabUxTests } from '../unit-tests/new-tab-ux-test.js';
+import { runTests as runConversationWorkspaceTests } from '../unit-tests/conversation-workspace-test.js';
+import { runTests as runSetupPanelLoopsTests } from '../unit-tests/setup-panel-loops-test.js';
+import { runTests as runSetupFieldFocusTests } from '../unit-tests/setup-field-focus-test.js';
 import { runTests as runBinUndoToastTests } from '../unit-tests/bin-undo-toast-test.js';
 import { runTests as runBinGhostResurrectionTests } from '../unit-tests/bin-ghost-resurrection-test.js';
 import { runTests as runBinEmptyMenuTests } from '../unit-tests/bin-empty-menu-test.js';
@@ -364,9 +367,17 @@ const ALL_TESTS = [
 ].map(t => ({ ...t, name: `integration:${t.name}` }));
 
 /**
- * All unit test suites — each runs in its own isolated browser tab.
+ * All unit test suites.
  * Each entry is a { name, run } pair where run(ctx) returns { passed, failed, errors }.
  * Names appear as individual test entries in listTests() and are addressable via -run.
+ *
+ * A suite does NOT get a realm to itself. A lane loads its page once and runs
+ * suite after suite in it (`headless-test.html`, which reloads only every
+ * LANE_RECYCLE_EVERY tests, to reclaim heap), so module-level state a suite
+ * leaves behind — a registration, a singleton, a defined element — is there for
+ * every suite that follows it and for a second run of the suite itself. A suite
+ * that installs something global owns putting it back, or tolerates finding it
+ * already there.
  *
  * An entry may also set `needsExclusiveRun: true`, which makes the Go runner
  * schedule it alone with no sibling lane in flight. Set it when a suite asserts
@@ -520,6 +531,11 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:theme-toggle', run: runThemeToggleTests, needsExclusiveRun: true },
   { name: 'unit:tool-name-resolution', run: runToolNameResolutionTests },
   { name: 'unit:new-tab-ux', run: runNewTabUxTests },
+  { name: 'unit:conversation-workspace', run: runConversationWorkspaceTests },
+  { name: 'unit:setup-panel-loops', run: runSetupPanelLoopsTests },
+  // Exclusive: it asserts on document.activeElement, which every lane in the
+  // shared origin can move.
+  { name: 'unit:setup-field-focus', run: runSetupFieldFocusTests, needsExclusiveRun: true },
   { name: 'unit:bin-undo-toast', run: runBinUndoToastTests },
   { name: 'unit:bin-ghost-resurrection', run: runBinGhostResurrectionTests },
   { name: 'unit:bin-empty-menu', run: runBinEmptyMenuTests },
@@ -652,7 +668,13 @@ export function ensureExtensionSuitesLoaded() {
         try {
           const mod = await import(prefix + entry.path);
           if (typeof mod.runTests === 'function') {
-            suites.push({ name: entry.name, run: mod.runTests });
+            // An extension suite declares exclusivity by exporting the flag, the
+            // internal suites' table not being somewhere it can reach.
+            suites.push({
+              name: entry.name,
+              run: mod.runTests,
+              needsExclusiveRun: mod.needsExclusiveRun === true,
+            });
             continue;
           }
           throw new Error('module has no runTests export');
@@ -973,14 +995,18 @@ export function listTests() {
  *   - `pollutesFixtureRoot` (integration tests): writes a fixed-name file to
  *     the shared fixture root that production auto-detection scans, which a
  *     sibling lane's createConversation would pick up.
- *   - `needsExclusiveRun` (unit suites): asserts on `document.activeElement`,
- *     which a sibling lane can invalidate by calling focus() — all lanes are
- *     iframes in one window, and only one frame holds focus at a time.
+ *   - `needsExclusiveRun` (unit and extension suites): asserts on
+ *     `document.activeElement`, which a sibling lane can invalidate by calling
+ *     focus() — all lanes are iframes in one window, and only one frame holds
+ *     focus at a time — or builds and removes directories in the shared fixture
+ *     root, which a sibling lane walking the project reads while they come and
+ *     go. An extension suite declares it by exporting `needsExclusiveRun`.
  * @returns {string[]} Names of tests that must run in isolation
  */
 export function listExclusiveTests() {
   return [
     ...ALL_TESTS.filter(t => t.pollutesFixtureRoot).map(t => t.name),
     ...UNIT_TEST_SUITES.filter(s => s.needsExclusiveRun).map(s => s.name),
+    ...EXTENSION_SUITES.filter(s => s.needsExclusiveRun).map(s => s.name),
   ];
 }

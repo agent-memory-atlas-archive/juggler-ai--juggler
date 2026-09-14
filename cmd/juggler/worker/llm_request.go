@@ -145,6 +145,14 @@ func (r *run) buildLLMRequestWithIntent(ctxResult *ContextResult, tools []ToolDe
 		"transactionId": txnID,
 	}
 
+	// Where this conversation works. The server resolves the id to a directory
+	// and roots the turn's provider there; omitted when the conversation is
+	// bound to the project, so an unbound request is exactly what it was before
+	// workspaces existed.
+	if workspaceID := r.workspaceID(); workspaceID != "" {
+		request["workspaceId"] = workspaceID
+	}
+
 	if explicitContinuation {
 		request["explicitContinuation"] = true
 	}
