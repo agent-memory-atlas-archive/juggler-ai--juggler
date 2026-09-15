@@ -17,6 +17,8 @@
 import { computeDiff } from '../../js/lib/diff-utils.js';
 import { assert } from '../utilities/test-helpers.js';
 
+/** @typedef {import('../../js/lib/diff-types.js').DiffHunk} DiffHunk */
+
 /**
  * @typedef {object} TestResult
  * @property {number} passed Number of passing assertions.
@@ -88,7 +90,9 @@ function lines(count) {
 function checkHunks(oldText, newText, why) {
   const oldLines = oldText === '' ? [] : oldText.split('\n');
   const newLines = newText === '' ? [] : newText.split('\n');
-  const hunks = computeDiff(oldText, newText, 1);
+  const computed = computeDiff(oldText, newText, 1);
+  assert(computed !== null, `${why}: the diff was refused, and these cases are all well inside the budget`);
+  const hunks = /** @type {DiffHunk[]} */ (computed);
 
   for (const hunk of hunks) {
     for (const [side, source, start, count, dropped] of /** @type {Array<[string, string[], number, number, string]>} */ ([
@@ -147,9 +151,9 @@ export async function runTests(_ctx) {
   // The reported case: an added line one context line after a previous change
   // was rendered ahead of the context that precedes it.
   check('nearby insertions keep file order', () => {
-    const hunks = computeDiff(OLD_TEXT, NEW_TEXT, 1);
+    const hunks = /** @type {DiffHunk[]} */ (computeDiff(OLD_TEXT, NEW_TEXT, 1));
     assert(hunks.length === 1, `expected one hunk, got ${hunks.length}`);
-    const rendered = /** @type {import('../../js/lib/diff-types.js').DiffHunk} */ (hunks[0]).lines
+    const rendered = /** @type {DiffHunk} */ (hunks[0]).lines
       .map(l => `${l.type === 'add' ? '+' : l.type === 'remove' ? '-' : ' '}${l.content.trim()}`);
     const want = [
       ' slug="demo",',
@@ -173,6 +177,54 @@ export async function runTests(_ctx) {
     assert(rendered.join('\n') === want.join('\n'), `rows read:\n${rendered.join('\n')}\nwant:\n${want.join('\n')}`);
   });
 
+  // What the budget is spent on is the region that differs, not the file it
+  // sits in: the table is built between the last common leading line and the
+  // first common trailing one.
+  check('a small edit to a big file is diffed, not refused', () => {
+    const before = lines(5000);
+    const after = [...before];
+    after[2500] = 'X';
+    const computed = computeDiff(before.join('\n'), after.join('\n'), 1);
+    assert(computed !== null, 'a one-line edit must be diffed however long the file is');
+    const hunks = /** @type {DiffHunk[]} */ (computed);
+    assert(hunks.length === 1, `expected one hunk, got ${hunks.length}`);
+    const hunk = /** @type {DiffHunk} */ (hunks[0]);
+    assert(hunk.oldStart === 2498 && hunk.newStart === 2498,
+      `the hunk should open three lines above the change, got ${hunk.oldStart}/${hunk.newStart}`);
+    assert(hunk.lines.length === 8, `expected the change and six context lines, got ${hunk.lines.length}`);
+    const changed = hunk.lines.filter(line => line.type !== 'equal').map(line => `${line.type} ${line.content}`);
+    assert(changed.join(', ') === 'remove l2501, add X', `expected one line replaced, got ${changed.join(', ')}`);
+  });
+
+  check('only the region that differs is charged to the budget', () => {
+    const rewritten = (/** @type {string} */ tag) => Array.from({ length: 2100 }, (_, k) => `${tag} ${k}`).join('\n');
+    assert(computeDiff(rewritten('was'), rewritten('now'), 1) === null,
+      'two 2,100-line files sharing no line are past the budget and must be refused');
+    const shared = lines(20000).join('\n');
+    assert(computeDiff(`${shared}\n${rewritten('was')}`, `${shared}\n${rewritten('now')}`, 1) === null,
+      'the same rewrite is still past the budget with 20,000 common lines above it');
+    assert(computeDiff(`${shared}\nX`, `${shared}\nY`, 1) !== null,
+      'one changed line under 20,000 common ones costs one cell, not four hundred million');
+  });
+
+  // Where the trim stops. Only the ends of a file are trimmed, so two changes
+  // far apart leave every line between them inside the region and charged to
+  // the budget, identical or not: a span of some two thousand lines between one
+  // change and the next is refused, however little of it differs.
+  check('the span between two distant changes is charged whole', () => {
+    const before = lines(20000);
+    const after = [...before];
+    after[2000] = 'X';
+    after[14000] = 'Y';
+    assert(computeDiff(before.join('\n'), after.join('\n'), 1) === null,
+      'two changes 12,000 lines apart put all 12,000 in the region');
+    const near = [...before];
+    near[2000] = 'X';
+    near[2500] = 'Y';
+    assert(computeDiff(before.join('\n'), near.join('\n'), 1) !== null,
+      'two changes 500 lines apart stay well inside it');
+  });
+
   const l = lines(20).join('\n');
   /** @type {Array<[string, string, string]>} */
   const cases = [
@@ -187,6 +239,11 @@ export async function runTests(_ctx) {
     ['insert at the very end', l, [...lines(20), 'X'].join('\n')],
     ['every other line changed', l, lines(20).map((s, k) => (k % 2 ? 'X' + s : s)).join('\n')],
     ['no changes', l, l],
+    ['one line changed deep in a big file', lines(5000).join('\n'), [...lines(5000).slice(0, 2500), 'X', ...lines(5000).slice(2501)].join('\n')],
+    ['big file changed at its first line', lines(5000).join('\n'), ['X', ...lines(5000).slice(1)].join('\n')],
+    ['big file changed at its last line', lines(5000).join('\n'), [...lines(5000).slice(0, 4999), 'X'].join('\n')],
+    ['big file with a rewritten middle', lines(5000).join('\n'),
+      [...lines(5000).slice(0, 2000), ...lines(300).map(s => `X${s}`), ...lines(5000).slice(2300)].join('\n')],
     ['from empty', '', lines(3).join('\n')],
     ['to empty', lines(3).join('\n'), '']
   ];

@@ -25,18 +25,6 @@ import { isAbsolutePath } from '../utils/code-selection.js';
  */
 const MAX_HIGHLIGHT_CHARS = 200_000;
 
-/**
- * The largest snapshot worth diffing here, as cells of the table the line diff
- * builds: it allocates one row per line of the old file and one column per line
- * of the new, and computes it on the spot, in the only thread there is. Two
- * two-thousand-line files are about the point where that stops being instant,
- * and a panel that stopped answering would be a worse outcome than not drawing.
- *
- * A server patch arrives already hunked and never meets this: nothing is
- * computed to draw it, however large the file it came from.
- */
-const DIFF_CELL_BUDGET = 4_000_000;
-
 /** How a file with no text patch to show says so, by the status git gave it. */
 const STATUS_NOTICES = {
   binary: 'Binary file. No text diff.',
@@ -44,18 +32,6 @@ const STATUS_NOTICES = {
   truncated: 'This patch was cut short; the counts cover the whole file.',
   large: 'This file is too large to diff here.',
 };
-
-/**
- * Lines in a string, without building the array of them.
- * @param {string} text - The text.
- * @returns {number} Its line count.
- */
-function lineCount(text) {
-  if (!text) return 0;
-  let lines = 1;
-  for (let at = text.indexOf('\n'); at !== -1; at = text.indexOf('\n', at + 1)) lines++;
-  return lines;
-}
 
 /**
  * One hunk of a server patch in the renderer's own shape. The server counts
@@ -294,12 +270,16 @@ class DiffViewer extends HTMLElement {
       return { hunks: patch.hunks, notices, added: patch.added, removed: patch.removed, drawable: !patch.binary };
     }
 
-    if ((lineCount(this.oldContent) + 1) * (lineCount(this.newContent) + 1) > DIFF_CELL_BUDGET) {
+    // A snapshot is diffed here and now, in the only thread there is, so the
+    // line diff refuses a changed region past its own budget rather than stall
+    // the panel. A server patch arrives already hunked and never meets this:
+    // nothing is computed to draw it, however large the file it came from.
+    const hunks = computeDiff(this.oldContent, this.newContent, this.startLineNumber);
+    if (hunks === null) {
       notices.push({ kind: 'large', text: STATUS_NOTICES.large });
       return { hunks: [], notices, added: 0, removed: 0, drawable: false };
     }
 
-    const hunks = /** @type {DiffHunk[]} */ (computeDiff(this.oldContent, this.newContent, this.startLineNumber));
     return { hunks, notices, added: this.countAdded(hunks), removed: this.countRemoved(hunks), drawable: true };
   }
 

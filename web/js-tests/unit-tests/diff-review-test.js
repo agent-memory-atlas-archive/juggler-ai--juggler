@@ -227,10 +227,24 @@ export async function runTests(_ctx) {
     assert(row.includes('|2|+|c'), `an addition should number only the new side, got ${row.join(' / ')}`);
   });
 
-  run('a file too large to diff here is refused, not attempted', () => {
+  run('a small edit to a big file is diffed, however big the file', () => {
     const el = viewer();
-    const big = `${new Array(2100).fill('x').join('\n')}\n`;
-    el.setDiff(big, `${big}y\n`, '/src/huge.js');
+    const body = Array.from({ length: 4000 }, (_, k) => `const x${k} = ${k};`);
+    const edited = [...body];
+    edited[2000] = 'const x2000 = CHANGED;';
+    el.setDiff(`${body.join('\n')}\n`, `${edited.join('\n')}\n`, '/src/huge.js');
+    assert(notices(el) === '', `a one-line edit needs no notice, got ${notices(el)}`);
+    const row = rows(el);
+    assert(row.includes('2001||-|const x2000 = 2000;'), `expected the removal, got ${row.join(' / ')}`);
+    assert(row.includes('|2001|+|const x2000 = CHANGED;'), `expected the addition, got ${row.join(' / ')}`);
+    assert(row.length === 8, `only the change and its context should be drawn, got ${row.length} rows`);
+  });
+
+  run('a changed region too large to diff here is refused, not attempted', () => {
+    const el = viewer();
+    const before = Array.from({ length: 2100 }, (_, k) => `was ${k}`).join('\n');
+    const after = Array.from({ length: 2100 }, (_, k) => `now ${k}`).join('\n');
+    el.setDiff(`${before}\n`, `${after}\n`, '/src/huge.js');
     assert(/too large/i.test(notices(el)), `expected the size refusal: ${notices(el)}`);
     assert(lines(el).length === 0, 'nothing should be diffed past the budget');
   });
