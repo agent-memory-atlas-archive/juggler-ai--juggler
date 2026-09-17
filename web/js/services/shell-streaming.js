@@ -31,6 +31,7 @@ import { MAX_EXEC_TIMEOUT_MS } from './ops-api.js';
  * @property {boolean} done - Whether execution is complete
  * @property {number} [exitCode] - Exit code (only present when done=true)
  * @property {string} [error] - Error message (only present on failure)
+ * @property {boolean} [blocked] - Whether the command was refused outright and never ran
  * @property {string} [status] - Liveness status for a silent command: "awaiting-permission" | "running" (non-done, empty data)
  * @property {string} [hint] - Human-readable explanation accompanying status
  * @property {string} [outputFile] - Absolute path to the full-output spill file (only when output was spilled, on the done chunk)
@@ -46,6 +47,7 @@ import { MAX_EXEC_TIMEOUT_MS } from './ops-api.js';
  * @property {number} exitCode - Process exit code
  * @property {boolean} success - Whether command succeeded (exitCode === 0)
  * @property {string} [error] - Error message if execution failed
+ * @property {boolean} [blocked] - Whether the command was refused outright and never ran
  * @property {boolean} [cancelled] - Whether execution was cancelled via AbortSignal
  * @property {string} [outputFile] - Absolute path to the full-output spill file (only when output was spilled)
  * @property {number} [outputBytes] - Complete output byte count (only when spilled)
@@ -138,13 +140,17 @@ export async function shellExecuteStreaming(params, onOutput, signal) {
           : {};
 
         if (chunk.error) {
-          // Error case - still resolve with result, let caller handle
+          // Error case - still resolve with result, let caller handle. `error`
+          // is the only account of what went wrong (a refusal, a bad cwd, a
+          // timeout), so it travels with the result rather than being inferred
+          // from the exit code, which is 1 for all of them.
           resolve({
             command,
             stdout: stdout.trimEnd(),
             exitCode: chunk.exitCode || 1,
             success: false,
             error: chunk.error,
+            ...(chunk.blocked ? { blocked: true } : {}),
             ...spillFields
           });
         } else {

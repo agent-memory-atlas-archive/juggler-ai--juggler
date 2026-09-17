@@ -128,7 +128,7 @@ func TestShellCommandWhitelist(t *testing.T) {
 		description string
 	}{
 		{"rm -rf /", "Recursive delete"},
-		{"dd if=/dev/zero of=/dev/null count=1", "Disk write attempt"},
+		{"dd if=/dev/zero of=/dev/sda bs=1M count=1", "Disk write attempt"},
 		{":(){ :|:& };:", "Fork bomb"},
 		{"chmod 777 /usr/bin/nonexistent", "Permission modification attempt"},
 	}

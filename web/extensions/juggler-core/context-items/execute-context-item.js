@@ -904,12 +904,17 @@ class ExecuteContextItem extends ContextItem {
         this.output += `\n… full output saved to ${result.outputFile}`;
       }
 
+      // `error` must travel with the result: it is the only statement of why a
+      // command that never ran didn't run, and getSummary has nothing else to
+      // tell the model apart from an exit code of 1.
       return {
         command: result.command,
         stdout: result.stdout,
         stderr: '', // Merged into stdout
         exitCode: result.exitCode,
         success: result.success,
+        ...(result.error ? { error: result.error } : {}),
+        ...(result.blocked ? { blocked: true } : {}),
         ...(result.outputFile
           ? { outputFile: result.outputFile, outputBytes: result.outputBytes, truncated: result.truncated }
           : {})
@@ -961,31 +966,46 @@ class ExecuteContextItem extends ContextItem {
     }
 
     // Success case - format command result
-    const result = /** @type {{command?: string, exitCode: number, stdout?: string, stderr?: string}} */ (outcome.result);
+    const result = /** @type {{command?: string, exitCode: number, stdout?: string, stderr?: string, error?: string, blocked?: boolean}} */ (outcome.result);
     const command = result.command || '';
     const exitCode = result.exitCode;
     const stdout = result.stdout || '';
     const stderr = result.stderr || '';
+    // Set when the run itself went wrong rather than the command exiting
+    // non-zero: refused before starting, an unusable cwd, a timeout, a kill.
+    const runError = result.error || '';
+    const blocked = Boolean(result.blocked);
 
-    const cmdSuccess = exitCode === 0;
+    const cmdSuccess = exitCode === 0 && !runError;
     const icon = cmdSuccess ? '✓' : '✗';
+
+    // The lead says which kind of non-completion this was; the server's own
+    // text follows it verbatim, because that is the part that names the cause.
+    const errorLead = blocked
+      ? 'Blocked by Juggler — the command never ran, so retrying it unchanged will do the same.'
+      : "Couldn't run the command to completion.";
 
     // Build summary for LLM (this is what goes in tool_result content)
     // Note: stderr is merged into stdout at execution time
-    let summary = stdout || '(no output)';
-    if (!cmdSuccess) {
-      summary += `\n\nexit code: ${exitCode}`;
+    let summary;
+    if (runError) {
+      summary = `${errorLead}\n\n${runError}`;
+      if (stdout) summary += `\n\nOutput before it stopped:\n${stdout}`;
+    } else {
+      summary = stdout || '(no output)';
+      if (!cmdSuccess) summary += `\n\nexit code: ${exitCode}`;
     }
     summary = this.truncateForLLM(summary);
 
     // Details for UI display
     let details = `$ ${command}\n\n`;
+    if (runError) details += `${errorLead}\n\n${runError}\n\n`;
     if (stdout) details += stdout;
     if (stderr) details += (stdout ? '\n\n' : '') + `stderr: ${stderr}`;
-    if (!cmdSuccess) details += `\n\nexit code: ${exitCode}`;
+    if (!cmdSuccess && !runError) details += `\n\nexit code: ${exitCode}`;
 
     // Generate feedback for LLM (appended by response-handler)
-    const feedbackForLLM = this._generateFeedbackForLLM(command, stdout, stderr, exitCode);
+    const feedbackForLLM = this._generateFeedbackForLLM(command, stdout, stderr, exitCode, runError, blocked);
 
     return {
       summary,
@@ -1003,10 +1023,21 @@ class ExecuteContextItem extends ContextItem {
    * @param {string} _stdout - Standard output (unused)
    * @param {string} _stderr - Standard error (unused)
    * @param {number} exitCode - Exit code
+   * @param {string} [runError] - Why the run itself did not complete, when it didn't
+   * @param {boolean} [blocked] - Whether the command was refused and never ran
    * @returns {string|undefined} Feedback message or undefined
    * @private
    */
-  _generateFeedbackForLLM(_command, _stdout, _stderr, exitCode) {
+  _generateFeedbackForLLM(_command, _stdout, _stderr, exitCode, runError, blocked) {
+    // A command that never ran has no exit code worth reporting — say what
+    // stopped it, so the next move is a different command rather than the
+    // same one again.
+    if (runError) {
+      return blocked
+        ? `Juggler blocked this command before running it: ${runError}. Retrying it unchanged will be blocked again — rewrite it or ask the user to run it.`
+        : `The command did not run to completion: ${runError}`;
+    }
+
     // Only provide feedback for failed commands
     if (exitCode === 0) {
       return undefined;

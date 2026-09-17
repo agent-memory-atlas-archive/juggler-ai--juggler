@@ -73,7 +73,7 @@ itself cannot bypass the project-directory check; only explicit user
 
 Shell commands run with the full privileges of the user running Juggler. The
 server contains a tiny "obvious foot-gun" filter (`bestEffortShellSanityCheck`
-in `cmd/juggler/ops/shell_ops.go`) that rejects a hard-coded list of
+in `cmd/juggler/ops/shell_command_parse.go`) that rejects a hard-coded list of
 patterns like `rm -rf /`. **This is not a security control** — it is trivial
 to bypass and exists only to catch accidental destructive copy-pastes. The
 real safety net is the UI approval modal: every shell tool call surfaces to

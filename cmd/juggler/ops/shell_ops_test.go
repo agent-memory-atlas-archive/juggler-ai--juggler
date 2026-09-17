@@ -5,6 +5,7 @@
 package ops
 
 import (
+	"context"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -485,10 +486,69 @@ func TestBestEffortShellSanityCheck(t *testing.T) {
 		"echo hello > /dev/null",
 		"ls -l /dev/sda",
 		"echo hello",
+		// `dd` reading and writing ordinary files is a routine copy, and the
+		// destructive form is caught by the raw-device pattern below it.
+		"dd if=backup.img of=restore.img",
+		"dd if=/dev/urandom of=key.bin bs=32 count=1",
+		"dd if=/dev/zero of=/dev/null count=1",
+		"dd if=input.bin bs=1M | gzip > out.gz",
 	}
 	for _, cmd := range allowed {
 		if err := bestEffortShellSanityCheck(cmd); err != nil {
 			t.Errorf("expected %q to be allowed, got: %v", cmd, err)
 		}
+	}
+}
+
+// TestExecuteStreaming_RefusalIsReportedAsBlocked pins the whole account of a
+// refused command on the terminal chunk: the reason in Error, and Blocked to
+// say it never ran. The exit code cannot carry that — a refusal and a command
+// that ran and failed both surface as 1 — so a caller with only the code tells
+// the model "exit code 1" and the model retries a command that can never work.
+func TestExecuteStreaming_RefusalIsReportedAsBlocked(t *testing.T) {
+	dir := t.TempDir()
+	shellOps := NewShellOperations(NewPathScope(dir, nil))
+
+	out := make(chan ShellStreamChunk, 8)
+	go shellOps.ExecuteStreaming(context.Background(), "shell-refused", "", "mkfs.ext4 /dev/sdb1", "", 30000, out)
+
+	c := awaitChunk(t, out, "the terminal chunk", func(c ShellStreamChunk) bool {
+		return c.Done
+	})
+
+	if !c.Blocked {
+		t.Errorf("a refused command must be marked Blocked, got %+v", c)
+	}
+	if !strings.Contains(c.Error, "dangerous pattern") {
+		t.Errorf("the terminal chunk must carry the reason, got Error=%q", c.Error)
+	}
+	if c.Data != "" {
+		t.Errorf("a command that never ran has no output, got Data=%q", c.Data)
+	}
+}
+
+// TestExecuteStreaming_TimeoutIsNotReportedAsBlocked keeps Blocked meaning the
+// one thing it means. A timeout also ends with Error set, but the command DID
+// run, so its output is real and a retry is not automatically futile.
+func TestExecuteStreaming_TimeoutIsNotReportedAsBlocked(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX-only shell command")
+	}
+
+	dir := t.TempDir()
+	shellOps := NewShellOperations(NewPathScope(dir, nil))
+
+	out := make(chan ShellStreamChunk, 64)
+	go shellOps.ExecuteStreaming(context.Background(), "shell-timeout", "", "echo before && sleep 5", "", 300, out)
+
+	c := awaitChunk(t, out, "the terminal chunk", func(c ShellStreamChunk) bool {
+		return c.Done
+	})
+
+	if c.Blocked {
+		t.Errorf("a timeout is not a refusal — Blocked must stay false, got %+v", c)
+	}
+	if !strings.Contains(c.Error, "timeout") {
+		t.Errorf("expected a timeout reason, got Error=%q", c.Error)
 	}
 }

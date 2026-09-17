@@ -30,8 +30,9 @@ type ShellStreamChunk struct {
 	Done        bool   `json:"done"`
 	ExitCode    int    `json:"exitCode,omitempty"`
 	Error       string `json:"error,omitempty"`
-	Status      string `json:"status,omitempty"` // "awaiting-permission" | "running"; empty for data/done chunks
-	Hint        string `json:"hint,omitempty"`   // human-readable explanation for the status
+	Status      string `json:"status,omitempty"`  // "awaiting-permission" | "running"; empty for data/done chunks
+	Hint        string `json:"hint,omitempty"`    // human-readable explanation for the status
+	Blocked     bool   `json:"blocked,omitempty"` // true when the command was refused and never ran
 	OutputFile  string `json:"outputFile,omitempty"`
 	OutputBytes int64  `json:"outputBytes,omitempty"`
 	Truncated   bool   `json:"truncated,omitempty"`
@@ -52,11 +53,16 @@ func (ops *ShellOperations) ExecuteStreaming(
 ) {
 	defer close(output)
 
+	// Blocked marks the one error the caller must not retry: the command was
+	// refused outright, so there is no output and nothing about the environment
+	// to fix. Without it a refusal is indistinguishable from a command that ran
+	// and failed, and the model retries it until it runs out of patience.
 	if err := bestEffortShellSanityCheck(command); err != nil {
 		output <- ShellStreamChunk{
 			ShellID: shellID,
 			Done:    true,
 			Error:   fmt.Sprintf("invalid command: %v", err),
+			Blocked: true,
 		}
 		return
 	}

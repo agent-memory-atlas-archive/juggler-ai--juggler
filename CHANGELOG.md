@@ -5,6 +5,9 @@ of changes; this project follows semantic versioning.
 
 ## [Unreleased]
 
+- A refused or timed-out bash command now tells the agent why, not just "exit code 1"
+- `dd` reading a file is no longer refused; writing to a raw disk device still is
+
 ## [0.6.4] - 2026-09-14
 
 - Fixed a macOS window on a second display being pulled back to the main one on every drop

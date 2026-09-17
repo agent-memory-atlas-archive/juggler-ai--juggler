@@ -340,7 +340,6 @@ var shellFootGuns = []struct {
 		"write to a raw disk device"},
 
 	{regexp.MustCompile(`(?i)\bmkfs(?:\.\w+)?\b`), "mkfs"},
-	{regexp.MustCompile(`(?i)\bdd\s+if=`), "dd if="},
 	{regexp.MustCompile(`:\s*\(\s*\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:`), "fork bomb"},
 }
 
