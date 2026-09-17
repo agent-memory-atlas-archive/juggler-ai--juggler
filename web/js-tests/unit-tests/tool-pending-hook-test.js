@@ -24,7 +24,7 @@
  *   6. A still-pending onToolPending promise stamps `reviewStatus.busy` (+ a
  *      manifest-derived label) on the parked tool for the promise's lifetime,
  *      and clears it when the promise settles while the tool is still PENDING.
- *   7. A synchronous (non-thenable) hook never sets `reviewStatus`.
+ *   7. A synchronous (non-thenable) hook leaves no `reviewStatus`.
  *   8. If the tool resolves before the promise settles (the allow path), the
  *      clear is a guarded no-op — it never writes onto the resolved item.
  *   9. A hook that resolves with `{note}` leaves a settled (non-busy)
@@ -33,6 +33,10 @@
  *  10. A hook that refuses the call (`refuseApproval`) settles it as a FAILED
  *      tool, not a cancelled one — the worker stops the turn on a cancelled
  *      tool, so a refusal recorded that way would end the run.
+ *  11. A call under review never reads as awaiting the user while the reviewer
+ *      holds it — not even in the transaction that parks it, which is the one
+ *      the attention alert fires from — and does read that way the moment the
+ *      review ends and leaves it parked.
  * @module unit-tests/tool-pending-hook-test
  */
 
@@ -43,6 +47,10 @@ import {
   assert
 } from '../utilities/test-helpers.js';
 import { handleNewToolAction } from '../../js/model/conversation-tool-actions.js';
+import {
+  hasPendingApprovalInTree,
+  hasUnattendedPendingApprovalInTree
+} from '../../js/model/thread-navigation.js';
 import { createToolActionMessage, TOOL_STATES } from '../../sdk/lib/message.js';
 
 /**
@@ -324,8 +332,9 @@ export async function runTests(_ctx) {
     }
 
     // =======================================================================
-    // Test 7: a synchronous (non-thenable) onToolPending never sets reviewStatus
-    // — the indicator is tied to an in-flight promise, and there is none.
+    // Test 7: a synchronous (non-thenable) onToolPending leaves no reviewStatus
+    // — the indicator is tied to an in-flight promise, and there is none, so the
+    // mark the park applied is dropped the moment the hook returns without one.
     // =======================================================================
     try {
       const conversation = await createApprovalTestConversation(session);
@@ -500,6 +509,71 @@ export async function runTests(_ctx) {
     } catch (e) {
       failed++;
       errors.push(`refusal completes rather than cancels: ${e instanceof Error ? e.message : String(e)}`);
+    }
+
+    // =======================================================================
+    // Test 11: a call a reviewer holds is not awaiting the user
+    //
+    // The attention alert (chime, flash, dock bounce) is raised from inside the
+    // transaction that parks a call, by walking the tree for a pending one —
+    // so a call this hook is about to review has to be marked under review by
+    // that same transaction, or the user is interrupted for a call the reviewer
+    // then silently approves. The observations here are taken from the doc
+    // change itself, which is the only place the difference is visible: by the
+    // time the gate returns, the mark is present either way.
+    // =======================================================================
+    try {
+      const conversation = await createApprovalTestConversation(session);
+      const mt = conversation.rootMessageThread;
+
+      const toolUseId = insertUnstartedBash(conversation, 'review-attention-1', 'echo attention');
+      /** @type {(v?: any) => void} */
+      let releaseHook = () => {};
+      const gate = new Promise((res) => { releaseHook = res; });
+      mt.strategy = {
+        getApprovalPolicy: () => 'require-approval',
+        onToolPending: () => gate
+      };
+
+      /** @type {Array<{parked: boolean, unattended: boolean}>} */
+      const seen = [];
+      const unsubscribe = session.subscribe((/** @type {any} */ e) => {
+        if (e.type !== 'conversation:changed' || e.data?.conversationId !== conversation.id) return;
+        seen.push({
+          parked: hasPendingApprovalInTree(mt.items),
+          unattended: hasUnattendedPendingApprovalInTree(mt.items)
+        });
+      });
+
+      try {
+        await handleNewToolAction(mt, toolUseId, conversation);
+
+        // Guards the assertion below: it is only worth anything if the park was
+        // actually observed as a doc change.
+        assert(seen.some((o) => o.parked),
+          'the park should have been observed as a change to this conversation');
+        assert(!seen.some((o) => o.unattended),
+          'a call under review was announced as awaiting the user — that is the false alarm');
+
+        // The reviewer declines and leaves the call parked: now it IS the user's,
+        // and the write that says so is a change the alert can fire from.
+        seen.length = 0;
+        releaseHook({ note: 'Declined' });
+        await gate;
+        await new Promise((r) => setTimeout(r, 0));
+
+        assert(hasUnattendedPendingApprovalInTree(mt.items) === true,
+          'a call left parked by a finished review must read as awaiting the user');
+        assert(seen.some((o) => o.unattended),
+          'the end of the review must itself be observable, or the held-back alert never fires');
+      } finally {
+        unsubscribe();
+      }
+
+      passed++;
+    } catch (e) {
+      failed++;
+      errors.push(`a reviewed call is not awaiting the user: ${e instanceof Error ? e.message : String(e)}`);
     }
   } finally {
     /** @type {any} */ (globalThis).JUGGLER_ENGINE = prevEngine;

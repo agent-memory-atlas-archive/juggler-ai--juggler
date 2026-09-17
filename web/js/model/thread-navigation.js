@@ -157,6 +157,50 @@ export function walkThreads(items, callback) {
  * @returns {boolean} True if any descendant tool-action is pending approval.
  */
 export function hasPendingApprovalInTree(items) {
+  return anyPendingApproval(items, true);
+}
+
+/**
+ * The narrower sibling of {@link hasPendingApprovalInTree}: whether a subtree
+ * contains a tool-action that is parked AND has nobody but the user left to
+ * resolve it — i.e. no strategy reviewer currently has it in hand.
+ *
+ * A parked call a strategy's `onToolPending` reviewer is still working on may
+ * yet be approved without the user ever seeing it, so it is not (yet) something
+ * to interrupt them about. This is the question the attention alert asks, as
+ * opposed to the highlight, which marks everything parked.
+ * @param {Array<*>|{toArray: () => Array<*>}|null|undefined} items - Items to
+ *   search (plain JS array or Y.Array).
+ * @returns {boolean} True if any descendant tool-action is parked with no
+ *   review in flight.
+ */
+export function hasUnattendedPendingApprovalInTree(items) {
+  return anyPendingApproval(items, false);
+}
+
+/**
+ * Whether a tool-action's `reviewStatus` says a strategy reviewer is in flight
+ * for it. The field is a Y.Map in the doc and a plain object in the fixtures
+ * that stand in for one, so read it both ways.
+ * @param {*} item - A tool-action item (Y.Map or plain).
+ * @returns {boolean} True while a review is running on this call.
+ * @private
+ */
+function isUnderReview(item) {
+  const reviewStatus = item.get('reviewStatus');
+  if (!reviewStatus) return false;
+  return !!(reviewStatus.get ? reviewStatus.get('busy') : reviewStatus.busy);
+}
+
+/**
+ * Shared walk behind the two pending-approval predicates.
+ * @param {Array<*>|{toArray: () => Array<*>}|null|undefined} items - Items to search.
+ * @param {boolean} countUnderReview - Whether a parked call a strategy reviewer
+ *   currently has in hand counts.
+ * @returns {boolean} True if any descendant tool-action qualifies.
+ * @private
+ */
+function anyPendingApproval(items, countUnderReview) {
   if (!items) return false;
   const arr = typeof (/** @type {any} */ (items).toArray) === 'function'
     ? /** @type {any} */ (items).toArray()
@@ -168,9 +212,11 @@ export function hasPendingApprovalInTree(items) {
       const state = item.get('state');
       // 'awaiting_approval' is a legacy/defensive alias for PENDING that some
       // callers still stamp; treat it as pending here too.
-      if (state === TOOL_STATES.PENDING || state === 'awaiting_approval') return true;
+      if (state === TOOL_STATES.PENDING || state === 'awaiting_approval') {
+        if (countUnderReview || !isUnderReview(item)) return true;
+      }
     } else if (type === 'thread') {
-      if (hasPendingApprovalInTree(item.get('items'))) return true;
+      if (anyPendingApproval(item.get('items'), countUnderReview)) return true;
     }
   }
   return false;

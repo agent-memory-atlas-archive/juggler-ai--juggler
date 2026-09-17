@@ -25,7 +25,7 @@ import { resolveToolName } from '../services/tool-generator.js';
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
 import { isViewer } from '../../sdk/lib/client-role.js';
 import { plain, yGet } from './item-accessor.js';
-import { APPROVAL_POLICY } from 'juggler/strategy-type';
+import StrategyType, { APPROVAL_POLICY } from 'juggler/strategy-type';
 import { INTERACTION_KIND } from '../../sdk/context-item.js';
 
 /** @typedef {import('../../sdk/lib/message.js').Message} Message */
@@ -56,9 +56,10 @@ const MAX_REVIEW_NOTE_CHARS = 240;
 /**
  * Write the transient `reviewStatus` field of a parked tool-action — the state
  * behind the approval card's review indicator. Two shapes are written: a busy
- * status while a strategy's `onToolPending` promise is in flight, and a
- * non-busy status carrying the strategy's closing note once it settles. `null`
- * clears the field.
+ * status while a strategy's `onToolPending` reviewer holds the call (stamped by
+ * the parking transaction itself, so the call never reads as awaiting the user
+ * while a reviewer might still take it), and a non-busy status carrying the
+ * strategy's closing note once it settles. `null` clears the field.
  *
  * Only ever writes while the tool is still PENDING. On the allow path the tool
  * has already transitioned to APPROVED and the approval surface is gone, so
@@ -285,6 +286,19 @@ export async function handleNewToolAction(messageThread, toolUseId, conversation
     needsApproval = defaultApproval;
   }
 
+  // Is a strategy reviewer about to be handed this call (see the onToolPending
+  // dispatch below)? Decided here, before the park is written, because the park
+  // is the moment the conversation announces that it wants the user: the
+  // attention alert fires from the very transaction that commits PENDING. A
+  // call a reviewer may yet approve without the user is not that news, so it
+  // parks already marked as under review and the alert waits for the review to
+  // end and leave it parked. `onToolPending` always exists — StrategyType
+  // defines the no-op — so the question is whether this strategy overrides it.
+  const strategyReviews = needsApproval
+    && action.interactionKind() === INTERACTION_KIND.GATE
+    && typeof messageThread.strategy?.onToolPending === 'function'
+    && messageThread.strategy.onToolPending !== StrategyType.prototype.onToolPending;
+
   // All writes below are pure derivations of the just-observed tool-action
   // (toolName + toolInput + plugin manifest), so they go through
   // engineDerivedUpdate and the worker's UndoManager skips them — otherwise
@@ -303,6 +317,16 @@ export async function handleNewToolAction(messageThread, toolUseId, conversation
         if (isToolActionMessage(/** @type {Message} */ (item)) && item.get('toolUseId') === toolUseId) {
           messageThread.updateItemField(i, 'approvalOptions', approvalOptions);
           messageThread.updateItemField(i, 'displayData', prepared.displayData);
+          // Parked under review: written here rather than after the hook is
+          // dispatched so it is already true when this transaction commits.
+          // The CAS above can have declined to park a call another observer got
+          // to first, so only mark one that actually reached PENDING.
+          if (strategyReviews && item.get('state') === TOOL_STATES.PENDING) {
+            messageThread.updateItemField(i, 'reviewStatus', {
+              busy: true,
+              label: reviewLabelFor(messageThread.strategy)
+            });
+          }
           break;
         }
       }
@@ -372,19 +396,17 @@ export async function handleNewToolAction(messageThread, toolUseId, conversation
       });
       if (pendingResult && typeof pendingResult.then === 'function') {
         // The hook returned a still-pending promise: the strategy is reviewing
-        // this parked call out-of-band. Surface a transient "reviewing…"
-        // indicator for exactly the promise's lifetime (the approval buttons
-        // stay fully live throughout — the indicator is purely additive).
+        // this parked call out-of-band, which is what the call parked marked as
+        // (the "reviewing…" indicator is already showing, and the approval
+        // buttons are fully live beside it — the indicator is purely additive).
         //
         // When it settles, a resolved `{note}` replaces the spinner with that
         // message and leaves it in the card, so a call still sitting there says
         // why (e.g. the reviewer declined, and its reason); anything else clears
         // the indicator as if it had never run. A note is display only — it
-        // cannot resolve the tool, which still waits for the human.
-        writeReviewStatus(messageThread, toolUseId, {
-          busy: true,
-          label: reviewLabelFor(messageThread.strategy)
-        });
+        // cannot resolve the tool, which still waits for the human. Either way
+        // the settling write is what lets the call read as awaiting the user,
+        // and the alert it was holding back fires from it.
         pendingResult
           .then((/** @type {unknown} */ result) => {
             writeReviewStatus(messageThread, toolUseId, closingReviewStatus(result));
@@ -393,9 +415,15 @@ export async function handleNewToolAction(messageThread, toolUseId, conversation
             console.error('[handleNewToolAction] onToolPending rejected:', err);
             writeReviewStatus(messageThread, toolUseId, null);
           });
+      } else if (strategyReviews) {
+        // The hook returned without a promise, so no review is in flight after
+        // all: drop the mark the park applied. The call is now plainly waiting
+        // for the user, and this write is the edge that says so.
+        writeReviewStatus(messageThread, toolUseId, null);
       }
     } catch (err) {
       console.error('[handleNewToolAction] onToolPending threw:', err);
+      if (strategyReviews) writeReviewStatus(messageThread, toolUseId, null);
     }
   }
 }

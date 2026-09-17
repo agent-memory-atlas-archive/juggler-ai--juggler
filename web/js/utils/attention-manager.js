@@ -11,6 +11,10 @@
  *    (this also covers AskUserQuestion, which is an approval under the hood), or
  *  - a worker **turn completes** and the conversation comes to rest (idle).
  *
+ * The approval edge waits for the automation to have its say first: a call a
+ * strategy's `onToolPending` reviewer is still weighing may never reach the user
+ * at all, so it counts only once the review ends and leaves it parked.
+ *
  * Every alert is gated on the user *not already looking* at that conversation:
  * we suppress it only when this window is focused/visible AND the conversation
  * is the one on screen. So the thread you're actively watching never beeps; a
@@ -57,7 +61,7 @@
  * @module utils/attention-manager
  */
 
-import { hasPendingApprovalInTree } from '../model/thread-navigation.js';
+import { hasUnattendedPendingApprovalInTree } from '../model/thread-navigation.js';
 import { playChime, unlockAudio, rearmAudio, CHIME_DEFAULTS, chimePatterns, chimeSounds } from './chime-synth.js';
 import { isDesktopWindow, postWindowControl } from '../../sdk/lib/window-control.js';
 
@@ -479,7 +483,12 @@ function onActivity(convId) {
 
   const llm = conv.llmState;
   const root = /** @type {any} */ (conv).rootMessageThread;
-  const awaiting = !!root && hasPendingApprovalInTree(root.items);
+  // A parked call a strategy reviewer still has in hand doesn't count: it may be
+  // approved without the user ever needing to look, and a chime for one that is
+  // then auto-approved is a false alarm. Such a call parks already marked as
+  // under review, and the write that ends the review is itself a doc change — so
+  // one left parked reaches this edge a moment later, on that write.
+  const awaiting = !!root && hasUnattendedPendingApprovalInTree(root.items);
   const turns = conv.completedTurns;
   const processing = !!llm && llm.isConversationProcessing(convId);
 

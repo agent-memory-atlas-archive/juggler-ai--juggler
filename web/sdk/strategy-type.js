@@ -527,7 +527,12 @@ class StrategyType {
    * While the returned promise is in flight the approval card shows a transient
    * "reviewing…" indicator (labelled from `static REVIEW_LABEL`, else the
    * manifest `name`), with the approval buttons fully live so the user can
-   * always decide instantly and race the hook. Resolving with `{note}` swaps
+   * always decide instantly and race the hook. For that span the parked call
+   * also does not count as waiting on the user: the attention alert (chime,
+   * flash, dock bounce) holds until the review ends and leaves it parked, so a
+   * call this hook goes on to approve never interrupts anyone. A hook that
+   * never settles therefore never alerts either — the call sits showing
+   * "reviewing…" until the user or the strategy resolves it. Resolving with `{note}` swaps
    * that indicator for the note and leaves it in the card — the way to tell the
    * user why a call is still parked (e.g. an out-of-band reviewer declined, and
    * its reason). Resolve with nothing to clear the indicator instead. A note is
