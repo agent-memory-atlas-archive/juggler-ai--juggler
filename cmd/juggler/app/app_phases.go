@@ -166,7 +166,13 @@ func (a *App) initLogging() error {
 
 	jlog.Init(opts)
 	a.pushCleanup(func() {
-		jlog.Info("👋 Goodbye!")
+		// Only a session that started can end. This cleanup is registered
+		// before the phases that can fail, so on an aborted launch it is the
+		// last thing printed — and a sign-off in that position reads as a
+		// completed run, burying the reason the run never began.
+		if !a.startupFailed {
+			jlog.Info("👋 Goodbye!")
+		}
 		jlog.Close()
 	})
 

@@ -5,8 +5,9 @@
 package main
 
 import (
+	"encoding/base64"
 	"fmt"
-	"path/filepath"
+	"html"
 
 	"juggler/cmd/juggler/core"
 )
@@ -28,13 +29,28 @@ func (e *lockedProjectError) Error() string {
 	return fmt.Sprintf("project is locked: %s", e.project)
 }
 
+// lockedProjectPage renders message as a self-contained page for the window's
+// URL. There is no server to serve it from — that is the whole problem being
+// reported — so it travels as a data URL.
+func lockedProjectPage(message string) string {
+	doc := `<!doctype html><meta charset="utf-8"><title>Project locked</title>` +
+		`<style>body{margin:0;padding:48px;background:#0d1117;color:#e6edf3;font:16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.5}` +
+		`main{max-width:720px;margin:auto}h1{margin-top:0}pre{white-space:pre-wrap;font:inherit}</style>` +
+		`<main><h1>Project locked</h1><pre>` + html.EscapeString(message) + `</pre></main>`
+
+	// Base64, not percent-encoding. url.QueryEscape encodes for
+	// application/x-www-form-urlencoded, where a space is "+" — a rule no
+	// browser applies to a data URL, so every space arrives as a literal "+"
+	// and takes the doctype, the charset and the CSS down with it. PathEscape
+	// gets the spaces right but still leaves "?" unescaped and would let a
+	// stray "#" truncate the document at the fragment. Base64 has no such
+	// characters to get wrong.
+	return "data:text/html;charset=utf-8;base64," + base64.StdEncoding.EncodeToString([]byte(doc))
+}
+
+// message is the text shown in the locked-project window. The wording lives in
+// core beside the lock itself, so the window and the terminal explain the same
+// situation the same way.
 func (e *lockedProjectError) message() string {
-	lockPath := filepath.Join(e.project, ".juggler", "juggler.lock")
-	message := "This project is locked by another process, but Juggler could not connect to the session that holds it.\n\n" +
-		"The lock file is:\n" + lockPath + "\n\n" +
-		"If you are sure no other Juggler process is running for this project, quit Juggler, delete that file, then reopen the project."
-	if e.info != nil {
-		message += fmt.Sprintf("\n\nThe lock recorded Juggler process %d at %s:%d, but it did not respond as this project.", e.info.PID, e.info.Host, e.info.Port)
-	}
-	return message
+	return (&core.ProjectLockedError{Project: e.project, Info: e.info}).Advice()
 }

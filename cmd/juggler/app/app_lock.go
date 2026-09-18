@@ -68,24 +68,60 @@ func (a *App) acquireInstance() error {
 	return nil
 }
 
-// handleExistingInstance handles the case where TryAcquire failed: verify
-// whether the holder is alive, prompt (or --kill-existing) to kill it, and
-// retry. Returns nil only when the lock is now held by us.
+// handleExistingInstance handles the case where TryAcquire failed: work out
+// what kind of holder we are contending with, and either supersede it or wait
+// for it to finish leaving. Returns nil only when the lock is now held by us.
 func (a *App) handleExistingInstance(existing *core.InstanceInfo) error {
-	if existing == nil {
-		return fmt.Errorf("failed to acquire instance lock (no existing instance info)")
+	// Classify rather than merely verify. A holder that answers for this
+	// project is only a live peer worth prompting about if it intends to stay:
+	// an --exit-with-parent orphan whose parent has already gone is on its way
+	// out, and waiting beats offering to kill something that is killing itself.
+	if core.ClassifyRunningInstance(existing, a.projectPath) == core.InstanceReusable {
+		return a.supersedeRunningInstance(existing)
 	}
 
-	isRunning, _ := core.VerifyInstance(existing, a.projectPath)
-	if !isRunning {
-		// Stale lock — retry once.
+	// Everything else — unreachable, or an orphan mid-exit — is a holder on its
+	// way out. A nil `existing` lands here too, and should: Release deletes
+	// instance.json before it unlocks, so "held, with no metadata" is a moment
+	// inside someone else's teardown, not a corrupt lock.
+	return a.waitForDepartingInstance(existing)
+}
+
+// waitForDepartingInstance polls for a lock whose holder can no longer speak
+// for itself.
+//
+// A server closes its listener in the first step of Shutdown and releases this
+// lock in the last, so for the whole span between them it holds the lock and
+// answers no health probe. That span is the normal appearance of a peer that is
+// still tearing down — the same grace the kill path below takes for granted,
+// owed to the far more common case where nobody had to be killed at all.
+func (a *App) waitForDepartingInstance(existing *core.InstanceInfo) error {
+	start := time.Now()
+	deadline := start.Add(staleLockGrace)
+	explained := false
+
+	for {
 		res, err := a.lock.TryAcquire(a.cfg.Server.Port, a.cfg.Server.Host)
-		if err != nil || !res.Acquired {
-			return fmt.Errorf("failed to acquire instance lock")
+		if err == nil && res.Acquired {
+			if explained {
+				fmt.Println("The previous instance has gone. Starting.")
+			}
+			return nil
 		}
-		return nil
+		if !time.Now().Before(deadline) {
+			return &core.ProjectLockedError{Project: a.projectPath, Info: existing}
+		}
+		if !explained && time.Since(start) >= staleLockNoticeAfter {
+			explained = true
+			fmt.Println("Waiting for the previous instance to shut down…")
+		}
+		time.Sleep(staleLockPollInterval)
 	}
+}
 
+// supersedeRunningInstance handles a live holder that means to stay: report it,
+// then prompt (or obey --kill-existing) to stop it and take the lock.
+func (a *App) supersedeRunningInstance(existing *core.InstanceInfo) error {
 	fmt.Println()
 	fmt.Println("⚠️  Juggler is already running for this project!")
 	fmt.Printf("   URL: http://%s:%d/\n", existing.Host, existing.Port)
@@ -105,9 +141,11 @@ func (a *App) handleExistingInstance(existing *core.InstanceInfo) error {
 
 	time.Sleep(postKillSettleDelay)
 
-	res, err := a.lock.TryAcquire(a.cfg.Server.Port, a.cfg.Server.Host)
-	if err != nil || !res.Acquired {
-		return fmt.Errorf("failed to acquire lock after stopping existing instance")
+	// The instance acknowledged the shutdown, but acknowledging is not the same
+	// as having finished: it still has its own teardown to walk before the lock
+	// comes free. Wait for it on the same terms as any other departing holder.
+	if err := a.waitForDepartingInstance(existing); err != nil {
+		return fmt.Errorf("couldn't take the lock after stopping the existing instance: %w", err)
 	}
 	return nil
 }
@@ -115,6 +153,21 @@ func (a *App) handleExistingInstance(existing *core.InstanceInfo) error {
 // postKillSettleDelay gives the previous instance's OS-level resources
 // (port binding, flock) a moment to be reclaimed before we retry TryAcquire.
 const postKillSettleDelay = 500 * time.Millisecond
+
+// staleLockGrace bounds the wait for a lock whose holder no longer answers a
+// health probe. A server closes its listener at the start of its shutdown and
+// releases this lock at the end, so "holds the lock, answers nothing" is the
+// normal appearance of a peer that is still tearing down — worth waiting out,
+// but not forever. Variables rather than constants so tests can shorten them.
+var (
+	staleLockGrace        = 3 * time.Second
+	staleLockPollInterval = 100 * time.Millisecond
+
+	// staleLockNoticeAfter is how long the wait must run before it explains
+	// itself. Under this a launch just looks fractionally slow, and a line
+	// about locks would be noise on a start that was about to succeed.
+	staleLockNoticeAfter = 500 * time.Millisecond
+)
 
 // promptKillInstance asks the user whether to kill the existing instance.
 func promptKillInstance() bool {

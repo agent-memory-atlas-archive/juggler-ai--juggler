@@ -182,6 +182,42 @@ func (l *InstanceLock) readInstanceInfo() (*InstanceInfo, error) {
 	return &info, nil
 }
 
+// ProjectLockedError reports a project whose lock is held by something that
+// can't be identified as a running Juggler — a peer still shutting down, or a
+// process that wedged mid-teardown and never let go.
+//
+// It carries its own recovery advice so that every surface reporting it says
+// the same thing: the desktop app renders Advice in a window, the terminal
+// prints it. Info is nil when the lock was held but instance.json could not be
+// read, which is itself a moment inside someone else's Release.
+type ProjectLockedError struct {
+	Project string
+	Info    *InstanceInfo
+}
+
+func (e *ProjectLockedError) Error() string {
+	return fmt.Sprintf("project %s is still locked by another process", e.Project)
+}
+
+// LockPath is the file a person has to delete if the advice runs out.
+func (e *ProjectLockedError) LockPath() string {
+	return filepath.Join(e.Project, ".juggler", "juggler.lock")
+}
+
+// Advice explains the situation and the way out of it, in the order someone
+// stuck needs them: what happened, which file, what usually fixes it, and only
+// then the manual step that cannot be undone.
+func (e *ProjectLockedError) Advice() string {
+	msg := "This project is locked by another process, but Juggler could not connect to the session that holds it.\n\n" +
+		"The lock file is:\n" + e.LockPath() + "\n\n" +
+		"This usually clears by itself within a few seconds, while the previous session finishes shutting down — try again first. " +
+		"If it persists, and you are sure no other Juggler process is running for this project, delete that file and start again."
+	if e.Info != nil {
+		msg += fmt.Sprintf("\n\nThe lock recorded Juggler process %d at %s:%d, but it did not respond as this project.", e.Info.PID, e.Info.Host, e.Info.Port)
+	}
+	return msg
+}
+
 // CheckProjectLocked probes whether another juggler instance holds the lock for
 // projectPath. It is read-only: it never creates directories or writes files,
 // and it immediately releases the flock if it was able to acquire it.

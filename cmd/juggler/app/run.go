@@ -11,8 +11,10 @@
 package app
 
 import (
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -194,9 +196,27 @@ func Run(cfg Config) int {
 	// replace to observe the status. These returns serve the paths that do
 	// unwind, so a status set here must also be set on the exit path above.
 	if err := app.Run(); err != nil {
+		reportStartupFailure(os.Stderr, err)
 		return 1
 	}
 	return int(app.exitCode.Load())
+}
+
+// reportStartupFailure explains a launch that never got off the ground.
+//
+// The status code alone is not an explanation. Nothing between the failing
+// phase and here prints the error, and the logging cleanup runs on the way out,
+// so without this a startup failure reaches the terminal as a banner, silence,
+// and an exit — indistinguishable from a session that ran and ended. A held
+// project lock gets its recovery advice too, since that is the failure a person
+// can actually do something about.
+func reportStartupFailure(w io.Writer, err error) {
+	fmt.Fprintf(w, "\nCouldn't start Juggler: %v\n", err)
+
+	var locked *core.ProjectLockedError
+	if errors.As(err, &locked) {
+		fmt.Fprintf(w, "\n%s\n", locked.Advice())
+	}
 }
 
 // registerProviders registers every built-in provider with the global registry.

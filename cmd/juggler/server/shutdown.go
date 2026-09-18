@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"juggler/cmd/juggler/ops"
@@ -124,6 +125,60 @@ func (s *Server) WaitForEngineConnected(timeout time.Duration) bool {
 	return false
 }
 
+// teardownStep is one stage of the shutdown sequence, named so that a stage
+// which fails to finish can be identified in the log rather than guessed at.
+type teardownStep struct {
+	name string
+	run  func()
+}
+
+// runTeardown runs steps in order and then releases the project lock, giving
+// the whole sequence no longer than ctx allows.
+//
+// The deadline exists for the lock's sake. By the time teardown starts the
+// listener is already closed, so this process holds the project lock while
+// answering nothing — indistinguishable, from outside, from a crashed instance.
+// A stage that never finishes therefore strands the lock for as long as the
+// process lives, and since flock is only reclaimed by the kernel on exit, the
+// project stays unopenable until someone deletes the file by hand.
+//
+// So on expiry we release regardless and let the caller exit. A stage still
+// running at that point is abandoned mid-flight, which risks losing whatever it
+// had left to write; holding the lock forever loses the project instead.
+func runTeardown(ctx context.Context, steps []teardownStep, release func() error) error {
+	// Index of the stage currently running, so a stage that overruns can be
+	// named. Written from the teardown goroutine, read from this one.
+	var stage atomic.Int32
+	stage.Store(-1)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i, step := range steps {
+			stage.Store(int32(i))
+			step.run()
+		}
+		stage.Store(-1)
+	}()
+
+	var err error
+	select {
+	case <-done:
+	case <-ctx.Done():
+		err = ctx.Err()
+		if i := int(stage.Load()); i >= 0 && i < len(steps) {
+			jlog.Error("Shutdown ran out of time in the %s stage. Releasing the project lock anyway, so the next launch isn't blocked by it.", steps[i].name)
+		} else {
+			jlog.Error("Shutdown ran out of time. Releasing the project lock anyway, so the next launch isn't blocked by it.")
+		}
+	}
+
+	if relErr := release(); relErr != nil {
+		jlog.Error("Error releasing instance lock: %v", relErr)
+	}
+	return err
+}
+
 // Shutdown gracefully shuts down the server
 func (s *Server) Shutdown(ctx context.Context) error {
 	jlog.Info("⏳ Graceful shutdown starting...")
@@ -135,51 +190,74 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		}
 	}
 
-	// 2. Notify all WebSocket clients that server is shutting down
-	jlog.Info("⏳ Closing WebSocket connections...")
-	s.broadcastShutdownNotice()
+	st := s.projectState.Load()
 
-	// 3. Stop file watcher (no dependency on session manager or workers)
-	if st := s.projectState.Load(); st != nil {
-		if st.fileWatcher != nil {
-			jlog.Info("⏳ Stopping file watcher...")
-			st.fileWatcher.Stop()
+	steps := []teardownStep{
+		// 2. Notify all WebSocket clients that server is shutting down
+		{"websocket clients", func() {
+			jlog.Info("⏳ Closing WebSocket connections...")
+			s.broadcastShutdownNotice()
+		}},
+
+		// 3. Stop file watcher (no dependency on session manager or workers)
+		{"file watcher", func() {
+			if st != nil && st.fileWatcher != nil {
+				jlog.Info("⏳ Stopping file watcher...")
+				st.fileWatcher.Stop()
+			}
+		}},
+
+		// 4. Stop workers before session manager — workers call SaveConversationBinary
+		// on shutdown, which routes through the session manager actor. If the session
+		// manager is stopped first, those saves deadlock waiting for a response.
+		{"workers", func() {
+			if s.workerManager != nil {
+				s.workerManager.Shutdown()
+			}
+		}},
+
+		// 4a. After workers are quiescent, close every cached Conversation so
+		// provider-side resources (CLI subprocesses, sockets, etc.) get
+		// released cleanly. Ordered after worker shutdown so no in-flight
+		// LLM call races a closing handle.
+		{"conversations", func() {
+			if s.conversationCache != nil {
+				s.conversationCache.Shutdown()
+			}
+		}},
+
+		// 4b. Stop background tasks. After the workers, so a Monitor's own delivery
+		// teardown gets to stop its task first and report it the way that path
+		// reports it; whatever is left is a plain run_in_background task, which
+		// nothing else stops. Each runs in its own process group, so exiting without
+		// this leaves it running under init with no handle anywhere.
+		{"background tasks", func() {
+			if stopped := ops.StopBackgroundTasks("", "Stopped when Juggler quit", taskStopGrace); stopped > 0 {
+				jlog.Info("⏹️  Stopped %d background task(s)", stopped)
+			}
+		}},
+
+		// 5. Session manager last, so everything above has finished routing its
+		// saves through it. The lock is released after this step rather than
+		// inside it: until the writing stops, another instance must not be able
+		// to open this project.
+		{"session manager", func() {
+			if st != nil && st.sessionManager != nil {
+				jlog.Info("⏳ Shutting down session manager...")
+				st.sessionManager.Shutdown()
+			}
+		}},
+	}
+
+	release := func() error {
+		if st == nil || st.lock == nil {
+			return nil
 		}
+		return st.lock.Release()
 	}
 
-	// 4. Stop workers before session manager — workers call SaveConversationBinary
-	// on shutdown, which routes through the session manager actor. If the session
-	// manager is stopped first, those saves deadlock waiting for a response.
-	if s.workerManager != nil {
-		s.workerManager.Shutdown()
-	}
-
-	// 4a. After workers are quiescent, close every cached Conversation so
-	// provider-side resources (CLI subprocesses, sockets, etc.) get
-	// released cleanly. Ordered after worker shutdown so no in-flight
-	// LLM call races a closing handle.
-	if s.conversationCache != nil {
-		s.conversationCache.Shutdown()
-	}
-
-	// 4b. Stop background tasks. After the workers, so a Monitor's own delivery
-	// teardown gets to stop its task first and report it the way that path
-	// reports it; whatever is left is a plain run_in_background task, which
-	// nothing else stops. Each runs in its own process group, so exiting without
-	// this leaves it running under init with no handle anywhere.
-	if stopped := ops.StopBackgroundTasks("", "Stopped when Juggler quit", taskStopGrace); stopped > 0 {
-		jlog.Info("⏹️  Stopped %d background task(s)", stopped)
-	}
-
-	// 5. Now safe to shut down session manager and release lock
-	if st := s.projectState.Load(); st != nil {
-		if st.sessionManager != nil {
-			jlog.Info("⏳ Shutting down session manager...")
-			st.sessionManager.Shutdown()
-		}
-		if st.lock != nil {
-			_ = st.lock.Release()
-		}
+	if err := runTeardown(ctx, steps, release); err != nil {
+		return err
 	}
 
 	jlog.Info("✅ Graceful shutdown complete")

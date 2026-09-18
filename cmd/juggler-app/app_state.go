@@ -6,9 +6,7 @@ package main
 
 import (
 	"fmt"
-	"html"
 	"log/slog"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -910,7 +908,7 @@ func (a *appState) buildLockedProjectWindow(spec windowSpec, message, inheritedT
 	if bgTheme == "" {
 		bgTheme = "dark"
 	}
-	page := "data:text/html;charset=utf-8," + url.QueryEscape(`<!doctype html><meta charset="utf-8"><title>Project locked</title><style>body{margin:0;padding:48px;background:#0d1117;color:#e6edf3;font:16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.5}main{max-width:720px;margin:auto}h1{margin-top:0}pre{white-space:pre-wrap;font:inherit}</style><main><h1>Project locked</h1><pre>`+html.EscapeString(message)+`</pre></main>`)
+	page := lockedProjectPage(message)
 	win := a.app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:            "Project locked — Juggler",
 		URL:              page,

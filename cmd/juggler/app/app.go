@@ -73,6 +73,11 @@ type App struct {
 	// cleanupOnce gates the teardown stack so it runs exactly once no matter
 	// which shutdown path gets there first.
 	cleanupOnce sync.Once
+
+	// startupFailed records that a phase returned an error, so the teardown
+	// stack can tell an aborted launch from a finished session. Set before Run
+	// returns the error and read only from the cleanup walk that follows it.
+	startupFailed bool
 }
 
 // Run executes startup phases in order, then blocks in waitForExit until a
@@ -84,6 +89,7 @@ func (a *App) Run() error {
 	phases := a.startupPhases()
 	for _, p := range phases {
 		if err := p.fn(); err != nil {
+			a.startupFailed = true
 			return fmt.Errorf("%s: %w", p.name, err)
 		}
 	}
