@@ -14,7 +14,7 @@
  *    appears once a project actually has memory).
  *
  * The "file present → seeded" symmetric case writes the real `.juggler/MEMORY.md`
- * at the project root, so it lives in an integration test (pollutesFixtureRoot),
+ * at the project root, so it lives in an integration test (needsExclusiveRun),
  * not here.
  * @module unit-tests/memory-seed-test
  */

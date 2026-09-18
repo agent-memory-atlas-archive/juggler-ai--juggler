@@ -197,7 +197,7 @@ export const threadInheritsFoundationalContextTest = {
   name: 'thread-inherits-foundational-context',
   description: 'An LLM-created sub-thread turn sees the system prompt, agents file, and project memory',
   fixture: 'unit-test-fixture',
-  pollutesFixtureRoot: true,
+  needsExclusiveRun: true,
 
   setupFiles: {
     'CLAUDE.md': '# Agent Instructions\n\nAGENTFILE_MARKER_ZZZ: follow the house style.\n',
@@ -261,7 +261,7 @@ export const threadInheritsStandingContextAfterMemoryTest = {
   name: 'thread-inherits-standing-context-after-memory',
   description: 'A leading-run standing context item positioned after memory is still inherited by a sub-thread',
   fixture: 'unit-test-fixture',
-  pollutesFixtureRoot: true,
+  needsExclusiveRun: true,
 
   setupFiles: {
     '.juggler/MEMORY.md': '# Memory\n\n- [2026-06-14] MEMORY_MARKER_ZZZ: build with make build\n'

@@ -1018,10 +1018,10 @@ export const threadAIFilesToSubThreadTest = {
   // addAIAssistantFiles looks, and a fixed filename can't hide behind a
   // per-test prefix the way every other test's scratch files do. While it
   // exists, any sibling lane's createConversation auto-detects it and gains
-  // a phantom file-content item. pollutesFixtureRoot tells the Go runner to
+  // a phantom file-content item. needsExclusiveRun tells the Go runner to
   // schedule this test alone (sequential phase, fixture reset around it), so
   // no sibling is ever in flight to observe the transient CLAUDE.md.
-  pollutesFixtureRoot: true,
+  needsExclusiveRun: true,
 
   operations: [
     { type: 'send-message', message: 'Hello' },

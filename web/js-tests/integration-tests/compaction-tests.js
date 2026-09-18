@@ -501,7 +501,7 @@ export const compactionPreservesMemoryTest = {
   name: 'compaction-preserves-memory',
   description: 'Project memory (and a standing item after it) stays at the parent across /compact',
   fixture: 'unit-test-fixture',
-  pollutesFixtureRoot: true,
+  needsExclusiveRun: true,
 
   setupFiles: {
     '.juggler/MEMORY.md': '# Memory\n\n- [2026-06-14] MEMORY_MARKER_ZZZ: build with make build\n'

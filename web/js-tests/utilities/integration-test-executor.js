@@ -138,6 +138,7 @@ import { runTests as runBase64Tests } from '../unit-tests/base64-test.js';
 import { runTests as runWSChunkTests } from '../unit-tests/ws-chunk-test.js';
 import { runTests as runRenderScalingTests } from '../unit-tests/render-scaling-tests.js';
 import { runTests as runTestBudgetTests } from '../unit-tests/test-budget-test.js';
+import { runTests as runExclusiveTestFlagsTests } from '../unit-tests/exclusive-test-flags-test.js';
 import { runTests as runEngineAutoloadTests } from '../unit-tests/engine-autoload-test.js';
 import { runTests as runSyncBatchBackoffTests } from '../unit-tests/sync-batch-backoff-test.js';
 import { runTests as runSyncFaultIsolationTests } from '../unit-tests/sync-fault-isolation-test.js';
@@ -380,11 +381,12 @@ const ALL_TESTS = [
  * already there.
  *
  * An entry may also set `needsExclusiveRun: true`, which makes the Go runner
- * schedule it alone with no sibling lane in flight. Set it when a suite asserts
- * on `document.activeElement`: every lane is an iframe inside ONE window, and a
- * window has exactly one focused frame, so any sibling calling element.focus()
- * takes frame focus away and blurs this lane's element to <body> — the suite
- * then fails on the pool's topology rather than on the code under test.
+ * schedule it alone with no sibling lane in flight. The commonest reason is a
+ * suite asserting on `document.activeElement`: every lane is an iframe inside
+ * ONE window, and a window has exactly one focused frame, so any sibling calling
+ * element.focus() takes frame focus away and blurs this lane's element to <body>
+ * — the suite then fails on the pool's topology rather than on the code under
+ * test. listExclusiveTests() lists the rest; the same flag carries them all.
  */
 const UNIT_TEST_SUITES = [
   { name: 'unit:context-cache-impact', run: runContextCacheImpactTests },
@@ -506,6 +508,7 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:ws-chunk', run: runWSChunkTests },
   { name: 'unit:render-scaling', run: runRenderScalingTests },
   { name: 'unit:test-budget', run: runTestBudgetTests },
+  { name: 'unit:exclusive-test-flags', run: runExclusiveTestFlagsTests },
   { name: 'unit:engine-autoload', run: runEngineAutoloadTests },
   { name: 'unit:sync-batch-backoff', run: runSyncBatchBackoffTests },
   { name: 'unit:sync-fault-isolation', run: runSyncFaultIsolationTests },
@@ -531,7 +534,10 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:theme-toggle', run: runThemeToggleTests, needsExclusiveRun: true },
   { name: 'unit:tool-name-resolution', run: runToolNameResolutionTests },
   { name: 'unit:new-tab-ux', run: runNewTabUxTests },
-  { name: 'unit:conversation-workspace', run: runConversationWorkspaceTests },
+  // Exclusive: it builds real git repositories in the shared fixture root and
+  // removes them again, which a sibling lane walking the project reads as it
+  // goes — the same reason the git-worktree extension suite is exclusive.
+  { name: 'unit:conversation-workspace', run: runConversationWorkspaceTests, needsExclusiveRun: true },
   { name: 'unit:setup-panel-loops', run: runSetupPanelLoopsTests },
   // Exclusive: it asserts on document.activeElement, which every lane in the
   // shared origin can move.
@@ -641,6 +647,19 @@ let EXTENSION_SUITES = [];
 let _extensionSuitesPromise = null;
 
 /**
+ * Build the EXTENSION_SUITES entry for one extension-owned test module. An
+ * extension suite declares exclusivity by exporting `needsExclusiveRun`, the
+ * internal suites' table not being somewhere it can reach, and this is where
+ * that export becomes the table entry listExclusiveTests() reads.
+ * @param {string} name - Suite name, e.g. "unit:git-worktree"
+ * @param {{runTests: function(any): Promise<any>, needsExclusiveRun?: boolean}} mod - The imported test module
+ * @returns {{name: string, run: function(any): Promise<any>, needsExclusiveRun: boolean}} Table entry
+ */
+export function extensionSuiteEntry(name, mod) {
+  return { name, run: mod.runTests, needsExclusiveRun: mod.needsExclusiveRun === true };
+}
+
+/**
  * Discover and register extension-owned test suites, once. Fetches the
  * manifest-driven list from the test harness, dynamic-imports each module
  * (whose runTests export becomes a unit suite named e.g. "unit:exa-search"),
@@ -668,13 +687,7 @@ export function ensureExtensionSuitesLoaded() {
         try {
           const mod = await import(prefix + entry.path);
           if (typeof mod.runTests === 'function') {
-            // An extension suite declares exclusivity by exporting the flag, the
-            // internal suites' table not being somewhere it can reach.
-            suites.push({
-              name: entry.name,
-              run: mod.runTests,
-              needsExclusiveRun: mod.needsExclusiveRun === true,
-            });
+            suites.push(extensionSuiteEntry(entry.name, mod));
             continue;
           }
           throw new Error('module has no runTests export');
@@ -988,25 +1001,38 @@ export function listTests() {
 }
 
 /**
+ * Collect the names of entries flagged `needsExclusiveRun` across any number of
+ * suite tables. One flag, read the same way from every table — an integration
+ * test, an internal unit suite and an extension suite all reach the Go runner
+ * through here, and `unit:exclusive-test-flags` holds that open.
+ * @param {...{name: string, needsExclusiveRun?: boolean}[]} tables - Suite tables to scan
+ * @returns {string[]} Names of the flagged entries, in table order
+ */
+export function exclusiveNamesIn(...tables) {
+  return tables.flat().filter(entry => entry.needsExclusiveRun).map(entry => entry.name);
+}
+
+/**
  * List tests the Go runner must schedule sequentially, with no sibling lane in
- * flight. Two independent reasons qualify, both about state the lanes share and
- * cannot namespace per-test:
+ * flight. Every reason is about state the lanes share and cannot namespace
+ * per-test, and any kind of suite can have one:
  *
- *   - `pollutesFixtureRoot` (integration tests): writes a fixed-name file to
- *     the shared fixture root that production auto-detection scans, which a
- *     sibling lane's createConversation would pick up.
- *   - `needsExclusiveRun` (unit and extension suites): asserts on
- *     `document.activeElement`, which a sibling lane can invalidate by calling
- *     focus() — all lanes are iframes in one window, and only one frame holds
- *     focus at a time — or builds and removes directories in the shared fixture
- *     root, which a sibling lane walking the project reads while they come and
- *     go. An extension suite declares it by exporting `needsExclusiveRun`.
+ *   - it writes a fixed-name file to the shared fixture root that production
+ *     auto-detection scans (`CLAUDE.md`, `.juggler/MEMORY.md`), so while it
+ *     exists a sibling lane's createConversation gains a phantom context item;
+ *   - it builds and removes directories in that root, which a sibling lane
+ *     walking the project reads while they come and go;
+ *   - it asserts on `document.activeElement`, which a sibling lane invalidates
+ *     by calling focus() — all lanes are iframes in one window, and only one
+ *     frame holds focus at a time;
+ *   - it writes a document-wide or origin-wide setting (`data-theme`, a
+ *     localStorage preference key) for the length of a case.
+ *
+ * The Go runner runs these after the parallel phase, with a fixture reset around
+ * each. An extension suite declares the flag by exporting `needsExclusiveRun`;
+ * everything else declares it on its table entry.
  * @returns {string[]} Names of tests that must run in isolation
  */
 export function listExclusiveTests() {
-  return [
-    ...ALL_TESTS.filter(t => t.pollutesFixtureRoot).map(t => t.name),
-    ...UNIT_TEST_SUITES.filter(s => s.needsExclusiveRun).map(s => s.name),
-    ...EXTENSION_SUITES.filter(s => s.needsExclusiveRun).map(s => s.name),
-  ];
+  return exclusiveNamesIn(ALL_TESTS, UNIT_TEST_SUITES, EXTENSION_SUITES);
 }

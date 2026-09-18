@@ -54,6 +54,22 @@ import workspaceProviderRegistry from '../../../js/registries/workspace-provider
 import ScratchCopyWorkspaceProvider, { sandboxPlaces } from '../workspaces/scratch-copy-workspace-provider.js';
 
 /**
+ * This suite's ops are bound to no workspace, so its shell commands run at the
+ * project root: it makes `probe-src-…/` and `probe-copy-…/` directly in the
+ * shared fixture root and removes them again. No sibling lane may be in flight
+ * while it does.
+ *
+ * The per-case tag keeps those directories from colliding with each other, but
+ * it cannot keep them out of the way of a lane that walks the *project* — and
+ * one of this suite's own cases copies the whole tree, so it is both cause and
+ * victim. Anything copying, listing or reporting on the project reads a
+ * `probe-…` entry another case is in the middle of deleting, and fails carrying
+ * a path it has never heard of.
+ * @type {boolean}
+ */
+export const needsExclusiveRun = true;
+
+/**
  * @typedef {object} TestResult
  * @property {number} passed - Number of passed tests
  * @property {number} failed - Number of failed tests

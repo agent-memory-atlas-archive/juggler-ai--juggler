@@ -51,14 +51,14 @@ export const clearPreservesSystemPromptTest = {
  * The default harness conversation is created BEFORE setupFiles writes
  * `.juggler/MEMORY.md`, so it carries no memory item up front; the re-seed on
  * /clear is what brings it in. Touches the fixed project-root memory path, so it
- * is scheduled alone via pollutesFixtureRoot.
+ * is scheduled alone via needsExclusiveRun.
  * @type {import('../utilities/integration-test-runner.js').IntegrationTestDefinition}
  */
 export const clearReseedsAutoItemsTest = {
   name: 'clear-reseeds-auto-items',
   description: '/clear re-seeds always-present auto items (project memory), matching a fresh conversation',
   fixture: 'unit-test-fixture',
-  pollutesFixtureRoot: true,
+  needsExclusiveRun: true,
 
   setupFiles: { '.juggler/MEMORY.md': '# Memory\n\n- [2026-06-14] Seeded fact\n' },
 
@@ -92,14 +92,14 @@ export const clearReseedsAutoItemsTest = {
  * `.juggler/MEMORY.md`, so the pre-clear state carries no memory item; the
  * single undo therefore lands precisely on [system-prompt, user, assistant].
  * Touches the fixed project-root memory path → scheduled alone via
- * pollutesFixtureRoot.
+ * needsExclusiveRun.
  * @type {import('../utilities/integration-test-runner.js').IntegrationTestDefinition}
  */
 export const clearUndoesAsSingleGroupTest = {
   name: 'clear-undoes-as-single-group',
   description: '/clear (wipe + re-seed) reverts in one undo to the exact pre-clear document',
   fixture: 'unit-test-fixture',
-  pollutesFixtureRoot: true,
+  needsExclusiveRun: true,
 
   setupFiles: { '.juggler/MEMORY.md': '# Memory\n\n- [2026-06-14] Seeded fact\n' },
 

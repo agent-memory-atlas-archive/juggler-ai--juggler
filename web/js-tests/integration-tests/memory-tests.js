@@ -61,14 +61,14 @@ function dumpMemoryItems(conversation) {
  * Memory file present at the project root → a new conversation gains a memory
  * context item. Touches the fixed `.juggler/MEMORY.md` at the project root
  * (a fixed path no per-test prefix can hide behind), so it is scheduled alone
- * via pollutesFixtureRoot, exactly like the CLAUDE.md auto-detection test.
+ * via needsExclusiveRun, exactly like the CLAUDE.md auto-detection test.
  * @type {import('../utilities/integration-test-runner.js').IntegrationTestDefinition}
  */
 export const memorySeededWhenFileExistsTest = {
   name: 'memory-seeded-when-file-exists',
   description: 'A new conversation auto-instantiates the memory item when .juggler/MEMORY.md exists',
   fixture: 'unit-test-fixture',
-  pollutesFixtureRoot: true,
+  needsExclusiveRun: true,
 
   llmResponses: [],
 
@@ -112,14 +112,14 @@ export const memorySeededWhenFileExistsTest = {
  * test rather than silently regressing cache stability.
  *
  * Touches the fixed `.juggler/MEMORY.md` at the project root, so it is
- * scheduled alone via pollutesFixtureRoot.
+ * scheduled alone via needsExclusiveRun.
  * @type {import('../utilities/integration-test-runner.js').IntegrationTestDefinition}
  */
 export const memorySystemPromptStableAcrossRememberTest = {
   name: 'memory-system-prompt-stable-across-remember',
   description: 'A memory remember round-trip leaves the assembled system prompt with the memory block exactly once',
   fixture: 'unit-test-fixture',
-  pollutesFixtureRoot: true,
+  needsExclusiveRun: true,
 
   // Seed the project memory file so the memory block has prior content.
   // The default harness conversation was created BEFORE this write, so it

@@ -267,10 +267,12 @@ func TestMain(m *testing.M) {
 	}()
 
 	// Start cfg.windows subprocesses; each hosts cfg.iframes iframe lanes.
-	// All iframes inside a subprocess share its SessionManager+engine+WS,
-	// so each slot token in testServerPool needs both the subprocess addr
-	// and a *per-test* scratch fixture dir (allocated freshly inside
-	// runOneBrowserTest, not here — these tokens carry only the addr).
+	// One fixture dir per subprocess, passed to it as --project: all iframes
+	// inside a subprocess share its SessionManager+engine+WS, so they share
+	// that fixture too, and every slot token for the subprocess carries it.
+	// Tests collaborate on the shared root by prefixing their filenames; a
+	// suite that cannot is declared exclusive and scheduled alone (see
+	// listExclusiveTests in web/js-tests/utilities/integration-test-executor.js).
 	for w := 0; w < cfg.windows; w++ {
 		fixtureDir, err := os.MkdirTemp("", "browser-test-*")
 		if err != nil {
