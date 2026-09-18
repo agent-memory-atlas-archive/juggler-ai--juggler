@@ -11570,6 +11570,12 @@ pinboard-shell.open .pinboard-panel {
     transform: translateX(-50%);
     background: transparent;
     cursor: col-resize;
+
+    /* Half the strip lies over the panel's interior, and `pinboard-content` is
+       a positioned later sibling, so without this the pin is painted over the
+       inner half and the handle answers only along the sliver outside the
+       panel — a handle that still looks its full width and isn't. */
+    z-index: var(--z-raised);
     transition: background var(--transition-base);
 }
 

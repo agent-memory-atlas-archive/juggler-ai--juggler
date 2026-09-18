@@ -622,6 +622,51 @@ export async function runTests(_ctx) {
       }
     });
 
+    await run('the edge can be grabbed right across the handle, over the pin as well', async () => {
+      // The strip straddles the panel's left edge, so half of it lies over the
+      // pin. `pinboard-content` is positioned — the find bar hangs off it — and
+      // comes later in the DOM, so unless the handle is raised above it the
+      // inner half is painted over and all that is left to grab is the sliver
+      // outside the panel: a handle that still looks its full width and isn't.
+      const { shell, toggle, teardown } = await mountShell([{ id: 'pin_r', type: 'probe', config: { label: 'A' } }]);
+      try {
+        // A default-width board is wider than a lane's window, and
+        // `elementFromPoint` only answers for points inside it. Narrow the panel
+        // until the whole of it is on screen: that moves the edge, and changes
+        // nothing about what is stacked over it.
+        shell.style.setProperty('--pinboard-width', '20rem');
+        const panel = /** @type {HTMLElement} */ (shell.querySelector('.pinboard-panel'));
+        const handle = /** @type {HTMLElement} */ (shell.querySelector('.pinboard-resize-handle'));
+        const content = /** @type {HTMLElement} */ (shell.querySelector('pinboard-content'));
+        assert(!!panel && !!handle && !!content,
+          'the fixture needs the panel, its handle, and a mounted pin beneath it');
+
+        // The board slides in, and a lane's page never paints, so the transition
+        // would sit at its first frame forever and the edge would be measured
+        // somewhere off to the right. Put the panel where an open board holds
+        // it, in one step.
+        panel.style.transition = 'none';
+        if (!shell.classList.contains('open')) toggle.click();
+        assert(shell.classList.contains('open'), 'the fixture needs the board open to hit-test it');
+        assert(Math.abs(panel.getBoundingClientRect().right - shell.getBoundingClientRect().right) < 1,
+          'the open panel must sit against the shell edge before anything is hit-tested');
+
+        const rect = handle.getBoundingClientRect();
+        assert(rect.width >= 4, `the handle must stay wide enough to aim at, got ${rect.width}px`);
+        const band = content.getBoundingClientRect();
+        const y = Math.round(band.top + band.height / 2);
+        for (const x of [rect.left + 0.5, rect.left + rect.width / 2, rect.right - 0.5]) {
+          const hit = document.elementFromPoint(x, y);
+          const at = (x - rect.left).toFixed(1);
+          assert(hit === handle,
+            `the pointer must reach the handle ${at}px across it, and landed on `
+            + `<${hit ? hit.tagName.toLowerCase() : 'nothing'} class="${hit?.getAttribute('class') || ''}">`);
+        }
+      } finally {
+        teardown();
+      }
+    });
+
     await run('opening moves focus into the board and closing gives it back', async () => {
       const { shell, toggle, teardown } = await mountShell([]);
       try {
