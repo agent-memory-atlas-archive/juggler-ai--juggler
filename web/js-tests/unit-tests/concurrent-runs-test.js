@@ -292,5 +292,40 @@ export async function runTests() {
     errors.push(`tiles agree with footers per thread: ${msg(e)}`);
   }
 
+  // --- 7: a run's last word is an error, and that is a rest ---
+  // A terminal error releases the claim, so the worker's frame carries no run at
+  // all and the top-level fields are the failing run's own last word (see
+  // statusHoldsClaim, cmd/juggler/worker/activity_state.go). Nothing follows it:
+  // there is no idle frame behind a frame that already dropped the run. So this
+  // frame has to settle the conversation by itself, or the spinner it leaves
+  // running is the last thing the worker ever says about it.
+  try {
+    const llm = new LLMState();
+    const conv = stubConversation('conv-terminal-error');
+    llm.registerConversationTab(conv, /** @type {any} */ ({}));
+    conv.publish(frame([
+      { threadItemId: 'child-a', status: 'streaming', startedAt: now - 4000, outputTokens: 51 },
+    ]));
+    assert(llm.isThreadProcessing(conv.id, 'child-a') === true, 'the child is streaming before it fails');
+
+    conv.publish({
+      activity: 'none', threadItemId: 'child-a', status: 'error',
+      message: 'The provider has reached its usage limit.', runs: {},
+    });
+
+    assert(llm.isThreadProcessing(conv.id, 'child-a') === false,
+      'a thread whose run ended on an error is stopped — the error is the end of the run, not a phase of it');
+    assert(llm.isConversationProcessing(conv.id) === false,
+      'and with nothing else running the conversation is at rest');
+    assert(llm.getStatusThreadId(conv.id) === null,
+      'nothing names a live column any more: a bare Escape must not be handed a thread that has stopped');
+
+    llm.unregisterConversationTab(conv.id);
+    passed++;
+  } catch (e) {
+    failed++;
+    errors.push(`a terminal error settles the conversation: ${msg(e)}`);
+  }
+
   return { passed, failed, errors };
 }

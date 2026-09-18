@@ -77,6 +77,68 @@ func TestRateLimitLatch_HoldsEverySiblingThread(t *testing.T) {
 	}
 }
 
+// TestRateLimitLatch_UserSendLiftsItForAParkedParent is the other half of the
+// incident: not the requests the latch saved, but the way out of it.
+//
+// A delegated child met the cap and rested without settling, so its parent is
+// parked on an open run and nothing in the conversation is running. The user
+// does the one thing the report tells them to do — send again — and the send
+// lands on the parent, whose activity is still awaiting_llm. That is the busy
+// gate: the message queues and the handler returns. A lift that sits below the
+// gate is never reached, the reducer refuses the child on every pass, and the
+// conversation the report promised would start again never does.
+func TestRateLimitLatch_UserSendLiftsItForAParkedParent(t *testing.T) {
+	w := NewConversationWorker("test-rate-limit-parked-parent", "user:test")
+	defer w.doc.Destroy()
+	w.currentRun().storeState(StateIdle)
+	w.doc.SetMetadata("defaultModelConfig", map[string]any{"provider": "test", "model": "test"})
+
+	w.doc.InsertMessage(0, ConversationItem{
+		Type: ItemTypeUser, ItemID: "u-1", Content: "look at a",
+		TransactionID: "txn-0", Timestamp: time.Now().Format(time.RFC3339),
+	})
+	w.doc.InsertMessage(1, ConversationItem{
+		Type: ItemTypeAssistant, ItemID: "a-1", Content: "I'll send an agent.",
+		TransactionID: "txn-0", Timestamp: time.Now().Format(time.RFC3339),
+	})
+
+	child := insertThreadWithOpts(w, threadOpts{goal: "read a", userMessage: "look at a", llmCreated: true, delegated: true})
+	appendToThread(w, child,
+		ConversationItem{Type: ItemTypeAssistant, ItemID: generateItemID(), Content: "I'll grep for it."},
+		ConversationItem{
+			Type: ItemTypeToolAction, ItemID: generateItemID(),
+			ToolUseID: "tu-a", ToolName: "grep",
+			State: StateCompleted, Result: resultJSON("ok"),
+		},
+	)
+
+	// The child rested on the cap: its run record is open, so the parent is
+	// parked on it, and the cap stands for another four hours.
+	w.doc.SetMetadata("processingState", map[string]any{
+		"activity": ActivityAwaitingLLM, "threadItemId": "", "status": "processing_tools",
+	})
+	w.latchRateLimit("test", time.Now().Add(4*time.Hour))
+
+	// One turn for the child the reducer may now dispatch, and one for the parent
+	// the child's settlement wakes.
+	w.setMockResponses([]MockResponse{
+		{Blocks: []LLMResponseBlock{{Type: "text", Content: "a is fine"}}, StopReason: "end_turn"},
+		{Blocks: []LLMResponseBlock{{Type: "text", Content: "so it is"}}, StopReason: "end_turn"},
+	})
+	feedContextAndTools(t, w)
+
+	sendMsg(t, w, SendMessageMessage{Type: "send-message", Text: "try again"})
+
+	if until := w.rateLimitedUntil("test"); !until.IsZero() {
+		t.Fatalf("the cap still stands until %v after the user sent into the parked parent: the send is an explicit "+
+			"\"try anyway\", and it is the only send this conversation has left to make", until)
+	}
+	if left := w.mock.remaining(); left != 0 {
+		t.Fatalf("%d of 2 scripted turns went unused: lifting the cap is not enough on its own — nothing else asks "+
+			"for a reducer pass, so the child is never re-offered and the queued message is never drained", left)
+	}
+}
+
 // TestRateLimitLatch_LiftsItselfWhenTheResetPasses: nothing re-tickles the
 // reducer when a cap expires, so the latch may only ever be a refusal that is
 // still true. A hold read after its reset is not a hold.

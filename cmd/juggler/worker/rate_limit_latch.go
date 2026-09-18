@@ -24,10 +24,14 @@ import (
 //   - Only a STATED reset latches. A wait nobody supplied is a guess
 //     (defaultRetryWait), and a guess must not stop a conversation.
 //   - It expires by itself, on read. There is no timer and nothing to re-tickle
-//     the reducer when the cap lifts: threads held here have settled at rest, and
-//     the user's next message is what starts the conversation again.
+//     the reducer when the cap lifts: threads held here are at rest, and the
+//     user's next message is what starts the conversation again.
 //   - A user send lifts it. Typing into a capped conversation is an explicit
-//     "try anyway", and it costs exactly one request to find out.
+//     "try anyway", and it costs exactly one request to find out. It lifts
+//     wherever it lands — a thread held by the cap rests without settling, so the
+//     parent parked on it reads as busy, and the send the user makes is the one
+//     into that parent. A lift only the idle path could reach would be a lift
+//     this conversation never gets.
 //
 // Keyed by provider name, which is the granularity credentials are resolved at
 // (server/llm_caller.go) and therefore the granularity a quota belongs to.
@@ -87,6 +91,27 @@ func (r *run) rateLimitedModelConfig(threadItemID string) *ModelConfig {
 		return nil
 	}
 	return mc
+}
+
+// liftRateLimitForSend lifts the cap standing over the thread a send is destined
+// for, and reports whether it lifted one — which is also the answer to "was this
+// conversation stopped by a cap until now", and therefore to "does anything need
+// re-offering to the reducer".
+//
+// Resolving the thread's provider walks the document under the y-crdt lock, so
+// it sits behind the same "any hold at all" pointer load rateLimitedModelConfig
+// uses: the sends in a conversation that never meets a cap — very nearly all of
+// them — pay one atomic read for this.
+func (r *run) liftRateLimitForSend(threadItemID string) bool {
+	if len(r.rateLimitHolds()) == 0 {
+		return false
+	}
+	mc := r.doc.ResolveEffectiveModelConfig(threadItemID)
+	if mc == nil || r.rateLimitedUntil(mc.Provider).IsZero() {
+		return false
+	}
+	r.clearRateLimit(mc.Provider)
+	return true
 }
 
 // clearRateLimit lifts providerName's cap. Called when the user sends into the

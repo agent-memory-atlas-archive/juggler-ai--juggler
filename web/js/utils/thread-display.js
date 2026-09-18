@@ -85,6 +85,12 @@ export function threadCostFigures(threadYMap, siblingArray) {
  * @property {boolean} [showSummary] - Paint the thread's summary instead of a
  *   status block. Set only when the thread is genuinely at rest, so the several
  *   surfaces that render a tile never re-derive "is it resting" and disagree.
+ * @property {boolean} [openRun] - The run this item stands for was started and
+ *   never settled, so the caller that made the call is still parked on it. Set
+ *   only on the states that are at rest, where it is the difference between a
+ *   thread nobody is waiting on and one whose caller cannot move until this run
+ *   is settled by hand. Which state it came to rest in does not change that:
+ *   what the tile offers follows the open run, not the label above it.
  */
 
 /**
@@ -240,7 +246,11 @@ export function getThreadStatus(threadYMap, live, siblingArray) {
       const it = items.get(i);
       if (!it || typeof it.get !== 'function') continue;
       if (it.get('type') === 'error') {
-        return { kind: 'errored', goal, message: 'Stopped (error)', spinner: false };
+        // An error is how the thread stopped, not whether anything is waiting on
+        // it. A run left open behind one — a child stopped by a provider cap is
+        // the ordinary case — still has its caller parked, and this tile is the
+        // only place that parking can be ended.
+        return { kind: 'errored', goal, message: 'Stopped (error)', spinner: false, openRun: !!record && !record.status };
       }
     }
   }
@@ -268,13 +278,39 @@ export function getThreadStatus(threadYMap, live, siblingArray) {
   // carries the Stop that settles it — the only affordance the parent column
   // has in this state (see thread-message).
   if (record && !record.status) {
-    return { kind: 'unfinished', goal, message: 'Unfinished', spinner: false };
+    return { kind: 'unfinished', goal, message: 'Unfinished', spinner: false, openRun: true };
   }
 
   // "Idle", not "Stopped": with the conversation idle and no result, nothing is
   // driving this thread — but nothing necessarily stopped it either (it may
   // simply never have been started). "Stopped" wrongly implies an interruption.
   return { kind: 'idle', goal, message: 'Idle', spinner: false };
+}
+
+/**
+ * The states with work outstanding: this thread is being driven, or something
+ * that is not the user will move it on — bar `paused`, which waits on the user
+ * but is an open piece of work with a route to it, and is marked so that route
+ * stays visible from the tab down.
+ *
+ * This is what a tile's icon pulse means, so the states left out are the ones it
+ * would misdescribe: `errored` and `unfinished` stopped mid-run and will not
+ * pick themselves back up, and `idle` is at rest. On any of those the pulse is
+ * the only moving pixel in the state, and it says the opposite of the label
+ * beside it.
+ * @param {ThreadStatus|null|undefined} status - A getThreadStatus classification.
+ * @returns {boolean} True when the thread has work outstanding.
+ */
+export function threadHasWorkOutstanding(status) {
+  switch (status?.kind) {
+    case 'running':
+    case 'pending':
+    case 'paused':
+    case 'queued':
+      return true;
+    default:
+      return false;
+  }
 }
 
 /**

@@ -211,6 +211,7 @@ import { runTests as runApprovalDraftFocusTests } from '../unit-tests/approval-d
 import { runTests as runNestedApprovalStatusTests } from '../unit-tests/nested-approval-status-test.js';
 import { runTests as runConcurrentRunsTests } from '../unit-tests/concurrent-runs-test.js';
 import { runTests as runThreadAliasTests } from '../unit-tests/thread-alias-test.js';
+import { runTests as runThreadTileStateTests } from '../unit-tests/thread-tile-state-test.js';
 import { runTests as runRunRecordsTests } from '../unit-tests/run-records-test.js';
 import { runTests as runToolGroupingTests } from '../unit-tests/tool-grouping-test.js';
 import { runTests as runChimeRecoveryTests } from '../unit-tests/chime-recovery-test.js';
@@ -562,6 +563,7 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:concurrent-runs', run: runConcurrentRunsTests },
   { name: 'unit:run-records', run: runRunRecordsTests },
   { name: 'unit:thread-alias', run: runThreadAliasTests },
+  { name: 'unit:thread-tile-state', run: runThreadTileStateTests },
   // Exclusive not for focus but for the shared origin: this suite writes the
   // tool-grouping localStorage preference, which every lane's renderer reads.
   { name: 'unit:tool-grouping', run: runToolGroupingTests, needsExclusiveRun: true },

@@ -287,6 +287,10 @@ func (r *run) handleSendMessage(payload json.RawMessage) {
 	// must not queue behind an unrelated sibling's run. threadRunState answers for
 	// the run writing to that thread and StateIdle for every other thread, so a
 	// run streaming on a sibling is no longer a reason to refuse this one.
+	// Whether this send asks for anything at all. An empty, skill-less,
+	// non-continuation send is not a send: below the gate it is refused outright,
+	// and above it there is nothing for it to queue.
+	carriesIntent := msg.IsContinuation || !input.isEmpty() || len(skillsToLoad) > 0
 	if r.threadActivity(msg.ThreadItemID) != ActivityNone || r.threadRunState(msg.ThreadItemID) != StateIdle {
 		if !msg.IsContinuation {
 			// Skills chosen while a turn is in flight ride the pending queue ahead
@@ -302,6 +306,17 @@ func (r *run) handleSendMessage(payload json.RawMessage) {
 				// queue at its next turn boundary on its own.
 				r.nudgeRetryWait(msg.ThreadItemID)
 			}
+		}
+
+		// Busy is not always working. A thread whose child rested on a usage cap is
+		// parked awaiting_llm on a run that will not settle until the child is
+		// dispatched, and the latch refuses that child on every reducer pass — so
+		// this branch is where the send that lifts the cap arrives. The lift is the
+		// same "try anyway" the idle path makes below; the pass is asked for here
+		// because queueing a message asks for none, and without one the thread the
+		// cap was holding is never re-offered.
+		if carriesIntent && r.liftRateLimitForSend(msg.ThreadItemID) {
+			r.requestReconcile()
 		}
 		return
 	}

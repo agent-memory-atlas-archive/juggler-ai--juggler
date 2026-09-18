@@ -900,7 +900,13 @@ class LLMState {
         break;
 
       case 'error':
-        this.updateStatus(conversationId, 'error', { message: message || 'Unknown error' }, threadItemId);
+        // Terminal, and a rest: the worker releases the claim on this status and
+        // drops the run from the registry in the same frame (statusHoldsClaim,
+        // cmd/juggler/worker/activity_state.go), so no idle frame follows to take
+        // the spinner down afterwards. What went wrong is already a durable error
+        // item in the transcript, which is where it is read; a status line
+        // repeating it would be the one part of the conversation still moving.
+        this._stopThread(conversationId, key);
         break;
 
       case 'validation-error': {

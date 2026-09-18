@@ -4,7 +4,8 @@
 
 import { wrapWithIcon } from '../utils/icon-message-renderer.js';
 import { badgeForItem } from '../utils/item-badge.js';
-import { getThreadStatus, getThreadDisplayContent, paintThreadSummary, paintThreadStatusText, threadCostFigures } from '../utils/thread-display.js';
+import { getThreadStatus, getThreadDisplayContent, paintThreadSummary, paintThreadStatusText, threadCostFigures,
+  threadHasWorkOutstanding } from '../utils/thread-display.js';
 import { applyCollapsible } from '../utils/collapsible.js';
 import { canonicalThread } from '../model/thread-alias.js';
 
@@ -160,17 +161,20 @@ class ThreadMessage extends HTMLElement {
 
   render() {
     const status = this._item ? getThreadStatus(this._item, this._live) : null;
-    // The tile shows a Stop button when the subtree has something to stop —
-    // it's the live processing column (running), about to be driven (pending),
-    // or parked on an approval (paused) — and when it has an open run to
-    // SETTLE (unfinished). The latter owns no in-flight work, so the click only
+    // The tile shows a Stop button for either of the two things a click can act
+    // on: work to stop — the live processing column (running), about to be
+    // driven (pending), or parked on an approval (paused) — or an open run to
+    // SETTLE (openRun). The second owns no in-flight work, so the click only
     // stamps the tile; that stamp is the point, because it is what releases the
-    // caller parked on the run and brings the parent column's Continue back. A
-    // queued/idle/errored tile has neither, so a Stop there would be
-    // misleading (see conversation.cancelThread / _threadOwnsActiveWork).
+    // caller parked on the run and brings the parent column's Continue back.
+    // It is asked as "is the run open", not "which state is this", because a
+    // thread can come to rest on an error with its run still open and its caller
+    // still parked — and that caller has no other way out. A tile with neither
+    // offers no Stop, which would act on nothing (see conversation.cancelThread
+    // / _threadOwnsActiveWork).
     const stoppable = !!status &&
       (status.kind === 'running' || status.kind === 'pending' ||
-       status.kind === 'paused' || status.kind === 'unfinished');
+       status.kind === 'paused' || status.openRun === true);
     // Source of truth: the run this item stands for, or the thread's summary
     // when it stands for none. Don't read the attribute — it's only set at
     // create time and would go stale after the worker writes the summary.
@@ -182,15 +186,20 @@ class ThreadMessage extends HTMLElement {
     // rest: mid-run the figures describe the run before this one, and a stale
     // pair is worse than none.
     const cost = showsSummary && this._item ? threadCostFigures(this._item) : null;
+    // Whether the icon pulses. Carried in the structural mode below, because the
+    // mark is written once onto a freshly built article: a transition it does not
+    // notice leaves the previous state's mark in place, and queued → idle is
+    // exactly that transition — no spinner either side, no Stop either side.
+    const atWork = threadHasWorkOutstanding(status);
 
-    // Structural mode: only changes when summary/status surface or spinner
-    // presence flips. Within a mode we update text in place so the spinner
-    // element and the icon-box (with its pulse animation) persist.
+    // Structural mode: only changes when summary/status surface, spinner
+    // presence or the work mark flips. Within a mode we update text in place so
+    // the spinner element and the icon-box (with its pulse animation) persist.
     const mode = !this._item
       ? 'empty'
       : showsSummary
         ? 'summary'
-        : `status:${status?.spinner ? '1' : '0'}:${stoppable ? 'stop' : 'nostop'}`;
+        : `status:${status?.spinner ? '1' : '0'}:${stoppable ? 'stop' : 'nostop'}:${atWork ? 'work' : 'rest'}`;
 
     // Content signature: what would actually be painted this tick. Lets us
     // skip the in-place repaint when nothing visible changed (the common case
@@ -206,10 +215,10 @@ class ThreadMessage extends HTMLElement {
       this._paintedKey = key;
       const article = document.createElement('article');
       article.className = 'thread-item';
-      // The icon pulse says work is under way. A thread stopped mid-run has
-      // none: the pulse would be the only moving pixel in the state, telling
-      // the user the opposite of what the tile says.
-      if (!showsSummary && status?.kind !== 'unfinished') {
+      // The icon pulse says work is under way. A thread stopped mid-run or by an
+      // error has none: the pulse would be the only moving pixel in the state,
+      // telling the user the opposite of what the tile says.
+      if (atWork) {
         article.setAttribute('data-processing', 'true');
       }
 
@@ -249,8 +258,11 @@ class ThreadMessage extends HTMLElement {
       // column rather than flush under the icon.
       if (stoppable) {
         const msgEl = summaryDiv.querySelector('.thread-status-message');
+        // Nothing is running on an open run nobody is driving, so the click
+        // stops no work: it ends the wait. Say that, rather than describing an
+        // action it does not perform.
         (msgEl || body).appendChild(this._buildStopButton(
-          status?.kind === 'unfinished'
+          status?.openRun === true
             ? 'Stop waiting for this thread'
             : 'Stop this thread'
         ));
