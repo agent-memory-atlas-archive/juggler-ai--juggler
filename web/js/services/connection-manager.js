@@ -49,6 +49,17 @@ class ConnectionManager {
     /** @type {import('../model/session.js').default|null} @private */
     this._session = null;
 
+    /** @type {Promise<void>|null} @private - The one session load, from the moment it is started */
+    this._sessionLoad = null;
+
+    // What `this._session` being non-null does NOT tell anyone: the Session is
+    // assigned before its load is awaited, and workerManager.init runs at the
+    // end of that load. Until this is true there is a session that cannot spawn
+    // a worker, so an 'open' arriving now is the first connection still
+    // settling rather than a reconnect to catch up on.
+    /** @type {boolean} @private */
+    this._sessionLoaded = false;
+
     /** @type {function|null} @private */
     this._unsubscribe = null;
 
@@ -92,7 +103,7 @@ class ConnectionManager {
   /**
    * Settles when this realm can actually run something.
    *
-   * `getSession()` is non-null well before that: `_initializeSession` assigns
+   * `getSession()` is non-null well before that: `_loadSession` assigns
    * the Session synchronously and *then* awaits its load, so a caller that
    * checks for a session finds one that cannot yet spawn a worker. Rejects with
    * the load's own error if the load failed, because that failure is permanent —
@@ -126,36 +137,7 @@ class ConnectionManager {
 
     // Handle connection events
     const openCallback = /** @type {any} */ (async () => {
-      // The link is up, so whatever the overlay was reporting is over.
-      if (this._disconnectionOverlay) this._disconnectionOverlay.hide();
-
-      // Initialize session if not yet done
-      if (!this._session) {
-        await this._initializeSession();
-        return;
-      }
-      // This 'open' is a reconnect, and websocket.js only releases one for a
-      // link that came back to the SAME server instance — so everything this
-      // page holds is still valid, merely behind. Catch up on the two things
-      // that went stale while the socket was down and that nothing replays:
-      //   - each conversation's Yjs document, via a state-vector diff in both
-      //     directions (the worker's ops we missed, and the edits made here
-      //     that the transport discarded);
-      //   - the session manifest, whose conversation list, names, order and
-      //     metadata are maintained only by broadcasts that were delivered to
-      //     a closed socket.
-      workerManager.resyncReadyConversations();
-      // Viewer-only. The engine holds no session manifest worth refreshing (it
-      // renders no tab bar and auto-loads a conversation the moment a sync for
-      // it arrives), and re-driving its loads from here would have it eagerly
-      // load the whole project on every blip instead.
-      if (isEngine()) return;
-      workerManager.reinitPendingConversations();
-      try {
-        await this._session.refreshFromServer();
-      } catch (error) {
-        console.error('[ConnectionManager] Couldn\'t refresh the session after reconnect:', extractErrorMessage(error));
-      }
+      await this._handleOpen();
     });
     this._wsCallbacks.set('open', openCallback);
     wsService.on('open', openCallback);
@@ -209,6 +191,52 @@ class ConnectionManager {
   }
 
   /**
+   * Handle the link coming up — either for the first time, or after a drop.
+   * @returns {Promise<void>} Completes once the connection has been accounted for
+   * @private
+   */
+  async _handleOpen() {
+    // The link is up, so whatever the overlay was reporting is over.
+    if (this._disconnectionOverlay) this._disconnectionOverlay.hide();
+
+    // Either the first connection, or one that arrived while the first load was
+    // still in flight — on the studio adopt path the flushed 'session' frame and
+    // 'open' are emitted in the same synchronous stretch, so both happen. Load
+    // the session (once, however many routes ask) and stop there: the load reads
+    // the very manifest the catch-up below would, and running that catch-up now
+    // would spawn workers against a manager whose init the load has not reached.
+    // (A load that finished assigned the session before awaiting anything, so
+    // the second test only ever fails together with the first.)
+    const session = this._session;
+    if (!this._sessionLoaded || !session) {
+      await this._initializeSession();
+      return;
+    }
+    // This 'open' is a reconnect, and websocket.js only releases one for a
+    // link that came back to the SAME server instance — so everything this
+    // page holds is still valid, merely behind. Catch up on the two things
+    // that went stale while the socket was down and that nothing replays:
+    //   - each conversation's Yjs document, via a state-vector diff in both
+    //     directions (the worker's ops we missed, and the edits made here
+    //     that the transport discarded);
+    //   - the session manifest, whose conversation list, names, order and
+    //     metadata are maintained only by broadcasts that were delivered to
+    //     a closed socket.
+    workerManager.resyncReadyConversations();
+    // Viewer-only. The engine holds no session manifest worth refreshing (it
+    // renders no tab bar and auto-loads a conversation the moment a sync for
+    // it arrives), and re-driving its loads from here would have it eagerly
+    // load the whole project on every blip instead.
+    if (isEngine()) return;
+    workerManager.reinitPendingConversations();
+    try {
+      await session.refreshFromServer();
+    } catch (error) {
+      console.error('[ConnectionManager] Couldn\'t refresh the session after reconnect:', extractErrorMessage(error));
+    }
+  }
+
+  /**
    * Handle retry notification from backend
    * @param {any} data - Retry data
    * @private
@@ -250,16 +278,30 @@ class ConnectionManager {
   }
 
   /**
-   * Initialize session
-   * @returns {Promise<void>}
+   * Load the session, once, and settle when it has finished loading.
+   *
+   * Every route to a connection asks for this — the 'session' init frame and
+   * 'open' both do, and on the studio adopt path both arrive in the same
+   * synchronous stretch. They share the one load and wait on the one promise,
+   * so "the session exists" and "the session has loaded" cannot come apart in
+   * the callers.
+   * @returns {Promise<void>} Completes when the session load has finished
    * @private
    */
   async _initializeSession() {
-    // Guard against multiple initializations
-    if (this._session) {
-      return;
+    if (!this._sessionLoad) {
+      this._sessionLoad = this._loadSession();
     }
+    await this._sessionLoad;
+  }
 
+  /**
+   * Create the session and load it. Call it through {@link ConnectionManager#_initializeSession},
+   * which is what keeps it to one.
+   * @returns {Promise<void>}
+   * @private
+   */
+  async _loadSession() {
     // Create session instance
     this._session = new Session(apiService);
 
@@ -319,6 +361,7 @@ class ConnectionManager {
     if (loadError) {
       this._markSessionUnusable(new Error(`the engine could not load its session: ${loadError}`));
     } else {
+      this._sessionLoaded = true;
       this._markSessionReady();
     }
 
@@ -423,6 +466,8 @@ class ConnectionManager {
 
     // Clear references
     this._session = null;
+    this._sessionLoad = null;
+    this._sessionLoaded = false;
   }
 }
 
