@@ -18,6 +18,8 @@
  * Events:
  *   path-change  — fired whenever the input value changes
  *                  detail: { value: string }
+ *   input        — as any text control raises it: on typing (the inner field's
+ *                  own event, bubbling out) and on a path taken from the menu
  */
 
 import { fetchPathCompletions, fetchFileCompletions } from '../services/completions-api.js';
@@ -327,6 +329,14 @@ class PathInput extends HTMLElement {
     if (this._debounce !== null) { clearTimeout(this._debounce); this._debounce = null; }
     this._input.value = path;
     this._emitChange();
+    // A path taken from the menu is a path the user entered, so the control
+    // raises `input` for it as it does for a keystroke — typing raises it by
+    // itself, on the inner field's way out, while an assigned value raises
+    // nothing at all. Without this, a form watching the events a field raises
+    // for itself hears about every half-typed prefix and never about the one
+    // value it can be sure of. Raised on the element rather than the field, so
+    // the handler that opens the menu does not run again behind it.
+    this.dispatchEvent(new Event('input', { bubbles: true }));
     if (path.endsWith('/')) {
       // Directory: drill in immediately.
       this._fetch(path);

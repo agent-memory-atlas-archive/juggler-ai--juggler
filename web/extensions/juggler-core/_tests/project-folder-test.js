@@ -253,6 +253,47 @@ export async function runTests() {
       }
     });
 
+    await run('a folder picked from the menu counts as a folder entered', async () => {
+      // The pick is what this field is for — a few keystrokes and a click — and
+      // it arrives without a keystroke of its own. The check the prefix started
+      // is deliberately waited out first, so nothing pending is left to look at
+      // the field again by chance: after that, the pick is the only thing that
+      // can put the form right, and Create stays dead unless it does.
+      const tag = uniqueTag();
+      const folder = `pf-${tag}`;
+      await ops.writeFile({ path: `${folder}/inner/marker.txt`, content: `picked-${tag}` });
+      const form = openForm(session, undefined);
+      let heard = 0;
+      const listen = () => { heard++; };
+      form.container.addEventListener('input', listen);
+      form.container.addEventListener('change', listen);
+      try {
+        type(form, 'pf-');
+        await waitFor(() => String(form.note.textContent ?? '').includes('no such folder'),
+          { description: 'the half-typed prefix to be reported as no folder of its own' });
+        heard = 0;
+
+        const offered = () => [...document.querySelectorAll('.path-input-menu .menu-item')]
+          .find(item => String(item.textContent ?? '').trim() === `${folder}/`);
+        await waitFor(offered, { description: `${folder}/ to be offered in the menu` });
+        offered()?.dispatchEvent(new Event('pointerdown', { bubbles: true, cancelable: true }));
+
+        // The line under the field, not the validity: clearing the verdict is
+        // the first thing a check does, so validity turns on before anything
+        // has looked at the picked path, and waiting on it would prove only
+        // that the form is hopeful.
+        await waitFor(() => String(form.note.textContent ?? '').includes('Commands run here'),
+          { description: 'the picked folder to be found, which is what leaves Create pressable' });
+        assert(form.provider.getSetupValue().valid === true,
+          `so Create is live, got ${JSON.stringify(form.provider.getSetupValue())}`);
+        assert(heard > 0,
+          'and the form says so in the events the panel listens to, or Create is never asked again');
+      } finally {
+        form.close();
+        await ops.shell({ command: `rm -rf ${folder}` }).catch(() => {});
+      }
+    });
+
     await run('a folder the project does not have is refused before anything is registered', async () => {
       const before = (await listWorkspaces()).length;
       const tag = uniqueTag();

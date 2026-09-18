@@ -3432,10 +3432,23 @@ conversation-setup-panel {
 }
 
 /* Plain by default: most of what lands here is the form reporting what it
-   worked out, and only the lines that are something to fix ask for the red. */
+   worked out, and only the lines that are something to fix ask for the red.
+
+   Set like the meaning line of a row above it, and for the same reason: it is
+   prose about the control beside it, so it reads at the size of the label and
+   the field rather than at the size of the card's own text, which left a
+   sentence in the form larger than the heading it sits under. */
 .setup-field-note {
     grid-column: 2;
+    font-size: 0.8125rem;
+    line-height: 1.45;
     color: var(--text-secondary);
+}
+
+/* Room above it only once there is something above it to be clear of — empty,
+   the note keeps taking no space at all. */
+.setup-field-note:not(:empty) {
+    margin-top: 0.25rem;
 }
 
 .setup-field-note-error {
@@ -3445,7 +3458,9 @@ conversation-setup-panel {
 /* A place the note names, which is a path: mono, and on its own line, because
    the sentence above it is prose and a path read mid-sentence is neither. */
 .setup-field-note-path {
+    margin-top: 0.0625rem;
     font-family: var(--font-mono);
+    font-size: 0.75rem;
     overflow-wrap: anywhere;
     color: var(--text-tertiary);
 }
