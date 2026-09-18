@@ -1,0 +1,42 @@
+{
+  "$comment": "The authoritative sheet list and ownership map. Read by scripts/lint-css-arch and by the <link> lists in web/index.html and web/js-tests/headless-test.html, which must match it in content and order. The contract is README.md.",
+
+  "layers": ["tokens", "base", "layout", "patterns", "components", "utilities"],
+
+  "sheets": [
+    { "file": "fonts.css", "layer": "base", "owns": ["*"] },
+    { "file": "styles.css", "layer": "base", "owns": ["*"] },
+    { "file": "utilities.css", "layer": "utilities", "owns": ["*"] },
+    { "file": "components.css", "layer": "components", "owns": ["*"] },
+    { "file": "context-items.css", "layer": "components", "owns": ["*"] },
+    { "file": "plugin-catalog.css", "layer": "components", "owns": ["*"] },
+    { "file": "skills-marketplace.css", "layer": "components", "owns": ["*"] },
+    { "file": "prism-theme.css", "layer": "base", "owns": ["*"] }
+  ],
+
+  "$dynamicClasses": "Class names assembled in JS, so no literal exists to find. Each pattern below was proven by locating the composing expression (e.g. `color-${…}`) in web/js. Keep them tight: a pattern broad enough to cover a whole family stops the dead-selector check from seeing anything in it.",
+  "dynamicClasses": [
+    "color-*",
+    "status-*",
+    "origin-*",
+    "badge-*",
+    "toggle-*",
+    "char-*",
+    "ext-source-*",
+    "ext-cap-type-*",
+    "tool-category-*",
+    "tx-tool-category-*",
+    "plugin-tree-toggle-*",
+    "slash-command-scope-*",
+    "approval-source-*",
+    "pp-status--*",
+    "task-box--*",
+    "bash-command-segment-*"
+  ],
+
+  "$jsSetProperties": "Custom properties set from JS rather than declared in CSS, so a bare var() referring to one is not a dangling reference.",
+  "jsSetProperties": [
+    "--strategy-color",
+    "--logo-with-name-url"
+  ]
+}

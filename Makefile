@@ -790,9 +790,14 @@ lint-types: node-deps
 lint-js: node-deps
 	@NODE_NO_WARNINGS=1 $(NPM_BIN)/eslint --config tooling/eslint.config.js --max-warnings 0 --ignore-pattern 'web/js/vendor/**' 'web/js/**/*.js' 'web/sdk/**/*.js' 'web/extensions/**/*.js' 'web/js-tests/**/*.js'
 
-## lint-css: Run CSS linter (enforces rem units, no px)
+## lint-css: Run the CSS linters — stylelint (rem units, no px), then
+## lint-css-arch, which checks the architecture contract in web/css/README.md:
+## sheet ownership, dead selectors, token parity, and that both HTML documents
+## link the same sheets. The second is whole-tree by nature, so it always runs
+## in full rather than over a file list.
 lint-css: node-deps
 	@NODE_NO_WARNINGS=1 $(NPM_BIN)/stylelint --config tooling/.stylelintrc.json 'web/css/**/*.css'
+	@node scripts/lint-css-arch
 
 ## fix: Auto-fix everything the linters CAN fix in place — gofmt, golangci-lint
 ## --fix, eslint --fix, stylelint --fix — reusing the SAME globs, configs, and

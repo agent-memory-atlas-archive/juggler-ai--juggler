@@ -181,6 +181,12 @@ if [ ${#css_files[@]} -gt 0 ]; then
 		echo "==> stylelint (${#css_files[@]} file(s))"
 		NODE_NO_WARNINGS=1 "$NPM_BIN/stylelint" --config tooling/.stylelintrc.json "${css_files[@]}" || status=1
 	fi
+	# Ownership, dead selectors and token parity are properties of the whole
+	# stylesheet set, so this one runs in full however few files were named.
+	if [ -z "${FIX:-}" ]; then
+		echo "==> lint-css-arch"
+		node scripts/lint-css-arch || status=1
+	fi
 fi
 
 # ---- Unroutable files -----------------------------------------------------

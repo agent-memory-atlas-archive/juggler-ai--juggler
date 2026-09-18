@@ -1,0 +1,460 @@
+#!/usr/bin/env node
+/**
+ * lint-css-arch — checks the CSS architecture contract in web/css/README.md.
+ *
+ * Four checks, all driven by web/css/manifest.json:
+ *
+ *   ownership     a selector lives in the file that owns its root
+ *   dead-selector a class in the CSS is referenced by no JS, HTML or extension
+ *   token-parity  every var() resolves; theme colour tokens exist in both themes
+ *   link-parity   index.html and headless-test.html link the manifest's sheets
+ *
+ * Known violations live in web/css/.lint-css-allowlist, one per line, as
+ * `<check> <item>` with an optional `# note`. The allowlist is the outstanding
+ * debt: entries may be removed, never added, and an entry that no longer
+ * matches anything is itself an error so the file cannot rot.
+ *
+ * Run via `make lint` / `make lint-files`; never invoke it by hand.
+ */
+
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+
+const repoRoot = path.resolve(__dirname, '..');
+const cssDir = path.join(repoRoot, 'web', 'css');
+
+// ---------------------------------------------------------------------------
+// CSS parsing. The tree has no preprocessor, so a careful character walk is
+// enough and costs nothing to maintain.
+// ---------------------------------------------------------------------------
+
+/** Strip comments, keeping newlines so line numbers survive. */
+function stripComments(src) {
+	let out = '';
+	let quote = null;
+	for (let i = 0; i < src.length; i++) {
+		const c = src[i];
+		if (quote) {
+			out += c;
+			if (c === '\\') { out += src[++i] ?? ''; continue; }
+			if (c === quote) quote = null;
+			continue;
+		}
+		if (c === '"' || c === "'") { quote = c; out += c; continue; }
+		if (c === '/' && src[i + 1] === '*') {
+			const end = src.indexOf('*/', i + 2);
+			const chunk = src.slice(i, end < 0 ? src.length : end + 2);
+			out += chunk.replace(/[^\n]/g, ' ');
+			i += chunk.length - 1;
+			continue;
+		}
+		out += c;
+	}
+	return out;
+}
+
+/**
+ * Walk a stylesheet and yield every rule with its selector, line and the
+ * at-rule stack it sits inside.
+ */
+function parseRules(src) {
+	const clean = stripComments(src);
+	const rules = [];
+	const stack = [];
+	let prelude = '';
+	let preludeLine = 1;
+	let line = 1;
+	let quote = null;
+
+	for (let i = 0; i < clean.length; i++) {
+		const c = clean[i];
+		if (c === '\n') line++;
+		if (quote) {
+			prelude += c;
+			if (c === '\\') { prelude += clean[++i] ?? ''; continue; }
+			if (c === quote) quote = null;
+			continue;
+		}
+		if (c === '"' || c === "'") { quote = c; prelude += c; continue; }
+
+		if (c === '{') {
+			const text = prelude.trim();
+			if (!prelude.trim()) preludeLine = line;
+			const inKeyframes = stack.some((s) => /^@(-\w+-)?keyframes/i.test(s));
+			if (text.startsWith('@')) {
+				stack.push(text);
+			} else {
+				stack.push(text);
+				if (text && !inKeyframes) {
+					rules.push({ selector: text, line: preludeLine, at: stack.slice(0, -1) });
+				}
+			}
+			prelude = '';
+			preludeLine = line;
+			continue;
+		}
+		if (c === '}') { stack.pop(); prelude = ''; preludeLine = line; continue; }
+		if (c === ';' && stack.length === 0) { prelude = ''; preludeLine = line; continue; }
+		if (!prelude.trim() && /\s/.test(c)) { preludeLine = line; continue; }
+		prelude += c;
+	}
+	return rules;
+}
+
+/**
+ * The root of a selector: the thing it is "about". `:root`, `html` and `body`
+ * are containers rather than subjects, so a rule that starts with one is about
+ * whatever it descends to — `:root[data-theme="light"] .badge` is about
+ * `.badge`.
+ */
+function rootOf(selectorPart) {
+	const compounds = selectorPart
+		.trim()
+		.split(/\s+|\s*[>+~]\s*/)
+		.filter(Boolean);
+	for (const compound of compounds) {
+		const m = compound.match(/^([.#]?[a-zA-Z][\w-]*)/);
+		if (!m) continue;
+		const token = m[1];
+		if (/^(:root|html|body)$/i.test(token) && compounds.length > 1) continue;
+		return token.replace(/^[.#]/, '');
+	}
+	return null;
+}
+
+function selectorParts(selector) {
+	const parts = [];
+	let depth = 0;
+	let current = '';
+	let quote = null;
+	for (const c of selector) {
+		if (quote) { current += c; if (c === quote) quote = null; continue; }
+		if (c === '"' || c === "'") { quote = c; current += c; continue; }
+		if (c === '(' || c === '[') depth++;
+		if (c === ')' || c === ']') depth--;
+		if (c === ',' && depth === 0) { parts.push(current); current = ''; continue; }
+		current += c;
+	}
+	if (current.trim()) parts.push(current);
+	return parts;
+}
+
+// ---------------------------------------------------------------------------
+// Inputs
+// ---------------------------------------------------------------------------
+
+function readManifest() {
+	const file = path.join(cssDir, 'manifest.json');
+	try {
+		return JSON.parse(fs.readFileSync(file, 'utf8'));
+	} catch (err) {
+		console.error(`lint-css-arch: cannot read web/css/manifest.json — ${err.message}`);
+		process.exit(2);
+	}
+}
+
+function readAllowlist() {
+	const file = path.join(cssDir, '.lint-css-allowlist');
+	const entries = new Map();
+	if (!fs.existsSync(file)) return entries;
+	for (const raw of fs.readFileSync(file, 'utf8').split('\n')) {
+		const line = raw.replace(/#.*$/, '').trim();
+		if (!line) continue;
+		const [check, ...rest] = line.split(/\s+/);
+		const item = rest.join(' ');
+		if (!entries.has(check)) entries.set(check, new Set());
+		entries.get(check).add(item);
+	}
+	return entries;
+}
+
+function walk(dir, test, out = []) {
+	let entries;
+	try {
+		entries = fs.readdirSync(dir, { withFileTypes: true });
+	} catch {
+		return out;
+	}
+	for (const entry of entries) {
+		const full = path.join(dir, entry.name);
+		if (entry.isDirectory()) {
+			// vendor/ is included deliberately: PrismJS names its own token
+			// classes at runtime (.attr-name, .block-comment), and skipping it
+			// would report every rule in the syntax theme as dead.
+			if (entry.name === 'node_modules') continue;
+			walk(full, test, out);
+		} else if (test(entry.name)) {
+			out.push(full);
+		}
+	}
+	return out;
+}
+
+/** Every identifier-ish token in the JS/HTML that could name a class. */
+function referencedTokens() {
+	const files = [
+		...walk(path.join(repoRoot, 'web', 'js'), (n) => n.endsWith('.js')),
+		...walk(path.join(repoRoot, 'web', 'sdk'), (n) => n.endsWith('.js')),
+		...walk(path.join(repoRoot, 'web', 'extensions'), (n) => n.endsWith('.js') || n.endsWith('.css')),
+		...walk(path.join(repoRoot, 'web', 'js-tests'), (n) => n.endsWith('.js') || n.endsWith('.html')),
+		path.join(repoRoot, 'web', 'index.html'),
+		path.join(repoRoot, 'web', 'engine.html'),
+		path.join(repoRoot, 'web', 'sandbox.html'),
+	];
+	const tokens = new Set();
+	for (const file of files) {
+		let text;
+		try { text = fs.readFileSync(file, 'utf8'); } catch { continue; }
+		for (const token of text.split(/[^\w-]+/)) {
+			if (token) tokens.add(token);
+		}
+	}
+	return tokens;
+}
+
+function globToRegExp(pattern) {
+	return new RegExp(`^${pattern.split('*').map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*')}$`);
+}
+
+// ---------------------------------------------------------------------------
+// Checks
+// ---------------------------------------------------------------------------
+
+function sheetFiles(manifest) {
+	return manifest.sheets.map((s) => ({ ...s, abs: path.join(cssDir, s.file) }));
+}
+
+/** ownership: a selector lives in the file that owns its root. */
+function checkOwnership(manifest, sheets, sources) {
+	const failures = [];
+	const owners = [];
+	for (const sheet of sheets) {
+		for (const pattern of sheet.owns || []) {
+			if (pattern !== '*') owners.push({ pattern, re: globToRegExp(pattern), file: sheet.file });
+		}
+	}
+	for (const sheet of sheets) {
+		const wildcard = (sheet.owns || []).includes('*');
+		for (const rule of parseRules(sources.get(sheet.file) || '')) {
+			for (const part of selectorParts(rule.selector)) {
+				const root = rootOf(part);
+				if (!root) continue;
+				const owner = owners.find((o) => o.re.test(root));
+				if (owner) {
+					if (owner.file !== sheet.file) {
+						failures.push({
+							item: `${sheet.file}:${root}`,
+							message: `${sheet.file}:${rule.line} — "${root}" is owned by ${owner.file}`,
+						});
+					}
+				} else if (!wildcard) {
+					failures.push({
+						item: `${sheet.file}:${root}`,
+						message: `${sheet.file}:${rule.line} — no sheet owns "${root}"`,
+					});
+				}
+			}
+		}
+	}
+	return dedupe(failures);
+}
+
+/** dead-selector: a class the CSS styles that nothing else ever names. */
+function checkDeadSelectors(manifest, sheets, sources) {
+	const tokens = referencedTokens();
+	const dynamic = (manifest.dynamicClasses || []).map(globToRegExp);
+	const seen = new Map();
+	for (const sheet of sheets) {
+		const clean = stripComments(sources.get(sheet.file) || '');
+		for (const m of clean.matchAll(/\.(-?[a-zA-Z][\w-]*)/g)) {
+			if (!seen.has(m[1])) seen.set(m[1], sheet.file);
+		}
+	}
+	const failures = [];
+	for (const [cls, file] of seen) {
+		if (tokens.has(cls)) continue;
+		if (dynamic.some((re) => re.test(cls))) continue;
+		failures.push({ item: cls, message: `${file} — .${cls} is referenced by no JS, HTML or extension` });
+	}
+	return failures;
+}
+
+/** token-parity: every var() resolves, and theme colours exist in both themes. */
+function checkTokenParity(manifest, sheets, sources) {
+	const defined = new Set(manifest.jsSetProperties || []);
+	const themes = { dark: new Set(), light: new Set() };
+	const usedWithFallback = new Set();
+	const usedBare = new Map();
+
+	for (const sheet of sheets) {
+		const clean = stripComments(sources.get(sheet.file) || '');
+		for (const m of clean.matchAll(/(--[\w-]+)\s*:/g)) defined.add(m[1]);
+		// var(--x) vs var(--x, fallback)
+		for (const m of clean.matchAll(/var\(\s*(--[\w-]+)\s*([,)])/g)) {
+			if (m[2] === ',') usedWithFallback.add(m[1]);
+			else if (!usedBare.has(m[1])) usedBare.set(m[1], sheet.file);
+		}
+	}
+
+	// Theme membership, from the :root blocks that carry a data-theme.
+	for (const sheet of sheets) {
+		const clean = stripComments(sources.get(sheet.file) || '');
+		for (const rule of parseRules(clean)) {
+			const isLight = /data-theme\s*=\s*["']?light/.test(rule.selector);
+			const isDark = /:root(?!\[)/.test(rule.selector) || /data-theme\s*=\s*["']?dark/.test(rule.selector);
+			if (!isLight && !isDark) continue;
+			const body = blockBodyAt(clean, rule.line);
+			for (const m of body.matchAll(/(--[\w-]+)\s*:/g)) {
+				themes[isLight ? 'light' : 'dark'].add(m[1]);
+			}
+		}
+	}
+
+	const failures = [];
+	for (const [name, file] of usedBare) {
+		if (!defined.has(name)) {
+			failures.push({ item: name, message: `${file} — var(${name}) has no definition and no fallback` });
+		}
+	}
+	for (const name of themes.dark) {
+		if (!themes.light.has(name) && !usedWithFallback.has(name) && !isScaleToken(name)) {
+			failures.push({ item: name, message: `${name} is defined for the dark theme only` });
+		}
+	}
+	for (const name of themes.light) {
+		if (!themes.dark.has(name) && !usedWithFallback.has(name)) {
+			failures.push({ item: name, message: `${name} is defined for the light theme only` });
+		}
+	}
+	return dedupe(failures);
+}
+
+/**
+ * Theme-independent scales currently share the dark `:root` block. Step 7 of
+ * the CSS restructure moves them to tokens/scale.css; until then they are not
+ * a parity failure.
+ */
+function isScaleToken(name) {
+	return /^--(spacing|font-size|font-weight|radius|z|shadow|transition|leading|scrollbar|popup|message-icon|task|cursor|ansi|font|wails)/.test(name);
+}
+
+function blockBodyAt(clean, line) {
+	const lines = clean.split('\n');
+	const start = clean.split('\n').slice(0, line - 1).join('\n').length;
+	const open = clean.indexOf('{', start);
+	if (open < 0) return '';
+	let depth = 0;
+	for (let i = open; i < clean.length; i++) {
+		if (clean[i] === '{') depth++;
+		else if (clean[i] === '}') { depth--; if (depth === 0) return clean.slice(open + 1, i); }
+	}
+	return lines.join('\n');
+}
+
+/** link-parity: both HTML documents link the manifest's sheets, in order. */
+function checkLinkParity(manifest) {
+	const wanted = manifest.sheets.map((s) => s.file);
+	const failures = [];
+	for (const rel of ['web/index.html', 'web/js-tests/headless-test.html']) {
+		const file = path.join(repoRoot, rel);
+		let html;
+		try { html = fs.readFileSync(file, 'utf8'); } catch { continue; }
+		const linked = [...html.matchAll(/<link[^>]*rel=["']stylesheet["'][^>]*href=["'][^"']*\/css\/([^"']+)["']/g)]
+			.map((m) => m[1]);
+		const name = path.basename(rel);
+		for (const sheet of wanted) {
+			if (!linked.includes(sheet)) failures.push({ item: `${name}:${sheet}`, message: `${rel} does not link ${sheet}` });
+		}
+		for (const sheet of linked) {
+			if (!wanted.includes(sheet)) failures.push({ item: `${name}:${sheet}`, message: `${rel} links ${sheet}, which the manifest does not list` });
+		}
+		const order = linked.filter((s) => wanted.includes(s));
+		const expected = wanted.filter((s) => linked.includes(s));
+		if (order.join() !== expected.join()) {
+			failures.push({ item: `${name}:order`, message: `${rel} links the sheets in a different order from the manifest` });
+		}
+	}
+	return failures;
+}
+
+function dedupe(failures) {
+	const seen = new Set();
+	return failures.filter((f) => (seen.has(f.item) ? false : seen.add(f.item)));
+}
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
+
+function main() {
+	const manifest = readManifest();
+	const allowlist = readAllowlist();
+	const sheets = sheetFiles(manifest);
+	const sources = new Map();
+	for (const sheet of sheets) {
+		try {
+			sources.set(sheet.file, fs.readFileSync(sheet.abs, 'utf8'));
+		} catch {
+			console.error(`lint-css-arch: manifest lists ${sheet.file}, which does not exist`);
+			process.exit(2);
+		}
+	}
+
+	const results = {
+		'ownership': checkOwnership(manifest, sheets, sources),
+		'dead-selector': checkDeadSelectors(manifest, sheets, sources),
+		'token-parity': checkTokenParity(manifest, sheets, sources),
+		'link-parity': checkLinkParity(manifest),
+	};
+
+	// `--emit-allowlist` prints every current failure in allowlist format,
+	// ignoring the existing allowlist. Use it to audit what is still owed, or
+	// to re-seed the file after a large restructuring step — then annotate.
+	if (process.argv.includes('--emit-allowlist')) {
+		for (const [check, failures] of Object.entries(results)) {
+			for (const failure of failures) console.log(`${check} ${failure.item}`);
+		}
+		return;
+	}
+
+	let failed = 0;
+	let allowed = 0;
+	const stale = [];
+
+	for (const [check, failures] of Object.entries(results)) {
+		const permitted = allowlist.get(check) || new Set();
+		const used = new Set();
+		const real = [];
+		for (const failure of failures) {
+			if (permitted.has(failure.item)) { used.add(failure.item); allowed++; continue; }
+			real.push(failure);
+		}
+		for (const item of permitted) {
+			if (!used.has(item)) stale.push(`${check} ${item}`);
+		}
+		if (real.length) {
+			failed += real.length;
+			console.error(`\n✗ ${check} (${real.length})`);
+			for (const failure of real.slice(0, 40)) console.error(`    ${failure.message}`);
+			if (real.length > 40) console.error(`    … and ${real.length - 40} more`);
+		}
+	}
+
+	if (stale.length) {
+		failed += stale.length;
+		console.error(stale.length === 1
+			? `\n✗ .lint-css-allowlist has an entry that no longer matches anything — delete it:`
+			: `\n✗ .lint-css-allowlist has ${stale.length} entries that no longer match anything — delete them:`);
+		for (const entry of stale.slice(0, 40)) console.error(`    ${entry}`);
+	}
+
+	if (failed) {
+		console.error(`\nlint-css-arch: ${failed} problem${failed === 1 ? '' : 's'}. The contract is web/css/README.md.`);
+		process.exit(1);
+	}
+	console.log(`✓ css architecture (${sheets.length} sheets, ${allowed} known violation${allowed === 1 ? '' : 's'} still allowlisted)`);
+}
+
+main();

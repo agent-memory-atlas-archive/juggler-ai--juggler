@@ -1,0 +1,183 @@
+# Known violations of the CSS architecture contract (web/css/README.md).
+#
+# Format: <check> <item>   # optional note
+#
+# This file is the outstanding debt of the CSS restructure. Entries may be
+# removed, never added: a new violation is a build failure, and an entry that
+# stops matching anything is also a failure, so the file cannot rot.
+#
+# Audit what is still owed:  node scripts/lint-css-arch --emit-allowlist
+
+# --- token-parity ---------------------------------------------------------
+# Two bare var()s that resolve to nothing, so the whole declaration is dropped:
+# styles.css:3478 (outline) and prism-theme.css:142 (inside a color-mix, which
+# takes the rest of the value with it).
+token-parity --accent-color
+token-parity --text-muted
+
+# Theme-independent tokens that share the dark theme's :root block only because
+# dark was written first. They move to tokens/scale.css.
+token-parity --modal-scrim
+token-parity --overlay-dark-70
+token-parity --overlay-dark-50
+token-parity --overlay-dark-25
+token-parity --overlay-dark-15
+token-parity --overlay-dark-10
+
+
+# --- dead-selector --------------------------------------------------------
+# Classes styled here that no JS, HTML or extension names, and that match no
+# dynamicClasses pattern in manifest.json. Each is either genuinely dead or a
+# name assembled somewhere the pattern list does not yet cover.
+dead-selector menu-reset-icon
+dead-selector u-btn-pill-control
+dead-selector llm-iteration-counter
+dead-selector iteration-normal
+dead-selector iteration-warning
+dead-selector iteration-critical
+dead-selector text-green
+dead-selector text-blue
+dead-selector text-red
+dead-selector text-yellow
+dead-selector text-secondary
+dead-selector u-btn-label
+dead-selector message-actions
+dead-selector u-empty-state
+dead-selector u-empty-state-lg
+dead-selector u-badge
+dead-selector u-badge-muted
+dead-selector u-badge-blue
+dead-selector u-badge-green
+dead-selector u-badge-red
+dead-selector u-badge-orange
+dead-selector u-badge-purple
+dead-selector u-icon-svg
+dead-selector u-icon-sm
+dead-selector u-icon-md
+dead-selector u-icon-lg
+dead-selector u-icon-xl
+dead-selector u-scrollbar-thin
+dead-selector u-interactive-row
+dead-selector u-card
+dead-selector ppd-folder-icon
+dead-selector context-item-context-menu
+dead-selector token-low
+dead-selector settings-actions
+dead-selector mcp-env-row
+dead-selector mcp-env-key
+dead-selector action-approval-message
+dead-selector transaction-summary
+dead-selector tx-duration
+dead-selector tx-tokens
+dead-selector tx-separator
+dead-selector action-confirmation-actions
+dead-selector action-result-details
+dead-selector menu-item-flex
+dead-selector menu-item-meta
+dead-selector collapsed-badge
+dead-selector context-item-badge
+dead-selector preformatted-output
+dead-selector text-muted
+dead-selector text-primary
+dead-selector transaction-band-even
+dead-selector transaction-band-odd
+dead-selector message-edit-textarea
+dead-selector ci-expanded-content
+dead-selector ci-collapsed-content
+dead-selector ci-btn
+dead-selector ci-remove-btn
+dead-selector ci-file-path
+dead-selector ci-file-path-header
+dead-selector ci-metadata
+dead-selector ci-badge
+dead-selector ci-badge-label
+dead-selector ci-badge-value
+dead-selector ci-section-title
+dead-selector ci-section-content
+dead-selector ci-list
+dead-selector ci-list-item
+dead-selector ci-empty
+dead-selector ci-empty-icon
+dead-selector ci-error
+dead-selector ci-error-title
+dead-selector ci-error-message
+dead-selector ci-warning
+dead-selector ci-success
+dead-selector ci-loading
+dead-selector collapsed-content
+dead-selector collapsed-main
+dead-selector collapsed-title
+dead-selector collapsed-subtitle
+dead-selector collapsed-preview
+dead-selector collapsed-meta
+dead-selector expanded-header
+dead-selector expanded-header-left
+dead-selector expanded-header-right
+dead-selector expanded-title
+dead-selector expanded-subtitle
+dead-selector ci-search-results
+dead-selector ci-search-file
+dead-selector ci-search-file-header
+dead-selector ci-search-match
+dead-selector ci-search-line-num
+dead-selector ci-search-highlight
+dead-selector ci-stats
+dead-selector ci-stat
+dead-selector ci-stat-value
+dead-selector ci-stat-label
+dead-selector question-answer-ci
+dead-selector qa-section
+dead-selector qa-label
+dead-selector qa-text
+dead-selector answer-text
+dead-selector ci-preview
+dead-selector system-ci
+dead-selector ci-output-label
+dead-selector response-json
+dead-selector plugin-category
+dead-selector plugin-id-help
+dead-selector plugin-module-url
+dead-selector plugin-module-url-label
+dead-selector plugin-module-url-link
+dead-selector plugin-module-url-value
+dead-selector llm-instructions-box
+dead-selector preview-section-header
+dead-selector preview-container
+dead-selector preview-error
+dead-selector capability-badges
+dead-selector capability-badge
+dead-selector capability-watches-files
+dead-selector capability-user-addable
+dead-selector capability-system-ci
+dead-selector capability-requires-approval
+dead-selector capability-supports-streaming
+dead-selector capability-supports-recovery
+dead-selector backend-details
+dead-selector backend-detail-row
+dead-selector backend-detail-label
+dead-selector backend-detail-value
+dead-selector tool-schema-header
+dead-selector operations-list
+dead-selector operations-empty
+dead-selector operation-item
+dead-selector operation-header
+dead-selector operation-name
+dead-selector operation-description
+dead-selector operation-params-label
+dead-selector operation-params
+dead-selector operation-param
+dead-selector operation-param-required
+dead-selector operation-param-optional
+dead-selector usage-content
+dead-selector llm-guidance-content
+dead-selector capability-sub-conversations
+dead-selector trigger-examples
+dead-selector trigger-example
+dead-selector tradeoffs-group
+dead-selector tradeoffs-content
+dead-selector tradeoffs-heading
+dead-selector tradeoffs-pros
+dead-selector tradeoffs-cons
+dead-selector tradeoffs-list
+dead-selector tradeoff-item
+dead-selector block-comment

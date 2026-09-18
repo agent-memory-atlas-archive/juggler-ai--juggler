@@ -195,6 +195,9 @@ Key invariants:
 
 ## Web UI
 
+- **CSS has a contract: `web/css/README.md`.** Layers, which file owns a rule,
+  token rules, and what an extension may style. Read it before adding CSS —
+  `make lint` enforces most of it.
 - **Event feeds are not interchangeable** — `onLLMStatusChange` and
   `conversation:changed` answer different questions. Which to use, and why
   handlers on the latter stay read-only and unbatched: `session.js`.
