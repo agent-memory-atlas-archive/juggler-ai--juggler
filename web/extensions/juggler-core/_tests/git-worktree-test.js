@@ -329,6 +329,44 @@ async function waitForRepoField(form) {
 }
 
 /**
+ * Wait for the Worktree field to be asked, and hand it back.
+ *
+ * It arrives later than the Repository field above it and only for a submodule:
+ * the form has to know which of the repositories on offer are submodules before
+ * it can know whether there is anything to ask. It is built hidden and shown,
+ * so being in the container is not the same as being asked.
+ * @param {any} form - As `openForm` returned it.
+ * @returns {Promise<HTMLSelectElement>} The field, once it is being asked.
+ */
+async function waitForScopeField(form) {
+  await waitFor(() => {
+    const select = /** @type {any} */ (form.container.querySelector('[data-field="scope"]'));
+    return Boolean(select) && select.parentElement?.hidden === false;
+  }, { description: 'the form to ask which tree a submodule should be made of' });
+  return form.container.querySelector('[data-field="scope"]');
+}
+
+/**
+ * A repository with another one inside it as a submodule.
+ *
+ * Both are built in the project and the inner one is added by a relative path,
+ * so nothing here depends on where the project is. `protocol.file.allow` is
+ * stated because git refuses a submodule from a local path without it, and
+ * stating it costs nothing on the versions that never minded.
+ * @param {any} ops - Project-pinned operations.
+ * @param {string} outer - Directory for the superproject, relative to the project.
+ * @param {string} inner - Directory for the repository it will hold, relative to the project.
+ * @param {string} at - Where the submodule sits inside the superproject.
+ * @returns {Promise<void>} When the superproject has it committed.
+ */
+async function buildSuperproject(ops, outer, inner, at) {
+  await buildRepo(ops, outer, `outer-${at}`);
+  await buildRepo(ops, inner, `inner-${at}`);
+  await mustRun(ops, `git -C ${outer} -c protocol.file.allow=always submodule add -q ../${inner} ${at}`);
+  await mustRun(ops, `git -C ${outer} commit -q -m submodule`);
+}
+
+/**
  * What a Repository field is offering, in the order it offers it.
  * @param {HTMLSelectElement} select - The field.
  * @returns {string[]} The values, which are paths relative to the base workspace.
@@ -1358,6 +1396,107 @@ export async function runTests() {
           `which is to say outside the project altogether, got ${JSON.stringify(form.location.value)}`);
       } finally {
         await ops.shell({ command: `rm -rf ${first} ${second}` }).catch(() => {});
+      }
+    });
+
+    await run('a submodule can be made a tree of from either end', async () => {
+      // A tree of a submodule holds the submodule and nothing else — not the
+      // Makefile that builds it, not the scripts around it, none of which are in
+      // that repository. A tree of the project holds all of it with the
+      // submodule inside. Both are reasonable and they are different trees, so
+      // the form asks rather than picking one.
+      const tag = uniqueTag();
+      const [outer, inner] = [`wt-super-${tag}`, `wt-inner-${tag}`];
+      const outerRoot = `${projectPath}${separator}${outer}`;
+      const saved = session.workspaces;
+      /** @type {any} */
+      let base = null;
+      try {
+        await buildSuperproject(ops, outer, inner, 'held');
+        // A branch of its own in the superproject, so that the base following
+        // the subject from one repository to the other is visible rather than
+        // the same word twice.
+        await mustRun(ops, `git -C ${outer} checkout -q -b trunk`);
+
+        base = await registerWorkspace({
+          kind: 'local', root: outerRoot, label: outer, state: 'ready'
+        });
+        session.workspaces = [...saved, base];
+
+        const form = openForm(session, base.id);
+        const select = await waitForRepoField(form);
+        pick(select, 'held');
+        const scope = await waitForScopeField(form);
+
+        // Nothing in this project says a whole-project tree is usable, so the
+        // form stays where it has always been and offers the other way.
+        assert(scope.value === 'repo',
+          `a project with no setup hook starts on the submodule alone, got ${JSON.stringify(scope.value)}`);
+        typeInto(form.branch, BRANCH);
+        const alone = defaultLocation(`${outerRoot}${separator}held`, BRANCH, outerRoot);
+        assert(form.location.value === alone,
+          `which is placed beside the project as it always was, got ${JSON.stringify(form.location.value)} rather than ${JSON.stringify(alone)}`);
+        await waitFor(() => form.base.value === 'main',
+          { description: "the base to fill in from the submodule's HEAD" });
+
+        // The other end: the tree becomes a tree of the project, named after the
+        // project, based on the project's HEAD rather than the submodule's.
+        pick(scope, 'project');
+        const whole = defaultLocation(outerRoot, BRANCH, outerRoot);
+        assert(form.location.value === whole,
+          `the whole project is a tree named for the project, got ${JSON.stringify(form.location.value)} rather than ${JSON.stringify(whole)}`);
+        await waitFor(() => form.base.value === 'trunk',
+          { description: "the base to be asked again, of the project it is now a tree of" });
+
+        const chosen = form.provider.getSetupValue().values;
+        assert(chosen.scope === 'project' && chosen.repo === 'held',
+          `and the form hands on both the scope and the repository it is about, got ${JSON.stringify(chosen)}`);
+
+        // The question only arises for a submodule. Choosing the project itself
+        // in the field above is not a submodule, so there is nothing to ask and
+        // the form says nothing.
+        pick(select, '');
+        assert(/** @type {any} */ (scope).parentElement.hidden === true,
+          'a repository that is not a submodule is not asked which end to make a tree of');
+        assert(form.provider.getSetupValue().values.scope === '',
+          `and no scope is handed on, got ${JSON.stringify(form.provider.getSetupValue().values.scope)}`);
+      } finally {
+        session.workspaces = saved;
+        if (base) await unregisterWorkspace(base.id).catch(() => {});
+        await ops.shell({ command: `rm -rf ${outer} ${inner}` }).catch(() => {});
+      }
+    });
+
+    await run('a project that carries a setup hook starts on the whole project', async () => {
+      // `git worktree add` does not populate submodules, so a whole-project tree
+      // arrives with an empty directory where the submodule is. The hook is
+      // where a project says what a new tree of it needs — so a project that has
+      // written one has said that a tree of the whole thing is the usable kind,
+      // and that is the only evidence worth defaulting on.
+      const tag = uniqueTag();
+      const [outer, inner] = [`wt-hooked-${tag}`, `wt-held-${tag}`];
+      const saved = session.workspaces;
+      /** @type {any} */
+      let base = null;
+      try {
+        await buildSuperproject(ops, outer, inner, 'held');
+        await mustRun(ops, `mkdir -p ${outer}/.juggler`);
+        await mustRun(ops, `echo exit 0 > ${outer}/.juggler/worktree-setup`);
+
+        base = await registerWorkspace({
+          kind: 'local', root: `${projectPath}${separator}${outer}`, label: outer, state: 'ready'
+        });
+        session.workspaces = [...saved, base];
+
+        const form = openForm(session, base.id);
+        pick(await waitForRepoField(form), 'held');
+        const scope = await waitForScopeField(form);
+        assert(scope.value === 'project',
+          `the hook is what turns the default round, got ${JSON.stringify(scope.value)}`);
+      } finally {
+        session.workspaces = saved;
+        if (base) await unregisterWorkspace(base.id).catch(() => {});
+        await ops.shell({ command: `rm -rf ${outer} ${inner}` }).catch(() => {});
       }
     });
 

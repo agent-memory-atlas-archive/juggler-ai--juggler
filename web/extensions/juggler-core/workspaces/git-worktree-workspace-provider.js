@@ -224,8 +224,9 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
 
   /**
    * Three fields: where to branch from, what to call the branch, and where the
-   * tree goes — and a fourth, when there is more than one repository to make a
-   * tree of.
+   * tree goes — a fourth when there is more than one repository to make a tree
+   * of, and a fifth when the one chosen is a submodule and so can be made a tree
+   * of from either end.
    *
    * Only the branch is normally touched. The base fills itself in from wherever
    * the repository is standing, and the location is derived from the branch —
@@ -244,6 +245,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     const seq = nextFormSequence();
     const ids = {
       repo: `git-worktree-repo-${seq}`,
+      scope: `git-worktree-scope-${seq}`,
       base: `git-worktree-base-${seq}`,
       branch: `git-worktree-branch-${seq}`,
       location: `git-worktree-location-${seq}`
@@ -263,7 +265,8 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     location.input.value = String(restored?.location ?? '');
 
     const repoRel = String(restored?.repo ?? '');
-    const { repoRoot, beside } = this._formPlaces(ctx, repoRel);
+    const scopeWanted = String(restored?.scope ?? '');
+    const { repoRoot, beside, subjectRel } = this._formPlaces(ctx, repoRel, scopeWanted);
     const form = {
       ctx,
       container,
@@ -271,8 +274,26 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
       repoRel,
       repoRoot,
       beside,
+      /** @type {string} The repository the tree is OF, which is not the chosen one when the whole project is. */
+      subjectRel,
+      /** @type {string} Which end of a submodule was asked for: 'project', 'repo', or '' when nothing is. */
+      scopeWanted,
+      /** @type {Set<string>} The base workspace's submodules, once they have been asked for. */
+      submodules: new Set(),
+      /** @type {boolean} Whether that set is an answer yet, rather than the absence of one. */
+      submodulesKnown: false,
+      /** @type {boolean} Whether the base workspace is itself a repository, which is what makes a project-wide tree possible. */
+      baseIsRepo: false,
+      /** @type {boolean} Whether the base workspace carries a setup hook. */
+      hasSetupHook: false,
       /** @type {HTMLSelectElement|null} The repository field, once there is a reason for one. */
       repo: null,
+      /** @type {HTMLSelectElement|null} The scope field, once a submodule is chosen. */
+      scope: null,
+      /** @type {HTMLElement|null} The scope field's row, hidden while the choice is not a real one. */
+      scopeRow: null,
+      /** @type {HTMLElement|null} The line under the scope field. */
+      scopeNote: null,
       base: base.input,
       branch: branch.input,
       location: location.input,
@@ -352,6 +373,124 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     // Only when it lands somewhere other than where the form already was: the
     // rest of it was built, and a base already asked for, against `form.repoRel`.
     if (select.value !== form.repoRel) this._repositoryChosen();
+
+    // What makes the scope question answerable: a base workspace that is itself
+    // a repository, and a chosen repository that is one of its submodules.
+    form.baseIsRepo = repos.includes('');
+    const submodules = await this._submodulePaths(form.ctx);
+    if (this._form !== form) return;
+    if (submodules.size > 0 && form.baseIsRepo) {
+      form.hasSetupHook = await this._hasSetupHook(form.ctx);
+      if (this._form !== form) return;
+    }
+    form.submodules = submodules;
+    form.submodulesKnown = true;
+    this._offerScope();
+    Object.assign(form, this._formPlaces(form.ctx, form.repoRel, form.scopeWanted));
+    this._deriveLocation();
+    this._report();
+  }
+
+  /**
+   * Offer the two ways to make a tree of a submodule, when the chosen repository
+   * is one — and stay out of the way when it is not.
+   *
+   * A tree of the submodule alone is the submodule alone: the project's
+   * Makefile, its scripts and whatever else the submodule is built by are in the
+   * enclosing repository, and none of that is in the tree. A tree of the project
+   * has all of it, and the submodule inside it can sit on its own branch. Which
+   * of those is wanted is not something to be guessed silently, so it is asked.
+   *
+   * The field is built once and hidden while the question does not arise, rather
+   * than added and removed: a control that appears and vanishes as the
+   * repository above it changes is a form that moves under the pointer.
+   */
+  _offerScope() {
+    const form = this._form;
+    if (!form) return;
+
+    // Nothing is known about submodules until they have been asked for, and a
+    // repository chosen before the answer arrives must not be read as evidence
+    // that the question does not arise — that would throw away a restored scope
+    // on the way past.
+    if (!form.submodulesKnown) return;
+
+    const applies = form.baseIsRepo && form.submodules.has(form.repoRel);
+    if (!applies) {
+      if (form.scopeRow) form.scopeRow.hidden = true;
+      form.scopeWanted = '';
+      return;
+    }
+
+    const projectName = baseName(this._formPlaces(form.ctx, '').repoRoot) || 'the project';
+    if (!form.scope) {
+      const { select, note } = choice(form.container, form.ids.scope, 'scope', 'Worktree', [
+        { value: 'project', label: '' },
+        { value: 'repo', label: '' }
+      ]);
+      form.scope = select;
+      form.scopeNote = note;
+      form.scopeRow = /** @type {HTMLElement} */ (select.parentElement);
+      // Under the repository it qualifies, which means moving it: the rest of
+      // the form was built before there was any reason to ask this.
+      form.repo?.parentElement?.after(form.scopeRow);
+      select.addEventListener('change', () => { this._scopeChosen(); });
+    }
+
+    form.scope.options[0].textContent = `${projectName}, with ${form.repoRel} in it`;
+    form.scope.options[1].textContent = `${form.repoRel} on its own`;
+    form.scopeRow.hidden = false;
+
+    // A restored answer is the user's and stands. Otherwise the hook decides:
+    // see {@link _hasSetupHook}.
+    if (form.scopeWanted !== 'project' && form.scopeWanted !== 'repo') {
+      form.scopeWanted = form.hasSetupHook ? 'project' : 'repo';
+    }
+    form.scope.value = form.scopeWanted;
+    this._showScopeNote();
+  }
+
+  /**
+   * Say what the scope on offer will actually leave in the tree.
+   *
+   * `git worktree add` does not populate submodules, so a project-wide tree
+   * arrives with an empty directory where the submodule is unless the project's
+   * hook fills it. That is worth saying plainly at the moment it is chosen, and
+   * not worth apologising for: the hook is where a project says what its trees
+   * need.
+   */
+  _showScopeNote() {
+    const form = this._form;
+    if (!form?.scopeNote) return;
+    if (form.scopeWanted === 'repo') {
+      showNote(form.scopeNote, `Only ${form.repoRel}. Nothing of the project around it comes with it.`);
+      return;
+    }
+    showNote(form.scopeNote, form.hasSetupHook
+      ? `${form.repoRel} starts uninitialised; ${SETUP_HOOK} runs in the new tree.`
+      : `${form.repoRel} starts uninitialised — there is no ${SETUP_HOOK} to fill it in.`);
+  }
+
+  /**
+   * Follow the scope being changed: it moves which repository the tree is of, so
+   * the base and the location are both about something else now.
+   */
+  _scopeChosen() {
+    const form = this._form;
+    if (!form?.scope) return;
+
+    form.scopeWanted = form.scope.value;
+    Object.assign(form, this._formPlaces(form.ctx, form.repoRel, form.scopeWanted));
+    this._deriveLocation();
+    this._showScopeNote();
+    // The same reasoning as choosing a repository: the base names a commit in
+    // whichever repository was the subject a moment ago, and the submodule and
+    // the project around it do not share a history.
+    if (!form.baseEdited) {
+      form.base.value = '';
+      void this._fillBaseFromHead();
+    }
+    this._report();
   }
 
   /**
@@ -363,7 +502,11 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     if (!form?.repo) return;
 
     form.repoRel = form.repo.value;
-    Object.assign(form, this._formPlaces(form.ctx, form.repoRel));
+    // Before the places are worked out: whether this repository is a submodule
+    // decides whether `scopeWanted` means anything, and the places are built
+    // from it.
+    this._offerScope();
+    Object.assign(form, this._formPlaces(form.ctx, form.repoRel, form.scopeWanted));
     this._deriveLocation();
     // The base names a commit in the repository that was chosen before, which is
     // not a commit in this one. A base the user typed is theirs and stays; one
@@ -395,6 +538,9 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
       // '' when the base workspace is the repository, which is the usual case
       // and the one the field is left out of altogether.
       repo: form.repoRel,
+      // '' unless a submodule is chosen and the question arose, which keeps a
+      // provision run from literal values exactly as it was.
+      scope: form.scopeWanted,
       base: form.base.value.trim(),
       branch,
       location: form.location.value.trim()
@@ -426,7 +572,9 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
   async _fillBaseFromHead() {
     const form = this._form;
     if (!form) return;
-    const asked = form.repoRel;
+    // The repository the tree will be OF, which is the project rather than the
+    // chosen submodule when the whole project was asked for.
+    const asked = form.subjectRel;
     const head = await this._inRepo(form.ctx, asked, 'git rev-parse --abbrev-ref HEAD');
     if (!head?.success) return;
     let named = String(head?.stdout ?? '').trim();
@@ -438,7 +586,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     // while this was in flight, may have chosen a different repository — for
     // which this answer is a commit that does not exist — and may have closed
     // the form altogether.
-    if (!named || this._form !== form || form.repoRel !== asked) return;
+    if (!named || this._form !== form || form.subjectRel !== asked) return;
     if (form.baseEdited || form.base.value) return;
     form.base.value = named;
     this._report();
@@ -511,15 +659,61 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
    * user is shown and the location the command builds cannot be two places.
    * @param {any} ctx - The form's context.
    * @param {string} repoRel - The repository chosen, relative to the base workspace.
-   * @returns {{repoRoot: string, beside: string}} Where it is, and what a tree of it sits next to.
+   * @param {string} [scope] - Which end of a submodule was asked for, when one was chosen.
+   * @returns {{repoRoot: string, beside: string, subjectRel: string}} Where it is, what a tree of it sits next to, and which repository it is a tree OF.
    */
-  _formPlaces(ctx, repoRel) {
+  _formPlaces(ctx, repoRel, scope = '') {
     try {
-      const { repoRoot, beside } = this._repoRoot({ repo: repoRel }, ctx);
-      return { repoRoot, beside };
+      const places = this._repoRoot({ repo: repoRel, scope }, ctx);
+      return { repoRoot: places.repoRoot, beside: places.beside, subjectRel: places.repoRel };
     } catch {
-      return { repoRoot: '', beside: '' };
+      return { repoRoot: '', beside: '', subjectRel: '' };
     }
+  }
+
+  /**
+   * Which of the repositories under the base workspace are its submodules.
+   *
+   * Read from `.gitmodules` at the base workspace, so these are its DIRECT
+   * submodules and nothing deeper: a submodule of a submodule is listed in a
+   * `.gitmodules` this never opens, and is treated as the plain nested
+   * repository it otherwise resembles.
+   *
+   * A base workspace that is not a repository, or a repository with no
+   * submodules, answers with an empty set and the form is the form it has always
+   * been.
+   * @param {any} ctx - The form's context, for operations pinned to the base workspace.
+   * @returns {Promise<Set<string>>} Submodule paths, relative to the base workspace.
+   */
+  async _submodulePaths(ctx) {
+    /** @type {Set<string>} */
+    const paths = new Set();
+    const listed = await this._inRepo(ctx, '', 'git config -f .gitmodules --list');
+    if (!listed?.success) return paths;
+    for (const line of String(listed?.stdout ?? '').split(/\r?\n/)) {
+      const said = /^submodule\..+\.path=(.+)$/.exec(line.trim())?.[1];
+      // `.gitmodules` writes a path with forward slashes wherever it was made;
+      // the repository list is the server's own, which on Windows is not. They
+      // are compared here, so they are spelled the same way here.
+      if (said) paths.add(said.trim().replace(/\\/g, '/'));
+    }
+    return paths;
+  }
+
+  /**
+   * Whether the base workspace carries a setup hook.
+   *
+   * It decides which way round the scope field starts, and it is a fair thing to
+   * read it from: a project that has written a hook has said what a tree of it
+   * needs in order to be usable, and a submodule is the usual reason for saying
+   * so. A project with no hook gets the placement it got before there was a
+   * choice.
+   * @param {any} ctx - The form's context.
+   * @returns {Promise<boolean>} Whether there is a hook to run.
+   */
+  async _hasSetupHook(ctx) {
+    const found = await this._inRepo(ctx, '', `test -f "${SETUP_HOOK}"`);
+    return Boolean(found?.success);
   }
 
   // ==========================================================================
@@ -549,7 +743,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
    * the git surfaces already discover repositories under a root rather than
    * assuming the root is one. The form and the provision ask this the same way
    * so that the path shown and the path built cannot be two different places.
-   * @param {any} values - What the setup form collected; only `repo` is read.
+   * @param {any} values - What the setup form collected; only `repo` and `scope` are read.
    * @param {any} ctx - The hook's context, for the session and the base workspace.
    * @returns {{repoRel: string, repoRoot: string, beside: string}} The repository, relative and absolute, and what a tree of it goes next to.
    * @throws {Error} When the base workspace cannot be resolved.
@@ -557,7 +751,12 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
   _repoRoot(values, ctx) {
     const baseRoot = ctx?.session?.workspaceRoot?.(ctx?.baseWorkspaceId ?? '');
     if (!baseRoot) throw new Error("Couldn't make a worktree: the base workspace has no root.");
-    const repoRel = shellSafe(String(values?.repo ?? '').trim(), 'repository path');
+    const chosen = shellSafe(String(values?.repo ?? '').trim(), 'repository path');
+    // A submodule can be worked on from either end, and `scope` says which was
+    // asked for. `project` makes the enclosing repository the subject: the tree
+    // is a tree of that, and the submodule arrives inside it as a submodule —
+    // which is to say uninitialised, until a setup hook sees to it.
+    const repoRel = String(values?.scope ?? '') === 'project' ? '' : chosen;
     const repoRoot = join(baseRoot, repoRel);
     // A repository under the base workspace rather than at it is nested in
     // something, and a tree beside it would land inside whatever that is. The
