@@ -31,10 +31,19 @@ import (
 const (
 	gitDiffContext  = 3       // lines of context git is asked for around each hunk
 	gitDiffMaxLines = 20000   // diff lines returned before the rest is dropped
-	gitDiffMaxBytes = 8 << 20 // patch bytes kept before the rest is dropped
 	gitDiffMaxMeta  = 8 << 20 // bytes kept from git's metadata passes
 	gitDiffSniff    = 8000    // bytes of an untracked file read to judge it binary
 )
+
+// gitDiffMaxBytes is the patch bytes kept before the rest is dropped.
+//
+// A var rather than a const so a test can lower it. Crossing eight megabytes
+// honestly costs git a quarter of a million lines to produce and parse, which
+// on a loaded runner takes longer than the diff's own per-command clock allows
+// — the test then fails on the clock rather than on the truncation it is about.
+// The code either side of the ceiling does not know what the ceiling is, so a
+// small one exercises it exactly.
+var gitDiffMaxBytes = 8 << 20
 
 // The diff's clocks, which are not the status card's. A card is polled in the
 // background and settles for the cheap answer, so it gives up quickly; a diff is

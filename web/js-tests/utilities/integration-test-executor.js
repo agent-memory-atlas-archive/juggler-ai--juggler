@@ -164,6 +164,10 @@ import { runTests as runThemeToggleTests } from '../unit-tests/theme-toggle-test
 import { runTests as runToolNameResolutionTests } from '../unit-tests/tool-name-resolution-test.js';
 import { runTests as runNewTabUxTests } from '../unit-tests/new-tab-ux-test.js';
 import { runTests as runConversationWorkspaceTests } from '../unit-tests/conversation-workspace-test.js';
+import { runTests as runConversationWorkspaceBindingTests } from '../unit-tests/conversation-workspace-binding-test.js';
+import { runTests as runConversationWorkspaceProvisionTests } from '../unit-tests/conversation-workspace-provision-test.js';
+import { runTests as runConversationWorkspacePanelTests } from '../unit-tests/conversation-workspace-panel-test.js';
+import { runTests as runConversationWorkspaceMoveTests } from '../unit-tests/conversation-workspace-move-test.js';
 import { runTests as runSetupPanelLoopsTests } from '../unit-tests/setup-panel-loops-test.js';
 import { runTests as runSetupFieldFocusTests } from '../unit-tests/setup-field-focus-test.js';
 import { runTests as runBinUndoToastTests } from '../unit-tests/bin-undo-toast-test.js';
@@ -541,6 +545,10 @@ const UNIT_TEST_SUITES = [
   // removes them again, which a sibling lane walking the project reads as it
   // goes — the same reason the git-worktree extension suite is exclusive.
   { name: 'unit:conversation-workspace', run: runConversationWorkspaceTests, needsExclusiveRun: true },
+  { name: 'unit:conversation-workspace-binding', run: runConversationWorkspaceBindingTests, needsExclusiveRun: true },
+  { name: 'unit:conversation-workspace-provision', run: runConversationWorkspaceProvisionTests, needsExclusiveRun: true },
+  { name: 'unit:conversation-workspace-panel', run: runConversationWorkspacePanelTests, needsExclusiveRun: true },
+  { name: 'unit:conversation-workspace-move', run: runConversationWorkspaceMoveTests, needsExclusiveRun: true },
   { name: 'unit:setup-panel-loops', run: runSetupPanelLoopsTests },
   // Exclusive: it asserts on document.activeElement, which every lane in the
   // shared origin can move.
@@ -755,8 +763,16 @@ export async function runTests(ctx) {
  * the result POST (itself retried for up to 10s) and the suite's conversation
  * cleanup room to finish inside that window.
  *
- * It buys nothing on a passing suite — the slowest of them is a couple of
- * seconds, and about six under a saturated machine.
+ * It buys nothing on a passing suite — the slowest of them is about six
+ * seconds idle, and a lane's work under a full concurrent run has been seen to
+ * cost five to nine times its idle cost.
+ *
+ * That headroom is the reason a suite is split rather than allowed to grow. A
+ * suite approaching ten seconds idle has none left on a loaded Windows runner,
+ * where every shell a case spawns costs an order of magnitude more than here,
+ * and it fails as a suite that "stopped making progress" — naming no case and
+ * no wait. `conversation-workspace` and `git-worktree` both reached that point
+ * and were split; the budget is not the number to raise when the next one does.
  */
 const UNIT_SUITE_BUDGET_MS = 45000;
 
@@ -784,7 +800,7 @@ async function runUnitSuiteWithConvCleanup(suite, ctx) {
   // that wedges never posts a result at all and the Go side reports a bare
   // "timeout polling /api/test/result after 1m0s" naming nothing; here it at
   // least says which suite stopped and when.
-  setTestDeadline(Date.now() + UNIT_SUITE_BUDGET_MS);
+  setTestDeadline(Date.now() + UNIT_SUITE_BUDGET_MS, { shared: true });
   // Unit suites share one document AND one popup-manager registry, so an
   // overlay a prior suite left open leaks into this one. The confirm/alert host
   // is a reused <modal-dialog> singleton (see modal-dialog.js): showConfirm and

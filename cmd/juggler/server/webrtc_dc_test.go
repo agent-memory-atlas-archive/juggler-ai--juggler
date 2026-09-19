@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -173,5 +174,47 @@ func readHTTPOverDCResponse(t *testing.T, frames <-chan []byte, reqID string) ht
 			}
 			return res
 		}
+	}
+}
+
+// TestWebRTCClientSendSurvivesConcurrentClose drives Send and Close the way the
+// realtime loop and the write pump do in production: a broadcast is still
+// queueing messages when a write error sends the pump through its deferred
+// Close. Signalling the close by closing the send channel itself makes that a
+// data race between close and send, so this fails under -race until the close
+// is signalled on a channel of its own.
+func TestWebRTCClientSendSurvivesConcurrentClose(t *testing.T) {
+	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	if err != nil {
+		t.Fatalf("NewPeerConnection: %v", err)
+	}
+	defer func() { _ = pc.Close() }()
+
+	// The channel never opens, so the pump's first write fails and its deferred
+	// Close runs while the senders below are still going — the CI stack exactly.
+	dc, err := pc.CreateDataChannel("juggler", nil)
+	if err != nil {
+		t.Fatalf("CreateDataChannel: %v", err)
+	}
+	c := newWebRTCClient(dc, pc, nil)
+
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 200 {
+				c.Send(map[string]string{"type": "ping"})
+			}
+		}()
+	}
+	// Close from underneath the senders as well, so the race is driven from both
+	// the pump's exit and an explicit eviction.
+	go c.Close()
+	wg.Wait()
+
+	// Send must report the client is gone rather than panic or block.
+	if c.Send(map[string]string{"type": "ping"}) {
+		t.Error("Send reported success on a closed client")
 	}
 }

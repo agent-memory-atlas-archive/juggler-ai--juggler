@@ -725,6 +725,16 @@ func TestGitDiffRevisionFollowsContentNotHead(t *testing.T) {
 // still the size it is: the counts come from git's own tally rather than from
 // the lines that survived, or a truncated diff would understate what it truncated.
 func TestGitDiffTruncatesTheTextButNotTheTruth(t *testing.T) {
+	// The ceiling is crossed for real, just not at eight megabytes: what is under
+	// test is the behaviour either side of it, and that does not know how high it
+	// is. Crossing the shipped one means a quarter of a million lines through git
+	// and the parser, which on a loaded runner outruns the diff's own 10s
+	// per-command clock and fails the test on the clock instead. Every test in
+	// this package runs sequentially, so lowering it for one is safe.
+	restore := gitDiffMaxBytes
+	gitDiffMaxBytes = 64 << 10
+	t.Cleanup(func() { gitDiffMaxBytes = restore })
+
 	p := newGitProject(t)
 	p.write("big.txt", "")
 	p.commit("init")

@@ -135,6 +135,40 @@ export async function runTests(_ctx) {
     errors.push(`waitFor stays bounded and names its condition: ${e instanceof Error ? e.message : String(e)}`);
   }
 
+  // A cap expressed only as a multiple of a wait's own nominal stops binding
+  // as soon as that multiple exceeds the budget it is drawn from: at six times
+  // a 10s nominal it does not bind inside a 45s suite at all, so the first
+  // stuck wait spends the lot and the suite is reported as one that "stopped
+  // making progress" — naming neither the wait nor the case, which is exactly
+  // how two Windows suites failed with no diagnostic. A wait may take a share
+  // of a shared budget, never all of it.
+  try {
+    const armedDeadline = testDeadlineMs();
+    try {
+      const budget = 45000;
+      setTestDeadline(Date.now() + budget, { shared: true });
+      // A nominal whose slack multiple (6x) is larger than the whole budget:
+      // only a share cap can bound this.
+      const generous = budgetFor(10000);
+      assert(generous < budget,
+        `a single wait may not take the whole ${budget}ms suite budget, got ${generous}ms`);
+      // And the share must still leave room for the cases that come after.
+      assert(generous <= Math.ceil(budget / 2),
+        `a single wait took ${generous}ms of a ${budget}ms budget, leaving too little for later cases`);
+      // A deadline belonging to one test is still spendable in full, so
+      // mock-LLM waits keep the patience they were given.
+      setTestDeadline(Date.now() + budget);
+      assert(budgetFor(10000) > Math.ceil(budget / 2),
+        'a per-test deadline is not shared, so a wait may still spend it');
+    } finally {
+      setTestDeadline(armedDeadline, { shared: true });
+    }
+    passed++;
+  } catch (e) {
+    failed++;
+    errors.push(`one wait cannot swallow a shared suite budget: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
   // `expect-confirm` is the one wait in the harness whose nominal timeout, when
   // missed, does not produce a failure at all. It arms a watcher BEFORE the
   // operation that raises the dialog, because that operation blocks on the

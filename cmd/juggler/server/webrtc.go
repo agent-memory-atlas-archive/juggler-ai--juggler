@@ -349,8 +349,9 @@ type webRTCClient struct {
 	info      ClientInfo
 	dc        *webrtc.DataChannel
 	pc        *webrtc.PeerConnection
-	send      chan wsMessage
-	closeOnce sync.Once
+	send      chan wsMessage // Channel for outgoing messages
+	closed    chan struct{}  // Closed to signal shutdown; see Close
+	closeOnce sync.Once      // Ensures closed is closed only once
 	stats     *wsStats
 	// lastSendAt is when a message last reached the channel, as unix nanoseconds.
 	// Written by the writer goroutine, read by the client's message loop. See
@@ -364,11 +365,12 @@ func newWebRTCClient(dc *webrtc.DataChannel, pc *webrtc.PeerConnection, stats *w
 		role: ClientRoleViewer,
 		// A data-channel viewer always reaches us over the WebRTC peer transport;
 		// there is no HTTP request (hence no User-Agent) at channel-open time.
-		info:  ClientInfo{Origin: "remote", Detail: remoteTransportLabel(dataChannelIngressKind), ConnectedAt: time.Now().UnixMilli()},
-		dc:    dc,
-		pc:    pc,
-		send:  make(chan wsMessage, 256),
-		stats: stats,
+		info:   ClientInfo{Origin: "remote", Detail: remoteTransportLabel(dataChannelIngressKind), ConnectedAt: time.Now().UnixMilli()},
+		dc:     dc,
+		pc:     pc,
+		send:   make(chan wsMessage, 256),
+		closed: make(chan struct{}),
+		stats:  stats,
 	}
 	// The channel has just opened, so the link starts idle from now rather than
 	// from the zero time.
@@ -402,10 +404,18 @@ func (c *webRTCClient) writePump() {
 	// Marking the client closed on the way out covers the exit a write error
 	// forces: nothing drains send once this goroutine is gone, so without it a
 	// sender would fill the buffer and then block on a channel with no reader.
-	// Close is idempotent (closeOnce), so the ordinary exit — the range ending
-	// because Close closed send — passes through it harmlessly.
+	// Close is idempotent (closeOnce), so the ordinary exit — the loop ending
+	// because Close closed the closed channel — passes through it harmlessly.
 	defer c.Close()
-	for msg := range c.send {
+	for {
+		var msg wsMessage
+		select {
+		case msg = <-c.send:
+		case <-c.closed:
+			// Close has already shut the data channel and the peer connection, so
+			// anything still queued has nowhere to go; drop it and stop.
+			return
+		}
 		payload := msg.raw
 		if payload == nil {
 			var err error
@@ -528,22 +538,39 @@ func assembleWebRTCChunk(chunks map[string]*webRTCChunkAssembly, data []byte) ([
 	return buf, true
 }
 
-func (c *webRTCClient) trySend(msg wsMessage) (sent bool) {
-	defer func() {
-		if recover() != nil {
-			sent = false
-		}
-	}()
-	c.send <- msg
-	return true
+// trySend queues a message, blocking while the buffer is full but never past
+// the client's close. Returns false once the client is closed.
+//
+// Shutdown is signalled by closing a separate `closed` channel rather than the
+// send channel itself: a sender and a closer can run on any two goroutines (the
+// realtime loop racing the write pump's deferred Close, say), and closing a
+// channel from under a concurrent send is a data race that costs a panic per
+// send.
+func (c *webRTCClient) trySend(msg wsMessage) bool {
+	// Prefer the closed signal when both are ready, so a closed client stops
+	// accepting work promptly rather than by chance.
+	select {
+	case <-c.closed:
+		return false
+	default:
+	}
+	select {
+	case c.send <- msg:
+		return true
+	case <-c.closed:
+		return false
+	}
 }
 
 func (c *webRTCClient) Send(msg any) bool        { return c.trySend(wsMessage{json: msg}) }
 func (c *webRTCClient) SendRaw(data []byte) bool { return c.trySend(wsMessage{raw: data}) }
 
+// Close stops the writer goroutine and tears down the transport. Safe to call
+// multiple times, and from any goroutine — including one that is not the
+// client's owner, which is how a wedged viewer is evicted.
 func (c *webRTCClient) Close() {
 	c.closeOnce.Do(func() {
-		close(c.send)
+		close(c.closed)
 		_ = c.dc.Close()
 		_ = c.pc.Close()
 	})

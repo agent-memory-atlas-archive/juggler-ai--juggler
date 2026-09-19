@@ -29,6 +29,14 @@
 let currentDeadlineMs = 0;
 
 /**
+ * The whole budget the armed deadline represents, when that deadline is shared
+ * by many cases, and 0 when it belongs to a single test. See
+ * {@link MAX_SHARE_OF_SHARED_BUDGET}.
+ * @type {number}
+ */
+let sharedBudgetMs = 0;
+
+/**
  * How much longer than its nominal timeout a wait may run when it is riding a
  * SHARED deadline.
  *
@@ -46,11 +54,30 @@ let currentDeadlineMs = 0;
 const SHARED_DEADLINE_SLACK = 6;
 
 /**
- * Arm the deadline for the test now starting.
- * @param {number} deadlineMs - Absolute Date.now()-based timestamp.
+ * The most of a shared budget one wait may take.
+ *
+ * `SHARED_DEADLINE_SLACK` alone caps a wait at a multiple of its own nominal,
+ * which stops binding the moment that multiple exceeds the budget: a 10s
+ * nominal in a 45s suite is capped at 60s, so the first stuck wait spends
+ * everything and the suite is reported as one that "stopped making progress",
+ * naming neither the wait nor the case. A cap expressed as a share of the
+ * budget cannot come loose that way, whatever nominal a caller picks. A third
+ * leaves room for the case to fail, for a couple of later ones to run, and for
+ * the suite to post a result that says which wait ran out.
  */
-export function setTestDeadline(deadlineMs) {
+const MAX_SHARE_OF_SHARED_BUDGET = 1 / 3;
+
+/**
+ * Arm the deadline for the test now starting.
+ *
+ * `shared` says the deadline covers a whole suite of cases rather than one
+ * test, which is what makes a single wait's share of it worth capping.
+ * @param {number} deadlineMs - Absolute Date.now()-based timestamp.
+ * @param {{shared?: boolean}} [options] - Whether many cases ride this deadline.
+ */
+export function setTestDeadline(deadlineMs, { shared = false } = {}) {
   currentDeadlineMs = deadlineMs;
+  sharedBudgetMs = shared ? Math.max(0, deadlineMs - Date.now()) : 0;
 }
 
 /**
@@ -59,6 +86,7 @@ export function setTestDeadline(deadlineMs) {
  */
 export function clearTestDeadline() {
   currentDeadlineMs = 0;
+  sharedBudgetMs = 0;
 }
 
 /**
@@ -87,7 +115,9 @@ export function budgetFor(fallbackMs, deadlineMs = 0) {
   if (deadlineMs) return Math.max(0, deadlineMs - Date.now() + 1000);
   if (!currentDeadlineMs) return fallbackMs;
   const remaining = Math.max(0, currentDeadlineMs - Date.now() + 1000);
-  return Math.min(remaining, fallbackMs * SHARED_DEADLINE_SLACK);
+  const capped = Math.min(remaining, fallbackMs * SHARED_DEADLINE_SLACK);
+  if (!sharedBudgetMs) return capped;
+  return Math.min(capped, Math.ceil(sharedBudgetMs * MAX_SHARE_OF_SHARED_BUDGET));
 }
 
 /**
