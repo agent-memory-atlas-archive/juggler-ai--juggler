@@ -30,6 +30,7 @@ import { settleRunCancelled } from './run-records.js';
 import strategyRegistry from '../registries/strategy-registry.js';
 import contextItemRegistry from '../registries/context-item-registry.js';
 import { TURN_CANCELLED_NOTICE } from '../utils/constants.js';
+import { recordTape } from '../utils/event-tape.js';
 import { ENGINE_DERIVED_ORIGIN } from '../utils/document-sync-manager.js';
 import {
   findThreadForArray,
@@ -2824,7 +2825,21 @@ class Conversation {
   }
 
   /**
-   * Show a warning message to the user
+   * Show a warning message to the user, through the composer that serves this
+   * conversation.
+   *
+   * With no composer there is nowhere to put it and the warning is lost, so the
+   * drop records itself. Every caller here is a refusal the user is owed an
+   * explanation for, and a warning that vanished silently reads — in a test
+   * failure block, and in a bug report — exactly like one that was never raised.
+   * The tape carries the conversation id, so the block shows it beside the
+   * assertion that went looking for a notice.
+   *
+   * It deliberately does NOT reach for the app-level `showNotice` instead. A
+   * conversation without a composer usually has another surface already saying
+   * this in place — the setup panel puts the cursor on the very field that is
+   * missing — and a document-level modal raised over it takes the focus that
+   * surface just placed.
    * @param {string} message - Warning message to display
    * @param {number} [duration] - Duration to show warning in milliseconds (default: 3000)
    */
@@ -2832,7 +2847,10 @@ class Conversation {
     const composer = this._getComposer();
     if (composer && 'showWarning' in composer && typeof composer.showWarning === 'function') {
       /** @type {any} */ (composer).showWarning(message, duration);
+      return;
     }
+    recordTape('warning-dropped', this.id, { message, hasTab: Boolean(this._tabElement) });
+    console.warn('[Conversation] warning with no composer to show it:', message);
   }
 
   /**
