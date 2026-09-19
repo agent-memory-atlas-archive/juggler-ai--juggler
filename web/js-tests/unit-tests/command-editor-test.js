@@ -15,7 +15,7 @@
  * @module unit-tests/command-editor-test
  */
 
-import { assert } from '../utilities/test-helpers.js';
+import { assert, neutralizeStrayOverlays } from '../utilities/test-helpers.js';
 import { openCommandEditor } from '../../js/components/command-editor-dialog.js';
 import { buildModelConfig } from '../../js/model/model-config.js';
 import providersCache from '../../js/services/providers-cache.js';
@@ -157,7 +157,10 @@ export async function runTests(_ctx) {
       errors.push(`${label}: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       env.restore();
-      document.querySelector('.command-editor-overlay')?.remove();
+      // Through the sweep, not by removing the element: the overlay holds a
+      // popup-manager token that only its own close releases, and a token left
+      // registered suppresses every shortcut for the rest of the lane.
+      neutralizeStrayOverlays();
       document.querySelector('model-picker')?.remove();
     }
   };

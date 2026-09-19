@@ -29,6 +29,7 @@ import {
 import workerManager from '../../js/services/worker-manager.js';
 import { plainToYMap } from '../../js/model/item-accessor.js';
 import toolExecutor from '../../js/services/tool-executor.js';
+import { closeAllPopups, __resetPopupManagerForTests } from '../../js/utils/popup-manager.js';
 import { noteProjectSize } from './project-size.js';
 import { forgetOwnConversation } from './conversation-claims.js';
 
@@ -167,6 +168,49 @@ export function destroyTrackedTestSessions() {
     }
   }
   trackedTestSessions.clear();
+}
+
+/**
+ * Return the shared unit-test realm to "nothing is overlaying the page".
+ *
+ * Two things can outlive a suite, and only one of them is an element.
+ *
+ * `<modal-dialog>` is a reused singleton: close(null) removes the
+ * `show`/`is-notice` classes, releases its popup-manager token, clears the
+ * notice timer and resolves any pending promise; removing the element then
+ * guarantees the next showConfirm/showAlert recreates a pristine one.
+ *
+ * The open-state token is the other, and it is the one that bites. It lives in
+ * the popup manager rather than in the DOM, so no amount of tidying elements
+ * reaches it — and `suppressedByOverlay()` reads it, which means a single stray
+ * token silently disables every keyboard shortcut for the rest of the lane. A
+ * suite the harness abandons at its 45s timeout never runs its own cleanup, so
+ * this is the only thing that will.
+ *
+ * Best-effort throughout — a throw here must never mask the suite's own result.
+ * @returns {void}
+ */
+export function neutralizeStrayOverlays() {
+  document.querySelectorAll('modal-dialog').forEach((modal) => {
+    try {
+      const m = /** @type {any} */ (modal);
+      if (typeof m.close === 'function') m.close(null);
+    } catch (_) { /* ignore — fall through to removal */ }
+    modal.classList.remove('show');
+    modal.remove();
+  });
+
+  // Dismiss by the app's own route first, so each surface tears itself down as
+  // it would on Escape and leaves no overlay behind on <body>.
+  try {
+    closeAllPopups();
+  } catch (err) {
+    console.error('[test-helpers] popup sweep failed:', err);
+  }
+  // Then the backstop, for a token no handler can release: an id-less
+  // markPopupOpen that registered no onClose, or a surface whose element a
+  // suite tore out from under it without going through close().
+  __resetPopupManagerForTests();
 }
 
 /**

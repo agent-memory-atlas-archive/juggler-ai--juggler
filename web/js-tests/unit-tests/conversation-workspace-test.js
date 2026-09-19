@@ -28,6 +28,7 @@ import {
   releaseTestConversation,
   waitForWorkerReady,
   waitFor,
+  neutralizeStrayOverlays,
   assert
 } from '../utilities/test-helpers.js';
 import {
@@ -3128,7 +3129,10 @@ export async function runTests() {
       } finally {
         /** @type {any} */ (window).showModal = realModal;
         FixtureProvider.report = null;
-        document.querySelector('.workspace-reconnect-overlay')?.remove();
+        // Through the sweep, not by removing the element: the overlay holds a
+        // popup-manager token that only its own close releases, and a token
+        // left registered suppresses every shortcut for the rest of the lane.
+        neutralizeStrayOverlays();
         session.workspaces = saved;
         await unregisterWorkspace(strandedId).catch(() => {});
         if (spare?.id) await unregisterWorkspace(spare.id).catch(() => {});

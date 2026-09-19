@@ -11,7 +11,7 @@
  */
 
 import { runIntegrationTests } from './integration-test-runner.js';
-import { destroyTrackedTestSessions } from './test-helpers.js';
+import { destroyTrackedTestSessions, neutralizeStrayOverlays } from './test-helpers.js';
 import { whenRegistriesSettled } from '../../js/registries/reload-registries.js';
 import { tests as readFileTests } from '../integration-tests/read-file-tests.js';
 import { tests as writeFileTests } from '../integration-tests/write-file-tests.js';
@@ -139,6 +139,7 @@ import { runTests as runWSChunkTests } from '../unit-tests/ws-chunk-test.js';
 import { runTests as runRenderScalingTests } from '../unit-tests/render-scaling-tests.js';
 import { runTests as runTestBudgetTests } from '../unit-tests/test-budget-test.js';
 import { runTests as runExclusiveTestFlagsTests } from '../unit-tests/exclusive-test-flags-test.js';
+import { runTests as runSuitePopupIsolationTests } from '../unit-tests/suite-popup-isolation-test.js';
 import { runTests as runEngineAutoloadTests } from '../unit-tests/engine-autoload-test.js';
 import { runTests as runSyncBatchBackoffTests } from '../unit-tests/sync-batch-backoff-test.js';
 import { runTests as runSyncFaultIsolationTests } from '../unit-tests/sync-fault-isolation-test.js';
@@ -510,6 +511,7 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:render-scaling', run: runRenderScalingTests },
   { name: 'unit:test-budget', run: runTestBudgetTests },
   { name: 'unit:exclusive-test-flags', run: runExclusiveTestFlagsTests },
+  { name: 'unit:suite-popup-isolation', run: runSuitePopupIsolationTests },
   { name: 'unit:engine-autoload', run: runEngineAutoloadTests },
   { name: 'unit:sync-batch-backoff', run: runSyncBatchBackoffTests },
   { name: 'unit:sync-fault-isolation', run: runSyncFaultIsolationTests },
@@ -783,15 +785,19 @@ async function runUnitSuiteWithConvCleanup(suite, ctx) {
   // "timeout polling /api/test/result after 1m0s" naming nothing; here it at
   // least says which suite stopped and when.
   setTestDeadline(Date.now() + UNIT_SUITE_BUDGET_MS);
-  // Unit suites share one document, so a modal a prior suite left open leaks
-  // into this one. The confirm/alert/notice host is a reused <modal-dialog>
-  // singleton (see modal-dialog.js): showConfirm/showAlert only resolve on a
-  // user click, so a suite that opens one without dismissing it leaves
-  // `modal-dialog.show` in the DOM — and any later suite that consults it
-  // globally (e.g. hold-to-cycle's defaultShouldHandle, which treats an open
-  // modal as "don't handle") then fails. Neutralize stray modals both before
-  // and after each suite so isolation holds regardless of neighbour order.
-  neutralizeStrayModals();
+  // Unit suites share one document AND one popup-manager registry, so an
+  // overlay a prior suite left open leaks into this one. The confirm/alert host
+  // is a reused <modal-dialog> singleton (see modal-dialog.js): showConfirm and
+  // showAlert only resolve on a user click, so a suite that opens one without
+  // dismissing it leaves `modal-dialog.show` in the DOM — and any later suite
+  // that consults it globally (e.g. hold-to-cycle's defaultShouldHandle, which
+  // treats an open modal as "don't handle") then fails. The open-state token is
+  // worse, because it is invisible: `suppressedByOverlay()` reads it, so one
+  // stray token disables every shortcut for the rest of the lane. Sweep both
+  // before and after each suite so isolation holds regardless of neighbour
+  // order — and, for a suite this function's own timeout abandons below, so
+  // that it holds at all.
+  neutralizeStrayOverlays();
   const before = snapshotOwnConversationIds();
   try {
     /** @type {ReturnType<typeof setTimeout>|undefined} */
@@ -828,7 +834,7 @@ async function runUnitSuiteWithConvCleanup(suite, ctx) {
     // Disarm before cleanup: the deadline belongs to the suite, and cleanup
     // running under an expired one would give every wait in it a zero budget.
     clearTestDeadline();
-    neutralizeStrayModals();
+    neutralizeStrayOverlays();
     // A suite that saved a command, a skill or a plugin toggle left a registry
     // rebuild running behind it — those call sites deliberately don't await one
     // (see whenRegistriesSettled). The suites of a lane share one realm and
@@ -845,25 +851,6 @@ async function runUnitSuiteWithConvCleanup(suite, ctx) {
     // every suite it runs, so an unswept one is retained for the whole run.
     destroyTrackedTestSessions();
   }
-}
-
-/**
- * Close and remove any <modal-dialog> element left in the shared unit-test
- * document. close(null) removes the `show`/`is-notice` classes, releases the
- * popup-manager token, clears the notice timer, and resolves any pending
- * promise; removing the element then guarantees the next showConfirm/showAlert
- * lazily recreates a pristine singleton. Best-effort — a throw here must never
- * mask the suite's own result.
- */
-function neutralizeStrayModals() {
-  document.querySelectorAll('modal-dialog').forEach((modal) => {
-    try {
-      const m = /** @type {any} */ (modal);
-      if (typeof m.close === 'function') m.close(null);
-    } catch (_) { /* ignore — fall through to removal */ }
-    modal.classList.remove('show');
-    modal.remove();
-  });
 }
 
 let _wsSetupDone = false;
