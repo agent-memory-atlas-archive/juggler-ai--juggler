@@ -289,12 +289,12 @@ export function setupWorkerCallbacks(session) {
       });
 
       // Get context from each standing context item that contributes request
-      // content. These are all injected as leading messages BEFORE the history
-      // (contextPosition 'prefix'), inside the cached prefix. System-position
-      // items are excluded (their content is already in systemPrompt); 'none'
-      // items are excluded (their state lives in the model's own tool_use
-      // history, e.g. todo/plan). One-shot file content (@-mentions, reads) is
-      // not here — it lives in the append-only history as a read.
+      // content — including @-mentioned and dropped files, which are ordinary
+      // 'prefix' items (file-content-context-item.js), not history records. The
+      // worker injects each at the position its item stands in the conversation,
+      // inside the cached prefix. System-position items are excluded (their
+      // content is already in systemPrompt); 'none' items are excluded (their
+      // state lives in the model's own tool_use history, e.g. todo/plan).
       /** @type {Array<{itemId: string, content: string, tokens: number}>} */
       const contexts = [];
       const itemIds = req.itemIds || [];

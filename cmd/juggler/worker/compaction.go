@@ -148,21 +148,19 @@ func (r *run) runFoldedThreadCompaction(modelConfig *ModelConfig, ctxResult *Con
 	// Preserve the real turn's cacheable prefix: the folded history renders through
 	// the same wire path as a live turn, and the summarization instruction is
 	// appended as a final user message rather than swapping the system prompt.
-	history, err := providerMessages(r.buildMessagesFromItems(itemsWithoutItemID(items, promptID), false))
+	// Mirror the live turn's placement (buildMessages): each standing context item
+	// renders where its item stands, and one whose item is not in this thread —
+	// the parent's, which foldedCompactionContextItemIDs pulls in — leads. The
+	// summarization instruction stays the final user message.
+	sourceItems := itemsWithoutItemID(items, promptID)
+	placed, unplaced := splitContextsByPlacement(sourceItems, ctxResult.Contexts)
+	wire := prependContextItemMessages(nil, unplaced)
+	wire = append(wire, r.buildMessagesFromItemsWithContexts(sourceItems, false, placed)...)
+	history, err := providerMessages(wire)
 	if err != nil {
 		return true, &BoundedCompactionError{Reason: BoundedCompactionSourceEncoding, Message: "bounded compaction could not encode semantic history: " + err.Error(), Cause: err}
 	}
-	// Mirror the live turn's placement (buildMessages): standing context items
-	// lead, before history (cached); the summarization instruction stays the
-	// final user message.
-	var messages []provider.Message
-	for _, ctx := range ctxResult.Contexts {
-		if ctx.Content == "" {
-			continue
-		}
-		messages = append(messages, provider.Message{Type: messageTypeContextItem, Content: contextItemMessageContent(ctx)})
-	}
-	messages = append(messages, history...)
+	messages := history
 	messages = append(messages, provider.Message{Type: ItemTypeUser, Content: DefaultSummarizationPrompt})
 	probeReq := hiddenLLMRequest{
 		Type: "message", SystemPrompt: ctxResult.SystemPrompt,

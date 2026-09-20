@@ -78,12 +78,13 @@ const MAX_SEEDED_SNAPSHOT_CHARS = 256_000;
  *  - `data.seeded` splits this class in two, on exactly that question:
  *
  *    A PIN (no flag) is LIVE. It persists only a `path`; file bytes are NEVER
- *    persisted. Content is resolved from disk on every render. Because it rides
- *    `contextPosition:'prefix'` (leading messages, before the growing history),
- *    the render is byte-identical while the file is unchanged → the prompt cache
- *    hits and the pin is paid for once; a real change busts the cache from that
- *    point (one cold start) — which is exactly the point of a pin. No watcher:
- *    nothing is in flight between sends.
+ *    persisted. Content is resolved from disk on every render. It rides
+ *    `contextPosition:'prefix'`, rendered at the point in the conversation where
+ *    it was added, so the render is byte-identical while the file is unchanged →
+ *    the prompt cache hits and the pin is paid for once; a real change busts the
+ *    cache from the pin's own position (one cold start, and the further down the
+ *    conversation it sits the cheaper that is) — which is exactly the point of a
+ *    pin. No watcher: nothing is in flight between sends.
  *
  *    A SEEDED item is FROZEN — the CLAUDE.md / AGENTS.md a session adds to
  *    itself (session.js `addAIAssistantFiles`). Nobody asked for it, so it may

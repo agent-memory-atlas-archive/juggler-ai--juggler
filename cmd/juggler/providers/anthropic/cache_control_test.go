@@ -109,12 +109,11 @@ func countEphemeralBreakpoints(messages []anthropicsdk.BetaMessageParam) int {
 	return n
 }
 
-// TestRollingBreakpointWithLeadingPrefixContext: standing context items ride as
-// LEADING context-item messages, before history — the only placement the worker
-// builds (prependContextItemMessages) and the one compaction mirrors. The
-// rolling breakpoint lands on the final block, so a leading context item sits
-// inside the cached prefix (paid once) rather than anchoring the breakpoint
-// itself.
+// TestRollingBreakpointWithLeadingPrefixContext: a context item at the head of
+// the conversation — the agents files a session seeds itself with — rides as a
+// leading context-item message. The rolling breakpoint lands on the final block,
+// so it sits inside the cached prefix (paid once) rather than anchoring the
+// breakpoint itself.
 func TestRollingBreakpointWithLeadingPrefixContext(t *testing.T) {
 	c := &Client{model: "claude-test"}
 
@@ -140,6 +139,41 @@ func TestRollingBreakpointWithLeadingPrefixContext(t *testing.T) {
 	last := params.Messages[len(params.Messages)-1]
 	if cc := last.Content[len(last.Content)-1].GetCacheControl(); cc == nil || string(cc.Type) != "ephemeral" {
 		t.Errorf("the last stable history block must carry the rolling breakpoint")
+	}
+}
+
+// TestRollingBreakpointWithInterleavedContext: a context item added partway
+// through a conversation — an @-mention, a pin — renders at the position it was
+// added (worker.buildMessages), so it arrives here BETWEEN history messages.
+// The breakpoint still lands at the tail, which is the whole point: the request
+// is one growing prefix, so the turn that adds the file pays for the file and
+// everything before it stays cached.
+func TestRollingBreakpointWithInterleavedContext(t *testing.T) {
+	c := &Client{model: "claude-test"}
+
+	params := c.buildMessageParams(provider.MessageRequest{
+		SystemPrompt: "SYS",
+		Messages: []provider.Message{
+			{Type: "user", Content: "first"},
+			{Type: "assistant", Content: "reply"},
+			{Type: "context-item", Content: "=== Context: FILE_2 ===\npackage main"},
+			{Type: "user", Content: "second"},
+		},
+	})
+	if got := countEphemeralBreakpoints(params.Messages); got != 1 {
+		t.Fatalf("expected exactly one rolling breakpoint, got %d", got)
+	}
+	// The context item and the user message it arrived with merge into one
+	// user-role turn: context block first, then the message.
+	last := params.Messages[len(params.Messages)-1]
+	if len(last.Content) != 2 {
+		t.Fatalf("expected the context block and its user message in one turn; got %d block(s)", len(last.Content))
+	}
+	if cc := last.Content[0].GetCacheControl(); cc != nil && string(cc.Type) == "ephemeral" {
+		t.Errorf("an interleaved context block must not anchor the rolling breakpoint")
+	}
+	if cc := last.Content[1].GetCacheControl(); cc == nil || string(cc.Type) != "ephemeral" {
+		t.Errorf("the final block must carry the rolling breakpoint")
 	}
 }
 

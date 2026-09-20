@@ -42,8 +42,8 @@ type thinkingAccumulator struct {
 // to SDK-specific types.
 //
 // The breakpoint goes at the tail because every message in the request belongs
-// in the cache: standing context items are prepended as LEADING messages before
-// all history (worker.prependContextItemMessages), so the whole request is one
+// in the cache: standing context items render at the position their item stands
+// in the conversation (worker.buildMessages), so the whole request is one
 // growing prefix. An unchanged context render is byte-identical turn to turn and
 // caches; a genuine change to it busts from its position, which is the intended
 // cost of pinning something live.
@@ -268,7 +268,7 @@ func convertTools(tools []provider.ToolDefinition) []anthropicsdk.BetaToolUnionP
 // Prompt cache layout (Anthropic matches the longest previously-written prefix,
 // in tools → system → messages order):
 //
-//		[ tools ][ system ] | cache_control | [ context items ][ history ] | cache_control
+//		[ tools ][ system ] | cache_control | [ history, context items in place ] | cache_control
 //
 //	  - The system breakpoint caches tools+system. This prefix is stable across a
 //	    strategy change and across turns (it varies only on a plugin
@@ -283,8 +283,9 @@ func convertTools(tools []provider.ToolDefinition) []anthropicsdk.BetaToolUnionP
 //	    our side. Blocks that cannot carry cache_control (thinking,
 //	    redacted_thinking) are stepped over, so the breakpoint lands on the last
 //	    block that accepts one — see setRollingCacheBreakpoint.
-//	  - Standing context items lead the messages, before all history
-//	    (worker.prependContextItemMessages). An unchanged render is byte-identical
+//	  - Standing context items ride at the position their item occupies in the
+//	    conversation (worker.buildMessages), so adding one appends rather than
+//	    shifting what is already cached. An unchanged render is byte-identical
 //	    each turn and rides the cache; a real change busts from that point, which
 //	    is the intended cost of a live pin.
 //

@@ -54,9 +54,12 @@ func TestPrependContextItemMessagesNilIsNoOp(t *testing.T) {
 	}
 }
 
-// TestBuildMessages_ContextLeadsHistory: buildMessages places standing context
-// items BEFORE the conversation history, so they sit inside the cached prefix.
-func TestBuildMessages_ContextLeadsHistory(t *testing.T) {
+// TestBuildMessages_UnplacedContextLeadsHistory: a context whose item does not
+// stand in the array being rendered cannot be positioned within it, so it falls
+// back to the leading placement, before all history. This is the folded
+// compaction probe's case — foldedCompactionContextItemIDs mixes in the PARENT
+// thread's items, which have no position in the target thread's history.
+func TestBuildMessages_UnplacedContextLeadsHistory(t *testing.T) {
 	w := NewConversationWorker("conv-ctx-lead", "user:test")
 	defer w.doc.Destroy()
 
@@ -88,21 +91,23 @@ func TestBuildMessages_ContextLeadsHistory(t *testing.T) {
 }
 
 // TestBuildMessages_ContextByteStableAcrossAppendedTurn is the anti-re-bill
-// guard: a standing context item stays the FIRST message and byte-identical
-// across a later turn that only appended history, so it remains inside the
-// cached prefix rather than being re-read as the conversation grows.
+// guard: a seeded context item — one standing at the head of the array, where a
+// fresh conversation puts its agents files — stays the FIRST message and
+// byte-identical across a later turn that only appended history, so it remains
+// inside the cached prefix rather than being re-read as the conversation grows.
 func TestBuildMessages_ContextByteStableAcrossAppendedTurn(t *testing.T) {
 	w := NewConversationWorker("conv-ctx-stable", "user:test")
 	defer w.doc.Destroy()
 
 	ctx := []ItemContext{{ItemID: "FILE_1", Content: "package main"}}
 
-	w.doc.InsertMessage(0, ConversationItem{Type: ItemTypeUser, ItemID: "u-1", Content: "one"})
+	w.doc.InsertMessage(0, ConversationItem{Type: "file-content", ItemID: "FILE_1"})
+	w.doc.InsertMessage(1, ConversationItem{Type: ItemTypeUser, ItemID: "u-1", Content: "one"})
 	turn1 := w.currentRun().buildMessages(ctx)
 
 	// Next turn: history grew (assistant reply + a new user message), same context.
-	w.doc.InsertMessage(1, ConversationItem{Type: ItemTypeAssistant, ItemID: "a-1", Content: "reply"})
-	w.doc.InsertMessage(2, ConversationItem{Type: ItemTypeUser, ItemID: "u-2", Content: "two"})
+	w.doc.InsertMessage(2, ConversationItem{Type: ItemTypeAssistant, ItemID: "a-1", Content: "reply"})
+	w.doc.InsertMessage(3, ConversationItem{Type: ItemTypeUser, ItemID: "u-2", Content: "two"})
 	turn2 := w.currentRun().buildMessages(ctx)
 
 	if turn1[0]["type"] != messageTypeContextItem || turn2[0]["type"] != messageTypeContextItem {
@@ -113,5 +118,59 @@ func TestBuildMessages_ContextByteStableAcrossAppendedTurn(t *testing.T) {
 	}
 	if len(turn2) <= len(turn1) {
 		t.Fatalf("expected turn2 to have more messages than turn1; got %d vs %d", len(turn2), len(turn1))
+	}
+}
+
+// TestBuildMessages_MidConversationContextDoesNotShiftHistory is the cache
+// anchor: adding a context item partway through a conversation — an @-mention,
+// a paperclip pin, a dropped file — must APPEND to the request, never insert
+// ahead of history.
+//
+// A context item stands in the items array at the point it was added (the
+// composer awaits the mention before dispatching, so it lands immediately
+// before the user message that mentioned it), and it is rendered there. So the
+// whole previous request survives as a byte-identical prefix of this one, the
+// provider's cache hits, and only the genuinely new bytes are paid for.
+// Rendering every context item at the HEAD instead slides all history down one
+// slot and cold-starts the entire conversation for the sake of one file.
+func TestBuildMessages_MidConversationContextDoesNotShiftHistory(t *testing.T) {
+	w := NewConversationWorker("conv-ctx-inplace", "user:test")
+	defer w.doc.Destroy()
+
+	// Turn 1: the agents file a fresh conversation seeds itself with, then history.
+	w.doc.InsertMessage(0, ConversationItem{Type: "file-content", ItemID: "FILE_1"})
+	w.doc.InsertMessage(1, ConversationItem{Type: ItemTypeUser, ItemID: "u-1", Content: "one"})
+	w.doc.InsertMessage(2, ConversationItem{Type: ItemTypeAssistant, ItemID: "a-1", Content: "reply"})
+
+	seeded := ItemContext{ItemID: "FILE_1", Content: "# agents file"}
+	turn1 := w.currentRun().buildMessages([]ItemContext{seeded})
+
+	// Turn 2: an @-mention's item, then the user message that mentioned it.
+	w.doc.InsertMessage(3, ConversationItem{Type: "file-content", ItemID: "FILE_2"})
+	w.doc.InsertMessage(4, ConversationItem{Type: ItemTypeUser, ItemID: "u-2", Content: "two"})
+
+	mentioned := ItemContext{ItemID: "FILE_2", Content: "package main"}
+	turn2 := w.currentRun().buildMessages([]ItemContext{seeded, mentioned})
+
+	if len(turn2) <= len(turn1) {
+		t.Fatalf("turn2 must extend turn1; got %d vs %d messages", len(turn2), len(turn1))
+	}
+	for i := range turn1 {
+		if got, want := mustJSON(t, turn2[i]), mustJSON(t, turn1[i]); got != want {
+			t.Fatalf("turn1 is no longer a prefix of turn2 — the cache cold-starts from message[%d]:\n  turn1[%d]=%s\n  turn2[%d]=%s",
+				i, i, want, i, got)
+		}
+	}
+	// The mention renders at its own position: after the turn-1 history, before
+	// the user message it arrived with.
+	tail := turn2[len(turn1):]
+	if len(tail) != 2 {
+		t.Fatalf("expected the new context item and its user message; got %+v", tail)
+	}
+	if tail[0]["type"] != messageTypeContextItem || !strings.Contains(tail[0]["content"].(string), "FILE_2") {
+		t.Errorf("first new message must be FILE_2's context; got %+v", tail[0])
+	}
+	if tail[1]["type"] != ItemTypeUser || tail[1]["content"] != "two" {
+		t.Errorf("the mentioning user message must follow its context item; got %+v", tail[1])
 	}
 }

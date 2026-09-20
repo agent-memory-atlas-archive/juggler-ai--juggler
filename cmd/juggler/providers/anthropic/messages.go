@@ -203,8 +203,9 @@ func transformToAPIMessagesInternal(messages []provider.Message) []APIMessage {
 
 		case "context-item", "context-item-updated", "guidance", "system-reminder":
 			// These are user-role messages with text content, all cacheable in
-			// place: context-item(-updated) blocks lead the request, before any
-			// history, and guidance/system-reminder are stable once written.
+			// place: a context-item(-updated) block stands where its item stands
+			// in the conversation, and guidance/system-reminder are stable once
+			// written.
 			if msg.Content != "" {
 				currentBlocks = append(currentBlocks, APIContentBlock{
 					Type: "text",

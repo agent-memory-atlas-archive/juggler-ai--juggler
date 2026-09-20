@@ -259,13 +259,13 @@ func isVolatileContextMessage(msgType string) bool {
 // stablePrefixCount returns the length of the stable decision prefix: everything
 // except a trailing run of volatile standing-context messages.
 //
-// The worker places standing context items at the HEAD of the request
-// (prependContextItemMessages), so in practice no such trailing run exists and
-// this returns len(messages). The strip is kept as a guard: anchoring the resume
-// prefix on a volatile message forces a "diverged" cold start on every turn,
-// because its bytes change turn-to-turn and flip hashRequestPrefix over the
-// anchored range. Anything that ever lands a context render at the tail is
-// excluded here rather than silently wrecking the CLI's warm resume.
+// The worker renders each standing context item at the position its item stands
+// in the conversation (buildMessages), so a context render CAN be the last thing
+// in a request — an item added while the thread was busy is promoted into the
+// items array after the last user message. Anchoring the resume prefix on one
+// would force a "diverged" cold start every turn, because its bytes change
+// turn-to-turn and flip hashRequestPrefix over the anchored range. Stripping the
+// trailing run keeps it eligible for replacement instead.
 func stablePrefixCount(messages []provider.Message) int {
 	n := len(messages)
 	for n > 0 && isVolatileContextMessage(messages[n-1].Type) {

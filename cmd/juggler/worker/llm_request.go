@@ -124,11 +124,12 @@ func (r *run) buildLLMRequestWithIntent(ctxResult *ContextResult, tools []ToolDe
 	// items are NOT in it: they ride as their own messages (buildMessages), so a
 	// todo update cannot cold-start the system prompt itself.
 	//
-	// They are LEADING messages, though (prependContextItemMessages), which puts
-	// them inside the cached prefix ahead of the whole history — so a `prefix` item
-	// whose rendered bytes change between sends does bust the cache from its own
-	// position. That is why the frontend freezes the agents files it seeds itself
-	// rather than rendering them live (file-content-context-item.js).
+	// Each rides at the position its item stands in (buildMessages), inside the
+	// cached prefix — so an item whose rendered bytes change between sends busts
+	// the cache from its own position. That is why the frontend freezes the agents
+	// files it seeds itself rather than rendering them live
+	// (file-content-context-item.js): seeded items stand at the head, where a
+	// re-render would cost the whole conversation.
 	systemPrompt := ctxResult.SystemPrompt
 
 	request := map[string]any{
@@ -860,13 +861,52 @@ func (w *ConversationWorker) appendToolActionResult(messages []map[string]any, i
 // buildMessages converts conversation items to LLM message format.
 // Uses provider.Message format with discriminated union via Type field.
 //
-// Standing context items are rendered as leading context-item messages BEFORE
-// the conversation history, so they sit inside the cached tools+system+history
-// prefix. There is no trailing position — see prependContextItemMessages.
+// A standing context item renders WHERE IT STANDS. Context items and history
+// share one items array, so an item's position in it is the moment it was added
+// — the agents files a conversation seeds itself with sit at the head, an
+// @-mention sits immediately before the user message that mentioned it (the
+// composer awaits the mention before dispatching the send). Rendering each one
+// at its own position is what keeps the request append-only: everything the
+// provider cached on the previous turn survives as a byte-identical prefix, and
+// a file added mid-conversation costs its own bytes and nothing else.
+//
+// A context whose item is not in this array cannot be positioned within it and
+// leads instead — see splitContextsByPlacement.
 func (r *run) buildMessages(contexts []ItemContext) []map[string]any {
-	messages := prependContextItemMessages(nil, contexts)
-	messages = append(messages, r.buildMessagesFromItems(r.getTargetItems(), true)...)
-	return messages
+	items := r.getTargetItems()
+	placed, unplaced := splitContextsByPlacement(items, contexts)
+	messages := prependContextItemMessages(nil, unplaced)
+	return append(messages, r.buildMessagesFromItemsWithContexts(items, true, placed)...)
+}
+
+// splitContextsByPlacement sorts rendered contexts by whether the item they came
+// from stands in items: those that do are keyed by item id for in-place
+// rendering, those that do not are returned in order for the leading block.
+//
+// Every context of a live turn is placed — the ids were read off this very array
+// (GetContextItemIDsForThread). The unplaced case is the folded compaction
+// probe, whose contexts include the PARENT thread's items: they have no position
+// in the thread being summarized, so leading is the only placement they have.
+func splitContextsByPlacement(items []ConversationItem, contexts []ItemContext) (map[string]ItemContext, []ItemContext) {
+	if len(contexts) == 0 {
+		return nil, nil
+	}
+	present := make(map[string]bool, len(items))
+	for _, item := range items {
+		if item.ItemID != "" {
+			present[item.ItemID] = true
+		}
+	}
+	placed := make(map[string]ItemContext, len(contexts))
+	var unplaced []ItemContext
+	for _, ctx := range contexts {
+		if present[ctx.ItemID] {
+			placed[ctx.ItemID] = ctx
+			continue
+		}
+		unplaced = append(unplaced, ctx)
+	}
+	return placed, unplaced
 }
 
 // buildMessagesFromItems converts an explicit item snapshot to the same semantic
@@ -876,6 +916,14 @@ func (r *run) buildMessages(contexts []ItemContext) []map[string]any {
 // (provider ordering) and, via appendToolActionResult, the incomplete-tool
 // recovery stamp. stampPending gates that stamp — snapshot consumers pass false.
 func (w *ConversationWorker) buildMessagesFromItems(items []ConversationItem, stampPending bool) []map[string]any {
+	return w.buildMessagesFromItemsWithContexts(items, stampPending, nil)
+}
+
+// buildMessagesFromItemsWithContexts is buildMessagesFromItems with the turn's
+// rendered standing context items, keyed by item id, each emitted at the
+// position its item occupies in items. A consumer with no context render passes
+// nil and gets history alone.
+func (w *ConversationWorker) buildMessagesFromItemsWithContexts(items []ConversationItem, stampPending bool, contexts map[string]ItemContext) []map[string]any {
 	var messages []map[string]any
 
 	// Index-based: the ItemTypeToolAction case consumes a run of same-turn
@@ -883,6 +931,12 @@ func (w *ConversationWorker) buildMessagesFromItems(items []ConversationItem, st
 	// through the shared per-item projection.
 	for i := 0; i < len(items); i++ {
 		item := items[i]
+		// A standing context item's own row emits nothing (itemWireMessages has
+		// no case for its type); its rendered content is emitted here, in its
+		// place, so the request stays append-only as items are added.
+		if ctx, ok := contexts[item.ItemID]; ok && ctx.Content != "" {
+			messages = append(messages, contextItemMessage(ctx))
+		}
 		if item.Type != ItemTypeToolAction {
 			wire := itemWireMessages(item, items)
 			if stampPending && item.Type == ItemTypeThread {
@@ -984,32 +1038,39 @@ func wireCarriesRealResult(wire []map[string]any) bool {
 }
 
 // contextItemMessageContent formats one standing context item's rendered text as
-// the body of a trailing context-item message. The `=== Context: <id> ===`
-// header preserves the historical framing so the model still reads these as
-// ambient, tool-independent context rather than a conversational turn.
+// the body of a context-item message. The `=== Context: <id> ===` header
+// preserves the historical framing so the model still reads these as ambient,
+// tool-independent context rather than a conversational turn.
 func contextItemMessageContent(ctx ItemContext) string {
 	return fmt.Sprintf("=== Context: %s ===\n%s", ctx.ItemID, ctx.Content)
 }
 
-// prependContextItemMessages renders standing context items as LEADING user-role
-// context-item messages, BEFORE all conversation history.
+// contextItemMessage renders one standing context item as a user-role
+// context-item message. The single construction site for both placements:
+// in-place (buildMessagesFromItemsWithContexts) and leading
+// (prependContextItemMessages).
+func contextItemMessage(ctx ItemContext) map[string]any {
+	return map[string]any{
+		"type":    messageTypeContextItem,
+		"content": contextItemMessageContent(ctx),
+	}
+}
+
+// prependContextItemMessages renders context items as LEADING user-role
+// context-item messages, before everything they are prepended to.
 //
-// Standing context items (a deliberate file pin, a dropped file, memory that
-// isn't system-position) sit before the growing history, so they are inside the
-// cached tools+system+history prefix. An unchanged render is byte-identical each
-// turn → the cache hits and the content is paid for once; a genuine change busts
-// from that point (rare). This is the only placement — there is no trailing tail:
-// one-shot file content (@-mentions, reads) lives in the append-only history
-// instead, and volatile state (todo/plan) rides the model's own tool_use history.
+// This is the fallback placement, for a context whose item does not stand in the
+// array being rendered — only the folded compaction probe, which pulls its
+// parent thread's context items into a summarization of the child. A context
+// that CAN be placed is rendered where its item stands instead (buildMessages),
+// because leading placement puts every later addition in front of the whole
+// history and cold-starts the cache for the sake of one new file.
 func prependContextItemMessages(messages []map[string]any, contexts []ItemContext) []map[string]any {
 	for _, ctx := range contexts {
 		if ctx.Content == "" {
 			continue
 		}
-		messages = append(messages, map[string]any{
-			"type":    messageTypeContextItem,
-			"content": contextItemMessageContent(ctx),
-		})
+		messages = append(messages, contextItemMessage(ctx))
 	}
 	return messages
 }
