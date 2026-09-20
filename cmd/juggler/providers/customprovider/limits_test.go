@@ -81,3 +81,60 @@ func TestCustomProviderDiscoversEndpointLimits(t *testing.T) {
 		t.Error("silent-gateway-model FromAPI = true, but nothing was reported about it — the number is an assumption")
 	}
 }
+
+// A LocalAI reached as a custom endpoint, which is how a user finds it before
+// there is a provider named after it. Its /v1/models rows are bare ids, so the
+// flat 128000 default used to stand for every model on the box — four times
+// what a default LocalAI will serve, and sixteen times what a model configured
+// down to 2048 will. The capabilities route is the one place the real number is
+// published, and reading it is what turns the guess into the server's own
+// answer.
+func TestCustomProviderReadsLocalAICapabilities(t *testing.T) {
+	userpathstest.Isolate(t)
+	unregisterAllAtEnd(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/models":
+			_, _ = w.Write([]byte(`{"object":"list","data":[
+				{"id":"top-level-big","object":"model"},
+				{"id":"top-level-small","object":"model"}
+			]}`))
+		case "/v1/models/capabilities":
+			_, _ = w.Write([]byte(`{"object":"list","data":[
+				{"id":"top-level-big","object":"model","capabilities":["chat"],"context_size":32768},
+				{"id":"top-level-small","object":"model","capabilities":["chat"],"context_size":2048}
+			]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	if _, err := execute(t, "save", endpointParams("localai", "LocalAI box", srv.URL+"/v1")); err != nil {
+		t.Fatalf("save localai: %v", err)
+	}
+
+	built, err := provider.InitializeProvider(RegisteredName("localai"), provider.Config{Model: "top-level-big"})
+	if err != nil {
+		t.Fatalf("InitializeProvider: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	infos, err := built.ListModelsWithInfo(ctx)
+	if err != nil {
+		t.Fatalf("ListModelsWithInfo: %v", err)
+	}
+
+	want := map[string]int{"top-level-big": 32768, "top-level-small": 2048}
+	for _, info := range infos {
+		if want[info.ID] != info.ContextWindow {
+			t.Errorf("%s ContextWindow = %d, want the server's own %d rather than the %d assumption",
+				info.ID, info.ContextWindow, want[info.ID], defaultContextWindow)
+		}
+		if !info.FromAPI {
+			t.Errorf("%s FromAPI = false, but its window came off the endpoint", info.ID)
+		}
+	}
+}

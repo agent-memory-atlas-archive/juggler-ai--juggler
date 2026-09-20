@@ -20,12 +20,19 @@ import (
 // custom header it was asked with. Reaching it at all is the assertion: an
 // instance whose base URL never made it to the client fails to connect instead
 // of quietly succeeding.
+//
+// Only the FIRST request is recorded, which is the model list. A listing whose
+// rows publish no limits goes on to ask the same endpoint for its model
+// capabilities, and that second path would otherwise overwrite the one under
+// test.
 func modelListServer(t *testing.T) (*httptest.Server, *string, *string) {
 	t.Helper()
 	var gotPath, gotHeader string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		gotHeader = r.Header.Get("X-Tenant")
+		if gotPath == "" {
+			gotPath = r.URL.Path
+			gotHeader = r.Header.Get("X-Tenant")
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{"object":"list","data":[{"id":"m","object":"model"}]}`)
 	}))

@@ -19,11 +19,18 @@ import (
 // path it was asked for. Reaching it at all is the assertion: the decoy URLs the
 // base-URL tests register point at a closed port, so a client built against the
 // wrong one fails to connect instead of quietly succeeding.
+//
+// Only the FIRST request is recorded, which is the model list. The row this
+// serves publishes no limits, so the listing goes on to ask the same endpoint
+// for its model capabilities, and that second path would otherwise overwrite
+// the one under test.
 func modelListServer(t *testing.T) (*httptest.Server, *string) {
 	t.Helper()
 	var gotPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
+		if gotPath == "" {
+			gotPath = r.URL.Path
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{"object":"list","data":[{"id":"m","object":"model"}]}`)
 	}))

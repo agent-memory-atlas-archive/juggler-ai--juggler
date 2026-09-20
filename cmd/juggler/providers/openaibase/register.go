@@ -232,6 +232,7 @@ func Register(d Descriptor) {
 		client := &openAICompatClient{
 			Client:     base,
 			desc:       d,
+			baseURL:    baseURL,
 			credential: firstNonEmpty(cfg.APIKey, cfg.BearerToken),
 			headers:    cfg.Headers,
 		}
@@ -326,7 +327,13 @@ func firstNonEmpty(values ...string) string {
 // supplying per-descriptor Name() and ListModelsWithInfo() behaviour.
 type openAICompatClient struct {
 	*Client
-	desc       Descriptor
+	desc Descriptor
+	// baseURL is the endpoint this client was built against, resolved through
+	// the same precedence the SDK client used (config, then descriptor
+	// resolver, then descriptor field). Kept so the extra metadata routes a
+	// listing may consult — see fillWindowsFromCapabilities — are reached on
+	// the server that is actually serving this client.
+	baseURL    string
 	credential string
 	headers    map[string]string
 }
@@ -353,7 +360,11 @@ func (c *openAICompatClient) ListModelsWithInfo(ctx context.Context) ([]provider
 	if filter == nil {
 		filter = func(string) bool { return true }
 	}
-	return c.Client.ListModelsWithInfo(ctx, filter, c.desc.ContextWindowFn, c.desc.InputModalitiesFn, c.desc.ThinkingSpecFn, c.desc.ServiceTierSpecFn, c.desc.DisplayProvider)
+	models, err := c.Client.ListModelsWithInfo(ctx, filter, c.desc.ContextWindowFn, c.desc.InputModalitiesFn, c.desc.ThinkingSpecFn, c.desc.ServiceTierSpecFn, c.desc.DisplayProvider)
+	if err != nil {
+		return nil, err
+	}
+	return c.fillWindowsFromCapabilities(ctx, models), nil
 }
 
 type usageOpenAICompatClient struct {

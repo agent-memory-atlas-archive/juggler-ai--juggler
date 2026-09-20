@@ -44,6 +44,16 @@ Some providers need more than a lookup:
   daemon itself honors). Precedence: a Modelfile `num_ctx` wins over all of
   them; among the overrides, the stored setting beats `OLLAMA_NUM_CTX`, which
   beats `OLLAMA_CONTEXT_LENGTH`.
+- **LocalAI:** its model list is a bare list of ids, but a second route —
+  `/v1/models/capabilities` — states the window the backend will actually serve
+  each model with, and Juggler reads it once per listing. That route reports the
+  window from LocalAI v4.10.0 onwards; an older server leaves every model on an
+  assumed 8192, which is LocalAI's own default. Note that only a **top-level**
+  `context_size:` in a model's YAML changes what it serves — under `parameters:`
+  it is ignored, which is where LocalAI's gallery configs put it, so gallery
+  models report 8192 whatever their file says. The same capabilities route is
+  read for any OpenAI-compatible endpoint that answers it, so a LocalAI reached
+  as a custom endpoint gets the same numbers.
 - **Claude Code custom aliases:** an alias the CLI has never seen has no known
   limit, so the first turn is allowed through and the real limit is learned
   from the provider's response. Learned sizes are cached in

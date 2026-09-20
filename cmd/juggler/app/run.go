@@ -37,6 +37,7 @@ import (
 	"juggler/cmd/juggler/providers/deepseek"
 	"juggler/cmd/juggler/providers/gemini"
 	"juggler/cmd/juggler/providers/llamacpp"
+	"juggler/cmd/juggler/providers/localai"
 	"juggler/cmd/juggler/providers/mistral"
 	"juggler/cmd/juggler/providers/moonshot"
 	"juggler/cmd/juggler/providers/ollama"
@@ -229,6 +230,7 @@ func registerProviders() {
 	deepseek.Register()
 	gemini.Register()
 	llamacpp.Register()
+	localai.Register()
 	mistral.Register()
 	moonshot.Register()
 	ollama.Register()

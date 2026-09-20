@@ -11,6 +11,8 @@ of changes; this project follows semantic versioning.
 - A refused or timed-out bash command now tells the agent why, not just "exit code 1"
 - `dd` reading a file is no longer refused; writing to a raw disk device still is
 - A plan or todo panel now offers a pin button, putting the live list on the pinboard
+- LocalAI is now a provider of its own, reading each model's real context window from the server
+- An OpenAI-compatible endpoint that publishes model capabilities is no longer assumed to be 128k
 
 ## [0.6.4] - 2026-09-14
 

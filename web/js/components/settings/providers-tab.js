@@ -753,6 +753,20 @@ export class ProvidersTab {
       }));
     }
 
+    // LocalAI: expose the server host so users can point at a non-default
+    // (LAN / remote / custom port) instance without restarting the app. Saved
+    // as the `localai_host` raw credential; backend re-fetches the model list,
+    // and each model's context window, on change.
+    if (provider.name === 'localai') {
+      controlColumn.appendChild(this._buildHostRow({
+        inputId: 'localai-host-input',
+        placeholder: 'http://127.0.0.1:8080',
+        configField: 'localaiHost',
+        configKey: 'localai_host',
+        defaultLabel: 'http://127.0.0.1:8080',
+      }));
+    }
+
     // Claude Code: let users point at the `claude` CLI explicitly for obscure
     // install locations auto-detection can't reach. Saved as the
     // `claudecode_binary_path` raw credential; a non-empty save also enables
@@ -1173,7 +1187,7 @@ export class ProvidersTab {
 
   /**
    * Build a host-URL input row for a keyless local-server provider (Ollama,
-   * llama.cpp). Loads the current value from `this.config[configField]`; saves
+   * llama.cpp, LocalAI). Loads the current value from `this.config[configField]`; saves
    * via /api/config on blur or Enter. Empty value clears the override (falls
    * back to the env var or the server-side default).
    * @param {{inputId: string, placeholder: string, configField: string, configKey: string, defaultLabel: string}} opts

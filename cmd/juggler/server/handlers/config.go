@@ -21,6 +21,7 @@ import (
 const (
 	ollamaHostKey           = "ollama_host"
 	llamacppHostKey         = "llamacpp_host"
+	localaiHostKey          = "localai_host"
 	claudecodeBinaryPathKey = "claudecode_binary_path"
 	streamIdleTimeoutKey    = "stream_idle_timeout" // mirrors streamidle.CredKey
 	// spendLimitTokensKey stores the conversation spend ceiling in cumulative
@@ -165,6 +166,7 @@ func (c *ConfigAPI) HandleGetConfig(w http.ResponseWriter, r *http.Request) {
 		},
 		"ollamaHost":               c.credStore.GetRawKey(ollamaHostKey),
 		"llamacppHost":             c.credStore.GetRawKey(llamacppHostKey),
+		"localaiHost":              c.credStore.GetRawKey(localaiHostKey),
 		"claudecodeBinaryPath":     c.credStore.GetRawKey(claudecodeBinaryPathKey),
 		"streamIdleTimeout":        c.credStore.GetRawKey(streamIdleTimeoutKey),
 		"spendLimitTokens":         c.credStore.GetRawKey(spendLimitTokensKey),
@@ -237,6 +239,17 @@ func (c *ConfigAPI) HandleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		if hostStr, ok := hostValue.(string); ok {
 			if err := c.credStore.SetRawKey(llamacppHostKey, hostStr); err != nil {
 				jlog.Error("Failed to save llama.cpp host: %v", err)
+			}
+		}
+	}
+
+	// Handle the LocalAI host override (raw credential). Same shape again: the
+	// provider re-reads the host on the refresh fireCredsChanged triggers, so
+	// the model list and the window each model reports come from the new server.
+	if hostValue, ok := req[localaiHostKey]; ok {
+		if hostStr, ok := hostValue.(string); ok {
+			if err := c.credStore.SetRawKey(localaiHostKey, hostStr); err != nil {
+				jlog.Error("Failed to save LocalAI host: %v", err)
 			}
 		}
 	}
