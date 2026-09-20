@@ -260,10 +260,14 @@ func setProcGroup(cmd *exec.Cmd) {
 // contained holds the job object each running command's tree belongs to, keyed
 // by the command that leads it. An entry lives from startContained to
 // releaseContainment, which is the window in which a kill can be asked for.
-var contained = struct {
-	sync.Mutex
-	jobs map[*exec.Cmd]*childcontain.Child
-}{jobs: map[*exec.Cmd]*childcontain.Child{}}
+//
+// containedGate is a size-1 semaphore guarding the map (the project forbids
+// sync.Mutex; channels are the house style). Reads take it too — they are map
+// lookups, so there is nothing for a reader/writer split to win here.
+var (
+	containedGate = make(chan struct{}, 1)
+	contained     = map[*exec.Cmd]*childcontain.Child{}
+)
 
 // startContained starts a command with its whole process tree inside a job
 // object, so the tree can later be taken in one act rather than reconstructed.
@@ -295,9 +299,9 @@ func startContained(cmd *exec.Cmd) error {
 		jlog.Error("ops: shell tree not contained, falling back to taskkill: %v", err)
 		return nil
 	}
-	contained.Lock()
-	contained.jobs[cmd] = child
-	contained.Unlock()
+	containedGate <- struct{}{}
+	contained[cmd] = child
+	<-containedGate
 	return nil
 }
 
@@ -305,10 +309,10 @@ func startContained(cmd *exec.Cmd) error {
 // is empty by then, so closing it kills nothing; leaving it open would leak the
 // handle for the life of the server.
 func releaseContainment(cmd *exec.Cmd) {
-	contained.Lock()
-	child := contained.jobs[cmd]
-	delete(contained.jobs, cmd)
-	contained.Unlock()
+	containedGate <- struct{}{}
+	child := contained[cmd]
+	delete(contained, cmd)
+	<-containedGate
 	child.Cleanup() // nil-safe, and idempotent against a kill that got there first
 }
 
@@ -355,9 +359,9 @@ func resumeProcess(pid int) {
 // Only a command that could not be contained falls back to walking the tree, and
 // only that fallback needs the leader alive to walk down from.
 func killProcessGroup(cmd *exec.Cmd) {
-	contained.Lock()
-	child := contained.jobs[cmd]
-	contained.Unlock()
+	containedGate <- struct{}{}
+	child := contained[cmd]
+	<-containedGate
 	if child != nil {
 		if err := child.Terminate(); err != nil {
 			jlog.Error("ops: cannot terminate contained shell tree: %v", err)

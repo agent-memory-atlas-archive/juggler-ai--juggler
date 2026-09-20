@@ -707,8 +707,12 @@ lint-files: app-icon-embed wails-runtime-embed
 ## lint-fmt: Enforce gofmt across the tree.
 ## Excludes vendored submodules under 3rdparty/ and any Go files that an npm
 ## package vendored into tooling/node_modules/ ships (e.g. flatted/).
+## The paths reach gofmt through xargs because the whole tree's worth of them
+## exceeds the command-line limit under Git-for-Windows bash: expanded inline
+## they fail with "Argument list too long", which leaves the output empty and
+## passes the check without having formatted-checked anything.
 lint-fmt:
-	@out=$$(gofmt -l $$(find . -name '*.go' -not -path './3rdparty/*' -not -path './tooling/*')); \
+	@out=$$(find . -name '*.go' -not -path './3rdparty/*' -not -path './tooling/*' -print0 | xargs -0 gofmt -l); \
 	if [ -n "$$out" ]; then \
 		echo "gofmt: the following files are not formatted:"; \
 		echo "$$out"; \
@@ -810,9 +814,10 @@ lint-css: node-deps
 fix: fix-fmt fix-go fix-js fix-css
 	@echo "✓ auto-fixes applied — now run 'make lint'"
 
-## fix-fmt: gofmt -w across the tree (same file set lint-fmt checks).
+## fix-fmt: gofmt -w across the tree (same file set lint-fmt checks, reaching
+## gofmt through xargs for the same reason).
 fix-fmt:
-	@gofmt -w $$(find . -name '*.go' -not -path './3rdparty/*' -not -path './tooling/*')
+	@find . -name '*.go' -not -path './3rdparty/*' -not -path './tooling/*' -print0 | xargs -0 gofmt -w
 
 ## fix-go: Apply golangci-lint's auto-fixes (only the linters that support --fix;
 ## many findings have none and still need a hand edit). Same package scope as
