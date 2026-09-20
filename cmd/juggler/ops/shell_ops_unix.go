@@ -30,6 +30,20 @@ func setProcGroup(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 }
 
+// startContained starts a command whose whole process tree can later be killed
+// together. On Unix the containment is the process group setProcGroup asked for
+// before the command was built, so there is nothing left to do once it is
+// running; the Windows twin has to place the tree in a job object here, which it
+// can only do after the process exists.
+func startContained(cmd *exec.Cmd) error {
+	return cmd.Start()
+}
+
+// releaseContainment frees whatever held the command's tree. A process group
+// costs nothing to leave behind, so this is a no-op; the Windows twin closes a
+// job handle.
+func releaseContainment(_ *exec.Cmd) {}
+
 // killProcessGroup kills the process and all its children
 func killProcessGroup(cmd *exec.Cmd) {
 	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)

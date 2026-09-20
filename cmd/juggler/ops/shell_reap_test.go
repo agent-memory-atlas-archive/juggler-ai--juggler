@@ -88,3 +88,41 @@ func TestExecuteStreaming_TimeoutReturnsDespiteEscapedChild(t *testing.T) {
 		t.Fatalf("timed-out command must report an error, got clean completion: %+v", done)
 	}
 }
+
+// TestExecute_TimeoutReturnsDespiteEscapedChild is the foreground twin of the
+// test above, and the promise matters more here: this is the path a user is
+// waiting on when they press Escape, and the handler goroutine serving them is
+// what a wedged teardown holds. The mechanism is the same — cmd.Stdout is a
+// cappedBuffer rather than an *os.File, so os/exec's copier and cmd.Wait() stay
+// blocked until every holder of the internal pipe has gone, and a grandchild
+// that escaped the process group is not reached by the kill.
+func TestExecute_TimeoutReturnsDespiteEscapedChild(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX process-group semantics only")
+	}
+	escaped := escapeGroupSleep("15")
+	if escaped == "" {
+		t.Skip("no setsid/perl available to launch a group-escaping child")
+	}
+
+	dir := t.TempDir()
+	shellOps := NewShellOperations(NewPathScope(dir, nil))
+	// Tiny grace so the test measures boundedness, not the real 7s.
+	shellOps.reapGrace = 300 * time.Millisecond
+
+	start := time.Now()
+	_, err := shellOps.execute(context.Background(), map[string]any{
+		"command": escaped + " & sleep 5",
+		"timeout": float64(200),
+	})
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("a command killed by its deadline must report an error, not a clean result")
+	}
+	// Bound: 200ms timeout + 300ms reap grace + generous slack. Unbounded, this
+	// returned only once the escaped `sleep 15` had gone.
+	if elapsed > 5*time.Second {
+		t.Fatalf("execute did not return promptly on timeout with an escaped child: took %v", elapsed)
+	}
+}

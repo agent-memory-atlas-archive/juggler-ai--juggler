@@ -17,6 +17,12 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unsafe"
+
+	"golang.org/x/sys/windows"
+
+	"juggler/cmd/juggler/childcontain"
+	"juggler/internal/jlog"
 )
 
 // Approved shell strings must run through a POSIX shell, not cmd.exe/PowerShell:
@@ -251,15 +257,122 @@ func setProcGroup(cmd *exec.Cmd) {
 	}
 }
 
-// killProcessGroup kills the process tree on Windows using taskkill.
+// contained holds the job object each running command's tree belongs to, keyed
+// by the command that leads it. An entry lives from startContained to
+// releaseContainment, which is the window in which a kill can be asked for.
+var contained = struct {
+	sync.Mutex
+	jobs map[*exec.Cmd]*childcontain.Child
+}{jobs: map[*exec.Cmd]*childcontain.Child{}}
+
+// startContained starts a command with its whole process tree inside a job
+// object, so the tree can later be taken in one act rather than reconstructed.
 //
-// Only meaningful while the process is alive; see takeTreeOnCancel for why the
-// tree has to be taken before its leader is.
+// The command is created suspended and resumed only once it is in the job.
+// That ordering is the whole point: AssignProcessToJobObject captures the
+// process it is given and every process that one starts afterwards, but nothing
+// it has already started. A command left to run while we assign would race the
+// launcher described in takeTreeOnCancel — which spawns the real shell as one of
+// the first things it does — and lose often enough that the escaped shell, and
+// the work it is part-way through, would outlive an occasional cancel.
+//
+// A command that cannot be contained still runs: it is resumed either way, and
+// killProcessGroup falls back to walking the tree. A suspended process that was
+// never resumed would hang forever, so nothing here may return before the resume.
+func startContained(cmd *exec.Cmd) error {
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.CreationFlags |= windows.CREATE_SUSPENDED
+
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	defer resumeProcess(cmd.Process.Pid)
+
+	child, err := childcontain.Adopt(cmd)
+	if err != nil {
+		jlog.Error("ops: shell tree not contained, falling back to taskkill: %v", err)
+		return nil
+	}
+	contained.Lock()
+	contained.jobs[cmd] = child
+	contained.Unlock()
+	return nil
+}
+
+// releaseContainment closes the command's job once it has been reaped. The job
+// is empty by then, so closing it kills nothing; leaving it open would leak the
+// handle for the life of the server.
+func releaseContainment(cmd *exec.Cmd) {
+	contained.Lock()
+	child := contained.jobs[cmd]
+	delete(contained.jobs, cmd)
+	contained.Unlock()
+	child.Cleanup() // nil-safe, and idempotent against a kill that got there first
+}
+
+// resumeProcess lets a suspended process run. Go hands back a process but not
+// the thread it was created with, so the thread is found by asking the OS which
+// threads that process owns — at this point it has exactly one, the initial
+// thread CreateProcess made and suspended.
+func resumeProcess(pid int) {
+	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPTHREAD, 0)
+	if err != nil {
+		jlog.Error("ops: cannot enumerate threads to resume pid %d: %v", pid, err)
+		return
+	}
+	defer func() { _ = windows.CloseHandle(snapshot) }()
+
+	var entry windows.ThreadEntry32
+	entry.Size = uint32(unsafe.Sizeof(entry))
+	for err = windows.Thread32First(snapshot, &entry); err == nil; err = windows.Thread32Next(snapshot, &entry) {
+		if entry.OwnerProcessID != uint32(pid) {
+			continue
+		}
+		thread, openErr := windows.OpenThread(windows.THREAD_SUSPEND_RESUME, false, entry.ThreadID)
+		if openErr != nil {
+			jlog.Error("ops: cannot open thread %d to resume pid %d: %v", entry.ThreadID, pid, openErr)
+			continue
+		}
+		_, resumeErr := windows.ResumeThread(thread)
+		_ = windows.CloseHandle(thread)
+		if resumeErr != nil {
+			jlog.Error("ops: cannot resume pid %d: %v", pid, resumeErr)
+		}
+	}
+}
+
+// killProcessGroup kills the process tree on Windows.
+//
+// A contained command is taken by terminating its job: one call, every member,
+// including whatever it started after it was contained. That is atomic against a
+// tree still spawning, idempotent against the two callers that race here on a
+// cancel (cmd.Cancel and the execute path's own kill), and immune to the
+// unreachability described in takeTreeOnCancel, since a job holds its members
+// however their parents have fared.
+//
+// Only a command that could not be contained falls back to walking the tree, and
+// only that fallback needs the leader alive to walk down from.
 func killProcessGroup(cmd *exec.Cmd) {
+	contained.Lock()
+	child := contained.jobs[cmd]
+	contained.Unlock()
+	if child != nil {
+		if err := child.Terminate(); err != nil {
+			jlog.Error("ops: cannot terminate contained shell tree: %v", err)
+		}
+		return
+	}
+
 	if cmd.Process == nil {
 		return
 	}
 	// /F = force, /T = tree (kill child processes), /PID = process ID
 	kill := exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", cmd.Process.Pid))
-	_ = kill.Run()
+	// A kill that silently did nothing is how a command outlives its cancel, so
+	// say so rather than leaving a survivor to be discovered by a fan.
+	if out, err := kill.CombinedOutput(); err != nil {
+		jlog.Error("ops: taskkill on pid %d failed: %v: %s", cmd.Process.Pid, err, strings.TrimSpace(string(out)))
+	}
 }

@@ -27,9 +27,24 @@ import (
 // only git can be asked whether what it reports is what the endpoint returned.
 // They reuse the gitProject harness in git_diff_handler_test.go.
 
+// unhurried lends the review clocks enough time that they cannot be the thing a
+// test measures. The fixtures here are a handful of files, so every git command
+// in them is the work of milliseconds; a loaded CI runner can still lose one to
+// the shipped ten seconds, and the test then reports a missing file rather than
+// a slow machine. The shipped values are asserted by
+// TestGitReviewIsNotHeldToTheStatusCardsClock, which asks for no review and so
+// goes on reading them.
+func unhurried(t *testing.T) {
+	t.Helper()
+	budget, perCmd := gitReviewBudget, gitReviewPerCmd
+	gitReviewBudget, gitReviewPerCmd = 5*time.Minute, time.Minute
+	t.Cleanup(func() { gitReviewBudget, gitReviewPerCmd = budget, perCmd })
+}
+
 // askReview calls the manifest endpoint the way the router would.
 func (p *gitProject) askReview(ctx context.Context) (*httptest.ResponseRecorder, gitReviewResponse) {
 	p.t.Helper()
+	unhurried(p.t)
 	api := NewGitStatusAPI(func() string { return p.root }, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/git/review", nil).WithContext(ctx)
 	rec := httptest.NewRecorder()

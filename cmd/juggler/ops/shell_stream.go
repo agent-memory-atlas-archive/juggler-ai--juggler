@@ -99,7 +99,7 @@ func (ops *ShellOperations) ExecuteStreaming(
 	cmd.Stderr = pipeWriter
 
 	// Start command
-	if err := cmd.Start(); err != nil {
+	if err := startContained(cmd); err != nil {
 		output <- ShellStreamChunk{
 			ShellID: shellID,
 			Done:    true,
@@ -114,6 +114,7 @@ func (ops *ShellOperations) ExecuteStreaming(
 	reaped := make(chan struct{})
 	go func() {
 		waitErr := cmd.Wait()
+		releaseContainment(cmd)
 		close(reaped)
 		cmdDone <- waitErr
 		pipeWriter.Close()

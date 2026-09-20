@@ -176,7 +176,7 @@ func (ops *ShellOperations) startBackground(params map[string]any) (any, error) 
 		cmd.Stdout = pipeWriter
 		cmd.Stderr = pipeWriter
 
-		if startErr := cmd.Start(); startErr != nil {
+		if startErr := startContained(cmd); startErr != nil {
 			pipeWriter.Close()
 			pipeReader.Close()
 			updateShellStatus(shellID, "failed", "", -1, fmt.Sprintf("command start failed: %v", startErr), "", 0, false)
@@ -195,6 +195,7 @@ func (ops *ShellOperations) startBackground(params map[string]any) (any, error) 
 		cmdDone := make(chan error, 1)
 		go func() {
 			waitErr := cmd.Wait()
+			releaseContainment(cmd)
 			close(reaped) // from here the pid may name something else
 			cmdDone <- waitErr
 			pipeWriter.Close()
@@ -375,28 +376,46 @@ func (ops *ShellOperations) execute(ctx context.Context, params map[string]any) 
 	cmd.Stderr = output // Merge stderr into stdout - interleaved naturally
 
 	// Start the command
-	if err := cmd.Start(); err != nil {
+	if err := startContained(cmd); err != nil {
 		return nil, fmt.Errorf("command start failed: %w", err)
 	}
 
-	// Wait for command with timeout / caller cancellation
+	// Wait for command with timeout / caller cancellation.
+	//
+	// The buffer belongs to this goroutine alone, and is closed here rather than
+	// in either branch below: output has no lock, os/exec's copier writes to it
+	// until the last holder of the pipe has gone, and the cancel branch is
+	// allowed to stop waiting for that. Closing it from there would be a write
+	// racing a write.
 	done := make(chan error, 1)
 	go func() {
-		done <- cmd.Wait()
+		err := cmd.Wait()
+		releaseContainment(cmd)
+		output.closeSpill()
+		done <- err
 	}()
 
 	select {
 	case <-execCtx.Done():
 		// Timeout or caller cancellation - kill the process group (all children).
 		killGroup(cmd)
-		<-done // Wait for the goroutine to finish
-		output.closeSpill()
+		// Bound the wait for the command to go, as the background and streaming
+		// paths do. cmd.Stdout/Stderr are a non-*os.File, so os/exec's output
+		// copier — and with it cmd.Wait() and done — stays blocked until every
+		// holder of the internal pipe's write end exits. Anything that survived
+		// the kill therefore holds this branch open indefinitely, long past the
+		// deadline, wedging the handler goroutine that a user pressing Escape is
+		// waiting on. So cap it and answer; cmd.Wait() keeps its own goroutine
+		// and done is buffered, so nothing leaks.
+		select {
+		case <-done:
+		case <-time.After(ops.reapGraceOrDefault()):
+		}
 		if execCtx.Err() == context.DeadlineExceeded {
 			return nil, fmt.Errorf("command execution timeout (exceeded %v)", timeout)
 		}
 		return nil, execCtx.Err()
 	case err := <-done:
-		output.closeSpill()
 		exitCode := 0
 		if err != nil {
 			code, ok := exitCodeOf(err)

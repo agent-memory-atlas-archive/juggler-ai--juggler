@@ -16,7 +16,11 @@ import (
 // Review bounds. A review is asked for rather than polled, so it can afford a
 // search the card cannot: nothing is skipped for being expensive, and whatever
 // it still fails to reach is reported instead of dropped.
-const (
+// The two clocks are var rather than const so a test can lend itself more of
+// them. A test that means to check what the review reports is not asking how
+// fast this machine's git is, and on a loaded CI runner those are different
+// questions with the same answer.
+var (
 	// gitReviewBudget is the whole request's clock. Longer than the card's,
 	// because the card can shrug at a repository it did not reach in time and
 	// this cannot.
@@ -28,7 +32,9 @@ const (
 	// reported as unreadable, and a review that calls a slow machine a broken one
 	// has failed at the only thing it claims to do.
 	gitReviewPerCmd = 10 * time.Second
+)
 
+const (
 	// gitReviewMaxRepos and gitReviewMaxDirs stop an unbounded walk of a tree
 	// nobody meant to hand over — a home directory opened as a project. The
 	// directory count is the one that binds in practice: it is roughly a large
