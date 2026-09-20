@@ -10,6 +10,7 @@ of changes; this project follows semantic versioning.
 - A worktree of a submodule now asks whether you want the submodule alone or the project around it
 - A refused or timed-out bash command now tells the agent why, not just "exit code 1"
 - `dd` reading a file is no longer refused; writing to a raw disk device still is
+- A plan or todo panel now offers a pin button, putting the live list on the pinboard
 
 ## [0.6.4] - 2026-09-14
 

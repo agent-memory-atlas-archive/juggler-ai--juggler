@@ -225,13 +225,13 @@ export function createFileActions(path, options = {}) {
   reveal.setAttribute('path', path);
   actions.appendChild(reveal);
 
-  const pinButton = createPinButton(options.pin || '');
+  const pinButton = options.pin ? createPinButton(fileSource(options.pin)) : null;
   if (pinButton) actions.appendChild(pinButton);
 
   return actions;
 }
 
-/** What pinning a file is called, wherever it is offered. */
+/** What pinning something is called, wherever it is offered. */
 const PIN_LABEL = 'Pin to Pinboard';
 
 /**
@@ -240,42 +240,58 @@ const PIN_LABEL = 'Pin to Pinboard';
  * @param {string} path - The path to pin.
  * @returns {import('juggler/pinboard-item-type').PinSource} The source to pin.
  */
-function pinSource(path) {
+function fileSource(path) {
   return { kind: 'file', path, presentation: 'live' };
 }
 
 /**
- * Put a file on the Pinboard. Shared so that the button, the right-click row and
- * a listing that pins a file of its own all mean one thing. Pinning is a view,
- * not a context change: the file appears on the board and no conversation is any
- * the wiser.
- * @param {string} path - Absolute path to pin.
+ * Put something on the Pinboard. The caller describes what it has — a file, the
+ * current plan, the checklist — and the registry finds the type that wants it,
+ * so no panel has to name a pin class.
+ *
+ * Pinning is a view, not a context change: the thing appears on the board and no
+ * conversation is any the wiser. A type that is already on the board is revealed
+ * rather than added twice.
+ * @param {import('juggler/pinboard-item-type').PinSource} source - What to pin.
  * @returns {Promise<boolean>} True when something enabled took it.
  */
-export async function pinFile(path) {
-  if (!path) return false;
-  const source = pinSource(path);
+export async function pinSource(source) {
+  if (!source?.kind) return false;
   if (!pinboardView.canPin(source)) return false;
   return !!(await pinboardView.addSource(source));
 }
 
 /**
- * The button that puts a file on the Pinboard, or null when there is nothing to
- * pin or nothing enabled to pin it with.
+ * Put a file on the Pinboard. Shared so that the button, the right-click row and
+ * a listing that pins a file of its own all mean one thing.
  * @param {string} path - Absolute path to pin.
+ * @returns {Promise<boolean>} True when something enabled took it.
+ */
+export async function pinFile(path) {
+  if (!path) return false;
+  return pinSource(fileSource(path));
+}
+
+/**
+ * The button that puts something on the Pinboard, or null when nothing enabled
+ * can take it — a button that does nothing when clicked is worse than no button,
+ * so the surface asks first and leaves it out.
+ * @param {import('juggler/pinboard-item-type').PinSource} source - What to pin.
+ * @param {string} [className] - The button's class, for a surface whose icon
+ *   buttons are styled differently from a file path row's.
  * @returns {HTMLElement|null} The button, or null to offer nothing.
  */
-function createPinButton(path) {
-  if (!path) return null;
-  if (!pinboardView.canPin(pinSource(path))) return null;
+export function createPinButton(source, className = 'properties-panel-filepath-btn') {
+  if (!source?.kind) return null;
+  if (!pinboardView.canPin(source)) return null;
 
   const button = document.createElement('button');
   button.type = 'button';
-  button.className = 'properties-panel-filepath-btn';
+  button.className = className;
   button.title = PIN_LABEL;
   button.setAttribute('aria-label', PIN_LABEL);
   button.innerHTML = PIN_SVG;
-  button.addEventListener('click', () => { void pinFile(path); });
+  button.addEventListener('click', () => { void pinSource(source); });
   return button;
 }
 
@@ -367,7 +383,7 @@ registerContextMenuProvider({
     if (paste) items.push(paste);
     // Offered on the same terms as the pin button: asked first, left out when
     // nothing enabled would take it.
-    if (pinboardView.canPin(pinSource(path))) {
+    if (pinboardView.canPin(fileSource(path))) {
       items.push({ label: PIN_LABEL, onClick: () => { void pinFile(path); } });
     }
     const host = subject.closest('[data-context-item-id]');

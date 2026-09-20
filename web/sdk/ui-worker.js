@@ -65,6 +65,8 @@ export const labeledSubsection = () => domUnavailable('labeledSubsection');
 export const addFilePath = () => domUnavailable('addFilePath');
 export const createFileActions = () => domUnavailable('createFileActions');
 export const pinFile = () => domUnavailable('pinFile');
+export const pinSource = () => domUnavailable('pinSource');
+export const createPinButton = () => domUnavailable('createPinButton');
 export const addDiffViewer = () => domUnavailable('addDiffViewer');
 export const createDiffViewer = () => domUnavailable('createDiffViewer');
 export const createReviewPanel = () => domUnavailable('createReviewPanel');

@@ -8,7 +8,7 @@ import { createElement } from 'juggler/ui';
 import {
   createEmptyState
 } from 'juggler/item-utils';
-import { createPlanBlock, renderPlanMarkdown } from '../lib/task-lists.js';
+import { createPlanBlock, renderPlanMarkdown, taskPinRow } from '../lib/task-lists.js';
 
 /**
  * Plan step with status and thread tracking
@@ -309,6 +309,8 @@ class PlanContextItem extends ContextItem {
     }
 
     const section = document.createElement('properties-panel-subsection');
+    const pinRow = taskPinRow('plan');
+    if (pinRow) section.appendChild(pinRow);
     section.appendChild(createPlanBlock(this.data));
     container.appendChild(section);
 
@@ -1113,6 +1115,11 @@ class PlanContextItem extends ContextItem {
       // content takes its natural height and the enclosing section scrolls as a
       // single unit — matching how every other tool-action panel behaves.
       const planSection = document.createElement('properties-panel-subsection');
+      // The plan below is the one this call left behind. The pin is where the
+      // current one stays visible, and with no transcript card this is the only
+      // place that offers it.
+      const pinRow = taskPinRow('plan');
+      if (pinRow) planSection.appendChild(pinRow);
       planSection.appendChild(createPlanBlock(planData));
       wrapper.appendChild(planSection);
       return { skipResultSection: true };

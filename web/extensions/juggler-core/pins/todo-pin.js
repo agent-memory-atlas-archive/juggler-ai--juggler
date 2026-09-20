@@ -43,6 +43,26 @@ class TodoPin extends PinboardItemType {
   }
 
   /**
+   * The checklist itself, wherever it is shown — the `todo` tool-action row's
+   * properties panel being the only place a user meets one, since the item draws
+   * no transcript card.
+   * @param {import('juggler/pinboard-item-type').PinSource} source - The source to pin.
+   * @returns {boolean} True for the current checklist.
+   */
+  static canPinSource(source) {
+    return source?.kind === 'todo';
+  }
+
+  /**
+   * There is one checklist per conversation and the pin resolves it on mount, so
+   * a request to show it carries nothing: an empty config is the whole of it.
+   * @returns {Record<string, any>} The config.
+   */
+  static configFromSource() {
+    return {};
+  }
+
+  /**
    * @param {HTMLElement} container - The body to fill.
    * @param {import('juggler/pinboard-item-type').PinContext} pinContext - The pin and its context.
    * @returns {import('juggler/pinboard-item-type').PinController} The controller.

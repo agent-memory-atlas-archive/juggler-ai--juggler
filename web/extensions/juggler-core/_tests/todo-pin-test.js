@@ -16,6 +16,8 @@
  */
 
 import TodoPin from '../pins/todo-pin.js';
+import TodoContextItem from '../context-items/todo-context-item.js';
+import pinboardItemRegistry from '../../../js/registries/pinboard-item-registry.js';
 import { assert } from '../../../js-tests/utilities/test-helpers.js';
 
 /**
@@ -316,6 +318,49 @@ export async function runTests(_ctx) {
     assert(ids.length === 1 && ids[0] === 'reveal',
       `one action, and it is the primary one: ${ids.join(', ')}`);
     m.teardown();
+  });
+
+  // --- the affordance that puts it there ------------------------------------
+  //
+  // The checklist draws no transcript card, so the `todo` tool-action row's
+  // properties panel is where a user meets it — and the button there is the only
+  // way to get it onto the board without hunting through the add picker.
+
+  /**
+   * Render the todo tool-action properties panel and hand back the pin button it
+   * drew, if it drew one.
+   * @returns {Element|null} The button, or null when the panel offered none.
+   */
+  function panelPinButton() {
+    // renderToolActionDetails reads only from ctx, never from instance state, so
+    // the constructor's required context fields can be inert stubs.
+    const item = new TodoContextItem(/** @type {any} */ ({
+      id: 'ci_todo', session: {}, conversation: {}, messageThread: {},
+    }));
+    const wrapper = document.createElement('div');
+    /** @type {any} */ (item).renderToolActionDetails(wrapper, {
+      toolAction: { get: () => undefined },
+      toolName: 'todo',
+      input: { todos: twoTodos },
+      helpers: {},
+      conversation: null,
+      messageThread: null,
+      session: null,
+      selectedItemId: 'ci_todo',
+    });
+    return wrapper.querySelector('[aria-label="Pin to Pinboard"]');
+  }
+
+  await test('the todo panel offers to pin the list only when something can take it', () => {
+    if (pinboardItemRegistry.getType('todo')) pinboardItemRegistry.reset();
+    assert(!panelPinButton(),
+      'with the Todo pin gone, the panel leaves the button out rather than drawing a dead one');
+
+    pinboardItemRegistry.registerClass(TodoPin, { extensionId: 'test' });
+    const button = panelPinButton();
+    assert(!!button, 'with the Todo pin enabled, the panel offers to put the list on the board');
+    assert(button?.getAttribute('title') === 'Pin to Pinboard',
+      'and says what it does without being clicked');
   });
 
   return { passed, failed, errors };
