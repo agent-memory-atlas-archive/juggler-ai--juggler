@@ -48,8 +48,9 @@ line you already had and cuts the assertion that says what broke.
 - **Before fixing lint failures by hand, run `make fix`** — it applies every
   auto-fix the linters can (gofmt, `golangci-lint --fix`, `eslint --fix`,
   `stylelint --fix`) using the same configs and globs as `make lint`, then tells
-  you to re-lint. It never fixes type errors (lint-types) or dead code
-  (lint-deadcode) — those still need a human. `make fix` and `make fix-files`
+  you to re-lint. It never fixes type errors (lint-types), dead code
+  (lint-deadcode), or missing imports in the docs' JavaScript examples
+  (lint-docs) — those still need a human. `make fix` and `make fix-files`
   are the only sanctioned ways to auto-fix; don't run `gofmt -w`, `eslint --fix`,
   or `stylelint --fix` directly (same drift reason as lint). Per-file:
   ```bash

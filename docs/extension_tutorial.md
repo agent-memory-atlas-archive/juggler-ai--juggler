@@ -126,7 +126,7 @@ call, and there are four members that matter:
 
 ```javascript
 import ContextItem from 'juggler/context-item';
-import { loadBookmarks, saveBookmarks } from '../lib/bookmark-store.js';
+import { loadBookmarks, saveBookmarks, format } from '../lib/bookmark-store.js';
 
 class BookmarksContextItem extends ContextItem {
   static MANIFEST = {
@@ -255,6 +255,9 @@ so this goes in a new file, `context-items/bookmark-clear-context-item.js` —
 putting it on the existing class would gate listing too.
 
 ```javascript
+import ContextItem from 'juggler/context-item';
+import { loadBookmarks, saveBookmarks, format } from '../lib/bookmark-store.js';
+
 class BookmarkClearContextItem extends ContextItem {
   static MANIFEST = {
     id: 'bookmark-clear',
@@ -341,7 +344,8 @@ export async function maxBookmarks(signal) {
 }
 ```
 
-Then enforce it in `execute()`:
+Then enforce it in `execute()`, adding `maxBookmarks` to that file's import from
+`../lib/bookmark-store.js`:
 
 ```javascript
 const cap = await maxBookmarks(this.signal);
@@ -368,7 +372,7 @@ nothing. Replace `commands/hello-command-type.js` with
 
 ```javascript
 import CommandType from 'juggler/command-type';
-import { loadBookmarks } from '../lib/bookmark-store.js';
+import { loadBookmarks, format } from '../lib/bookmark-store.js';
 
 class BookmarksCommandType extends CommandType {
   static MANIFEST = {

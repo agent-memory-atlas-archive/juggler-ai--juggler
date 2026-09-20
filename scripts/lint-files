@@ -19,6 +19,7 @@
 #   *.go         → gofmt check + go vet + golangci-lint (on each file's package)
 #   *.js         → eslint
 #   *.css        → stylelint
+#   *.md         → lint-docs-code (imports in the docs' JavaScript examples)
 # Other extensions are reported and skipped. Whole-program checks that have no
 # meaningful per-file form (deadcode) are intentionally NOT run here — use
 # `make lint` for those.
@@ -60,6 +61,7 @@ fi
 go_files=()
 js_files=()
 css_files=()
+md_files=()
 go_dirs=()
 unknown=()
 missing=()
@@ -85,6 +87,7 @@ for f in "${files[@]}"; do
 			;;
 		*.js)  js_files+=("$f") ;;
 		*.css) css_files+=("$f") ;;
+		*.md)  md_files+=("$f") ;;
 		*)     unknown+=("$f") ;;
 	esac
 done
@@ -187,6 +190,16 @@ if [ ${#css_files[@]} -gt 0 ]; then
 		echo "==> lint-css-arch"
 		node scripts/lint-css-arch || status=1
 	fi
+fi
+
+# ---- Markdown -------------------------------------------------------------
+if [ ${#md_files[@]} -gt 0 ] && [ -z "${FIX:-}" ]; then
+	# The symbol table this check works from is per document, not per block, so
+	# it runs over the whole tree however few files were named — the same reason
+	# lint-css-arch does.
+	ensure_node_tooling eslint
+	echo "==> lint-docs-code"
+	node scripts/lint-docs-code || status=1
 fi
 
 # ---- Unroutable files -----------------------------------------------------

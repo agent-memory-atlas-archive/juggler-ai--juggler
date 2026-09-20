@@ -692,7 +692,7 @@ GOLANGCI_LINT_VERSION=v2.13.2
 ## golangci-lint / go vet / gofmt / eslint / stylelint by hand — the configs,
 ## flags, ignore patterns and pinned tool versions live here, and a hand-rolled
 ## invocation silently diverges from what CI enforces.
-lint: lint-fmt lint-go lint-deadcode lint-types lint-js lint-css
+lint: lint-fmt lint-go lint-deadcode lint-types lint-js lint-css lint-docs
 	@echo "✓ lint passed"
 
 ## lint-files: Lint ONLY the named files, using the same linters/configs as
@@ -802,6 +802,13 @@ lint-js: node-deps
 lint-css: node-deps
 	@NODE_NO_WARNINGS=1 $(NPM_BIN)/stylelint --config tooling/.stylelintrc.json 'web/css/**/*.css'
 	@node scripts/lint-css-arch
+
+## lint-docs: Check that the JavaScript examples in the Markdown docs can be
+## copy/pasted and run — specifically, that a block never uses a name the same
+## document shows the source of without importing it. Whole-tree by nature (the
+## symbol table is per document), so it always runs in full.
+lint-docs: node-deps
+	@node scripts/lint-docs-code
 
 ## fix: Auto-fix everything the linters CAN fix in place — gofmt, golangci-lint
 ## --fix, eslint --fix, stylelint --fix — reusing the SAME globs, configs, and
