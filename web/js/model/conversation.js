@@ -1556,12 +1556,16 @@ class Conversation {
       .map((/** @type {any} */ it) => it.toJSON())
       .filter((/** @type {{itemId?: string, type?: string}} */ it) => !(it.itemId === 'SYSTEM_1' || it.type === 'system-prompt'));
 
+    // Nothing to splice means this would be a delete wearing expand's name: the
+    // tile goes and nothing takes its place, so whatever the tile itself
+    // carried — a compaction fold's summary is the case that bites — is gone
+    // with no route back. Expand only ever trades a tile for its contents.
+    if (!snapshots.length) return false;
+
     this.atomicUpdate(() => {
       parentThread.deleteAt(idx);
-      if (snapshots.length) {
-        const ymaps = snapshots.map((/** @type {any} */ s) => plainToYMap(s));
-        parentThread.ensureYarray().insert(idx, ymaps);
-      }
+      const ymaps = snapshots.map((/** @type {any} */ s) => plainToYMap(s));
+      parentThread.ensureYarray().insert(idx, ymaps);
     });
     return true;
   }

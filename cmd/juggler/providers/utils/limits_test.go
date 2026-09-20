@@ -4,7 +4,11 @@
 
 package utils
 
-import "testing"
+import (
+	"testing"
+
+	"juggler/cmd/juggler/providers/provider"
+)
 
 func TestClampOutputToWindow(t *testing.T) {
 	tests := []struct {
@@ -16,6 +20,8 @@ func TestClampOutputToWindow(t *testing.T) {
 		{"a cap that fits is left alone", 200000, 64000, 64000},
 		{"a cap equal to the window leaves no input room", 8192, 8192, 1638},
 		{"a cap above the window is a catalog artifact", 128000, 200000, 20000},
+		{"a cap over the admission ceiling leaves no usable input room", 1000000, 900000, 20000},
+		{"a cap just under the admission ceiling is left alone", 1000000, 849999, 849999},
 		{"an absent cap derives the reserve", 1000000, 0, 20000},
 		{"a negative cap derives the reserve", 32000, -1, 6400},
 		{"a small window derives a fifth", 4096, 0, 819},
@@ -51,6 +57,18 @@ func TestClampedOutputAlwaysLeavesInputRoom(t *testing.T) {
 			}
 			if got >= window {
 				t.Errorf("window %d, cap %d: clamped to %d, which still leaves no room for input", window, output, got)
+			}
+			// Room for input is not enough on its own: admission charges this
+			// cap as its output reserve and advises compaction once the reserve
+			// plus the input estimate passes the soft ceiling. A reserve at or
+			// above that ceiling exceeds it unaided, so every request advises
+			// and no amount of folding can ever clear it. A window of 2 is
+			// excluded because its ceiling and its derived reserve are both one
+			// token, so no cap can satisfy this — the same degenerate end the
+			// domain note above describes.
+			if window >= 3 && int64(got) >= provider.ContextCeiling(int64(window), 0) {
+				t.Errorf("window %d, cap %d: clamped to %d, at or above the admission ceiling %d — every request would advise compaction",
+					window, output, got, provider.ContextCeiling(int64(window), 0))
 			}
 		}
 	}

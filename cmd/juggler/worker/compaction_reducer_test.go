@@ -686,3 +686,22 @@ func TestBoundedReducerFinalEmptyOutputErrors(t *testing.T) {
 		t.Fatalf("dispatches = %d, want the single final attempt", stub.calls)
 	}
 }
+
+// TestBoundedReducerRejectsAnEchoedTranscript pins that a final call answering
+// with the transcript it was handed is a failure, not a summary. Map passes
+// already have to shrink their layer; the final call had no such bound, so an
+// echo was committed as the fold's result — and a fold sends nothing but its
+// result to the model, so the echo becomes the whole of what the conversation
+// is remembered by.
+func TestBoundedReducerRejectsAnEchoedTranscript(t *testing.T) {
+	records := reducerTestRecords(t, strings.Repeat("history ", 100))
+	stub := &stubCompactionDispatcher{}
+	stub.handle = func(_ int, req hiddenLLMRequest) (*LLMResponse, error) {
+		return compactionTextResponse(req.Messages[0].Content, 1, 1), nil
+	}
+	result, err := newStubBoundedReducer(records, 10_000, 100, 0, stub).run(records)
+	var bounded *BoundedCompactionError
+	if !errors.As(err, &bounded) || bounded.Reason != BoundedCompactionNoProgress {
+		t.Fatalf("error = %#v (summary %d chars), want a no-progress failure", err, len(result.Summary))
+	}
+}

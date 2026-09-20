@@ -223,6 +223,9 @@ func (r *boundedReducer) run(records []string) (result CompactionResult, err err
 				if summary == "" {
 					return result, r.budget.err(BoundedCompactionEmptyOutput, pass, "bounded compaction final call returned empty output", nil)
 				}
+				if progressErr := r.summaryProgressErr(pass, joined, summary); progressErr != nil {
+					return result, progressErr
+				}
 				result.Summary = summary
 				return result, nil
 			}
@@ -308,6 +311,13 @@ func (r *boundedReducer) probeRequest(req hiddenLLMRequest, fingerprint string) 
 		if summary == "" {
 			return result, nil, r.budget.err(BoundedCompactionEmptyOutput, 0, "bounded compaction final call returned empty output", nil)
 		}
+		var source string
+		if len(req.Messages) > 0 {
+			source = req.Messages[0].Content
+		}
+		if progressErr := r.summaryProgressErr(0, source, summary); progressErr != nil {
+			return result, nil, progressErr
+		}
 		result.Summary = summary
 		return result, nil, nil
 	}
@@ -318,6 +328,63 @@ func (r *boundedReducer) probeRequest(req hiddenLLMRequest, fingerprint string) 
 		return result, contextLimit, nil
 	}
 	return result, nil, callErr
+}
+
+// compactionEchoWindow is how long a verbatim run must be to count as the
+// source being reproduced rather than quoted, and compactionEchoProbes how many
+// evenly spaced windows are sampled (a preamble before the copied text shifts
+// the offsets, so the start alone is not enough). A source shorter than one
+// window cannot be shown to have been reproduced and is always accepted.
+const (
+	compactionEchoWindow = 64
+	compactionEchoProbes = 5
+)
+
+// summaryEchoesSource reports whether the summary reproduces a long contiguous
+// run of the source. Windows are sliced by byte: a split rune only makes the
+// needle fail to match, which is the safe direction.
+func summaryEchoesSource(source, summary string) bool {
+	if len(source) < compactionEchoWindow {
+		return false
+	}
+	span := len(source) - compactionEchoWindow
+	for i := range compactionEchoProbes {
+		start := span * i / (compactionEchoProbes - 1)
+		if strings.Contains(summary, source[start:start+compactionEchoWindow]) {
+			return true
+		}
+	}
+	return false
+}
+
+// summaryProgressErr rejects a final call that answered with something no
+// shorter than the transcript it was handed. A map pass must shrink its layer
+// to continue; the final call owes the same, because a summary that saved
+// nothing is not a summary. The shape this catches is a model echoing the
+// transcript back — canonical records carry tool_use inputs verbatim, and a
+// model asked to compress them sometimes reproduces them instead. A fold sends
+// nothing but its result to the model, so an echo accepted here becomes the
+// whole of what the folded conversation is remembered by.
+//
+// The rule is unfloored: on a source small enough that an honest summary is
+// longer, compaction had nothing to save and the fold is left unsummarised for
+// Re-summarise rather than committed.
+// Both conditions are required. Length alone would fail every honest summary of
+// a transcript shorter than itself; reproduction alone would fail a summary that
+// legitimately quotes at length, which DefaultSummarizationPrompt asks for. A
+// reply that is no shorter than its source AND reproduces a long run of it
+// verbatim has copied rather than compressed.
+//
+// The source is trimmed for the comparison because the summary already is:
+// measured raw, a transcript handed straight back counts as shorter by its own
+// trailing newline and passes.
+func (r *boundedReducer) summaryProgressErr(pass int, source, summary string) error {
+	source = strings.TrimSpace(source)
+	if len(summary) < len(source) || !summaryEchoesSource(source, summary) {
+		return nil
+	}
+	return r.budget.err(BoundedCompactionNoProgress, pass,
+		fmt.Sprintf("bounded compaction final call returned no summary: %d chars in, %d chars back", len(source), len(summary)), nil)
 }
 
 func (r *boundedReducer) isCancelled() bool {

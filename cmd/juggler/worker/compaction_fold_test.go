@@ -16,6 +16,13 @@ import (
 	ycrdt "github.com/skyterra/y-crdt"
 )
 
+// echoableTurn is a user turn long enough for an echo of it to be recognisable
+// as one: the reducer only calls a reply a copy when it reproduces a run of the
+// source longer than compactionEchoWindow.
+func echoableTurn(topic string) string {
+	return topic + ": " + strings.Repeat("the user asked for a change and the agent made it. ", 4)
+}
+
 func feedCompactionContextAndTools(w *ConversationWorker, tools ...ToolDefinition) {
 	go func() {
 		contextResponse, _ := json.Marshal(map[string]any{
@@ -496,6 +503,45 @@ func TestHandleCompactConvergesToSingleSummary(t *testing.T) {
 	// forward (the swallowed thread's condensed result).
 	if len(sources) != 2 || !strings.Contains(sources[1], "first summary") {
 		t.Fatalf("second summarization source did not contain the first summary (calls=%d)", len(sources))
+	}
+}
+
+// TestHandleCompactLeavesAnEchoedSummaryUnsummarized pins the reducer's
+// shrink rule where the user meets it: a summarizer whose answer is no shorter
+// than the transcript it was given has summarized nothing, so the fold is left
+// marked unsummarized — with its transcript intact and Re-summarise offered —
+// rather than committing the answer as the conversation's only record.
+func TestHandleCompactLeavesAnEchoedSummaryUnsummarized(t *testing.T) {
+	w := NewConversationWorker("test-conv", "user:test")
+	defer w.doc.Destroy()
+	w.currentRun().storeState(StateIdle)
+	w.doc.SetMetadata("defaultModelConfig", map[string]any{"provider": "test", "model": "test"})
+	feedCompactionContextAndTools(w)
+	// The fault in the wild: the transcript handed back instead of a summary.
+	w.llmCallFunc = func(_ context.Context, encoded json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
+		var req hiddenLLMRequest
+		if err := json.Unmarshal(encoded, &req); err != nil {
+			return nil, err
+		}
+		return &LLMResponse{Blocks: []LLMResponseBlock{{Type: provider.ContentBlockTypeText, Content: req.Messages[0].Content}}}, nil
+	}
+	w.doc.doc.Transact(func(_ *ycrdt.Transaction) {
+		arr := w.doc.ensureItems()
+		arr.Push(ycrdt.ArrayAny{conversationItemToYMap(ConversationItem{Type: ItemTypeUser, ItemID: generateItemID(), Content: echoableTurn("hello")})})
+		arr.Push(ycrdt.ArrayAny{conversationItemToYMap(ConversationItem{Type: ItemTypeAssistant, ItemID: generateItemID(), Content: "hi"})})
+	}, w.doc.authorID)
+
+	waitAck := captureAck(t, w, "client-1", "e1")
+	w.currentRun().handleCompact(json.RawMessage(`{"type":"compact","ackId":"e1"}`))
+	waitAck()
+
+	items := w.doc.GetItems()
+	threadID := items[len(items)-1].ItemID
+	if result := threadResult(w, threadID); result != "" {
+		t.Fatalf("fold result = %q, want no result — an echo is not a summary", result)
+	}
+	if !threadFlag(w, threadID, "compactionUnsummarized") {
+		t.Fatal("a fold whose summarizer echoed the transcript is not marked unsummarized: it offers no route back to a summary")
 	}
 }
 

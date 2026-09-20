@@ -46,12 +46,26 @@ type Limits struct {
 // window, substituting the shared derived reserve when the reported cap cannot
 // be right.
 //
-// Two inputs get replaced, for the same reason. A cap at or above the window
-// leaves nothing for input, so the provider rejects every request — and such a
-// value is a catalog artifact rather than a limit (some OpenRouter entries
-// report max_completion_tokens equal to context_length). A cap of zero is
-// simply absent. In both cases the honest answer is the conservative reserve
-// derived from the window, which is what admission would charge anyway.
+// Three inputs get replaced, for the same reason: each is a catalog artifact
+// rather than a limit, and each would make the model unusable.
+//
+// A cap of zero is simply absent. A cap at or above the window leaves nothing
+// for input, so the provider rejects every request (some OpenRouter entries
+// report max_completion_tokens equal to context_length). A cap at or above the
+// admission ceiling is the same fault one step earlier: admission charges this
+// number as its output reserve and advises compaction once the reserve plus
+// the input estimate passes that ceiling, so a reserve which clears it unaided
+// would advise on every request from the first message, and folding could never
+// help — the fold's own retain budget is computed net of the very same reserve.
+//
+// That third case is a guard against a catalog shape rather than a fix for an
+// observed one: no model has been seen reporting a cap in that band. Real
+// reserves sit far below it (32k against a 200k window, 64k against 1M). Do not
+// reach for it to explain a conversation that compacts too early — that symptom
+// has been traced to the measured-prefix projection, not to the reserve.
+//
+// In all three cases the honest answer is the conservative reserve derived from
+// the window, which is what admission would charge anyway.
 //
 // An unknown window has nothing to clamp against, so the cap passes through
 // untouched: whether it is usable is not a question this function can answer.
@@ -59,7 +73,7 @@ func ClampOutputToWindow(window, maxOutput int) int {
 	if window <= 0 {
 		return maxOutput
 	}
-	if maxOutput <= 0 || maxOutput >= window {
+	if maxOutput <= 0 || int64(maxOutput) >= provider.ContextCeiling(int64(window), 0) {
 		return int(provider.ContextSafetyReserve(int64(window)))
 	}
 	return maxOutput

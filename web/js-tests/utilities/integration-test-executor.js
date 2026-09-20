@@ -223,6 +223,7 @@ import { runTests as runConcurrentRunsTests } from '../unit-tests/concurrent-run
 import { runTests as runThreadAliasTests } from '../unit-tests/thread-alias-test.js';
 import { runTests as runThreadTileStateTests } from '../unit-tests/thread-tile-state-test.js';
 import { runTests as runRunRecordsTests } from '../unit-tests/run-records-test.js';
+import { runTests as runExpandFoldGuardTests } from '../unit-tests/expand-fold-guard-test.js';
 import { runTests as runToolGroupingTests } from '../unit-tests/tool-grouping-test.js';
 import { runTests as runChimeRecoveryTests } from '../unit-tests/chime-recovery-test.js';
 import { runTests as runTabBehaviourPrefsTests } from '../unit-tests/tab-behaviour-prefs-test.js';
@@ -597,6 +598,7 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:nested-approval-status', run: runNestedApprovalStatusTests },
   { name: 'unit:concurrent-runs', run: runConcurrentRunsTests },
   { name: 'unit:run-records', run: runRunRecordsTests },
+  { name: 'unit:expand-fold-guard', run: runExpandFoldGuardTests },
   { name: 'unit:thread-alias', run: runThreadAliasTests },
   { name: 'unit:thread-tile-state', run: runThreadTileStateTests },
   // Exclusive not for focus but for the shared origin: this suite writes the
