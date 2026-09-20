@@ -46,6 +46,15 @@ func receivedAnything(c *WSClient) bool {
 	}
 }
 
+// relayBudget bounds every wait here that expects something to arrive. A
+// test-local patience limit, not a product constant: nothing in the relay path
+// is slow, so the budget is spent only when a run is already failing, and a
+// generous one costs a passing run nothing. It is generous rather than huge
+// because the package shares one `-timeout 5m`: a budget long enough for
+// several blown waits to add up to that would trade a named test failure for
+// the whole package being killed, which reports nothing about which wait broke.
+const relayBudget = 20 * time.Second
+
 // awaitDelivery blocks until the client is sent something, and fails the test if
 // nothing is. Delivery is asynchronous in two hops — sendToViewer posts an op to
 // the viewer group's loop, which hands the message to each client's mailbox — so
@@ -58,7 +67,7 @@ func awaitDelivery(t *testing.T, c *WSClient, who string) wsMessage {
 	select {
 	case msg := <-c.send:
 		return msg
-	case <-time.After(5 * time.Second):
+	case <-time.After(relayBudget):
 		t.Fatalf("%s received nothing", who)
 		return wsMessage{}
 	}
@@ -169,7 +178,7 @@ func TestViewerRelay_LeavingStopsDelivery(t *testing.T) {
 // nextRelay reads frames until a viewer-relay arrives, or fails.
 func nextRelay(t *testing.T, conn *websocket.Conn) relayFrame {
 	t.Helper()
-	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(relayBudget))
 	for {
 		_, msgBytes, err := conn.ReadMessage()
 		if err != nil {
@@ -237,7 +246,7 @@ func dialRole(t *testing.T, ts *httptest.Server, role, viewerID string) *websock
 	if err := conn.WriteJSON(map[string]string{"type": "session-changed"}); err != nil {
 		t.Fatalf("%s readiness probe could not be sent: %v", role, err)
 	}
-	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(relayBudget))
 	for {
 		_, msgBytes, err := conn.ReadMessage()
 		if err != nil {

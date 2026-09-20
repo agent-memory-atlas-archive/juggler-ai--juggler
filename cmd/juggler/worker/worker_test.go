@@ -47,6 +47,15 @@ var barrierSeq atomic.Int64
 
 const barrierAckPrefix = "test-barrier-"
 
+// barrierBudget bounds how long a barrier waits for its own ack. The ack is
+// produced by the run loop and the batcher on their own goroutines, so the wait
+// measures the scheduler, not the worker: on a CI box running every package's
+// tests at once under -race, losing those goroutines the CPU for several
+// seconds is ordinary. It is spent only by a run that is already failing, and
+// stays well inside the package's `-timeout 5m` so a blown barrier is reported
+// as the named test it belongs to rather than as a killed package.
+const barrierBudget = 20 * time.Second
+
 // framesUntilBarrier returns the type of every frame a client received up to
 // the point where the worker had dealt with everything queued before this call
 // — the frames the test's last action caused, and nothing else. It drains the
@@ -71,7 +80,7 @@ func framesUntilBarrier(t *testing.T, w *ConversationWorker, mc *msgChan) frameL
 	w.Send("ping", payload)
 
 	var seen frameLog
-	deadline := time.After(10 * time.Second)
+	deadline := time.After(barrierBudget)
 	for {
 		select {
 		case raw := <-mc.ch:
@@ -109,7 +118,7 @@ func quiesce(t *testing.T, w *ConversationWorker, clients ...*msgChan) {
 // waitForType blocks until a message with the given "type" field arrives or timeout.
 func (m *msgChan) waitForType(t *testing.T, msgType string) map[string]any {
 	t.Helper()
-	deadline := time.NewTimer(10 * time.Second)
+	deadline := time.NewTimer(barrierBudget)
 	defer deadline.Stop()
 	for {
 		select {
