@@ -16,6 +16,7 @@
 
 import { createIconBadge, createTypeBadge } from '../utils/icon-message-renderer.js';
 import { appendDeleteControls } from '../utils/panel-delete-controls.js';
+import { createPinControl } from '../utils/properties-panel-helpers.js';
 import { TOOL_STATES } from '../../sdk/lib/message.js';
 import { findNeighborItemId } from '../services/context-item-utilities.js';
 import { renderTransactionDetail } from './transaction-detail-renderer.js';
@@ -974,6 +975,11 @@ class PropertiesPanel extends HTMLElement {
   _renderContextItemControls(contextItem) {
     const controls = document.createElement('properties-panel-controls');
 
+    // Pin button (if the owning plugin names something the board can show).
+    // First because it is the one control here that changes nothing.
+    const pinBtn = createPinControl(/** @type {any} */ (contextItem.constructor)?.getPinSource?.());
+    if (pinBtn) controls.appendChild(pinBtn);
+
     // Refresh button (if context item supports refresh)
     if (typeof /** @type {any} */ (contextItem).refresh === 'function') {
       const refreshBtn = document.createElement('button');
@@ -1015,11 +1021,17 @@ class PropertiesPanel extends HTMLElement {
   _renderToolActionControls(toolAction) {
     const controls = document.createElement('properties-panel-controls');
 
+    const taResult = toolAction.get('result');
+    const ActionClass = this._conversation?.toolActionClass(toolAction.get('toolUseId'));
+
+    // Pin button (if the owning plugin names something the board can show).
+    // First because it is the one control here that changes nothing.
+    const pinBtn = createPinControl(/** @type {any} */ (ActionClass)?.getPinSource?.());
+    if (pinBtn) controls.appendChild(pinBtn);
+
     // Re-run button (for any completed action that can be re-run). Gate on the
     // owning plugin's declaration — items whose re-execution is a no-op (skill
     // load, memory write, static manual) opt out via isRerunnable()===false.
-    const taResult = toolAction.get('result');
-    const ActionClass = this._conversation?.toolActionClass(toolAction.get('toolUseId'));
     const rerunnable = ActionClass?.isRerunnable?.() !== false;
     if (taResult && rerunnable && this._isRetryable(toolAction)) {
       const retryBtn = document.createElement('button');

@@ -18,7 +18,9 @@
 import TodoPin from '../pins/todo-pin.js';
 import TodoContextItem from '../context-items/todo-context-item.js';
 import pinboardItemRegistry from '../../../js/registries/pinboard-item-registry.js';
+import { createPinControl } from '../../../js/utils/properties-panel-helpers.js';
 import { assert } from '../../../js-tests/utilities/test-helpers.js';
+import '../../../js/components/properties-panel.js';
 
 /**
  * @typedef {object} TestResult
@@ -323,44 +325,45 @@ export async function runTests(_ctx) {
   // --- the affordance that puts it there ------------------------------------
   //
   // The checklist draws no transcript card, so the `todo` tool-action row's
-  // properties panel is where a user meets it — and the button there is the only
+  // properties panel is where a user meets it — and the control there is the only
   // way to get it onto the board without hunting through the add picker.
 
-  /**
-   * Render the todo tool-action properties panel and hand back the pin button it
-   * drew, if it drew one.
-   * @returns {Element|null} The button, or null when the panel offered none.
-   */
-  function panelPinButton() {
-    // renderToolActionDetails reads only from ctx, never from instance state, so
-    // the constructor's required context fields can be inert stubs.
-    const item = new TodoContextItem(/** @type {any} */ ({
-      id: 'ci_todo', session: {}, conversation: {}, messageThread: {},
-    }));
-    const wrapper = document.createElement('div');
-    /** @type {any} */ (item).renderToolActionDetails(wrapper, {
-      toolAction: { get: () => undefined },
-      toolName: 'todo',
-      input: { todos: twoTodos },
-      helpers: {},
-      conversation: null,
-      messageThread: null,
-      session: null,
-      selectedItemId: 'ci_todo',
-    });
-    return wrapper.querySelector('[aria-label="Pin to Pinboard"]');
-  }
-
   await test('the todo panel offers to pin the list only when something can take it', () => {
+    /**
+     * The control the panel builds for whatever the item type names, which is
+     * the same call `_renderContextItemControls` and `_renderToolActionControls`
+     * both make.
+     * @returns {HTMLElement|null} The control, or null when none was offered.
+     */
+    const control = () => createPinControl(TodoContextItem.getPinSource());
+
     if (pinboardItemRegistry.getType('todo')) pinboardItemRegistry.reset();
-    assert(!panelPinButton(),
+    assert(!control(),
       'with the Todo pin gone, the panel leaves the button out rather than drawing a dead one');
 
     pinboardItemRegistry.registerClass(TodoPin, { extensionId: 'test' });
-    const button = panelPinButton();
+    const button = control();
     assert(!!button, 'with the Todo pin enabled, the panel offers to put the list on the board');
-    assert(button?.getAttribute('title') === 'Pin to Pinboard',
+    assert(button?.getAttribute('aria-label') === 'Pin to Pinboard',
       'and says what it does without being clicked');
+    assert(button?.className === 'properties-panel-btn',
+      `it belongs with Re-run and Delete, not in the body: ${button?.className}`);
+    assert((button?.textContent || '').includes('Pin to Pinboard'),
+      `a control in that block is labelled, not a bare icon: ${button?.textContent}`);
+  });
+
+  await test('the panel puts it in the controls block, not in the body', () => {
+    pinboardItemRegistry.registerClass(TodoPin, { extensionId: 'test' });
+    const panel = /** @type {any} */ (document.createElement('properties-panel'));
+    // A tool-action with no result and no thread: every other control gates
+    // itself off, leaving whatever the pin seam contributed and nothing else.
+    panel._conversation = { toolActionClass: () => TodoContextItem };
+    panel._messageThread = null;
+    const controls = panel._renderToolActionControls({ get: () => undefined });
+
+    const labels = [...controls.children].map((/** @type {Element} */ c) => c.textContent?.trim());
+    assert(labels.length === 1 && labels[0] === 'Pin to Pinboard',
+      `the panel's own controls are where it belongs, got [${labels.join(', ')}]`);
   });
 
   return { passed, failed, errors };

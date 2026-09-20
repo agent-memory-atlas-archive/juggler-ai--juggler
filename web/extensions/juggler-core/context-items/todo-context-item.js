@@ -6,7 +6,7 @@
 import ContextItem from 'juggler/context-item';
 import { createElement } from 'juggler/ui';
 import { createEmptyState } from 'juggler/item-utils';
-import { createTodoBlock, renderTodoMarkdown, taskPinRow } from '../lib/task-lists.js';
+import { createTodoBlock, renderTodoMarkdown } from '../lib/task-lists.js';
 
 /**
  * A single todo item.
@@ -178,6 +178,16 @@ class TodoContextItem extends ContextItem {
   }
 
   /**
+   * The panel shows the list as it stood when the call ran; the pin is where the
+   * current one keeps showing. Offered as a control so a user reading an old
+   * checklist can put the live one somewhere it stays visible.
+   * @returns {import('juggler/pinboard-item-type').PinSource} The checklist.
+   */
+  static getPinSource() {
+    return { kind: 'todo' };
+  }
+
+  /**
    * With no standing card, the todo tool-action row is the checklist's only
    * presence in the transcript. It is there so the user can see progress at a
    * glance, which folding it into a collapsed run of tool uses would defeat.
@@ -247,8 +257,6 @@ class TodoContextItem extends ContextItem {
       return container;
     }
     const section = document.createElement('properties-panel-subsection');
-    const pinRow = taskPinRow('todo');
-    if (pinRow) section.appendChild(pinRow);
     section.appendChild(createTodoBlock(todos));
     container.appendChild(section);
     return container;
@@ -460,11 +468,6 @@ class TodoContextItem extends ContextItem {
 
     if (todos.length > 0) {
       const section = document.createElement('properties-panel-subsection');
-      // The row below is the list as it stood when this call ran. The pin is
-      // where the current one stays visible, and with no transcript card this is
-      // the only place that offers it.
-      const pinRow = taskPinRow('todo');
-      if (pinRow) section.appendChild(pinRow);
       section.appendChild(createTodoBlock(todos));
       wrapper.appendChild(section);
       return { skipResultSection: true };

@@ -877,6 +877,25 @@ class ContextItem {
   }
 
   /**
+   * What this item type offers to put on the Pinboard, or null (the default) for
+   * one that offers nothing.
+   *
+   * The properties panel adds a "Pin to Pinboard" control for whatever this
+   * returns, on both the item's own panel and the tool-action row that wrote it.
+   * Return a source descriptor rather than a pin type: the registry decides which
+   * enabled type claims it, so an item never names a pin class and the control
+   * disappears by itself when nothing can take it.
+   *
+   * Worth overriding where the item's panel shows a snapshot of something that
+   * goes on changing — a plan, a checklist — and the pin is the only place the
+   * live one stands still.
+   * @returns {import('./pinboard-item-type.js').PinSource|null} What to pin, or null.
+   */
+  static getPinSource() {
+    return null;
+  }
+
+  /**
    * Return a UI fragment that lets the user manage this plugin's permission
    * rules. The host inserts the returned element directly into the
    * permission-controls popup, between sibling plugins' sections. Return

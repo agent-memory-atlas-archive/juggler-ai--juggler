@@ -25,10 +25,10 @@
  * @module lib/task-lists
  */
 
-import { createElement, createPinButton, injectStylesOnce, taskMarker, taskStatusWord } from 'juggler/ui';
+import { createElement, injectStylesOnce, taskMarker, taskStatusWord } from 'juggler/ui';
 import { createTextBlock } from 'juggler/item-utils';
 
-injectStylesOnce('task-list-styles', `
+injectStylesOnce('task-progress-styles', `
 .task-progress {
   display: flex;
   height: 0.375rem;
@@ -40,10 +40,6 @@ injectStylesOnce('task-list-styles', `
 .task-progress__segment--completed { background: var(--task-done-box); }
 .task-progress__segment--in-progress { background: var(--task-progress-box); }
 .task-progress__segment--failed { background: var(--task-failed-box); }
-.task-pin-row {
-  display: flex;
-  justify-content: flex-end;
-}
 `);
 
 /**
@@ -239,24 +235,4 @@ export function createPlanBlock(planData) {
  */
 export function createTodoBlock(todos) {
   return createTaskListBlock(renderTodoMarkdown(todos), todos || []);
-}
-
-/**
- * The row that offers to put a plan or a checklist on the pinboard, or null when
- * nothing enabled would take it.
- *
- * Both panels show a list that is only ever a snapshot of the moment the tool ran;
- * the pin is where the live one stands still. Since neither item draws a transcript
- * card, this button is the only route from reading a plan to watching it, short of
- * the add picker. It is shared so the two panels offer it identically — a difference
- * between them would be nothing but an oversight.
- * @param {'plan'|'todo'} kind - Which of the two to pin.
- * @returns {HTMLElement|null} The row, or null to offer nothing.
- */
-export function taskPinRow(kind) {
-  const button = createPinButton({ kind });
-  if (!button) return null;
-  const row = createElement('div', 'task-pin-row');
-  row.appendChild(button);
-  return row;
 }

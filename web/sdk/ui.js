@@ -52,8 +52,6 @@ export {
   addFilePath,
   createFileActions,
   pinFile,
-  pinSource,
-  createPinButton,
   addDiffViewer,
 } from '../js/utils/properties-panel-helpers.js';
 

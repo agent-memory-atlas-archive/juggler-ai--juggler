@@ -255,7 +255,7 @@ function fileSource(path) {
  * @param {import('juggler/pinboard-item-type').PinSource} source - What to pin.
  * @returns {Promise<boolean>} True when something enabled took it.
  */
-export async function pinSource(source) {
+async function pinSource(source) {
   if (!source?.kind) return false;
   if (!pinboardView.canPin(source)) return false;
   return !!(await pinboardView.addSource(source));
@@ -281,7 +281,7 @@ export async function pinFile(path) {
  *   buttons are styled differently from a file path row's.
  * @returns {HTMLElement|null} The button, or null to offer nothing.
  */
-export function createPinButton(source, className = 'properties-panel-filepath-btn') {
+function createPinButton(source, className = 'properties-panel-filepath-btn') {
   if (!source?.kind) return null;
   if (!pinboardView.canPin(source)) return null;
 
@@ -292,6 +292,23 @@ export function createPinButton(source, className = 'properties-panel-filepath-b
   button.setAttribute('aria-label', PIN_LABEL);
   button.innerHTML = PIN_SVG;
   button.addEventListener('click', () => { void pinSource(source); });
+  return button;
+}
+
+/**
+ * The same action as a full-width labelled control, for the panel's controls
+ * block — where it sits with Re-run and Delete rather than beside a path.
+ *
+ * A panel's controls are where an action on the whole item belongs; putting this
+ * one in the body would push the thing being read down the panel to make room
+ * for a button about it.
+ * @param {import('juggler/pinboard-item-type').PinSource|null} source - What to pin.
+ * @returns {HTMLElement|null} The control, or null to offer nothing.
+ */
+export function createPinControl(source) {
+  if (!source) return null;
+  const button = createPinButton(source, 'properties-panel-btn');
+  if (button) button.innerHTML = `${PIN_SVG} ${PIN_LABEL}`;
   return button;
 }
 

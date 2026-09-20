@@ -21,6 +21,7 @@
 import PlanPin from '../pins/plan-pin.js';
 import PlanContextItem from '../context-items/plan-context-item.js';
 import pinboardItemRegistry from '../../../js/registries/pinboard-item-registry.js';
+import { createPinControl } from '../../../js/utils/properties-panel-helpers.js';
 import { assert } from '../../../js-tests/utilities/test-helpers.js';
 
 /**
@@ -379,44 +380,31 @@ export async function runTests(_ctx) {
   // --- the affordance that puts it there ------------------------------------
   //
   // The plan draws no transcript card, so the `plan` tool-action row's properties
-  // panel is where a user meets it — and the button there is the only way to get
+  // panel is where a user meets it — and the control there is the only way to get
   // it onto the board without hunting through the add picker.
 
-  /**
-   * Render the plan tool-action properties panel and hand back the pin button it
-   * drew, if it drew one.
-   * @returns {Element|null} The button, or null when the panel offered none.
-   */
-  function panelPinButton() {
-    // renderToolActionDetails reads only from ctx, never from instance state, so
-    // the constructor's required context fields can be inert stubs.
-    const item = new PlanContextItem(/** @type {any} */ ({
-      id: 'ci_plan', session: {}, conversation: {}, messageThread: {},
-    }));
-    const wrapper = document.createElement('div');
-    /** @type {any} */ (item).renderToolActionDetails(wrapper, {
-      toolAction: { get: () => undefined },
-      toolName: 'plan',
-      input: { action: 'submit', title: 'A plan', items: twoSteps },
-      helpers: {},
-      conversation: null,
-      messageThread: null,
-      session: null,
-      selectedItemId: 'ci_plan',
-    });
-    return wrapper.querySelector('[aria-label="Pin to Pinboard"]');
-  }
-
   await test('the plan panel offers to pin the plan only when something can take it', () => {
+    /**
+     * The control the panel builds for whatever the item type names, which is
+     * the same call `_renderContextItemControls` and `_renderToolActionControls`
+     * both make.
+     * @returns {HTMLElement|null} The control, or null when none was offered.
+     */
+    const control = () => createPinControl(PlanContextItem.getPinSource());
+
     if (pinboardItemRegistry.getType('plan')) pinboardItemRegistry.reset();
-    assert(!panelPinButton(),
+    assert(!control(),
       'with the Plan pin gone, the panel leaves the button out rather than drawing a dead one');
 
     pinboardItemRegistry.registerClass(PlanPin, { extensionId: 'test' });
-    const button = panelPinButton();
+    const button = control();
     assert(!!button, 'with the Plan pin enabled, the panel offers to put the plan on the board');
-    assert(button?.getAttribute('title') === 'Pin to Pinboard',
+    assert(button?.getAttribute('aria-label') === 'Pin to Pinboard',
       'and says what it does without being clicked');
+    assert(button?.className === 'properties-panel-btn',
+      `it belongs with Re-run and Delete, not in the body: ${button?.className}`);
+    assert((button?.textContent || '').includes('Pin to Pinboard'),
+      `a control in that block is labelled, not a bare icon: ${button?.textContent}`);
   });
 
   return { passed, failed, errors };
