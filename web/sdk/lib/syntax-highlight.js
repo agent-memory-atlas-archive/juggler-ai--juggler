@@ -24,7 +24,7 @@
  * text when Prism or the requested grammar is unavailable (e.g. a worker
  * context, or a language whose component wasn't bundled).
  *
- * The tokens Prism emits carry `.token.<type>` classes; `css/prism-theme.css`
+ * The tokens Prism emits carry `.token.<type>` classes; `css/vendor/prism-theme.css`
  * colours them, so any element produced here picks up the app theme for free.
  */
 

@@ -1,0 +1,320 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+about-modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: var(--z-modal);
+    align-items: center;
+    justify-content: center;
+}
+
+about-modal:has(.about-backdrop) {
+    display: flex;
+}
+
+about-modal .about-container {
+    padding: 0;
+    max-width: 24rem;
+    width: 90%;
+    background: var(--bg-primary);
+}
+
+about-modal .about-header {
+    padding: 2rem 2rem 1rem;
+    text-align: center;
+    background: linear-gradient(180deg, rgb(88 166 255 / 8%) 0%, transparent 100%);
+}
+
+/* Inline SVG rather than the usual masked box (see utils/juggler-logo.js): the
+   clubs have to move independently of the lettering. position/z-index puts the
+   mark above the panel's later content, so a club thrown across the description
+   passes in front of the text instead of behind it. */
+about-modal .about-logo {
+    position: relative;
+    z-index: 1;
+    height: 3rem;
+    margin: 0 auto 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* 2.2rem inside the 3rem row is the size the masked logo drew at: its viewBox
+   was wider than the box's aspect-ratio, so `mask-size: contain` fitted it to
+   the width and it never filled the row's height. Keeping that size means the
+   header looks unchanged; raise it towards 3rem to make the mark bigger.
+
+   overflow: visible lets a thrown club paint outside the mark — modal-panel's
+   own overflow: hidden is what clips it, so clubs disappear at the panel edge
+   rather than floating over the app. */
+about-modal .about-logo svg {
+    height: 2.2rem;
+    width: auto;
+    overflow: visible;
+    fill: var(--text-primary);
+}
+
+/* ---- The throw -------------------------------------------------------------
+
+   A moment after the box opens the three clubs are lobbed out of the panel and
+   tumble back into place. Each club is g.logo-club (travel) wrapping g.logo-spin
+   (rotation): separating them lets the spin run at a steady rate while the
+   travel eases along its arc, which is what makes a club read as thrown rather
+   than slid. Clicking the logo throws them again (about-modal.js).
+
+   Per-club aim lives in custom properties so tuning the feel is editing numbers:
+     --throw-dx/dy    where it ends up, in SVG user units (~1.25px each here)
+     --throw-ax/ay    where it is 26% of the way through — the arc's shape
+     --throw-rot      rotation on the way out
+     --throw-back     rotation on landing; a multiple of 360deg so it lands square
+     --throw-hop      the small bob upwards before it goes
+     --throw-delay    when this club leaves
+
+   Down is the expensive direction — the panel body sits below the mark — so the
+   clubs fall outwards through the lower side walls, which is the shortest way
+   out of sight while still reading as a drop. */
+about-modal .logo-club,
+about-modal .logo-spin,
+about-modal .logo-name {
+    transform-box: fill-box;
+    transform-origin: 50% 50%;
+}
+
+/* Lengths below are SVG user units in the mark's own coordinate system, which
+   is what a CSS transform on an SVG element resolves px against — they scale
+   with the logo and have nothing to do with device pixels. rem here would be
+   read as 16 user units and would not track the mark's size at all. */
+/* stylelint-disable rem-over-px/rem-over-px, unit-disallowed-list */
+about-modal .logo-club-1 {
+    --throw-delay: 600ms;
+    --throw-ax: -40px;
+    --throw-ay: 9px;
+    --throw-dx: -143px;
+    --throw-dy: 118px;
+    --throw-rot: -720deg;
+    --throw-back: -1080deg;
+    --throw-hop: -3.1px;
+}
+
+about-modal .logo-club-2 {
+    --throw-delay: 690ms;
+    --throw-ax: 55px;
+    --throw-ay: 7px;
+    --throw-dx: 196px;
+    --throw-dy: 102px;
+    --throw-rot: 720deg;
+    --throw-back: 1440deg;
+    --throw-hop: -3.1px;
+}
+
+about-modal .logo-club-3 {
+    --throw-delay: 780ms;
+    --throw-ax: -37px;
+    --throw-ay: 11px;
+    --throw-dx: -145px;
+    --throw-dy: 155px;
+    --throw-rot: -360deg;
+    --throw-back: -720deg;
+    --throw-hop: -4.35px;
+}
+
+about-modal .about-logo.tossing .logo-club {
+    animation: about-logo-throw 1500ms var(--throw-delay) both;
+}
+
+about-modal .about-logo.tossing .logo-spin {
+    animation: about-logo-spin 1500ms var(--throw-delay) both;
+}
+
+about-modal .about-logo.tossing .logo-name {
+    animation: about-logo-jolt 700ms 640ms both;
+}
+
+@keyframes about-logo-throw {
+    /* A hop up before the fall: being tossed is what makes this read as thrown
+       rather than dropped, and it is the beat the whole thing bounces off. */
+    0% {
+        transform: translate(0, 0) scale(1);
+        animation-timing-function: cubic-bezier(0.35, 0, 0.65, -0.2);
+    }
+
+    6% {
+        transform: translate(1px, var(--throw-hop)) scale(0.94, 1.07);
+        animation-timing-function: cubic-bezier(0.2, 0.6, 0.5, 0.9);
+    }
+
+    /* Most of the sideways travel done, barely any of the drop — then gravity,
+       so the horizontal speed stays flat while the fall accelerates. */
+    26% {
+        transform: translate(var(--throw-ax), var(--throw-ay)) scale(1.03);
+        animation-timing-function: cubic-bezier(0.45, 0, 0.9, 0.55);
+    }
+
+    46% {
+        transform: translate(var(--throw-dx), var(--throw-dy)) scale(1);
+        animation-timing-function: ease-in-out;
+    }
+
+    /* Out of sight, doing who knows what. It drifts a little so it does not read
+       as parked just off-stage waiting for its cue. */
+    56% {
+        transform: translate(calc(var(--throw-dx) * 1.06), calc(var(--throw-dy) * 1.06)) scale(1);
+        animation-timing-function: cubic-bezier(0.3, 0.1, 0.2, 1);
+    }
+
+    /* Home, slightly past it, and settled. */
+    86% {
+        transform: translate(calc(var(--throw-dx) * -0.06), calc(var(--throw-dy) * -0.06)) scale(1.03);
+    }
+
+    94% {
+        transform: translate(calc(var(--throw-dx) * 0.02), calc(var(--throw-dy) * 0.02)) scale(0.98, 1.02);
+    }
+
+    100% {
+        transform: translate(0, 0) scale(1);
+    }
+}
+
+@keyframes about-logo-spin {
+    0% {
+        transform: rotate(0deg);
+    }
+
+    6% {
+        transform: rotate(-12deg);
+        animation-timing-function: linear;
+    }
+
+    46% {
+        transform: rotate(var(--throw-rot));
+    }
+
+    56% {
+        transform: rotate(calc(var(--throw-rot) * 1.06));
+        animation-timing-function: cubic-bezier(0.3, 0.1, 0.2, 1);
+    }
+
+    90% {
+        transform: rotate(calc(var(--throw-back) + 9deg));
+    }
+
+    100% {
+        transform: rotate(var(--throw-back));
+    }
+}
+
+/* The lettering flinches as the clubs leave, then settles. */
+@keyframes about-logo-jolt {
+    0% {
+        transform: translate(0, 0) rotate(0deg) scale(1);
+    }
+
+    14% {
+        transform: translate(0, 1.2px) rotate(0deg) scale(1.02, 0.94);
+    }
+
+    34% {
+        transform: translate(0, -1.6px) rotate(-1.4deg) scale(0.99, 1.03);
+    }
+
+    58% {
+        transform: translate(0, 0.5px) rotate(0.8deg) scale(1.01, 0.99);
+    }
+
+    78% {
+        transform: translate(0, -0.2px) rotate(-0.3deg) scale(1);
+    }
+
+    100% {
+        transform: translate(0, 0) rotate(0deg) scale(1);
+    }
+}
+/* stylelint-enable rem-over-px/rem-over-px, unit-disallowed-list */
+
+/* Pure decoration, and unrequested movement is exactly what the preference is
+   there to stop. The logo simply sits still. */
+@media (prefers-reduced-motion: reduce) {
+    about-modal .about-logo.tossing .logo-club,
+    about-modal .about-logo.tossing .logo-spin,
+    about-modal .about-logo.tossing .logo-name {
+        animation: none;
+    }
+}
+
+about-modal .about-version {
+    display: block;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-top: 0.25rem;
+}
+
+about-modal .about-content {
+    padding: 1.25rem 2rem 1.5rem;
+    text-align: center;
+}
+
+about-modal .about-description {
+    color: var(--text-primary);
+    font-size: 0.9375rem;
+    line-height: 1.6;
+    margin: 0 0 1rem;
+}
+
+about-modal .about-link {
+    margin: 0 0 1rem;
+}
+
+about-modal .about-description + .about-link {
+    margin-top: 1.5rem;
+}
+
+about-modal .about-link a {
+    color: var(--accent-blue);
+    text-decoration: none;
+    font-size: 0.875rem;
+}
+
+about-modal .about-link a:hover {
+    text-decoration: underline;
+}
+
+about-modal .about-footer {
+    display: flex;
+    justify-content: center;
+    padding: 1rem 2rem 1.5rem;
+}
+
+about-modal .about-button {
+    padding: 0.625rem 1.25rem;
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 150ms ease;
+    border: none;
+}
+
+about-modal .about-button.primary {
+    background: var(--accent-blue);
+    color: #fff;
+}
+
+about-modal .about-button.primary:hover {
+    background: var(--accent-blue-light);
+}
+
+about-modal .about-button.primary:focus {
+    outline: none;
+    box-shadow: 0 0 0 0.1875rem rgb(88 166 255 / 30%);
+}
+
+/* Settings Panel Component */

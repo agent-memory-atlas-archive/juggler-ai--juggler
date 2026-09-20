@@ -1,0 +1,1434 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+settings-panel {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: var(--z-modal);
+    font-family: var(--font-ui);
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+settings-panel.show {
+    display: block;
+}
+
+settings-panel .settings-container {
+    /* Centre with inset+auto margins rather than translate(-50%, -50%): the
+       percentage translate offsets by half the element's own (fractional) size,
+       landing the composited layer on a half-pixel. WebKit then resamples the
+       whole layer to place it, softening all text/borders (Blink snaps it, so
+       Chrome looks fine). inset:0 + margin:auto centres with no transform, so
+       no compositing layer and no blur. */
+    position: fixed;
+    inset: 0;
+    margin: auto;
+    padding-top: 0.3rem;
+    width: 92%;
+    max-width: 82rem;
+    height: 90vh;
+    max-height: 90vh;
+}
+
+settings-panel .settings-tabs {
+    display: flex;
+    gap: 0;
+
+    /* Extra right padding reserves room for the corner close button, which is
+       absolutely positioned over this strip in the horizontal (mobile) layout. */
+    padding: 0 3rem 0 1.5rem;
+    border-bottom: 0.0625rem solid var(--border-divider);
+    flex-shrink: 0;
+    align-items: center;
+    min-width: 0;
+}
+
+/* The horizontally-scrollable region holding the tab buttons. Lets the strip
+   swipe sideways on narrow screens instead of clipping the trailing tabs; the
+   close button lives outside it (a sibling) so it stays pinned and reachable.
+   The scrollbar is hidden — a soft edge fade is the scroll affordance instead.
+
+   The fade is keyed to actual overflow: settings-panel.js toggles .overflow-start
+   / .overflow-end from the strip's scroll position, and each class opens up the
+   fade on that edge. With neither class the start/end stops collapse to 0, so a
+   strip that fits shows no fade at all (no false "there's more" cue), and the
+   right fade disappears once you've scrolled to the last tab. */
+settings-panel .settings-tabs-scroll {
+    --tab-fade: 2.5rem;
+
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    mask-image: linear-gradient(
+        to right,
+        transparent 0,
+        #000 var(--tab-fade-start, 0),
+        #000 calc(100% - var(--tab-fade-end, 0)),
+        transparent 100%
+    );
+}
+
+settings-panel .settings-tabs-scroll.overflow-start {
+    --tab-fade-start: var(--tab-fade);
+}
+
+settings-panel .settings-tabs-scroll.overflow-end {
+    --tab-fade-end: var(--tab-fade);
+}
+
+settings-panel .settings-tabs-scroll::-webkit-scrollbar {
+    display: none;
+}
+
+/* The close button is a direct child of the container (not the tab strip), so it
+   anchors to the dialog's top-right corner in every layout. The container is
+   position:fixed, so this absolute box is measured from the dialog itself. It
+   sits above the loading overlay so the panel stays dismissable while loading.
+   The desktop sidebar layout re-homes it into its own grid cell (see below). */
+settings-panel .close-button {
+    position: absolute;
+    top: max(0.3rem, env(safe-area-inset-top));
+    right: max(0.55rem, env(safe-area-inset-right));
+    z-index: calc(var(--z-raised) + 1);
+    flex-shrink: 0;
+}
+
+settings-panel .settings-tab {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    padding: 0.875rem 1.25rem;
+    font-size: 0.875rem;
+    cursor: pointer;
+    border-radius: 0;
+    border-bottom: 0.125rem solid transparent;
+    transition: color 150ms ease, border-color 150ms ease;
+    position: relative;
+    top: 0.0625rem;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+settings-panel .settings-tab:hover {
+    color: var(--text-primary);
+}
+
+settings-panel .settings-tab.active {
+    color: var(--accent-blue);
+    border-bottom-color: var(--accent-blue);
+}
+
+/* The panel frame and its tab strip are chrome, but everything inside the tab
+   bodies is a document the user reads and copies from: file paths, server
+   command lines, skill descriptions, version strings, and above all the log
+   viewer. This element wraps every tab section, so re-enabling selection here
+   covers them all. See the selection policy in styles.css. */
+settings-panel .settings-content {
+    flex: 1;
+    overflow-y: auto;
+
+    /* The right gutter is wider than the left because the close button floats
+       over this pane's top-right corner (it occupies 0.55–2.55rem in from the
+       panel edge). The gutter clears that box with room to spare, so content
+       pinned to the right — the Skills tab's refresh button, for one — reads as
+       a separate control rather than crowding the ×. */
+    padding: 1.5rem 3.25rem 1.5rem 1.5rem;
+    display: grid;
+    min-height: 0;
+    opacity: 0;
+    transition: opacity 200ms ease;
+    -webkit-user-select: text;
+    user-select: text;
+}
+
+settings-panel.loaded .settings-content {
+    opacity: 1;
+}
+
+/* Loading state */
+settings-panel .settings-loading {
+    position: absolute;
+    inset: 3.5rem 0 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    background: var(--bg-secondary);
+    z-index: var(--z-raised);
+    opacity: 1;
+    transition: opacity 200ms ease;
+}
+
+settings-panel.loaded .settings-loading {
+    opacity: 0;
+    pointer-events: none;
+}
+
+settings-panel .settings-loading-text {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+settings-panel .settings-tab-content {
+    grid-area: 1 / 1;
+    visibility: hidden;
+    opacity: 0;
+    transition: opacity 150ms ease;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+settings-panel .settings-tab-content.active {
+    visibility: visible;
+    opacity: 1;
+}
+
+settings-panel .settings-description {
+    color: var(--text-secondary);
+    margin-bottom: 1.5rem;
+    line-height: 1.6;
+    font-size: 0.875rem;
+}
+
+settings-panel .settings-description code {
+    background: var(--bg-primary);
+    padding: 0.125rem 0.375rem;
+    border-radius: 0.1875rem;
+    color: var(--accent-green);
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+}
+
+settings-panel .settings-form {
+    max-width: 50rem;
+}
+
+settings-panel .settings-group {
+    margin-bottom: 0;
+}
+
+settings-panel .provider-field {
+    display: grid;
+    grid-template-columns: minmax(0, 40%) minmax(0, 1fr);
+    align-items: start;
+    gap: 1.5rem;
+    padding: 1rem 1.25rem;
+    background: var(--bg-tertiary);
+    border-radius: 0.5rem;
+    margin-bottom: 0.625rem;
+}
+
+settings-panel .provider-field:last-child {
+    margin-bottom: 0;
+}
+
+/* Multi-row card: groups several related provider-field rows (e.g. "New
+   conversation defaults") inside one shared box instead of each row getting
+   its own separate box — the rows lose their individual card chrome and are
+   divided by a hairline instead. */
+settings-panel .settings-card {
+    background: var(--bg-tertiary);
+    border-radius: 0.5rem;
+    padding: 0 1.25rem;
+    margin-bottom: 0.625rem;
+}
+
+settings-panel .settings-card:last-child {
+    margin-bottom: 0;
+}
+
+settings-panel .settings-card .provider-field {
+    background: none;
+    border-radius: 0;
+    padding: 1rem 0;
+    margin-bottom: 0;
+    border-bottom: 0.0625rem solid var(--border-color);
+}
+
+settings-panel .settings-card .provider-field:last-child {
+    border-bottom: none;
+}
+
+/* Rows reach a card through per-section wrapper divs (each renderer owns its own
+   container), so a row can be last in its wrapper while other wrappers still
+   follow. Only the last row in the card is the last row, so put the hairline
+   back on the ones the rule above stripped it from. */
+settings-panel .settings-card > div:not(:last-child) > .provider-field:last-child {
+    border-bottom: 0.0625rem solid var(--border-color);
+}
+
+/* Logs tab: file picker + live-tailing viewer. The tab and its form are flex
+   columns so the viewer fills the panel's full width and remaining height, with
+   its own internal scroll (the tab itself does not scroll). */
+settings-panel #tab-logs {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+settings-panel #logs-form {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    max-width: none;
+}
+
+settings-panel .logs-empty {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+settings-panel .logs-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    margin-bottom: 0.75rem;
+}
+
+settings-panel .logs-picker-label {
+    flex-shrink: 0;
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+}
+
+settings-panel .logs-picker {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0.4375rem 0.625rem;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.375rem;
+    font-family: var(--font-ui);
+    font-size: 0.8125rem;
+    cursor: pointer;
+}
+
+settings-panel .logs-picker:focus-visible {
+    outline: 0.125rem solid var(--accent-green);
+    outline-offset: 0.0625rem;
+}
+
+settings-panel .logs-filepath {
+    margin-bottom: 0.75rem;
+}
+
+settings-panel .logs-filepath:empty {
+    display: none;
+}
+
+settings-panel .logs-viewer {
+    margin: 0;
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 0.75rem 1rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    tab-size: 4;
+}
+
+/* Keyboard shortcuts tab: category headings + the key display on each row. */
+settings-panel .settings-section-heading {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin: 1.25rem 0 0.625rem;
+}
+
+settings-panel .settings-section-heading:first-child {
+    margin-top: 0;
+}
+
+/* A heading that introduces its section in a sentence: the heading supplies the
+   gap above, so the line under it only needs the shorter gap down to the card
+   it is describing. */
+settings-panel .settings-section-heading + .settings-description {
+    margin-bottom: 0.75rem;
+}
+
+/* The global settings section's heading is the first child of its own container
+   and would otherwise hit the reset above despite not being at the top of the
+   panel. Restore the standard top gap. */
+settings-panel #global-settings .settings-section-heading {
+    margin-top: 1.25rem;
+}
+
+/* Give the label its full width and let the key sit right after it (content
+   width), instead of the default 40%/60% split that strands the key far right. */
+settings-panel .shortcut-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 1rem;
+}
+
+/* .provider-control is a column flex; lay the keycaps out in a right-aligned row
+   instead, so each shrinks to its own text rather than stretching across the
+   column, and a command with an alias shows its keys side by side. */
+settings-panel .shortcut-control {
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.375rem;
+}
+
+settings-panel .shortcut-keycap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2rem;
+    min-height: 2rem;
+    padding: 0.25rem 0.625rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color, var(--bg-tertiary));
+    border-radius: 0.375rem;
+    box-shadow: 0 1px 0 var(--bg-tertiary);
+    color: var(--text-primary);
+
+    /* System UI stack: reliably carries the ⌘ ⇧ ⌥ ⌫ glyphs (unlike the mono font). */
+    font-family: -apple-system, system-ui, var(--font-ui), sans-serif;
+    font-size: 1.0625rem;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+}
+
+settings-panel .provider-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 0;
+}
+
+settings-panel .provider-info .provider-name {
+    color: var(--text-primary);
+    font-size: 0.9375rem;
+    font-weight: 500;
+    margin: 0;
+}
+
+settings-panel .provider-info .provider-description {
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+    line-height: 1.4;
+}
+
+settings-panel .provider-control {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    min-width: 0;
+}
+
+/* The custom naming-instruction control shares the auto-name card with the
+   on/off switch, sitting beneath it with a hairline divider so the switch and
+   the prompt it shapes read as one grouped setting rather than two rows. */
+settings-panel .auto-name-instruction {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    margin-top: 0.5rem;
+    padding-top: 0.75rem;
+    border-top: 0.0625rem solid var(--border-color);
+}
+
+settings-panel .auto-name-instruction[hidden] {
+    display: none;
+}
+
+settings-panel .provider-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    border: 0.0625rem solid var(--border-color);
+    border-radius: 0.375rem;
+    background: var(--bg-primary);
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+settings-panel .provider-input-wrapper:focus-within {
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 0.1875rem rgb(88 166 255 / 10%);
+}
+
+settings-panel .provider-input-wrapper input {
+    flex: 1 1 0;
+    min-width: 0;
+    width: 0;
+    padding: 0.625rem 0.875rem;
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    font-family: var(--font-mono);
+}
+
+settings-panel .provider-input-wrapper input:focus {
+    outline: none;
+}
+
+settings-panel .provider-buttons {
+    display: flex;
+    gap: 0.375rem;
+    padding-right: 0.5rem;
+    flex-shrink: 0;
+}
+
+/* GitHub host field for the Copilot (device-flow) provider — Enterprise Cloud
+   users point it at their <tenant>.ghe.com. Compact label above a full-width
+   input, sitting between the sign-in status line and the buttons. */
+settings-panel .copilot-host-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 0;
+}
+
+settings-panel .copilot-host-label {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+}
+
+settings-panel .copilot-host-field input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0.4rem 0.6rem;
+    border: 0.0625rem solid var(--border-color);
+    border-radius: 0.375rem;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 0.8125rem;
+    font-family: var(--font-mono);
+}
+
+settings-panel .copilot-host-field input:focus {
+    outline: none;
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 0.1875rem rgb(88 166 255 / 10%);
+}
+
+settings-panel .provider-active-badge {
+    position: absolute;
+    left: 0.875rem;
+    top: 50%;
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    pointer-events: none;
+}
+
+settings-panel .provider-active-badge svg {
+    fill: var(--accent-green, #3fb950);
+    flex-shrink: 0;
+}
+
+/* Settings-panel native selects. Defaults, Notifications, Connectivity, keyboard
+   shortcuts, and manifest-driven extension settings share the same control. */
+settings-panel .settings-select,
+settings-panel .chime-select,
+settings-panel .proxy-mode-select {
+    width: 100%;
+    padding: 0.625rem 2rem 0.625rem 0.875rem;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border: 0.0625rem solid var(--border-color);
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+    font-family: inherit;
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960' width='16' height='16'%3E%3Cpath fill='%238b949e' d='M480-360 280-560h400L480-360Z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.625rem center;
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+settings-panel .settings-select:hover,
+settings-panel .chime-select:hover,
+settings-panel .proxy-mode-select:hover {
+    border-color: var(--text-secondary);
+}
+
+settings-panel .settings-select:focus,
+settings-panel .chime-select:focus,
+settings-panel .proxy-mode-select:focus {
+    outline: none;
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 0.1875rem rgb(88 166 255 / 10%);
+}
+
+settings-panel .chime-select option {
+    color: var(--text-primary);
+    background: var(--bg-primary);
+    padding: 0.25rem 0.5rem;
+}
+
+settings-panel .settings-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    margin-top: 2rem;
+}
+
+settings-panel .settings-btn {
+    padding: 0.625rem 1.25rem;
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: background 150ms ease;
+    border: none;
+}
+
+settings-panel .settings-btn.small {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.75rem;
+    min-width: 4rem;
+}
+
+settings-panel .settings-btn.primary {
+    background: var(--accent-blue);
+    color: #fff;
+}
+
+settings-panel .settings-btn.primary:hover:not(:disabled) {
+    background: var(--accent-blue-light);
+}
+
+settings-panel .settings-btn.danger {
+    background: #dc3545;
+    color: #fff;
+}
+
+settings-panel .settings-btn.danger:hover:not(:disabled) {
+    background: #c82333;
+}
+
+settings-panel .settings-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Icon-only button (OAuth "re-check sign-in" refresh). Subtle secondary styling
+   so it sits quietly next to any primary/danger action in the same group. */
+settings-panel .settings-btn.icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.375rem;
+    min-width: 0;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    border: 0.0625rem solid var(--border-color);
+}
+
+settings-panel .settings-btn.icon:hover:not(:disabled) {
+    color: var(--text-primary);
+    border-color: var(--text-secondary);
+}
+
+settings-panel .settings-btn.icon svg {
+    display: block;
+    width: 1rem;
+    height: 1rem;
+    fill: currentcolor;
+}
+
+settings-panel .settings-btn.icon.spinning svg {
+    animation: u-spin 0.8s linear infinite;
+    transform-origin: center;
+}
+
+/* Toggle switch for keyless providers */
+settings-panel .provider-toggle-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0;
+}
+
+settings-panel .provider-toggle {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+settings-panel .toggle-switch {
+    --toggle-height: 1.125rem;
+    --toggle-padding: 0.125rem;
+    --toggle-knob: calc(var(--toggle-height) - var(--toggle-padding) * 2);
+    --toggle-width: calc(var(--toggle-knob) * 2 + var(--toggle-padding) * 2);
+    --toggle-travel: calc(var(--toggle-width) - var(--toggle-knob) - var(--toggle-padding) * 2);
+
+    position: relative;
+    display: inline-block;
+    width: var(--toggle-width);
+    height: var(--toggle-height);
+    background: var(--border-subtle);
+    border-radius: var(--toggle-height);
+    cursor: pointer;
+    padding-right: 2rem;
+    transition: background-color 150ms ease;
+    flex-shrink: 0;
+}
+
+settings-panel .toggle-switch::after {
+    content: '';
+    position: absolute;
+    top: var(--toggle-padding);
+    left: var(--toggle-padding);
+    width: var(--toggle-knob);
+    height: var(--toggle-knob);
+    background: white;
+    border-radius: 50%;
+    transition: transform 150ms ease;
+}
+
+settings-panel .provider-toggle:checked + .toggle-switch {
+    background: var(--accent-blue);
+}
+
+settings-panel .provider-toggle:checked + .toggle-switch::after {
+    transform: translateX(var(--toggle-travel));
+}
+
+settings-panel .provider-toggle:focus + .toggle-switch {
+    box-shadow: 0 0 0 0.1875rem rgb(88 166 255 / 20%);
+}
+
+settings-panel .toggle-description {
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+}
+
+/* Connectivity tab */
+
+settings-panel .connectivity-wan-error {
+    color: var(--accent-red, #f85149);
+}
+
+/* The proxy-mode picker reuses the shared settings-panel native-select styling
+   (.settings-select / .chime-select). The Manual URL field mirrors the
+   .mcp-input look: a bordered text control on the panel's primary surface. */
+settings-panel .proxy-url-input {
+    padding: 0.4375rem 0.625rem;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border: 0.0625rem solid var(--border-color);
+    border-radius: 0.375rem;
+    font-family: var(--font-ui);
+    font-size: 0.8125rem;
+}
+
+settings-panel .proxy-url-input:focus-visible {
+    outline: none;
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 0.1875rem rgb(88 166 255 / 10%);
+}
+
+/* Manual URL field: revealed only when Manual is selected (JS toggles [hidden]),
+   stacked under the picker with its inline status/error line. */
+settings-panel .proxy-url-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+}
+
+settings-panel .proxy-url-row[hidden] {
+    display: none;
+}
+
+settings-panel .proxy-status:empty {
+    display: none;
+}
+
+/* "Start on launch" toggle: a compact labelled checkbox sharing the control
+   column with the Start/Stop button. Muted so it reads as a secondary
+   preference rather than a primary action. */
+settings-panel .connectivity-launch-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+    cursor: pointer;
+    user-select: none;
+}
+
+settings-panel .connectivity-launch-checkbox {
+    cursor: pointer;
+}
+
+/* Connected-clients box: a "Connected clients" label on the left, and on the
+   right the list of other clients (dot + origin + muted device/time), or a muted
+   empty line. Top-align so the label sits level with the first list row. */
+settings-panel .connectivity-clients {
+    align-items: start;
+}
+
+settings-panel .connectivity-clients-empty {
+    color: var(--text-tertiary);
+    font-size: 0.8125rem;
+}
+
+settings-panel .connectivity-client-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+settings-panel .connectivity-client {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+}
+
+settings-panel .connectivity-client-dot {
+    flex-shrink: 0;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    align-self: center;
+    background: var(--text-tertiary);
+}
+
+settings-panel .connectivity-client-dot.origin-local {
+    background: var(--accent-green, #3fb950);
+}
+
+settings-panel .connectivity-client-dot.origin-lan {
+    background: var(--accent-blue, #58a6ff);
+}
+
+settings-panel .connectivity-client-dot.origin-remote {
+    background: var(--accent-orange, #d29922);
+}
+
+settings-panel .connectivity-client-origin {
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+settings-panel .connectivity-client-meta {
+    color: var(--text-tertiary);
+}
+
+settings-panel .connectivity-url-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem 1rem;
+    margin-top: 0.75rem;
+}
+
+/* MCP servers tab: server list, status dots, stderr log viewer, and the
+   add/edit form (repeatable arg/env rows with masked env values). */
+settings-panel .mcp-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.875rem;
+}
+
+settings-panel .mcp-import-soon {
+    color: var(--text-tertiary);
+    font-size: 0.75rem;
+}
+
+settings-panel .mcp-empty {
+    line-height: 1.5;
+}
+
+/* A condition every row is blind to (e.g. the MCP extension being off), stated
+   once above the list rather than repeated on rows that all look healthy. */
+settings-panel .mcp-notice {
+    margin-bottom: 0.875rem;
+    line-height: 1.5;
+    color: var(--warning, var(--text-secondary));
+}
+
+settings-panel .mcp-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+}
+
+settings-panel .mcp-row {
+    margin-bottom: 0;
+}
+
+settings-panel .mcp-row-disabled .provider-info {
+    opacity: 0.55;
+}
+
+settings-panel .mcp-name-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+settings-panel .mcp-status-dot {
+    flex-shrink: 0;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: var(--text-tertiary);
+}
+
+settings-panel .mcp-status-dot.status-running {
+    background: var(--accent-green, #3fb950);
+}
+
+settings-panel .mcp-status-dot.status-starting {
+    background: var(--accent-orange, #d29922);
+    animation: mcp-dot-pulse 1.2s ease-in-out infinite;
+}
+
+settings-panel .mcp-status-dot.status-failed {
+    background: var(--accent-red, #f85149);
+}
+
+settings-panel .mcp-status-dot.status-stopped {
+    background: var(--text-tertiary);
+}
+
+@keyframes mcp-dot-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+}
+
+settings-panel .mcp-impl,
+settings-panel .mcp-scope-chip {
+    color: var(--text-tertiary);
+    font-size: 0.75rem;
+    font-weight: normal;
+}
+
+settings-panel .mcp-scope-chip {
+    padding: 0.0625rem 0.375rem;
+    border: 0.0625rem solid var(--border-color);
+    border-radius: 0.625rem;
+}
+
+settings-panel .mcp-error-hint {
+    color: var(--accent-red, #f85149);
+}
+
+settings-panel .mcp-controls {
+    align-items: flex-end;
+}
+
+settings-panel .mcp-toggle-wrap {
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+}
+
+settings-panel .mcp-btn-row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.375rem;
+}
+
+settings-panel .mcp-log-view {
+    margin: 0.25rem 0 0;
+    max-height: 12rem;
+    overflow: auto;
+    padding: 0.625rem 0.75rem;
+    background: var(--bg-primary);
+    border: 0.0625rem solid var(--border-color);
+    border-radius: 0.375rem;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    tab-size: 4;
+}
+
+/* Add/edit form */
+settings-panel .mcp-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+settings-panel .mcp-form-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+}
+
+settings-panel .mcp-field-label {
+    color: var(--text-primary);
+    font-size: 0.8125rem;
+    font-weight: 500;
+}
+
+settings-panel .mcp-field-hint {
+    color: var(--text-tertiary);
+    font-size: 0.75rem;
+}
+
+settings-panel .mcp-input {
+    padding: 0.4375rem 0.625rem;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border: 0.0625rem solid var(--border-color);
+    border-radius: 0.375rem;
+    font-family: var(--font-ui);
+    font-size: 0.8125rem;
+}
+
+settings-panel .mcp-input:focus-visible {
+    outline: none;
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 0.1875rem rgb(88 166 255 / 10%);
+}
+
+settings-panel select.mcp-input {
+    cursor: pointer;
+}
+
+settings-panel .mcp-args-list,
+settings-panel .mcp-env-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+}
+
+settings-panel .mcp-repeat-row {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+}
+
+settings-panel .mcp-repeat-row .mcp-input {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+settings-panel .mcp-env-row .mcp-env-key {
+    flex: 0 1 12rem;
+}
+
+settings-panel .mcp-remove-row,
+settings-panel .mcp-reveal-btn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    padding: 0;
+    background: transparent;
+    border: 0.0625rem solid var(--border-color);
+    border-radius: 0.375rem;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    cursor: pointer;
+}
+
+settings-panel .mcp-remove-row:hover,
+settings-panel .mcp-reveal-btn:hover {
+    color: var(--text-primary);
+    border-color: var(--text-tertiary);
+}
+
+settings-panel .mcp-add-row {
+    align-self: flex-start;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+settings-panel .mcp-enabled-field {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+settings-panel .mcp-form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+}
+
+/* Notifications tab: the chime-customisation row — two popup menus (Pattern +
+   Sound) above an action row (Volume rotary + Preview/Reset). The rotary's
+   native range stays accessible/focusable; pointer dragging is handled by JS
+   against the visible dial. The control column stacks, so top-align it. */
+settings-panel .chime-controls-field {
+    align-items: start;
+}
+
+settings-panel .chime-controls {
+    flex-flow: column nowrap;
+    align-items: stretch;
+    gap: 0.85rem;
+}
+
+/* The two curated popup menus, side by side. */
+settings-panel .chime-menus {
+    display: flex;
+    gap: 0.75rem;
+}
+
+settings-panel .chime-select-field {
+    display: flex;
+    flex: 1 1 0;
+    min-width: 0;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+settings-panel .chime-select-label {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+}
+
+/* Volume rotary + Preview/Reset buttons share the action row. */
+settings-panel .chime-actions {
+    display: flex;
+    flex-flow: row wrap;
+    align-items: center;
+    gap: 1rem;
+}
+
+settings-panel .chime-rotary {
+    --value: 0;
+
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--text-primary);
+    font-size: 0.75rem;
+    user-select: none;
+}
+
+settings-panel .chime-rotary-knob {
+    --angle: 120deg;
+    --chime-rotary-colour: color-mix(in srgb, var(--text-primary) 65%, transparent);
+    --chime-rotary-ring-thickness: 0.16rem;
+
+    width: 3.4rem;
+    height: 3.4rem;
+    border-radius: 50%;
+    position: relative;
+    display: block;
+    cursor: var(--cursor-row-resize);
+
+    /* Claim the touch gesture so a vertical drag turns the dial instead of
+       scrolling the panel — without this the browser fires pointercancel the
+       moment a finger moves and the dial never responds to touch. */
+    touch-action: none;
+}
+
+settings-panel .chime-rotary-outer {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: conic-gradient(from 210deg, var(--chime-rotary-colour) 0 300deg, transparent 300deg 360deg);
+
+    /* Feather the inner edge across ~1px so the mask boundary gets antialiased.
+       Coincident stops (a hard cliff) rasterise without supersampling in Blink —
+       most visibly in the Windows WebView — leaving the inner circle jagged. */
+    mask: radial-gradient(farthest-side, transparent calc(100% - var(--chime-rotary-ring-thickness)), #000 calc(100% - var(--chime-rotary-ring-thickness) + 0.0625rem));
+}
+
+settings-panel .chime-rotary-inner {
+    position: absolute;
+    inset: 0.5rem;
+    border: var(--chime-rotary-ring-thickness) solid var(--chime-rotary-colour);
+    border-radius: 50%;
+}
+
+settings-panel .chime-rotary-tick {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 1.45rem;
+    height: var(--chime-rotary-ring-thickness);
+    border-radius: 999rem;
+    background: var(--chime-rotary-colour);
+    transform: translateY(-50%) rotate(var(--angle));
+    transform-origin: 0 50%;
+}
+
+settings-panel .chime-rotary-input {
+    position: absolute;
+    width: 0.0625rem;
+    height: 0.0625rem;
+    opacity: 0;
+    pointer-events: none;
+}
+
+settings-panel .chime-rotary:focus-within .chime-rotary-knob {
+    outline: none;
+}
+
+settings-panel .chime-rotary-label {
+    color: var(--text-secondary);
+    line-height: 1;
+}
+
+settings-panel .chime-preview-btn {
+    margin-left: 0.25rem;
+}
+
+/* Keep the Start/Stop button from crowding the QR/URL block above it. Only the
+   block/list that sits directly in the control column gets the gap; QR blocks
+   nested inside a multi-address list defer to the list's own spacing. */
+settings-panel .provider-control > .connectivity-url-block,
+settings-panel .provider-control > .connectivity-url-list {
+    margin-bottom: 0.5rem;
+}
+
+settings-panel .connectivity-url-block {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    margin-top: 0.75rem;
+}
+
+settings-panel .connectivity-url-list .connectivity-url-block {
+    margin-top: 0;
+}
+
+settings-panel .connectivity-url-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    max-width: 100%;
+    margin-bottom: 0.5rem;
+}
+
+settings-panel .connectivity-url {
+    display: block;
+    font-size: 0.875rem;
+    color: var(--accent-blue, #58a6ff);
+    word-break: break-all;
+    text-align: center;
+}
+
+settings-panel .connectivity-url-copy {
+    position: relative;
+    flex: 0 0 auto;
+    width: 1.5rem;
+    height: 1.5rem;
+    padding: 0.25rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.25rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 150ms ease, color 150ms ease;
+}
+
+settings-panel .connectivity-url-copy svg {
+    width: 0.875rem;
+    height: 0.875rem;
+}
+
+settings-panel .connectivity-url-copy:hover {
+    background: var(--bg-raised);
+    color: var(--text-primary);
+}
+
+settings-panel .connectivity-qr {
+    width: 8rem;
+    height: 8rem;
+    display: block;
+    border-radius: 0.25rem;
+    color: var(--text-primary);
+}
+
+settings-panel .connectivity-qr svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+settings-panel .toggle-label {
+    display: block;
+    margin-bottom: 0.5rem;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+/* Desktop / tablet (>36rem): the tabs no longer fit as a single horizontal row,
+   so lay the panel out as a left sidebar of tab buttons + a content pane. The
+   container becomes a grid: a full-height sidebar column on the left, and a
+   right column split into a slim top row (home for the close button) above the
+   scrolling content. Below 36rem the phones block reverts to the stacked
+   horizontal strip, so this whole layout is reactive to width with no JS. */
+@media (width > 36rem) {
+    settings-panel .settings-container {
+        --settings-sidebar-w: 13.5rem;
+
+        display: grid;
+        grid-template:
+            "sidebar content" minmax(0, 1fr)
+            / var(--settings-sidebar-w) minmax(0, 1fr);
+        padding-top: 0;
+    }
+
+    /* Left column: a vertical, independently-scrolling list of tab buttons. */
+    settings-panel .settings-tabs {
+        grid-area: sidebar;
+        flex-direction: column;
+        align-items: stretch;
+        padding: 1.5rem 0.6rem;
+        border-bottom: none;
+        border-right: 0.0625rem solid var(--border-divider);
+        overflow-y: auto;
+        min-height: 0;
+    }
+
+    /* The scroll region carried a horizontal overflow-fade for the row layout;
+       stacked vertically it just holds the column and lets the nav do the
+       scrolling, so drop the mask and its horizontal flex sizing. */
+    settings-panel .settings-tabs-scroll {
+        flex: 0 0 auto;
+        flex-direction: column;
+        gap: 0.125rem;
+        overflow: visible;
+        mask-image: none;
+    }
+
+    /* Full-width rows; the active tab is marked by its background + accent text
+       (the base .settings-tab.active colour), no side bar. Labels wrap rather
+       than get clipped. */
+    settings-panel .settings-tab {
+        top: 0;
+        width: 100%;
+        text-align: left;
+        white-space: normal;
+        padding: 0.5625rem 0.75rem;
+        border-bottom: none;
+        border-radius: 0.375rem;
+    }
+
+    settings-panel .settings-tab:hover {
+        background: var(--bg-tertiary);
+    }
+
+    settings-panel .settings-tab.active {
+        border-bottom-color: transparent;
+        background: var(--bg-tertiary);
+    }
+
+    /* The close button keeps its base absolute positioning, floating over the
+       top-right of the content pane (no grid cell of its own, so it never
+       reserves a row that would push the content down). */
+    settings-panel .settings-content {
+        grid-area: content;
+    }
+
+    /* Loading overlay covers only the content pane, leaving the sidebar and the
+       close button visible (and usable) during the first load. */
+    settings-panel .settings-loading {
+        inset: 0 0 0 var(--settings-sidebar-w);
+    }
+}
+
+/* Phones (≤36rem). This block lives AFTER every settings-panel base rule it
+   overrides: media queries add no specificity, so an equal-specificity base
+   rule that came later in the file would otherwise win and reinstate the
+   desktop padding. Keep these overrides last in the settings section.
+
+   The centred 90%-wide card wastes edge space and leaves the dense forms
+   cramped, so present the panel as a full-bleed sheet filling the viewport;
+   safe-area insets keep the close button clear of the notch and the Save-keys
+   action row clear of the home indicator; padding is trimmed so the content
+   isn't double-gutted (content gutter + field padding) on a narrow screen. */
+@media (width <= 36rem) {
+    settings-panel .settings-container {
+        inset: 0;
+        top: auto;
+        left: auto;
+        transform: none;
+        width: 100%;
+        max-width: none;
+        height: 100%;
+        max-height: 100%;
+        border-radius: 0;
+    }
+
+    settings-panel .settings-tabs {
+        /* Extra right padding clears the corner close button (absolute, top-right). */
+        padding: env(safe-area-inset-top) 3rem 0 0.75rem;
+    }
+
+    settings-panel .settings-tab {
+        padding: 0.75rem 0.9rem;
+    }
+
+    settings-panel .settings-content {
+        padding: 0.75rem 0.625rem;
+        padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));
+    }
+
+    settings-panel .provider-field {
+        grid-template-columns: 1fr;
+        gap: 0.75rem;
+        padding: 0.75rem 0.875rem;
+    }
+
+    settings-panel .settings-actions {
+        margin-top: 1.25rem;
+    }
+
+    /* The two chime menus sit side by side on desktop; on a phone-width control
+       column let them stack so neither select gets crushed. */
+    settings-panel .chime-menus {
+        flex-wrap: wrap;
+    }
+
+    settings-panel .chime-menus .chime-select-field {
+        flex-basis: 100%;
+    }
+}
+
+/* ===================================================================
+   Context Preview Modal
+   ================================================================== */
+

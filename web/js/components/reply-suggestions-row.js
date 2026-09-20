@@ -8,7 +8,7 @@
  * That position is the whole design. It is where a phone keyboard puts its word
  * suggestions, and the chips are cut from the composer's own material — same
  * background, same corner radius, same font as the box the words land in (see
- * the `reply-suggestions` rules in `components.css`, which share their surface
+ * the `reply-suggestions` rules in `components/composer.css`, which share their surface
  * declarations with `composer-box-wrapper` so the two cannot drift apart). A
  * chip then reads as the composer offering to fill itself in, rather than as
  * another control the column owns.

@@ -1,0 +1,1072 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+properties-panel {
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-secondary);
+    border-left: 1px solid var(--border-divider);
+    overflow: hidden;
+    position: relative;
+}
+
+/* Content area - flex column so expanded content can fill available space */
+properties-panel-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 1rem;
+}
+
+/* Empty state */
+properties-panel-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 0.75rem;
+    color: var(--text-tertiary);
+}
+
+.properties-panel-empty-icon {
+    opacity: 0.5;
+}
+
+.properties-panel-empty-icon svg {
+    width: 2.5rem;
+    height: 2.5rem;
+}
+
+.properties-panel-empty-text {
+    font-size: 0.875rem;
+    text-align: center;
+}
+
+/* Section styling - fills available space so content can flex */
+properties-panel-section {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    gap: 1rem;
+    overflow-y: auto;
+    padding-right: 0.5rem;
+}
+
+/* Mirror .message-with-icon: the row top-aligns (so a wrapping title doesn't
+   float the badge to centre), and the title text is given the same band as the
+   icon circle so its first line centres on the icon — and thus on the lozenge,
+   which is centred to the icon inside the badge. The badge itself keeps its
+   default align-items:center so the circular icon and the lozenge stay
+   vertically centred to each other. Header controls move to another line when
+   the column cannot hold them, rather than giving the column a wider intrinsic
+   size. */
+.properties-panel-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    min-width: 0;
+    max-width: 100%;
+    gap: 0.8rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border-divider);
+}
+
+/* The shared conversation-row badge normally keeps its full width. In a panel
+   header it may shrink, and its lozenge may wrap, so a long extension-provided
+   type name cannot widen a narrow column. */
+.properties-panel-header .message-icon-badge {
+    flex-shrink: 1;
+    min-width: 0;
+}
+
+.properties-panel-header .context-item-type-badge {
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+/* For a plugin-backed item the header badge doubles as a link into
+   Settings → Extensions, selecting the capability that owns the item. The hand
+   cursor and the hover lift are what tell the user it is clickable at all. Only
+   the panel adds .badge-catalog-link — the conversation list paints the same
+   badge and stays inert. */
+.properties-panel-header .message-icon-badge.badge-catalog-link {
+    cursor: pointer;
+    border-radius: 0.25rem;
+    transition: filter 150ms ease;
+}
+
+.properties-panel-header .message-icon-badge.badge-catalog-link:hover {
+    filter: brightness(1.15);
+}
+
+.properties-panel-header .message-icon-badge.badge-catalog-link:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--accent-blue) 25%, transparent);
+}
+
+/* Title/status text following the badge: centre within a band as tall as the
+   icon circle — the same trick .message-content-box > .action-result-status
+   uses in the conversation list — so the text sits on the lozenge label. */
+.properties-panel-title,
+.properties-panel-title-status {
+    min-width: 0;
+    min-height: var(--message-icon-row-height);
+    display: flex;
+    align-items: center;
+    overflow-wrap: anywhere;
+}
+
+/* Right-edge elements stay vertically centred regardless of the row's
+   flex-start alignment. */
+.properties-panel-timestamp,
+.properties-panel-token-chip,
+.properties-panel-header-icon-btn {
+    align-self: center;
+}
+
+.properties-panel-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+properties-panel-body {
+    font-size: 0.875rem;
+    line-height: 1.6;
+    color: var(--text-primary);
+}
+
+properties-panel-body pre {
+    margin: 0;
+}
+
+.properties-panel-text {
+    font-family: var(--font-sans);
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    background: var(--bg-primary);
+    padding: 0.75rem;
+    border-radius: 0.25rem;
+    font-size: 0.875rem;
+}
+
+/* Thinking body, plain variant: reasoning that carries no Markdown is shown as
+   it arrived, so it needs the mono, whitespace-significant treatment the sans
+   panel body doesn't give it — the same shape a plain user-message bubble gets.
+   Sized to match the panel's other verbatim text rather than its prose. */
+.properties-panel-thinking .plain {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+}
+
+/* Thinking body, Markdown variant: a reasoning summary leads most paragraphs
+   with a bold title. Against body text at --font-weight-normal (200 in the dark
+   theme) full bold is a 400-point jump every few lines and the block reads as
+   shouting, so the titles carry at medium — enough to scan as structure. */
+.properties-panel-thinking .markdown :is(strong, b) {
+    font-weight: var(--font-weight-medium);
+}
+
+/* Subsection styling */
+properties-panel-subsection {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.properties-panel-subtitle {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.0625rem;
+    margin: 0;
+}
+
+/* Live background-task output: the status line above the buffer, and the note
+   that the server dropped the buffer's middle. Both annotate the output rather
+   than being output, so they shed the boxed treatment .properties-panel-text
+   gives verbatim text and read as captions instead. */
+.live-task-output-status,
+.live-task-output-note {
+    background: none;
+    padding: 0;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+/* The Stop button shrinks to fit its label: .properties-panel-btn is
+   display:flex inside a column flex subsection, so it would otherwise stretch
+   the full width of the panel. */
+.live-task-output-stop {
+    align-self: flex-start;
+}
+
+/* User-message attachments: a vertical list of thumbnail + metadata rows. */
+.properties-panel-attachments {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.properties-panel-attachment {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    margin: 0;
+    min-width: 0;
+    padding: 0.5rem;
+    background: var(--bg-primary);
+    border-radius: 0.375rem;
+}
+
+/* <file-view> — the host element every file viewer renders into. It is a plain
+   block so a viewer controls its own layout; only the shared image case needs a
+   size cap here, since an image renders at its intrinsic size otherwise. */
+file-view {
+    display: block;
+    min-width: 0;
+}
+
+.file-view-content {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.file-view-image {
+    max-width: 100%;
+    height: auto;
+    align-self: flex-start;
+    border-radius: 0.25rem;
+    background: var(--bg-secondary);
+    cursor: zoom-in;
+}
+
+/* PDF viewer: one canvas per page, drawn lazily as it scrolls into view. The
+   aspect-ratio is set per page from its viewport so the box is reserved before
+   the page is drawn and the column does not jump as pages fill in. */
+.pdf-view-pages {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    min-width: 0;
+}
+
+.pdf-view-page {
+    width: 100%;
+    height: auto;
+    background: var(--bg-secondary);
+    border-radius: 0.25rem;
+}
+
+.pdf-view-pagecount {
+    font-size: 0.625rem;
+    font-family: var(--font-mono, 'Courier New', monospace);
+    opacity: 0.7;
+}
+
+.properties-panel-attachment-thumb {
+    flex: none;
+    width: 3rem;
+    height: 3rem;
+    object-fit: cover;
+    border-radius: 0.25rem;
+    background: var(--bg-secondary);
+    cursor: zoom-in;
+}
+
+.properties-panel-attachment-caption {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    min-width: 0;
+}
+
+.properties-panel-attachment-name {
+    font-size: 0.8125rem;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.properties-panel-attachment-meta {
+    font-size: 0.6875rem;
+    color: var(--text-secondary);
+}
+
+/* File path row: path fills the available width, copy + reveal buttons at the end */
+.properties-panel-filepath-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+    margin-right: 0.5rem;
+}
+
+/* Bare file path (no box) */
+.properties-panel-filepath {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    padding: 0;
+    word-break: break-all;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* Size / line-count annotation, on its own line below the path row */
+.properties-panel-filepath-info {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    color: var(--text-tertiary);
+    white-space: nowrap;
+    margin-top: 0.25rem;
+}
+
+/* Copy + reveal buttons pinned to the right-hand end of the path row */
+.properties-panel-filepath-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    flex-shrink: 0;
+}
+
+reveal-button {
+    display: inline-flex;
+}
+
+/* Inline icon buttons shared by the path-row copy button and <reveal-button>. */
+.properties-panel-filepath-btn,
+.reveal-button {
+    position: relative;
+    width: 1.5rem;
+    height: 1.5rem;
+    padding: 0.25rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.25rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 150ms ease, color 150ms ease;
+}
+
+.properties-panel-filepath-btn svg,
+.reveal-button svg {
+    width: 0.875rem;
+    height: 0.875rem;
+    display: block;
+}
+
+.properties-panel-filepath-btn:hover,
+.reveal-button:hover {
+    background: var(--bg-raised);
+    color: var(--text-primary);
+}
+
+.properties-panel-filepath-btn:disabled,
+.reveal-button:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+/* Code blocks */
+.properties-panel-code {
+    border-radius: 0.25rem;
+    padding: 0.1rem 0.5rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    line-height: 1.5;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    margin: 0;
+    min-width: 0;
+}
+
+/* Result display.
+ * pre-wrap (not pre) so an over-long single line wraps at the panel edge
+ * instead of forcing horizontal scroll, while short lines keep their column
+ * layout. overflow-wrap: anywhere lets unbroken tokens (long paths, hashes,
+ * base64) break rather than overflow. */
+.properties-panel-result {
+    background: var(--bg-primary);
+    padding: 0.1rem 0.5rem;
+    border-radius: 0.25rem;
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    overflow: auto;
+    min-width: 0;
+}
+
+.properties-panel-result.error {
+    color: var(--accent-red);
+    background: rgb(130 40 37 / 15%);
+    white-space: pre-wrap;
+    overflow: visible;
+}
+
+.properties-panel-result.cancelled,
+.properties-panel-result.empty {
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+/* Status in properties panel title */
+.properties-panel-title-status {
+    font-weight: 400;
+    color: var(--text-secondary);
+    font-size: 0.85em;
+    margin-left: 0.75em;
+}
+
+/* Pulse the icon box in the properties panel header while the tool action is running */
+properties-panel-section[data-processing="true"] .message-icon-box {
+    animation: icon-pulse 0.8s ease-in-out infinite;
+}
+
+/* Context item content fills available space and scrolls internally */
+properties-panel-section .context-item-expanded-content {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+/* Inside the panel, results take natural height — section scrolls as one unit */
+properties-panel-section .properties-panel-result {
+    max-height: none;
+    overflow-x: auto;
+}
+
+/* Timestamp label in header (shown before token chip) */
+.properties-panel-timestamp {
+    margin-left: auto;
+    font-size: 0.6875rem;
+    color: var(--text-tertiary);
+    white-space: nowrap;
+}
+
+/* Token count chip in header */
+.properties-panel-token-chip {
+    margin-left: auto;
+    margin-right: 0.1rem;
+    padding: 0.125rem 0.5rem;
+    border-radius: 0.75rem;
+    font-size: 0.6875rem;
+    font-family: var(--font-mono);
+    white-space: nowrap;
+    color: var(--text-secondary);
+    background: var(--bg-raised);
+}
+
+.properties-panel-token-chip.token-low {
+    background: color-mix(in srgb, var(--accent-green) 25%, var(--bg-raised));
+    color: var(--text-primary);
+}
+
+.properties-panel-token-chip.token-high {
+    background: color-mix(in srgb, var(--accent-yellow) 30%, var(--bg-raised));
+    color: var(--text-primary);
+}
+
+.properties-panel-token-chip.token-critical {
+    background: color-mix(in srgb, var(--accent-red) 30%, var(--bg-raised));
+    color: var(--text-primary);
+}
+
+/* With a timestamp before it, the chip sits next to the timestamp rather than pushing right */
+.properties-panel-timestamp ~ .properties-panel-token-chip {
+    margin-left: 0.4rem;
+}
+
+/* The discreet small icon-only button: sized to sit at the right edge of a
+   properties-panel header next to the token chip, and reused wherever an
+   affordance should be available without asking for attention — the transaction
+   view, per-row copy buttons, the conversation footer's log button. */
+.properties-panel-header-icon-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    padding: 0.25rem;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 0.25rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+.properties-panel-header-icon-btn:hover {
+    background: var(--bg-raised);
+    color: var(--text-primary);
+    border-color: var(--text-tertiary);
+}
+
+.properties-panel-header-icon-btn svg {
+    width: 0.875rem;
+    height: 0.875rem;
+}
+
+/* Controls */
+properties-panel-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border-divider);
+}
+
+properties-panel-controls:empty {
+    display: none;
+}
+
+.properties-panel-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.375rem;
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+    cursor: pointer;
+    transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+.properties-panel-btn:hover {
+    background: var(--bg-raised);
+    border-color: var(--text-tertiary);
+    color: var(--text-primary);
+}
+
+.properties-panel-btn svg {
+    width: 1rem;
+    height: 1rem;
+    flex-shrink: 0;
+}
+
+.properties-panel-btn.danger {
+    color: var(--accent-red);
+}
+
+.properties-panel-btn.danger:hover {
+    background: var(--accent-red);
+    border-color: var(--accent-red);
+    color: white;
+}
+
+/* Copyable text container */
+.properties-panel-copyable {
+    position: relative;
+}
+
+/* Zero-height sticky anchor so the copy button stays visible while scrolling */
+.properties-panel-copy-header {
+    position: sticky;
+    top: 0;
+    height: 0;
+    overflow: visible;
+    z-index: 1;
+}
+
+/* Inline copy button for text areas */
+.properties-panel-inline-copy {
+    position: absolute;
+    top: 0.375rem;
+    right: 0.375rem;
+    width: 1.5rem;
+    height: 1.5rem;
+    padding: 0.25rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.25rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 150ms ease, background 150ms ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.properties-panel-inline-copy svg {
+    width: 0.875rem;
+    height: 0.875rem;
+}
+
+.properties-panel-copyable:hover .properties-panel-inline-copy {
+    opacity: 1;
+}
+
+@media (hover: none) {
+    .properties-panel-inline-copy {
+        opacity: 1;
+    }
+}
+
+.properties-panel-inline-copy:hover {
+    background: var(--bg-raised);
+    color: var(--text-primary);
+}
+
+/* Keep the button visible while its "Copied" confirmation is showing, even if
+   the pointer has moved away from the (otherwise hover-revealed) button. */
+.properties-panel-inline-copy.copied {
+    opacity: 1;
+}
+
+/* Transient "Copied" confirmation anchored to the copy button. Absolutely
+   positioned so it never disrupts the surrounding layout. These buttons all sit
+   at the top-right corner of their container, so the bubble opens *downward and
+   to the left* (its right edge pinned to the button's right edge) — i.e. into
+   the content, the only directions with room. Opening upward or centred spills
+   past the scroll container's top/right clip edges and gets cut off. Shared by
+   the inline text-area copy button and the file-path-row copy button. */
+.properties-panel-inline-copy.copied::after,
+.properties-panel-filepath-btn.copied::after,
+.message-copy-button.copied::after,
+.code-copy-button.copied::after,
+settings-panel .connectivity-url-copy.copied::after {
+    content: "Copied";
+    position: absolute;
+    top: calc(100% + 0.25rem);
+    right: 0;
+    padding: 0.1875rem 0.4375rem;
+    background: var(--tooltip-bg);
+    border: 1px solid var(--border-floating);
+    border-radius: 0.25rem;
+    color: var(--tooltip-text);
+    font-size: 0.6875rem;
+    font-weight: 500;
+    line-height: 1.2;
+    white-space: nowrap;
+    pointer-events: none;
+    box-shadow: var(--tooltip-shadow);
+    z-index: 10;
+
+    /* Pop in from the button's corner: fade up + scale, settle, then ease away
+       so the confirmation reads as an active flash rather than a static label.
+       transform-origin matches the anchor (top-right) so the scale grows out of
+       the button. Total ≈ the 2s the .copied class lives (see copy-button.js). */
+    transform-origin: top right;
+    animation: copied-pop 2s ease forwards;
+}
+
+@keyframes copied-pop {
+    0% {
+        opacity: 0;
+        transform: translateY(-0.25rem) scale(0.85);
+    }
+
+    12% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+
+    85% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+
+    100% {
+        opacity: 0;
+        transform: translateY(-0.125rem) scale(0.97);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .properties-panel-inline-copy.copied::after,
+    .properties-panel-filepath-btn.copied::after,
+        .message-copy-button.copied::after,
+    .code-copy-button.copied::after,
+    settings-panel .connectivity-url-copy.copied::after {
+        animation: none;
+        opacity: 1;
+        transform: none;
+    }
+}
+
+/* Transaction subsection demarcation in properties panel */
+properties-panel-section properties-panel-subsection + properties-panel-subsection {
+    border-top: 1px solid var(--border-divider);
+    padding-top: 1rem;
+}
+
+/* Transaction detail — one scroller for the whole panel (the enclosing
+   properties-panel-section), so each section is as tall as its content instead
+   of being penned into a fixed share of the panel's height. Output is usually
+   short and the input is a list of collapsed rows, so both fit; opening a long
+   message simply scrolls. */
+properties-panel-tx-sections {
+    display: flex;
+    flex-direction: column;
+}
+
+properties-panel-tx-sections > properties-panel-subsection {
+    padding: 0.75rem 0;
+}
+
+properties-panel-tx-sections > properties-panel-subsection + properties-panel-subsection {
+    border-top: 1px solid var(--border-divider);
+}
+
+/* Section header: title, then the size line and copy-all button at the right */
+.tx-section-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.tx-section-head .properties-panel-subtitle {
+    margin: 0;
+}
+
+.tx-section-summary {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    color: var(--text-tertiary);
+    white-space: nowrap;
+}
+
+.tx-section-head .properties-panel-header-icon-btn {
+    flex-shrink: 0;
+}
+
+/* Input rows — one per message, collapsed until asked for */
+.tx-rows {
+    display: flex;
+    flex-direction: column;
+}
+
+.tx-row {
+    border-bottom: 1px solid var(--border-divider);
+}
+
+.tx-row-summary {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.3rem 0.25rem;
+    cursor: pointer;
+    list-style: none;
+    font-size: 0.75rem;
+}
+
+.tx-row-summary::-webkit-details-marker {
+    display: none;
+}
+
+.tx-row-summary:hover {
+    background: var(--bg-raised);
+}
+
+.tx-row-kind {
+    flex-shrink: 0;
+    min-width: 6.5rem;
+    font-family: var(--font-mono);
+    color: var(--text-tertiary);
+}
+
+.tx-row-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-secondary);
+}
+
+.tx-row-size {
+    flex-shrink: 0;
+    font-family: var(--font-mono);
+    color: var(--text-tertiary);
+}
+
+/* The per-row copy button appears on hover/focus only — a column of buttons
+   down every row would drown out the sizes, which are what the list is for. */
+.tx-row-copy {
+    flex-shrink: 0;
+    opacity: 0;
+}
+
+.tx-row-summary:hover .tx-row-copy,
+.tx-row-copy:focus-visible,
+.tx-row-copy.copied {
+    opacity: 1;
+}
+
+@media (hover: none) {
+    .tx-row-copy {
+        opacity: 1;
+    }
+}
+
+.tx-row-body,
+.tx-out-block {
+    padding: 0.25rem 0 0.75rem;
+}
+
+.tx-field {
+    margin-top: 0.5rem;
+}
+
+.tx-field-key,
+.tx-out-kind {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    color: var(--text-tertiary);
+    margin-bottom: 0.25rem;
+}
+
+/* Text rendered as text: a system prompt or a file body keeps its line breaks
+   instead of arriving as one enormous JSON-escaped line. */
+.tx-text {
+    max-height: 30rem;
+    overflow: auto;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+}
+
+/* JSON inside a row sits tight against its key label rather than carrying the
+   standalone block's vertical margin. */
+.tx-row-body .properties-panel-json-display,
+.tx-out-block .properties-panel-json-display {
+    margin: 0;
+}
+
+/* The tool list: one line per tool the model was offered, grouped by where it
+   came from, so a missing tool is visibly missing rather than buried in a
+   schema dump. */
+.tx-tools {
+    display: flex;
+    flex-direction: column;
+}
+
+/* Header on the tool list: when this list was sent, and whether the thread's
+   live list has moved since. A tool that arrived after the turn is absent here
+   for a reason, and the header is what says so. */
+.tx-tools-header {
+    padding: 0.25rem 0.25rem 0.35rem;
+    font-size: 0.6875rem;
+    color: var(--text-tertiary);
+}
+
+.tx-tools-drift {
+    margin-top: 0.2rem;
+    color: var(--warning, var(--text-tertiary));
+}
+
+.tx-tool-group {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    padding: 0.5rem 0.25rem 0.25rem;
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    color: var(--text-tertiary);
+}
+
+.tx-tool-group-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tx-tool-group-count {
+    flex-shrink: 0;
+}
+
+.tx-tool-summary {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.2rem 0.25rem 0.2rem 0.75rem;
+    cursor: pointer;
+    list-style: none;
+    font-size: 0.75rem;
+}
+
+.tx-tool-summary::-webkit-details-marker {
+    display: none;
+}
+
+.tx-tool-summary:hover {
+    background: var(--bg-raised);
+}
+
+.tx-tool-name {
+    flex-shrink: 0;
+    max-width: 14rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    color: var(--text-secondary);
+}
+
+.tx-tool-category {
+    flex-shrink: 0;
+    font-size: 0.625rem;
+    color: var(--text-tertiary);
+}
+
+.tx-tool-category-write {
+    color: var(--warning, var(--text-tertiary));
+}
+
+.tx-tool-desc {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-tertiary);
+}
+
+/* Transaction metadata bar in properties panel */
+properties-panel-tx-metadata {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    padding: 0.5rem 0;
+    margin-bottom: 1rem;
+    font-size: 0.6875rem;
+}
+
+properties-panel-tx-metadata .meta-item {
+    color: var(--text-secondary);
+}
+
+/* JSON display in properties panel */
+.properties-panel-json-display {
+    margin: 1rem 0;
+    padding: 0;
+    background: transparent;
+    border: none;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    line-height: 1.6;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+}
+
+.properties-panel-json-display .json-key {
+    color: var(--accent-purple);
+}
+
+.properties-panel-json-display .json-string {
+    color: var(--accent-green);
+}
+
+.properties-panel-json-display .json-number {
+    color: var(--accent-yellow);
+}
+
+.properties-panel-json-display .json-boolean {
+    color: var(--accent-blue);
+}
+
+.properties-panel-json-display .json-null,
+.properties-panel-json-display .json-undefined {
+    color: var(--text-tertiary);
+    font-style: italic;
+}
+
+.properties-panel-json-display .json-bracket,
+.properties-panel-json-display .json-comma {
+    color: var(--text-tertiary);
+}
+
+/* Selection styles - apply to outer custom element, not article */
+.conversation-item.selected {
+    background: var(--item-selected-bg);
+    border-radius: 0.4rem 0.5rem;
+
+    /* The hand below is a click affordance, and the gesture most likely to
+       start over the item that is already selected is a drag across its text.
+       So a selected item hands the cursor back to the browser: `auto` draws
+       the I-beam only where a selection can actually begin and the arrow
+       everywhere else, which is a truer answer than a hand over padding. Any
+       control inside the item sets its own cursor, so buttons keep the hand. */
+    cursor: auto;
+}
+
+
+/* Suppress browser focus boxes */
+.conversation-item:focus {
+    outline: none;
+}
+
+/* Make items selectable */
+.conversation-item {
+    cursor: pointer;
+    padding: 0.4rem 0.75rem;
+}
+
+/* ===================================================================
+   Context Item Type Badge (used by renderResultStatusMessage lozenge)
+   ================================================================== */
+
+.context-item-type-badge {
+    display: inline-block;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    line-height: 1;
+    text-transform: uppercase;
+    letter-spacing: 0.0625rem;
+    color: white;
+    background: var(--preset-badge-bg, var(--preset-bg, var(--bg-primary)));
+    padding: 0.25rem 0.5rem 0.125rem;
+    border-radius: 0.25rem;
+}
+
+/* Approval-provenance badge in a tool-action's properties-panel header. Reuses
+   the type-badge lozenge shape and sits beside it, but carries a leading icon
+   and a source-specific tint so a user / rule / strategy approval reads at a glance.
+   Rendered only when the item was stamped with an approvalSource. */
+.properties-panel-approval-badge {
+    display: inline-flex;
+    align-items: center;
+    align-self: center;
+    gap: 0.25rem;
+    color: var(--text-secondary);
+    background: var(--bg-raised);
+}
+
+.properties-panel-approval-badge.approval-source-strategy {
+    color: var(--accent-green);
+}
+
+.properties-panel-approval-badge .icon-auto-awesome,
+.properties-panel-approval-badge .icon-check,
+.properties-panel-approval-badge .icon-checklist {
+    width: 0.75rem;
+    height: 0.75rem;
+}
+
+/* Model Selector Component */

@@ -38,7 +38,7 @@ export async function runTests(_ctx) {
 
   /**
    * The class the sanitizer boxes authored HTML in. Pinned here rather than
-   * imported because it is a contract with styles.css, which is what puts the
+   * imported because it is a contract with patterns/markdown.css, which is what puts the
    * `contain` on the box: if the name moves, the containment silently stops.
    */
   const HTML_SCOPE_CLASS = 'markdown-html-scope';

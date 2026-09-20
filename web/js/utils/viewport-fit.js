@@ -21,7 +21,7 @@
  * styles relax back to the CSS `inset: 0`.
  *
  * Touch-only: gated on the same `(hover: none) and (pointer: coarse)` query as
- * the touch-composer rules in components.css, so desktop pinch-zoom — which also
+ * the touch-composer rules in components/composer.css, so desktop pinch-zoom — which
  * moves the visual viewport — never reshapes the app.
  *
  * `top`/`height` are used rather than a `transform`: a transform on the

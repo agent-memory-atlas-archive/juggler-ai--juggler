@@ -1,0 +1,387 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+.pulse {
+    animation: pulse 2s infinite;
+}
+
+/* Responsive */
+@media (width <= 64rem) {
+    .app-header {
+        padding: 0.5rem 0.75rem;
+    }
+
+    .logo::before {
+        height: 1.5rem;
+    }
+}
+
+@media (width <= 48rem) {
+    body {
+        font-size: 0.8125rem;
+    }
+}
+
+/* Narrow viewports (phones): header-actions is a fixed-width, non-shrinking
+   cluster, so on a narrow screen its rightmost buttons (network, settings) run
+   off the right edge. Let the header wrap and drop the WHOLE action cluster
+   onto its own full-width second row. Row 1 keeps the hamburger, logo, and
+   project path; row 2 is the buttons. Pill labels collapse to icon-only.
+
+   The regular icon buttons are kept on ONE non-wrapping row that spans the full
+   header width: they're spread edge-to-edge (space-between) so no leftover space
+   pools in front of the first button, and each may shrink so the row always fits
+   rather than spilling a button off the right. The undo/redo circles are pinned
+   (never shrink) so they can't distort into ovals. The update pill — a non-icon
+   control that can't collapse to a glyph and whose label must stay readable
+   ("Downloading update… 42%") — is the one exception: it sits outside the icon
+   group and takes a full row of its own above them, present only when relevant. */
+@media (width <= 36rem) {
+    /* Tighten the whole header on a phone: the desktop's generous 12px/20px
+       padding wastes scarce width and height once the actions drop to their own
+       row. */
+    .app-header {
+        flex-wrap: wrap;
+        gap: 0 0.5rem;
+        padding: 0.5rem 0.75rem;
+    }
+
+    /* Drop header-actions' own inset so the button row reaches the header's
+       edges — with the reduced .app-header padding above, its only remaining
+       margin from the screen edge. */
+    header-actions {
+        flex-basis: 100%;
+        min-width: 0;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        padding: 0;
+    }
+
+    /* The icon buttons become a single non-wrapping row that fills the header
+       width; they spread edge-to-edge and shrink to fit so nothing wraps or
+       spills. */
+    header-actions .header-actions-controls {
+        display: flex;
+        flex: 1 1 100%;
+        flex-wrap: nowrap;
+        align-items: center;
+        justify-content: space-between;
+        min-width: 0;
+    }
+
+    header-actions .header-actions-controls > button {
+        flex: 0 1 auto;
+        min-width: 0;
+    }
+
+    /* Keep the visible undo/redo circles perfectly round — they must never be
+       squeezed into ovals; the transparent icon buttons absorb the shrink. */
+    header-actions .header-actions-controls > .u-btn-circular-control {
+        flex-shrink: 0;
+    }
+
+    /* The update pill gets its own full-width row, above the icon buttons. */
+    header-actions > update-button:not([hidden]) {
+        flex: 0 0 100%;
+        justify-content: flex-end;
+    }
+
+    header-actions .u-btn-label {
+        display: none;
+    }
+
+    /* Reveal the hamburger; it sits before the logo at the far left. Gated on
+       viewport width ONLY — it appears exactly when the sidebar collapses to a
+       drawer, in any context (browser tab or native window). Matches the base
+       hide rule's specificity (.app-header prefix) and comes later, so it wins
+       when the query is active. */
+    .app-header .sidebar-toggle-button {
+        display: flex;
+        order: -1;
+    }
+
+    /* The conversation sidebar becomes an off-canvas drawer, sliding in over
+       the conversation columns rather than permanently stealing ~15rem of the
+       width. .app-main is position:relative, so this anchors to it.
+       The `.app-main` prefix is also load-bearing: it raises specificity above
+       the base `conversation-bar { position: relative; width: 15rem }` in
+       components.css, which loads AFTER this file — without it the base rule
+       wins (media queries add no specificity) and the bar stays in flow,
+       reserving its 15rem column as an empty gap. */
+    .app-main conversation-bar {
+        position: absolute;
+        inset: 0 auto 0 0;
+        z-index: var(--z-dropdown);
+        width: min(15rem, 80vw);
+        transform: translateX(-100%);
+        transition: transform 200ms ease;
+
+        /* Horizontal drags are the swipe-to-dismiss gesture
+           (ui-event-manager.js `_setupSidebarSwipe`), vertical ones stay the
+           browser's so the tab list still scrolls. `pan-y` claims exactly that
+           split — `none` would take the scroll away too. It only states the
+           intent: holding a swipe against a browser that reads the drag's
+           vertical drift as a scroll takes cancelling the touchmove, which the
+           swipe does once it owns the gesture. */
+        touch-action: pan-y;
+    }
+
+    /* Shadow only while open: when closed the drawer's right edge sits at the
+       viewport's left edge (translateX(-100%)), so a permanent box-shadow would
+       blur its 1.5rem out over the page. Painting it only in the open state
+       keeps the closed drawer fully off-canvas. */
+    body.sidebar-open .app-main conversation-bar {
+        transform: translateX(0);
+        box-shadow: 0 0 1.5rem rgb(0 0 0 / 35%);
+    }
+
+    /* The resize grip stays active in drawer mode: it sits on the drawer's
+       right edge, so dragging it widens the open drawer to fit long tab names
+       (setupColumnResize sets an inline rem width that overrides the default
+       above; the same localStorage width is shared with fixed mode). The grip
+       rides off-screen with the drawer while it's closed. */
+
+    /* Scrim: covers the columns beneath the open drawer; tap to dismiss. */
+    .sidebar-backdrop {
+        display: block;
+        position: absolute;
+        inset: 0;
+        z-index: var(--z-controls);
+        background: var(--modal-scrim);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 200ms ease;
+    }
+
+    /* Above everything the drawer is covering, and below the drawer itself. At
+       --z-controls the scrim ties with <pinboard-shell>, which is a later
+       sibling and therefore paints over it — so with the board open the drawer
+       hung over an undimmed workspace, and every tap "outside" the drawer landed
+       on the board instead of on the one element that dismisses it. On a phone
+       the board is the full width of .app-main, so there was nothing left to
+       tap. Raised only while the drawer is open: the rest of the time the scrim
+       is inert and must not sit over the board at all. */
+    body.sidebar-open .sidebar-backdrop {
+        z-index: calc(var(--z-dropdown) - 1);
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    /* Main content: a 30rem column is wider than a phone, forcing horizontal
+       scroll mid-column. Make each column fill the viewport and snap, so the
+       columns page cleanly instead of half-showing. */
+    column-container {
+        scroll-snap-type: x mandatory;
+    }
+
+    column-container conversation-area,
+    column-container conversation-area[style*="width"],
+    column-container properties-panel,
+    column-container properties-panel[style*="width"]:not(:last-child) {
+        flex: 0 0 100%;
+        min-width: 0;
+        scroll-snap-align: start;
+    }
+}
+
+/* ==========================================================================
+   Popup sheets (phones) — presentation owned by web/js/utils/popup-surface.js.
+   On a narrow viewport presentPopup() turns a button-anchored dropdown into a
+   bottom sheet: it adds `.popup-sheet` to the surface and, for modal popups, a
+   sibling `.popup-sheet-scrim`. These rules own every sheet visual; the JS owns
+   none. Each surface is listed as a combined `.popup-sheet.<surface>` selector
+   so the sheet's full-width geometry out-specifies that surface's pinned
+   desktop width (model 36rem, strategy 22rem, permissions 34rem) without
+   `!important`. Same 36rem phone breakpoint as the rest of the app.
+   ========================================================================== */
+@media (width <= 36rem) {
+    .popup-sheet,
+    .popup-sheet.dropdown-menu,
+    .popup-sheet.strategy-dropdown,
+    .popup-sheet.permissions-popup,
+    .popup-sheet.pp-panel,
+    .popup-sheet.model-picker {
+        position: fixed;
+        inset: auto 0 0;
+        top: auto;
+        width: 100%;
+        min-width: 0;
+        max-width: 100%;
+        max-height: 85vh;
+        margin: 0;
+        border-radius: 1rem 1rem 0 0;
+        border-bottom: none;
+        box-shadow: 0 -0.5rem 1.5rem rgb(0 0 0 / 45%);
+        overflow-y: auto;
+        z-index: calc(var(--z-modal) + 1);
+        animation: popup-sheet-up 200ms ease;
+    }
+
+    /* While a drag-to-dismiss gesture is in flight, presentPopup pins the
+       transform inline (transition: none) so the sheet tracks the finger; on
+       release it restores this transition for the snap-back / dismiss glide. */
+    .popup-sheet {
+        /* How far a full-bleed child (the grabber) must pull out to reach the
+           sheet's edge: exactly the inline padding the surface pays. Sheets that
+           lay themselves out internally pay none, so they stay at zero —
+           declared last for the picker, a .dropdown-menu that sets `padding: 0`. */
+        --sheet-bleed: 0rem;
+
+        transition: transform 200ms ease;
+    }
+
+    .popup-sheet.dropdown-menu {
+        --sheet-bleed: var(--popup-padding-inline);
+    }
+
+    .popup-sheet.model-picker {
+        --sheet-bleed: 0rem;
+    }
+
+    /* Drag grabber — a real element (injected by presentPopup) so it can own
+       the grab-and-drag-down gesture. `touch-action: none` keeps that drag from
+       being claimed by the sheet's own scroll; `position: sticky` keeps the bar
+       pinned at the visual top while the content scrolls beneath it. */
+    .popup-sheet-grabber {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        flex: 0 0 auto;
+
+        /* Span the full width whatever the sheet's own layout is: all columns
+           when the sheet is a grid (e.g. the slash-commands menu's `auto 1fr`),
+           stretched when it's a flex column (model selector), full-width when
+           it's a plain block — so the centred line is always centred on the
+           whole popup, never on its first column.
+
+           `width: auto` plus a negative --sheet-bleed rather than `width: 100%`,
+           because 100% is the CONTENT box: on a surface that pads itself the bar
+           would stop short of the sheet's edges, and this is a touch target —
+           the drag would die in the padding. The bleed is whatever inline
+           padding that surface took, so the bar reaches the sheet's own edge. */
+        grid-column: 1 / -1;
+        align-self: stretch;
+        width: auto;
+        margin-inline: calc(var(--sheet-bleed, 0rem) * -1);
+        height: 1.75rem;
+        background: var(--bg-secondary);
+        border-radius: 1rem 1rem 0 0;
+        cursor: grab;
+        touch-action: none;
+    }
+
+    .popup-sheet-grabber:active {
+        cursor: grabbing;
+    }
+
+    .popup-sheet-grabber::before {
+        content: "";
+        position: absolute;
+        top: 0.5rem;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 2.25rem;
+        height: 0.25rem;
+        border-radius: 0.125rem;
+        background: var(--text-tertiary);
+        opacity: 0.6;
+    }
+
+    /* Model picker: one column, in DOM order — the chosen model and its dials,
+       then Recent, then the list, then the actions. A flex column rather than
+       the desktop grid (whose second column and extra rows have nowhere to go
+       here), so the sections and the injected grabber stack in the order they
+       appear. Recent lands above the list, which is the order a phone wants
+       them in anyway: the shortlist first, the whole catalogue after. */
+    .popup-sheet.model-picker.show {
+        display: flex;
+        flex-direction: column;
+    }
+
+    /* The SHEET is the single scroll container: every section takes its natural
+       height and none scrolls on its own. A column keeping its own
+       `flex: 1 1 auto` scroller gets no height here — the detail column alone
+       can meet the 85vh cap, squeezing the list to nothing.
+
+       EVERY nested scroller must be listed. A flex item left on the desktop's
+       `min-height: 0` is free to shrink below its content, and with the overflow
+       here turned visible that content does not clip — it paints straight over
+       whatever follows. Leaving the list column out is what put the actions
+       under the model rows.
+
+       Qualified with `.model-picker` for specificity, and it is load-bearing:
+       the picker's own rule is `.model-picker .model-picker-rows`, which has to
+       carry that prefix to survive the `.dropdown-menu menu` chrome reset. At
+       equal specificity the cascade would settle it on file order — and
+       components.css loads after this file — so an unqualified selector here
+       loses, and the list silently gives up its height on a phone. */
+    .popup-sheet.model-picker .model-picker-detail,
+    .popup-sheet.model-picker .model-picker-list,
+    .popup-sheet.model-picker .model-picker-rows {
+        min-height: auto;
+        overflow: visible;
+    }
+
+    /* Nothing scrolls on its own here, so the stable scrollbar gutter the desktop
+       list reserves is width taken from the rows for a bar that cannot appear —
+       and the padding that held their fill off that bar has nothing to hold it
+       off. A phone has no width to spare for either. */
+    .popup-sheet.model-picker .model-picker-rows {
+        scrollbar-gutter: auto;
+        padding-inline: 0;
+    }
+
+    /* Stacked, the sections are bands across the sheet rather than columns beside
+       each other, so every rule between them runs edge to edge — the list's below
+       and, out here, Recent's and the actions'. On the desktop those two are
+       inset to the left column's text line, which stacked would leave three
+       section rules of two different widths. The inset moves inside instead, so
+       the content still starts on the same line. */
+    .popup-sheet.model-picker .model-picker-recent,
+    .popup-sheet.model-picker .model-picker-footer {
+        margin-inline: 0;
+        padding-inline: var(--picker-gutter);
+    }
+
+    .popup-sheet .model-picker-list {
+        border-left: none;
+        border-top: 0.0625rem solid var(--border-divider);
+    }
+
+    /* Dimmed backdrop behind modal sheets; tap to dismiss (wired in JS). */
+    .popup-sheet-scrim {
+        position: fixed;
+        inset: 0;
+        background: var(--modal-scrim);
+        z-index: var(--z-modal);
+        animation: popup-sheet-fade 200ms ease;
+    }
+}
+
+@keyframes popup-sheet-up {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+}
+
+@keyframes popup-sheet-fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* Message Styles */
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(0.625rem);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* User messages: Modern flat rounded bubble (subtle grey), right-aligned */

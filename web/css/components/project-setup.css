@@ -1,0 +1,542 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+
+.workspace-banner-lead {
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 600;
+}
+
+.workspace-banner-label {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+/* The root is the detail, and the part most likely to be long: it gives up its
+   width first and ellipsises, while the label it qualifies stays whole. */
+.workspace-banner-root {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: 0.8;
+}
+
+/* The Undo the banner carries for as long as a workspace made a moment ago can
+   still be given back. A link rather than a button: it sits at the end of a line
+   of prose and must not read as the conversation's main action. */
+.workspace-banner-rebind,
+.workspace-banner-elsewhere,
+.workspace-banner-undo {
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    color: var(--text-secondary);
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.workspace-banner-rebind:hover,
+.workspace-banner-elsewhere:hover,
+.workspace-banner-undo:hover {
+    color: var(--text-primary);
+}
+
+/* The tree this conversation works in is no longer there to work in. Marked
+   rather than shouted: what is wrong is already in the sentence it carries, and
+   the way out beside it is the point. */
+.conversation-workspace-banner.workspace-banner-stranded {
+    color: var(--accent-yellow);
+}
+
+/* The one question a new conversation is asked, in the welcome slot at the foot
+   of its transcript: the space the starting hint has to itself when there is
+   nothing to ask, which is where somebody about to type is already looking. It
+   centres in that space (auto margins against the stretched inner column, see
+   .awaiting-setup above) and carries the hint's own lines beneath it. */
+conversation-setup-panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.5rem;
+
+    /* Centred in whatever space is left below the seeded items, and padded so a
+       band with none to spare still leaves it clear of them and of the
+       composer. */
+    margin: auto 0;
+    padding: 1.5rem 0;
+}
+
+/* The question and its answers. It carries no frame of its own: the answers
+   below are blocks in the composer's material, and a box drawn round them would
+   only be a second box inside the one the composer already shares this
+   background with. Sized to the text rather than the column: a line of prose
+   across a wide window is harder to read than the same line at a sane measure.
+
+   The proportional face stops here rather than at the panel: this is prose and
+   controls, while the hint below it is the same four lines the empty-background
+   overlay draws in the monospace .app-main hands down, and the two are read as
+   one thing. What inside the card is a path or a typed name asks for the mono
+   face by name. */
+.setup-card {
+    width: 100%;
+    max-width: 30rem;
+    font-family: var(--font-ui);
+    font-size: var(--font-size-md);
+}
+
+.setup-section-title {
+    margin: 0 0.25rem 0.75rem;
+    font-size: var(--font-size-md);
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.setup-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+}
+
+/* A row and the body it expands into, as one object. Outside the card there is
+   no block to be part of, so the wrapper stands aside and the rows go on being
+   the group's own children. */
+.setup-choice {
+    display: contents;
+}
+
+.setup-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0 0.5rem;
+    padding: 0.25rem 0.375rem;
+    border: 0;
+    border-radius: 0.25rem;
+    background: none;
+    font: inherit;
+    color: var(--text-primary);
+    text-align: left;
+    cursor: pointer;
+}
+
+/* Outside the card — the move dialog — a row stays one line: its reader has
+   answered this question before and is scanning a list, not being introduced to
+   it. The head hands its parts straight to the row's own flex line. */
+.setup-row-head {
+    display: contents;
+}
+
+.setup-row:hover {
+    background: rgb(255 255 255 / 6%);
+}
+
+.setup-row[aria-checked="true"] {
+    background: rgb(255 255 255 / 10%);
+}
+
+.setup-row-meaning,
+.setup-row-detail {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-secondary);
+}
+
+/* In the card, a choice is a block of the composer's own material: the same
+   fill and the same corner as the box directly below it, so the panel reads as
+   part of the thing about to be typed into rather than as a form printed over
+   it. The block is the wrapper, not the row, because the form the chosen row
+   opens belongs inside the block it was opened from. */
+.setup-card .setup-choice {
+    display: block;
+    border-radius: 1.25rem;
+    background: var(--bubble-user-bg);
+    transition: background 150ms ease, box-shadow 150ms ease;
+}
+
+.setup-card .setup-choice:has(.setup-row:hover) {
+    background: var(--bubble-user-bg-hover);
+}
+
+/* The one that is chosen, said twice: the fill comes up, and a hairline of
+   accent runs round the inside of the corner. Inside, because the block has no
+   border to recolour and a ring drawn outside it would sit in the gap. */
+.setup-card .setup-choice:has(.setup-row[aria-checked="true"]) {
+    background: var(--bubble-user-bg-hover);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-blue) 50%, transparent);
+}
+
+/* The row fills its block: a dot in its own column, and everything picking it
+   would mean stacked beside it. */
+.setup-card .setup-row {
+    display: grid;
+    grid-template-columns: 0.875rem 1fr;
+    gap: 0.1875rem 0.75rem;
+    align-items: start;
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border: 0;
+    border-radius: inherit;
+    background: none;
+}
+
+.setup-card .setup-rows {
+    gap: 0.5rem;
+}
+
+/* The list's own hover and selection fills belong to the block here, which
+   draws both for the whole choice including its form. */
+.setup-card .setup-row:hover,
+.setup-card .setup-row[aria-checked="true"] {
+    background: none;
+}
+
+.setup-card .setup-row:focus-visible {
+    outline: 1px solid var(--accent-blue);
+    outline-offset: -0.125rem;
+}
+
+/* The dot, drawn rather than borrowed from a form control: a hairline ring, and
+   a centre that arrives when the row is the answer. Absent from the adopt row,
+   which is a button among the choices and says its own verb instead. */
+.setup-card .setup-row[role="radio"]::before {
+    content: "";
+    grid-row: 1;
+    grid-column: 1;
+    place-self: center;
+    width: 0.875rem;
+    height: 0.875rem;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 30%, transparent);
+    transition: background 150ms ease, box-shadow 150ms ease;
+}
+
+/* The filled centre, without a second element to draw it. */
+.setup-card .setup-row[aria-checked="true"]::before {
+    background: radial-gradient(circle at center,
+        var(--accent-blue) 0 0.1875rem, transparent 0.2188rem);
+    box-shadow: inset 0 0 0 1px var(--accent-blue);
+}
+
+.setup-card .setup-row-head {
+    display: flex;
+    align-items: baseline;
+    gap: 0 0.5rem;
+    grid-row: 1;
+    grid-column: 2;
+}
+
+/* Three steps, in the order they are wanted: the name, what choosing it would
+   mean, then the address for the reader who has decided and is checking. Weight
+   alone would leave three lines of one size in one colour and make the card a
+   paragraph; sized and dimmed apart, a choice can be told from its neighbours
+   without being read. */
+.setup-card .setup-row-label {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.setup-card .setup-row-meaning,
+.setup-card .setup-row-detail {
+    grid-column: 2;
+}
+
+/* The meaning is prose and wraps; the path under it is an address and does not,
+   because a wrapped path is a wall. */
+.setup-card .setup-row-meaning {
+    overflow: visible;
+    white-space: normal;
+    font-size: 0.8125rem;
+    line-height: 1.45;
+    color: var(--text-secondary);
+}
+
+/* A path, in the face every other path in the app is set in. */
+.setup-card .setup-row-detail {
+    margin-top: 0.0625rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+}
+
+/* The composer's own instructions, below the card and dimmer than it: the card
+   is the thing to answer, these are what to do next. */
+.setup-hint {
+    display: flex;
+    justify-content: center;
+    color: var(--text-tertiary);
+    font-size: var(--font-size-md);
+    text-align: center;
+}
+
+/* A workspace that could not be reached when it was last asked. Dimmed rather
+   than dropped: it is still selectable, and selecting it tries again. */
+.setup-row-away {
+    opacity: 0.6;
+}
+
+/* What a row does, for the one row that does something rather than being
+   chosen. Last on the line, where a button would be. */
+.setup-row-verb {
+    margin-left: auto;
+    padding-left: 0.5rem;
+    color: var(--accent-blue);
+    white-space: nowrap;
+}
+
+.setup-row-body {
+    padding: 0.25rem 0.375rem 0.5rem;
+}
+
+/* In the card the form is inside the block it was opened from, and starts where
+   that block's text starts: the row's own inset, plus the dot's column and the
+   gap after it. */
+.setup-card .setup-row-body {
+    padding: 0 1rem 0.875rem 2.625rem;
+}
+
+.setup-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.setup-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.375rem;
+    margin-top: 0.5rem;
+}
+
+/* The one button in the panel that builds anything, and the one that stops it
+   once it is building. Both wear the corner the blocks around them do. */
+.setup-create,
+.setup-cancel {
+    padding: 0.375rem 0.875rem;
+    border: 0;
+    border-radius: 0.625rem;
+    font-family: inherit;
+    font-size: 0.8125rem;
+    cursor: pointer;
+}
+
+.setup-create {
+    background: var(--accent-blue);
+    font-weight: 500;
+    color: #fff;
+}
+
+.setup-create:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.setup-cancel {
+    background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+    color: var(--text-primary);
+}
+
+.setup-cancel:hover {
+    background: color-mix(in srgb, var(--text-primary) 16%, transparent);
+}
+
+/* What the provider says this kind of place is for, above the form that makes
+   one. Secondary throughout: it is read once, while deciding, and then never
+   again by someone who has decided. */
+.setup-recommend {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    margin-bottom: 0.375rem;
+    color: var(--text-secondary);
+}
+
+.setup-recommend p {
+    margin: 0;
+}
+
+/* One step down from the name above it, with the meaning it elaborates. */
+.setup-card .setup-recommend {
+    font-size: 0.8125rem;
+    line-height: 1.45;
+}
+
+/* The notes are the surprises — what is not copied, what a fresh tree costs —
+   so they are set apart from the two lines that merely say what it suits. */
+.setup-recommend-note {
+    padding-left: 0.625rem;
+    text-indent: -0.625rem;
+}
+
+.setup-recommend-note::before {
+    content: "— ";
+}
+
+/* One field of a provider's setup form. The classes belong to the panel rather
+   than to any provider: every form that opens in this slot should be the same
+   form with different fields in it. A note sits under the input and is empty —
+   taking no room — until something is wrong with what is above it. */
+.setup-field {
+    display: grid;
+    grid-template-columns: 4.5rem 1fr;
+    gap: 0 0.5rem;
+    align-items: baseline;
+}
+
+.setup-field-label {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+}
+
+/* What is typed into these is a name or a path, so the field is monospaced
+   while the label beside it is not. */
+.setup-field-input {
+    min-width: 0;
+    padding: 0.3125rem 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    background: var(--bg-primary);
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    color: var(--text-primary);
+}
+
+.setup-field-input:focus {
+    outline: none;
+    border-color: var(--accent-blue);
+}
+
+/* A field whose answer is a path completed as it is typed. <path-input> brings
+   its own control, set for the wider form of the project picker, so in here it
+   is brought back to the field beside it — same rule as the select below, for
+   the same reason. */
+.setup-field > path-input {
+    min-width: 0;
+}
+
+.setup-field > path-input .path-input-field {
+    padding: 0.3125rem 0.5rem;
+    border-radius: 0.5rem;
+    font-size: 0.8125rem;
+}
+
+.setup-field > path-input .path-input-field:focus {
+    border-color: var(--accent-blue);
+    box-shadow: none;
+}
+
+/* A field whose answer is picked rather than typed. What is picked is still a
+   path, so it is set exactly like the field above it — the two sit in the same
+   column of the same form and a reader should not be able to tell which of them
+   the provider chose to build.
+
+   Which takes `appearance: none` and a chevron of our own, the same pair the
+   settings panel and the command editor use: left alone, the platform's select
+   keeps its own chrome and quietly ignores the border, the radius and the font,
+   so it matches the operating system instead of the form it is in. The right
+   padding is what the chevron stands in. */
+.setup-field-select {
+    min-width: 0;
+    padding: 0.3125rem 1.75rem 0.3125rem 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    background: var(--bg-primary);
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    color: var(--text-primary);
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960' width='16' height='16'%3E%3Cpath fill='%238b949e' d='M480-360 280-560h400L480-360Z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.5rem center;
+    transition: border-color 150ms ease;
+}
+
+/* The field above it is typed into and has no hover; this one opens a menu, and
+   every other native select in the app says so on the way past. */
+.setup-field-select:hover {
+    border-color: var(--text-secondary);
+}
+
+.setup-field-select:focus {
+    outline: none;
+    border-color: var(--accent-blue);
+}
+
+/* Plain by default: most of what lands here is the form reporting what it
+   worked out, and only the lines that are something to fix ask for the red.
+
+   Set like the meaning line of a row above it, and for the same reason: it is
+   prose about the control beside it, so it reads at the size of the label and
+   the field rather than at the size of the card's own text, which left a
+   sentence in the form larger than the heading it sits under. */
+.setup-field-note {
+    grid-column: 2;
+    font-size: 0.8125rem;
+    line-height: 1.45;
+    color: var(--text-secondary);
+}
+
+/* Room above it only once there is something above it to be clear of — empty,
+   the note keeps taking no space at all. */
+.setup-field-note:not(:empty) {
+    margin-top: 0.25rem;
+}
+
+.setup-field-note-error {
+    color: var(--error-color);
+}
+
+/* A place the note names, which is a path: mono, and on its own line, because
+   the sentence above it is prose and a path read mid-sentence is neither. */
+.setup-field-note-path {
+    margin-top: 0.0625rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    overflow-wrap: anywhere;
+    color: var(--text-tertiary);
+}
+
+.setup-progress-step {
+    display: flex;
+    gap: 0 0.5rem;
+    padding: 0.125rem 0.375rem;
+    color: var(--text-secondary);
+}
+
+.setup-progress-detail {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: 0.8;
+}
+
+.setup-error {
+    padding: 0.25rem 0.375rem;
+    color: var(--error-color);
+}
+
+/* What a refused send points at, for a moment. The message is still in the box
+   and nothing has gone wrong — so this marks the thing to finish rather than
+   reporting a fault, and fades on its own. */
+.setup-attention {
+    outline: 1px solid var(--accent-color);
+    outline-offset: 0.125rem;
+}
+
+/* Queued-message zone: messages typed while a turn is in flight, rendered after
+   the status footer as a dimmed "coming up next" area. Each bubble is a real,
+   selectable user message; the zone gives them a distinct, lower-emphasis frame
+   so they read as not-yet-sent. */

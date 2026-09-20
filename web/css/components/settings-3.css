@@ -1,0 +1,814 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+::highlight(find-match) {
+    /* Subtle translucent yellow — reads as a muted tint over both the dark and
+       light message surfaces while leaving the underlying text colour intact. */
+    background-color: rgb(255 213 0 / 32%);
+}
+
+::highlight(find-match-current) {
+    /* The active match: a stronger, opaque warm-yellow fill with near-black
+       text. --notice-bg is a light yellow in both themes, so dark text stays
+       readable on it either way. */
+    background-color: var(--notice-bg, #e6b93f);
+    color: #1a1a1a;
+}
+
+/* ── Find (⌘F) bar ─────────────────────────────────────────────────────────
+   The presentational bar driven by find-bar.js. Mounted as an absolutely-
+   positioned overlay inside whichever panel is being searched — the `mount` of
+   that panel's getFindTarget(), always a positioned box — and pinned top-right
+   above that panel's scroller. Sits at --z-controls: above the content and the
+   scroll-controls (z-index 2) it overlaps, but below dropdowns and modals.
+   Visual language mirrors .scroll-control-btn — same surface, border, radius
+   tokens — so it reads as part of the same control family in both themes.
+
+   The max-width matters on the narrow panels: properties and the pinboard are
+   resized to whatever the user can spare, and a bar wider than its panel would
+   hang off the edge rather than shrink. The input gives up the width. */
+.find-bar {
+    position: absolute;
+    top: 0.5rem;
+    right: 1.25rem;
+    z-index: var(--z-controls, 100);
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    max-width: calc(100% - 2rem);
+    padding: 0.25rem;
+    border: 0.0625rem solid var(--border-color);
+    border-radius: var(--radius-xl, 0.5rem);
+    background: var(--bg-secondary, #161b22);
+    color: var(--text-primary, #e6edf3);
+    box-shadow: var(--shadow-md, 0 0.125rem 0.5rem rgb(0 0 0 / 20%));
+}
+
+.find-bar__input {
+    flex: 0 1 11rem;
+    min-width: 3rem;
+    padding: 0.25rem 0.5rem;
+    border: 0.0625rem solid var(--border-color);
+    border-radius: var(--radius-lg, 0.375rem);
+    background: var(--bg-primary, #0d1117);
+    color: var(--text-primary, #e6edf3);
+    font: inherit;
+    font-size: 0.8125rem;
+    outline: none;
+}
+
+.find-bar__input:focus {
+    border-color: var(--accent-blue, #58a6ff);
+}
+
+.find-bar__counter {
+    min-width: 4.25rem;
+    padding: 0 0.25rem;
+    color: var(--text-secondary, #8b949e);
+    font-size: 0.75rem;
+    text-align: right;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.find-bar__counter--empty {
+    color: var(--notice-bg, #e6b93f);
+}
+
+.find-bar__btn {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    padding: 0;
+    border: 0.0625rem solid transparent;
+    border-radius: var(--radius-lg, 0.375rem);
+    background: transparent;
+    color: var(--text-secondary, #8b949e);
+    cursor: pointer;
+    font-size: 0.75rem;
+    line-height: 1;
+    transition: color 0.2s, background-color 0.2s, border-color 0.2s;
+}
+
+.find-bar__btn svg {
+    width: 1rem;
+    height: 1rem;
+}
+
+.find-bar__btn:hover {
+    color: var(--accent-blue, #58a6ff);
+    background: var(--bg-tertiary, #282e33);
+}
+
+.find-bar__toggle {
+    font-weight: 600;
+}
+
+.find-bar__toggle.is-active {
+    color: var(--accent-blue, #58a6ff);
+    border-color: var(--accent-blue, #58a6ff);
+    background: var(--bg-tertiary, #282e33);
+}
+
+/* ── User-defined slash commands ─────────────────────────────────────────── */
+
+/* Provenance badge on a user command's slash-menu row. */
+.slash-command-scope-badge {
+    margin-left: 0.4rem;
+    padding: 0.05rem 0.35rem;
+    border-radius: 0.6rem;
+    font-size: 0.68rem;
+    line-height: 1.4;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-secondary);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-subtle);
+}
+
+.slash-command-scope-project {
+    color: var(--accent-blue);
+    border-color: var(--accent-blue);
+}
+
+.slash-command-scope-user {
+    color: var(--accent-purple);
+    border-color: var(--accent-purple);
+}
+
+.slash-command-new .menu-item-command {
+    color: var(--accent-green, #3fb950);
+}
+
+/* "Edit custom slash commands…" and "Browse built-in commands…" — the pair of
+   pinned rows above the list, shared by the `/` completion menu, the commands
+   dropdown and the mobile actions sheet. Tinted so they read as the way IN to
+   commands rather than two more commands to run, and keeping the same full
+   corner radius as every other row: they highlight as ordinary rows, they are
+   simply not command rows. */
+.slash-command-pinned {
+    color: var(--accent-blue);
+}
+
+.slash-command-pinned:hover {
+    background: color-mix(in srgb, var(--accent-blue) 16%, transparent);
+}
+
+/* The rule dividing the pair from the commands is drawn in the gap below the
+   last button rather than as its border, so the hovered row keeps its rounded
+   box and the line stays straight and full-width instead of curving with it. */
+.slash-command-pinned-last {
+    position: relative;
+    margin-bottom: 0.55rem;
+}
+
+.slash-command-pinned-last::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -0.275rem;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+/* The commands dropdown lays every row out as a two-column subgrid of name and
+   description. These rows are single buttons carrying only a label, so they opt
+   back out to a flex line rather than being squeezed into the narrow name
+   column. */
+.commands-menu .slash-command-pinned {
+    display: flex;
+    align-items: center;
+}
+
+.slash-command-pinned-label {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.8125rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Command editor dialog. */
+.command-editor-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-modal, 1000);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+}
+
+/* These dialogs stack — the editor opens over the manager — so two scrims lie
+   over the page at once. That is exactly why the strength is not chosen here:
+   anything heavier than the house value compounds into near-black. */
+.command-editor-backdrop {
+    position: absolute;
+    inset: 0;
+    background: var(--modal-scrim);
+}
+
+.command-editor-panel {
+    position: relative;
+    width: min(38rem, 100%);
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-raised, #1c2128);
+    border: 1px solid var(--border-floating, var(--border-color));
+    border-radius: 0.6rem;
+    box-shadow: var(--popup-shadow);
+    overflow: hidden;
+}
+
+.command-editor-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.9rem 1.1rem;
+    border-bottom: 1px solid var(--border-divider, var(--border-color));
+}
+
+.command-editor-header h2 {
+    margin: 0;
+    font-size: 1.05rem;
+}
+
+/* Pulled out into the header's padding so the button's box hangs off the corner
+   while its icon stays optically aligned with the title. */
+.command-editor-close {
+    margin: -0.4rem -0.3rem;
+}
+
+.command-editor-body {
+    padding: 1rem 1.1rem;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+}
+
+.command-editor-label,
+.command-editor-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+}
+
+/* The name and its args hint sit side by side: together they spell the line the
+   user will type, `/review-pr <pr-number>`. The name is the narrower of the two
+   because a command name is short and an args hint is not. */
+.command-editor-row {
+    display: flex;
+    gap: 0.6rem;
+}
+
+.command-editor-row > .command-editor-label {
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+.command-editor-row > .command-editor-name-field {
+    flex: 0 1 13rem;
+}
+
+/* A field's caption: used in a non-<label> field group to match the text of a
+   real one, and inside a <label> whose caption is more than a bare string. A
+   label is a flex column, so an unwrapped "Args hint <span>(optional)</span>"
+   would be two flex items stacked on two lines, dropping that field's input
+   below its neighbour's. */
+.command-editor-label-text {
+    color: var(--text-secondary);
+}
+
+.command-editor-optional {
+    color: var(--text-tertiary, var(--text-secondary));
+    font-weight: normal;
+}
+
+.command-editor-input,
+.command-editor-textarea {
+    width: 100%;
+    padding: 0.4rem 0.55rem;
+    background: var(--bg-primary, #0d1117);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.35rem;
+    font-family: var(--font-sans);
+    font-size: 0.85rem;
+}
+
+.command-editor-textarea {
+    font-family: var(--font-mono, monospace);
+    resize: vertical;
+}
+
+/* Native select, given the same treatment as the settings panel's: the platform
+   control's own chrome matches nothing else in the dialog. */
+.command-editor-select {
+    width: 100%;
+    padding: 0.4rem 1.8rem 0.4rem 0.55rem;
+    background: var(--bg-primary, #0d1117);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.35rem;
+    font-family: var(--font-sans);
+    font-size: 0.85rem;
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960' width='16' height='16'%3E%3Cpath fill='%238b949e' d='M480-360 280-560h400L480-360Z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.5rem center;
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.command-editor-select:hover {
+    border-color: var(--text-secondary);
+}
+
+.command-editor-input:focus,
+.command-editor-textarea:focus,
+.command-editor-select:focus {
+    outline: none;
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 0.1875rem rgb(88 166 255 / 10%);
+}
+
+.command-editor-name-row {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.command-editor-slash {
+    color: var(--text-secondary);
+    font-family: var(--font-mono, monospace);
+}
+
+.command-editor-hint {
+    font-size: 0.72rem;
+    color: var(--text-tertiary, var(--text-secondary));
+}
+
+.command-editor-hint code,
+.command-editor-preview-out {
+    font-family: var(--font-mono, monospace);
+}
+
+.command-editor-field-error {
+    font-size: 0.72rem;
+    color: var(--accent-red, #f85149);
+    min-height: 0.9rem;
+}
+
+/* The preview is a check, not the subject of the dialog: its caption and sample
+   args share one line and the output pane stays short, so it reads as a strip
+   under the template rather than a second editor. */
+.command-editor-preview {
+    background: var(--bg-secondary, #161b22);
+    border: 1px solid var(--border-subtle);
+    border-radius: 0.35rem;
+    padding: 0.5rem 0.6rem;
+}
+
+.command-editor-preview-head {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.command-editor-preview-title {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+}
+
+.command-editor-preview-args {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.8rem;
+}
+
+.command-editor-preview-out {
+    margin: 0.4rem 0 0;
+    padding: 0.45rem 0.5rem;
+    background: var(--bg-code-dark, #0d1117);
+    border-radius: 0.3rem;
+    font-size: 0.8rem;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    min-height: 1.2rem;
+    max-height: 6rem;
+    overflow-y: auto;
+}
+
+/* Segmented controls (run mode, save scope): the picker's dial idiom at form
+   scale — same accent for the chosen value, but readable sentence case rather
+   than the picker's dense uppercase pills. */
+.command-editor-segmented {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    padding: 0.2rem;
+    background: var(--bg-primary, #0d1117);
+    border: 1px solid var(--border-color);
+    border-radius: 0.4rem;
+    align-self: flex-start;
+}
+
+.command-editor-seg {
+    padding: 0.3rem 0.65rem;
+    border: none;
+    border-radius: 0.3rem;
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: 0.8rem;
+    line-height: 1.4;
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+}
+
+.command-editor-seg:hover {
+    background: var(--bg-tertiary, rgb(127 127 127 / 16%));
+    color: var(--text-primary);
+}
+
+.command-editor-seg.active {
+    background: var(--accent-blue);
+    color: #fff;
+}
+
+/* What the selected run mode actually does — information, so it sits directly
+   under the control it explains. */
+.command-editor-run-hint {
+    font-size: 0.75rem;
+    color: var(--text-tertiary, var(--text-secondary));
+}
+
+.command-editor-subthread {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    padding-left: 0.7rem;
+    border-left: 0.125rem solid var(--border-subtle);
+}
+
+/* The chip is a control, not body text — it must not inherit the label's size. */
+.command-editor-subthread model-chip {
+    align-self: flex-start;
+    font-size: 0.85rem;
+    color: var(--text-primary);
+}
+
+.command-editor-subthread.hidden {
+    display: none;
+}
+
+.command-editor-footer {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.8rem 1.1rem;
+    border-top: 1px solid var(--border-divider, var(--border-color));
+}
+
+/* Where the file lands: the scope choice and the path it produces, kept
+   together beside Save because that is the moment either one matters. */
+.command-editor-target {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    min-width: 0;
+}
+
+.command-editor-path {
+    font-size: 0.72rem;
+    color: var(--text-tertiary, var(--text-secondary));
+    font-family: var(--font-mono, monospace);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.command-editor-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.command-editor-actions .hidden {
+    display: none;
+}
+
+/* Where a conversation that has already started should work instead. The setup
+   panel's question asked again, in a dialog rather than at the top of the
+   transcript: by then the transcript belongs to the work. The rows inside it
+   are the panel's own classes, deliberately — the same list of places should
+   look the same wherever it is offered. */
+.workspace-move-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-modal, 1000);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+}
+
+.workspace-move-backdrop {
+    position: absolute;
+    inset: 0;
+    background: var(--modal-scrim);
+}
+
+.workspace-move-dialog {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    width: min(32rem, 100%);
+    max-height: 90vh;
+    padding: 0.9rem 1.1rem 1.1rem;
+    overflow-y: auto;
+    background: var(--bg-raised, #1c2128);
+    border: 1px solid var(--border-floating, var(--border-color));
+    border-radius: 0.6rem;
+    box-shadow: var(--popup-shadow);
+    font-size: 0.75rem;
+}
+
+.workspace-move-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.workspace-move-title {
+    margin: 0;
+    font-size: 1.05rem;
+}
+
+/* Pulled into the padding so the button's box hangs off the corner while its
+   icon stays optically aligned with the title. */
+.workspace-move-close {
+    margin: -0.4rem -0.3rem;
+}
+
+/* Where it works now: stated rather than offered, and so not one of the rows
+   below it. */
+.workspace-move-now {
+    display: flex;
+    align-items: baseline;
+    gap: 0 0.5rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px dashed var(--border-divider, rgb(255 255 255 / 12%));
+    color: var(--text-secondary);
+}
+
+.workspace-move-now-label {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+/* The root gives up its width first and ellipsises, as it does in the banner:
+   it is the longest part, and the one a reader scans rather than reads. */
+.workspace-move-now-root {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: 0.8;
+}
+
+/* What the tree being left still holds, and whether to bring it. It sits under
+   the statement of where the conversation works because it is about that tree,
+   not about the list of places below it. */
+.workspace-move-work {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    color: var(--text-secondary);
+}
+
+.workspace-move-work-lead {
+    color: var(--text-primary);
+}
+
+.workspace-move-carry {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+}
+
+/* Commands manager. */
+.command-manager-group {
+    margin-bottom: 1rem;
+}
+
+.command-manager-group h3 {
+    margin: 0 0 0.4rem;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+}
+
+.command-manager-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.45rem 0.5rem;
+    border: 1px solid var(--border-subtle);
+    border-radius: 0.35rem;
+    margin-bottom: 0.35rem;
+}
+
+.command-manager-row.is-broken {
+    border-color: var(--accent-red, #f85149);
+    opacity: 0.9;
+}
+
+.command-manager-row code {
+    font-family: var(--font-mono, monospace);
+    color: var(--text-primary);
+}
+
+.command-manager-row .command-manager-desc {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    flex: 1;
+}
+
+.command-manager-row .command-manager-error {
+    color: var(--accent-red, #f85149);
+    font-size: 0.76rem;
+    flex: 1;
+}
+
+.command-manager-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+/* The row's delete: the app's standard trashcan button — square, transparent,
+   the icon on currentcolor so it rests muted and turns red under the pointer. */
+.command-manager-delete {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-radius: 0.25rem;
+    color: var(--text-tertiary);
+    cursor: pointer;
+}
+
+.command-manager-delete:hover {
+    color: var(--accent-red);
+    background: color-mix(in srgb, var(--accent-red) 12%, transparent);
+}
+
+/* Updates settings tab: version summary, 3-way mode radios, and a manual check
+   row. They share the provider-field card shell, but that shell's default
+   40%/60% info/control grid doesn't fit any of them — these rules fix the
+   columns per row so the version text isn't cramped, the radios sit on a right
+   rail beside their labels, and the check row reads as an action bar. */
+
+/* Version summary has no control column — let its text use the full card width
+   instead of being squeezed into the default 40% info column (which wraps the
+   one-line version string into a cramped ragged block). */
+settings-panel .updates-version-row {
+    display: block;
+}
+
+/* Each mode is a full-width selectable card: label + description take the row,
+   the radio sits on a right rail, vertically centred next to its text instead
+   of marooned in the middle of a wide control column. */
+settings-panel .updates-mode-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    cursor: pointer;
+}
+
+settings-panel .updates-mode-row .provider-control {
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+}
+
+settings-panel .updates-mode-radio {
+    width: 1rem;
+    height: 1rem;
+    accent-color: var(--accent-color);
+    cursor: pointer;
+}
+
+/* Manual check is an action bar, not a card: drop the card background and grid
+   so an empty status line doesn't render as a stray grey box, and lay it out as
+   status-left / button-right. */
+settings-panel .updates-check-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    background: none;
+    padding: 0.75rem 0.25rem 0;
+    margin-top: 0.25rem;
+}
+
+settings-panel .updates-check-row .provider-info {
+    flex: 1 1 auto;
+}
+
+settings-panel .updates-check-row .provider-control {
+    flex: 0 0 auto;
+    align-items: flex-end;
+}
+
+/* ============================================================================
+   ESCAPE ARM CUE (web/js/services/escape-behaviour.js)
+
+   Shown under the "press Escape twice to stop" preference, for the moment
+   between the two presses. Without it the first press looks like the key doing
+   nothing at all, which reads as a bug rather than as a safety catch.
+
+   Deliberately NOT a popup: it is appended straight to <body> and never
+   registered with popup-manager, because a registered popup would make the
+   SECOND Escape dismiss this cue instead of stopping the turn. It is inert to
+   the pointer for the same reason — clicking it must not be a way to arm or
+   cancel anything.
+   ========================================================================== */
+.escape-arm-cue {
+    position: fixed;
+    left: 50%;
+    bottom: 6rem;
+    transform: translateX(-50%);
+    z-index: var(--z-toast);
+    padding: 0.5rem 0.875rem;
+    background: var(--tooltip-bg);
+    color: var(--tooltip-text);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--tooltip-shadow);
+    font-family: var(--font-ui);
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--leading-tight);
+    white-space: nowrap;
+    pointer-events: none;
+    -webkit-user-select: none;
+    user-select: none;
+    animation: escape-arm-cue-in 0.12s ease-out;
+}
+
+@keyframes escape-arm-cue-in {
+    from {
+        opacity: 0;
+        transform: translate(-50%, 0.375rem);
+    }
+
+    to {
+        opacity: 1;
+        transform: translate(-50%, 0);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .escape-arm-cue {
+        animation: none;
+    }
+}
+
+/* ============================================================================
+   PINBOARD (web/js/components/pinboard-*.js)
+
+   The board overlays the right of the working area rather than taking width
+   from it: the conversation columns are wide, horizontally scrolling, and full
+   of held scroll positions, and narrowing them to show something beside them
+   would move the thing being read.
+
+   <pinboard-shell> spans .app-main but is inert to the pointer, so only the
+   scrim and the panel catch anything. Closed, the panel is `visibility: hidden`
+   and translated off the right edge — out of the tab order and out of the
+   accessibility tree, with no attribute to keep in step.
+
+   The control that opens it is .pinboard-header-button, in the header bar with
+   the window's other controls, at every width.
+   ========================================================================== */

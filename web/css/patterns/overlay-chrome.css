@@ -1,0 +1,260 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+/* ===================================================================
+   APP TIER CSS — components.css
+   Styles app custom elements and chrome. Not plugin content.
+
+   Compare:
+     styles.css              — design tokens + core layout
+     utilities.css           — reusable utility classes
+     components.css          — app custom elements  ← this file
+     context-items.css       — plugin content rendering
+     plugin-catalog.css      — plugin catalog UI
+
+   TABLE OF CONTENTS
+   -----------------
+    1.  Reusable Close Button             ln   5
+    2.  Shared Modal Styles               ln  33
+    3.  Token Display                     ln  58
+    4.  Code Block                        ln  93
+    5.  Conversation Bar                  ln 168
+    6.  Properties Panel                  ln 661
+    7.  Context Item Type Badge           ln 1074
+    8.  Model Selector                    ln 1090
+    9.  Diff Viewer                       ln 1235
+   10.  Composer                         ln 1382
+   11.  Permission Controls               ln 1628
+   12.  Welcome Modal                     ln 2055
+   13.  About Modal                       ln 2293
+   14.  Settings Panel                    ln 2405
+   15.  modal-dialog                      ln 2752  (→ Context Preview Modal)
+   16.  Action Confirmation               ln 2986
+   17.  Transaction Summary               ln 3041
+   18.  Multi-Question Form               ln 3143
+   19.  Action Result Status              ln 3204
+   20.  Dropdown Menu List                ln 3286
+   21.  Semantic Badge Colors             ln 3321
+   22.  Preformatted Output               ln 3360
+   23.  Ask User Question                 ln 3372
+   24.  Text Utilities                    ln 3419
+   25.  Disconnection Overlay             ln 3431
+   26.  Message Context Menu              ln 3471
+   27.  Project Picker Modal              ln 3749
+   ================================================================== */
+
+/* ===================================================================
+   Reusable Close Button
+   Standard close button for panels and modals.
+   Usage: Add class "close-button" to any button element.
+   Chrome (transparent rest, hover fill + hairline border, press dip) comes
+   from the shared .u-btn-ghost house style in utilities.css, which lists
+   .close-button alongside it; this rule owns only the box. The × itself is
+   an .icon-close span, so it centres on geometry rather than font metrics.
+   ================================================================== */
+.close-button {
+    padding: 0;
+    width: 2rem;
+    height: 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+/* ===================================================================
+   Shared Modal Styles
+   Common backdrop and panel styling for all modals and overlays.
+   ================================================================== */
+modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: var(--modal-scrim);
+    z-index: 1;
+}
+
+/* Outer card chrome (bg/border/radius/shadow) comes from the shared
+   popup-surface rule in styles.css. overflow:hidden clips full-bleed children
+   (headers, list rows) to the rounded corner. */
+modal-panel {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* Full-size image lightbox: click an attached image to open it centered over a
+   dimmed backdrop; click anywhere or press Escape to dismiss (image-lightbox.js).
+   The one surface that deliberately does not take --modal-scrim: it is not
+   dimming a panel behind a dialog, it is giving the image a dark surround to be
+   seen against, and it never stacks over another modal. */
+.image-lightbox {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    background: var(--overlay-dark-70);
+    z-index: var(--z-modal, 1000);
+    cursor: zoom-out;
+}
+
+.image-lightbox .image-lightbox-img {
+    max-width: 90vw;
+    max-height: 90vh;
+    object-fit: contain;
+    border-radius: 0.5rem;
+    box-shadow: var(--popup-shadow);
+}
+
+/* Token Display Component */
+token-display {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    font-family: var(--font-sans);
+    padding: 0.5rem 0;
+}
+
+/* The pill becomes a control only once it has numbers behind it — role=button
+   is set alongside these, so the affordance and the behaviour arrive together. */
+token-display[role="button"] {
+    cursor: pointer;
+}
+
+token-display .token-bar {
+    width: 5rem;
+    height: 0.5rem;
+    background: var(--border-color);
+    border-radius: 0.25rem;
+    overflow: hidden;
+    display: flex;
+}
+
+token-display .token-fill,
+token-display .token-fill-cached {
+    height: 100%;
+    transition: width 0.3s, background 0.3s;
+}
+
+token-display .token-fill-cached {
+    background: var(--text-tertiary);
+    opacity: 0.45;
+}
+
+token-display .token-text {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+/* The count text is always neutral. Capacity is conveyed by the bar
+ * fill, never by recolouring the number. */
+token-display .token-cached {
+    color: var(--text-tertiary);
+}
+
+token-display .token-denominator {
+    color: var(--text-tertiary);
+}
+
+/* Default bar fill — quiet grey for low usage (<60% of budget) and
+ * for the "budget unknown" state where the fill is 0% anyway. */
+token-display .token-fill {
+    background: var(--text-tertiary);
+}
+
+/* Capacity escalation — only at 60%+ does the meter earn colour. */
+token-display.token-medium .token-fill { background: var(--accent-yellow); }
+token-display.token-high   .token-fill { background: var(--accent-red); }
+
+/* Cache-warn — localised to the `+Nk new` segment inside the cached
+ * parenthetical. The total count and the bar fill are unaffected;
+ * the signal is *about* the cached portion, so it lives there. */
+token-display.cache-warn .token-new {
+    color: var(--warning, #c08a00);
+}
+
+/* Code Block Component */
+code-block {
+    position: relative;
+    background: var(--bg-code-medium);
+    border: 0.0625rem solid var(--border-code);
+    border-radius: 0.25rem;
+    overflow: hidden;
+    display: block;
+}
+
+code-block .code-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0.75rem;
+    background: var(--bg-code-dark);
+    border-bottom: 0.0625rem solid var(--border-code);
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+}
+
+code-block .language {
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+}
+
+code-block .copy-btn {
+    background: none;
+    border: none;
+    color: var(--text-code);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.6875rem;
+    padding: 0.25rem 0.5rem;
+    transition: color 0.2s;
+}
+
+code-block .copy-btn:hover {
+    color: var(--accent-green);
+}
+
+code-block .copy-btn.copied {
+    color: var(--accent-green);
+}
+
+code-block pre {
+    margin: 0;
+    padding: 0.9375rem;
+    overflow-x: auto;
+}
+
+code-block code {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    line-height: 1.5;
+}
+
+/* Scrollbar styling for code blocks - uses code-specific colors */
+code-block pre::-webkit-scrollbar {
+    height: var(--scrollbar-size-medium);
+}
+
+code-block pre::-webkit-scrollbar-track {
+    background: var(--bg-code-dark);
+}
+
+code-block pre::-webkit-scrollbar-thumb {
+    background: var(--border-code);
+    border-radius: var(--scrollbar-thumb-radius);
+}
+
+code-block pre::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover-bg);
+}
+

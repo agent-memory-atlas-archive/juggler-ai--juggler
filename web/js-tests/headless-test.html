@@ -27,17 +27,58 @@
         });
     </script>
 
-    <!-- Fonts (self-hosted; see web/css/fonts.css) -->
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/fonts.css">
+    <!-- Fonts (self-hosted; see web/css/base/fonts.css) -->
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/base/fonts.css">
 
-    <!-- Styles (same as index.html — needed for real component rendering) -->
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/styles.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/utilities.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/context-items.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/plugin-catalog.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/skills-marketplace.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/prism-theme.css">
+    <!-- Styles (same as index.html — needed for real component rendering).
+         lint-css-arch checks this list matches web/css/manifest.json. -->
+    <!-- Element defaults -->
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/base/reset.css">
+
+    <!-- Tokens -->
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/tokens/theme-dark.css">
+
+    <!-- The shell, and the components it frames -->
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/layout/app-shell.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/messages-1.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/base/elements.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/layout/responsive.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/messages-2.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/project-setup.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/messages-3.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/markdown.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/layout/window-chrome.css">
+
+    <!-- Utilities -->
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/utilities/utilities.css">
+
+    <!-- Shared patterns, and the feature groups -->
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/overlay-chrome.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/conversation-bar.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/layout/app-header.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/strategy-bar.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/icons.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/properties-panel.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/model-picker.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/spinner.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/diff-viewer.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/composer.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/approvals-1.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/modal-dialog.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/settings-1.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/about-modal.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/settings-2.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/approvals-2.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/overlays-and-updates.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/tooltip.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/settings-3.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/pinboard.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/context-items.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/plugin-catalog.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/skills-marketplace.css">
+
+    <!-- Vendor -->
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/vendor/prism-theme.css">
 
     <!-- Vendor scripts -->
     <script src="/v{{.StaticVersion}}/js/vendor/marked.min.js"></script>

@@ -353,7 +353,7 @@ export function toggleTheme() {
  * under the transparent macOS titlebar (rendered by the html canvas) stays at
  * the load-time colour. An inline style write bypasses that cache. The value is
  * read back from the just-applied theme's --bg-primary rather than hard-coded,
- * so it can't drift from styles.css.
+ * so it can't drift from tokens/theme-dark.css.
  * @param {string} theme - Resolved theme to paint ('dark' or 'light').
  * @private
  */

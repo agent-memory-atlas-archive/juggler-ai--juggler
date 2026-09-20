@@ -1,0 +1,92 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+.app-tooltip {
+    position: fixed;
+    z-index: var(--z-toast);
+    max-width: 22rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--tooltip-bg);
+    color: var(--tooltip-text);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--tooltip-shadow);
+    font-family: var(--font-ui);
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--leading-tight);
+    letter-spacing: 0.01em;
+    white-space: normal;
+    overflow-wrap: break-word;
+    pointer-events: none;
+    -webkit-user-select: none;
+    user-select: none;
+
+    /* Gap between the anchor and the surface. The JS positions the surface flush
+       against the anchor edge; this margin (rem, so it scales with font-size
+       zoom) opens the gap — pulled up when above, pushed down when below. */
+    margin-top: -0.5rem;
+
+    /* Hidden resting state. The surface stays mounted (so it can be measured)
+       and animates in via .is-visible; transform-origin grows it from the
+       caret edge for a subtle "pop". */
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(0.25rem) scale(0.96);
+    transform-origin: center bottom;
+    transition:
+        opacity 130ms ease,
+        transform 150ms cubic-bezier(0.22, 1, 0.36, 1),
+        visibility 0s linear 150ms;
+}
+
+/* Caret — a rotated square of the surface fill, so it reads as one piece with
+   the body. Sits on the bottom edge (tooltip above the anchor) by default. */
+.app-tooltip::after {
+    content: "";
+    position: absolute;
+    left: clamp(0.875rem, var(--tt-arrow-x, 50%), calc(100% - 0.875rem));
+    width: 0.5rem;
+    height: 0.5rem;
+    background: var(--tooltip-bg);
+    top: 100%;
+    transform: translate(-50%, -50%) rotate(45deg);
+}
+
+/* Flipped: tooltip sits below the anchor, so the gap pushes down instead of up,
+   the caret moves to the top edge, the growth origin inverts, and the hidden
+   state drops down from above. */
+.app-tooltip.app-tooltip--below {
+    margin-top: 0.5rem;
+    transform: translateY(-0.25rem) scale(0.96);
+    transform-origin: center top;
+}
+
+.app-tooltip.app-tooltip--below::after {
+    top: 0;
+}
+
+.app-tooltip.is-visible {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0) scale(1);
+    transition:
+        opacity 130ms ease,
+        transform 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .app-tooltip,
+    .app-tooltip.is-visible {
+        transform: none;
+        transition: opacity 100ms ease, visibility 0s;
+    }
+}
+
+/* ── Find in conversation (⌘F) highlights ──────────────────────────────────
+   Painted via the CSS Custom Highlight API from find-controller.js, NEVER by
+   wrapping matches in <span>s: the conversation renderer diffs and animates
+   message elements, so injected wrapper nodes would be corrupted mid-stream.
+   Ranges are registered under the 'find-match' / 'find-match-current' names. */

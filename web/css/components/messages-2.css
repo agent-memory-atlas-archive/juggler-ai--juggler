@@ -1,0 +1,569 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+user-message article.user {
+    background: var(--bubble-user-bg, #2d333b);
+    color: var(--bubble-user-text, #e6edf3);
+    padding: 0.75rem 1rem;
+    border-radius: 1.125rem;
+    font-size: 0.875rem;
+    overflow-wrap: break-word;
+    position: relative;
+    margin-left: auto;
+    max-width: 85%;
+}
+
+/* When a user message is selected, layer the selection overlay over the bubble
+   so the selected state stays visible on the bubble itself — otherwise, in light
+   mode, the bubble and the selection highlight composite to nearly the same pale
+   grey and the bubble disappears into the selection. Layering keeps the bubble a
+   step darker than the gutter highlight regardless of theme or backdrop. */
+user-message.conversation-item.selected article.user {
+    background:
+        linear-gradient(var(--overlay-light-10), var(--overlay-light-10)),
+        var(--bubble-user-bg, #2d333b);
+}
+
+/* Attached images inside a user message. The text (when present) sits in its
+   own block; the grid wraps a row of thumbnails below it. Each thumbnail scales
+   down to a sensible max while preserving its intrinsic aspect ratio (the
+   width/height attributes set on the <img>), and click-expands via the
+   lightbox. */
+user-message .user-message-text {
+    overflow-wrap: break-word;
+}
+
+/* Plain (non-Markdown) user text: significant whitespace via pre-wrap, mono
+   font inherited from the conversation area (not overridden here). Only the
+   `.plain` variant gets pre-wrap — a Markdown-rendered bubble must not, or the
+   newlines the renderer emits between block tags render as blank lines.
+   user-message.js adds `.plain` only when the source has no Markdown. */
+user-message .user-message-text.plain {
+    white-space: pre-wrap;
+}
+
+/* Collapse/expand for oversized conversation items (an extremely long user
+   message, a long thread summary). Applied by utils/collapsible.js only past a
+   character-count threshold, so ordinary items never carry these classes. The clamped
+   block fades to transparent over its last stretch via a mask (background-
+   agnostic, so it works on the user bubble and the thread tile alike), and a
+   subtle full-width toggle is inserted directly below it.
+
+   The clamp sits comfortably below the height the character thresholds imply,
+   so anything that earns a toggle is visibly cut: an item barely over its
+   threshold still has real content hidden, rather than a couple of pixels that
+   make the toggle pointless. */
+.collapsible.is-collapsed {
+    max-height: 15rem;
+    overflow: hidden;
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 2.5rem), transparent);
+}
+
+.collapsible-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+    width: 100%;
+    margin-top: 0.25rem;
+    padding: 0.15rem 0.25rem;
+    background: transparent;
+    border: none;
+    border-radius: 0.375rem;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: 0.75rem;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0.7;
+    transition: opacity 120ms ease, background 120ms ease;
+}
+
+.collapsible-toggle:hover {
+    opacity: 1;
+    background: var(--overlay-light-10);
+}
+
+.collapsible-toggle svg {
+    width: 1rem;
+    height: 1rem;
+    flex-shrink: 0;
+}
+
+user-message .user-message-attachments {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+/* Image-only message: grid is the first child, so drop the top gap. */
+user-message .user-message-attachments:first-child {
+    margin-top: 0;
+}
+
+user-message .user-message-attachment {
+    display: block;
+    max-width: 20rem;
+    max-height: 20rem;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    border-radius: 0.5rem;
+    background: var(--bg-primary);
+    cursor: zoom-in;
+}
+
+/* Assistant messages: No background, plain text */
+assistant-message article.assistant {
+    background: transparent;
+    color: var(--bubble-assistant-text, #e6edf3);
+    font-size: 0.875rem;
+    overflow-wrap: break-word;
+    position: relative;
+}
+
+/* Hover-reveal copy-to-clipboard button in the upper-right of user and
+   assistant messages. Absolutely positioned so it never disrupts layout;
+   hidden until the message (or the button itself) is hovered. */
+.message-copy-button {
+    position: absolute;
+    top: 0.25rem;
+    right: 0.25rem;
+    width: 1.5rem;
+    height: 1.5rem;
+    padding: 0.25rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.25rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 150ms ease, background 150ms ease, color 150ms ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+}
+
+.message-copy-button svg {
+    width: 0.875rem;
+    height: 0.875rem;
+    display: block;
+}
+
+/* Hovering the message reveals the button only translucently, so it doesn't
+   obscure the text under it; it comes to full opacity only when the pointer is
+   on the button itself or after a copy. */
+user-message article.user:hover .message-copy-button,
+assistant-message article.assistant:hover .message-copy-button {
+    opacity: 0.4;
+}
+
+.message-copy-button:hover,
+.message-copy-button.copied {
+    opacity: 1;
+}
+
+.message-copy-button:hover {
+    background: var(--bg-raised);
+    color: var(--text-primary);
+}
+
+/* Assistant messages have no bubble and span the column's full text width, so
+   push their copy button out into the right-hand gutter (the message list's
+   1rem padding) instead of over the text. The gutter is narrower than the
+   button, so it can't clear the text entirely without crossing the list's clip
+   edge into the scrollbar — this lands the button's right edge exactly at that
+   edge, leaving the bulk in the gutter and only its inner sliver over the text. */
+assistant-message article.assistant .message-copy-button {
+    right: -1rem;
+}
+
+@media (hover: none) {
+    .message-copy-button {
+        opacity: 0.7;
+    }
+
+    .message-copy-button:active,
+    .message-copy-button.copied {
+        opacity: 1;
+    }
+}
+
+/* Thinking messages: Same as assistant but yellow icon handled by component */
+thinking-message article.thinking {
+    background: transparent;
+    color: var(--bubble-assistant-text, #e6edf3);
+    font-size: 0.875rem;
+    overflow-wrap: break-word;
+}
+
+/* Unified icon-based message components */
+context-item-message article.ci,
+error-message article.error {
+    background: transparent;
+    font-size: 0.8rem;
+    overflow-wrap: break-word;
+
+    /* Defensive: prevent custom content from overflowing conversation panel */
+    max-width: 100%;
+    overflow: hidden;
+}
+
+/* Error items get a card treatment — an out-of-tokens or network error is
+   usually something the user wants to act on, so it reads as a distinct block
+   rather than one more dim log line, and carries its own Retry action. */
+error-message article.error {
+    background: color-mix(in srgb, var(--accent-red) 10%, transparent);
+    border: 0.0625rem solid color-mix(in srgb, var(--accent-red) 35%, transparent);
+    border-radius: 0.5rem;
+    padding: 0.85rem 0.95rem;
+    font-size: 0.85rem;
+}
+
+/* Plain-English lead above the provider's own error text, which keeps its own
+   styling below so the diagnostic detail stays as readable as ever. */
+.error-message-lead {
+    margin-bottom: 0.35rem;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+/* Action row sits below the error text, right-aligned. Usually just Retry; an
+   authentication failure adds a Provider settings action ahead of it. */
+.error-message-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+    margin-top: 0.75rem;
+}
+
+/* Retry reuses .message-action-btn but themes its hover red to match the error. */
+.error-retry-btn:hover:not(:disabled) {
+    border-color: var(--accent-red, #f85149);
+    color: var(--accent-red, #f85149);
+}
+
+/* A notice takes no card and no extra room: the amber triangle, a "Warning"
+   lozenge and one line saying what happened are the whole row, laid out by the
+   shared .message-with-icon rules. Nothing has failed and there is nothing to
+   act on, so the measured detail waits in the properties panel. */
+notice-message article.notice {
+    max-width: 100%;
+    overflow: hidden;
+}
+
+/* All message components need display: block for proper backgrounds and selection */
+user-message,
+assistant-message,
+thinking-message,
+context-item-message,
+error-message,
+notice-message,
+thread-message,
+tool-group-message,
+tool-action-message {
+    display: block;
+}
+
+
+
+/* Left padding prevents icon hover border from being clipped by parent overflow:hidden */
+.message-with-icon {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+}
+
+.message-icon-box {
+    border-radius: 50%;
+    padding: var(--message-icon-pad);
+    margin-top: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+/* Icon sizing - applies to both inline SVGs and CSS mask icons */
+.message-icon-box svg,
+.message-icon-box > span[class^="icon-"] {
+    width: var(--message-icon-size);
+    height: var(--message-icon-size);
+}
+
+/* Icon + type badge share this parent so they keep a fixed layout relative to
+   each other regardless of what else sits on the row. Centered to one another;
+   the group as a whole aligns to the top of the content via .message-with-icon. */
+.message-icon-badge {
+    display: flex;
+    align-items: center;
+    gap: var(--message-icon-badge-gap);
+    flex-shrink: 0;
+}
+
+/* An item's body: whatever it has to say or ask below its icon row — a thread's
+   summary, the approval buttons, a plugin's own form. Such a block is appended
+   as a sibling of .message-with-icon rather than into .message-content-box, so
+   that prose several lines long, or a column of option labels, gets the tile's
+   width instead of the sliver beside the badge. This lines its left edge up
+   with the lozenge, so it reads as belonging to the row above instead of
+   spilling back under the icon. Add the class to any such block; don't
+   re-derive the indent. */
+.message-row-body {
+    margin-left: var(--message-icon-indent);
+    min-width: 0;
+    max-width: 100%;
+}
+
+
+/* Color presets - unified utility classes that set --preset-bg and --preset-badge-bg */
+.color-slate {
+    --preset-bg: var(--ci-preset-slate);
+    --preset-badge-bg: var(--ci-preset-badge-slate, var(--ci-preset-slate));
+}
+
+.color-blue {
+    --preset-bg: var(--ci-preset-blue);
+    --preset-badge-bg: var(--ci-preset-badge-blue, var(--ci-preset-blue));
+}
+
+.color-indigo {
+    --preset-bg: var(--ci-preset-indigo);
+    --preset-badge-bg: var(--ci-preset-badge-indigo, var(--ci-preset-indigo));
+}
+
+.color-purple {
+    --preset-bg: var(--ci-preset-purple);
+    --preset-badge-bg: var(--ci-preset-badge-purple, var(--ci-preset-purple));
+}
+
+.color-magenta {
+    --preset-bg: var(--ci-preset-magenta);
+    --preset-badge-bg: var(--ci-preset-badge-magenta, var(--ci-preset-magenta));
+}
+
+.color-pink {
+    --preset-bg: var(--ci-preset-pink);
+    --preset-badge-bg: var(--ci-preset-badge-pink, var(--ci-preset-pink));
+}
+
+.color-red {
+    --preset-bg: var(--ci-preset-red);
+    --preset-badge-bg: var(--ci-preset-badge-red, var(--ci-preset-red));
+}
+
+.color-orange {
+    --preset-bg: var(--ci-preset-orange);
+    --preset-badge-bg: var(--ci-preset-badge-orange, var(--ci-preset-orange));
+}
+
+.color-amber {
+    --preset-bg: var(--ci-preset-amber);
+    --preset-badge-bg: var(--ci-preset-badge-amber, var(--ci-preset-amber));
+}
+
+.color-yellow {
+    --preset-bg: var(--ci-preset-yellow);
+    --preset-badge-bg: var(--ci-preset-badge-yellow, var(--ci-preset-yellow));
+}
+
+.color-lime {
+    --preset-bg: var(--ci-preset-lime);
+    --preset-badge-bg: var(--ci-preset-badge-lime, var(--ci-preset-lime));
+}
+
+.color-green {
+    --preset-bg: var(--ci-preset-green);
+    --preset-badge-bg: var(--ci-preset-badge-green, var(--ci-preset-green));
+}
+
+.color-emerald {
+    --preset-bg: var(--ci-preset-emerald);
+    --preset-badge-bg: var(--ci-preset-badge-emerald, var(--ci-preset-emerald));
+}
+
+.color-teal {
+    --preset-bg: var(--ci-preset-teal);
+    --preset-badge-bg: var(--ci-preset-badge-teal, var(--ci-preset-teal));
+}
+
+.color-cyan {
+    --preset-bg: var(--ci-preset-cyan);
+    --preset-badge-bg: var(--ci-preset-badge-cyan, var(--ci-preset-cyan));
+}
+
+.color-sky {
+    --preset-bg: var(--ci-preset-sky);
+    --preset-badge-bg: var(--ci-preset-badge-sky, var(--ci-preset-sky));
+}
+
+.color-brown {
+    --preset-bg: var(--ci-preset-brown);
+    --preset-badge-bg: var(--ci-preset-badge-brown, var(--ci-preset-brown));
+}
+
+.color-stone {
+    --preset-bg: var(--ci-preset-stone);
+    --preset-badge-bg: var(--ci-preset-badge-stone, var(--ci-preset-stone));
+}
+
+.color-zinc {
+    --preset-bg: var(--ci-preset-zinc);
+    --preset-badge-bg: var(--ci-preset-badge-zinc, var(--ci-preset-zinc));
+}
+
+.color-crimson {
+    --preset-bg: var(--ci-preset-crimson);
+    --preset-badge-bg: var(--ci-preset-badge-crimson, var(--ci-preset-crimson));
+}
+
+/* Semantic family classes — the labels context-item plugins return from
+   getBadgeOptions(). They resolve through the --ci-family-* tokens so the
+   family→hue mapping lives here, not hard-coded in each tool. */
+.color-read {
+    --preset-bg: var(--ci-family-read);
+    --preset-badge-bg: var(--ci-family-badge-read, var(--ci-family-read));
+}
+
+.color-search {
+    --preset-bg: var(--ci-family-search);
+    --preset-badge-bg: var(--ci-family-badge-search, var(--ci-family-search));
+}
+
+.color-web {
+    --preset-bg: var(--ci-family-web);
+    --preset-badge-bg: var(--ci-family-badge-web, var(--ci-family-web));
+}
+
+.color-edit {
+    --preset-bg: var(--ci-family-edit);
+    --preset-badge-bg: var(--ci-family-badge-edit, var(--ci-family-edit));
+}
+
+.color-memory {
+    --preset-bg: var(--ci-family-memory);
+    --preset-badge-bg: var(--ci-family-badge-memory, var(--ci-family-memory));
+}
+
+.color-execute {
+    --preset-bg: var(--ci-family-execute);
+    --preset-badge-bg: var(--ci-family-badge-execute, var(--ci-family-execute));
+}
+
+.color-plan {
+    --preset-bg: var(--ci-family-plan);
+    --preset-badge-bg: var(--ci-family-badge-plan, var(--ci-family-plan));
+}
+
+.color-meta {
+    --preset-bg: var(--ci-family-meta);
+    --preset-badge-bg: var(--ci-family-badge-meta, var(--ci-family-meta));
+}
+
+.color-system {
+    --preset-bg: var(--ci-family-system);
+    --preset-badge-bg: var(--ci-family-badge-system, var(--ci-family-system));
+}
+
+.color-ask {
+    --preset-bg: var(--ci-family-ask);
+    --preset-badge-bg: var(--ci-family-badge-ask, var(--ci-family-ask));
+}
+
+.color-thread {
+    --preset-bg: var(--ci-family-thread);
+    --preset-badge-bg: var(--ci-family-badge-thread, var(--ci-family-thread));
+}
+
+.color-todo {
+    --preset-bg: var(--ci-family-todo);
+    --preset-badge-bg: var(--ci-family-badge-todo, var(--ci-family-todo));
+}
+
+/* Apply preset background to icon boxes and context item containers */
+.message-icon-box[class*="color-"] { background: var(--preset-badge-bg, var(--preset-bg)); }
+
+/* In light theme, colored icon boxes use saturated dark backgrounds — force icons to white */
+:root[data-theme="light"] .message-icon-box[class*="color-"] { color: white; }
+:root[data-theme="light"] .message-icon-box[class*="color-"] > span[class^="icon-"] { background-color: white; }
+
+/* Pulse animation for busy message icons */
+assistant-message[is-processing="true"] .message-icon-box,
+thinking-message[is-processing="true"] .message-icon-box,
+tool-action-message article[data-processing="true"] .message-icon-box,
+thread-message article[data-processing="true"] .message-icon-box,
+tool-group-message article[data-processing="true"] .message-icon-box {
+    animation: icon-pulse 0.8s ease-in-out infinite;
+}
+
+.message-text {
+    color: var(--text-secondary, #8b949e);
+    font-family: var(--font-mono);
+}
+
+/* Error messages use red color for visibility */
+article.error .message-text {
+    color: var(--accent-red);
+}
+
+/* Content box for icon messages - pure layout container, never clips children */
+.message-content-box {
+    background: transparent;
+    border: none;
+    flex: 1;
+    min-width: 0;
+}
+
+/* Shared title-row alignment for EVERY icon-message item type. The title row is
+   given the same height as the icon/badge group and centers its content, so the
+   title aligns to the badge identically for read-file, grep, system prompt, file
+   content, project memory and all the rest — no per-component padding hacks. */
+.message-content-box .action-result > .action-result-status,
+.message-content-box > .message-text {
+    min-height: var(--message-icon-row-height);
+    display: flex;
+    align-items: center;
+}
+
+/* Two-line summaries (the shared .summary-with-subtitle helper — e.g. bash's
+   command + description) must NOT be centered as a single block. Top-align the
+   row and give the first line the same icon-row band, so the command aligns to
+   the badge exactly like every single-line title and the description just sits
+   below it. */
+.message-content-box .action-result-status:has(.summary-with-subtitle) {
+    align-items: flex-start;
+}
+
+.message-content-box .summary-with-subtitle-main {
+    line-height: var(--message-icon-row-height);
+}
+
+/* Assistant/Thinking content box - transparent, just indentation */
+assistant-message article.assistant .message-content-box,
+thinking-message article.thinking .message-content-box {
+    background: transparent;
+    border: none;
+    padding: 0.4rem 0;
+}
+
+/* Workspace banner: the tree a bound conversation works in, stated once above
+   the first item. It scopes everything below it, so it reads as a quiet rule
+   across the top of the transcript rather than as content — no bubble, no icon,
+   and never loud enough to compete with the first message. Shown only when the
+   conversation is bound to something other than the project. */
+.conversation-workspace-banner {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0 0.375rem;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px dashed var(--border-divider, rgb(255 255 255 / 12%));
+    font-size: 0.6875rem;
+    color: var(--text-secondary);
+}

@@ -87,7 +87,7 @@ export const TODO_PREVIEW_MESSAGE = `Here are all the states, drawn the way the 
 @media (max-width: 46rem) { .tbx .two { grid-template-columns: 1fr; } }
 .tbx .cap { font-size: 11px; color: #8b949e; margin: 0 0 6px; }
 
-/* old tick, reproduced exactly as it is in styles.css today */
+/* old tick, reproduced exactly as it is in patterns/icons.css today */
 .tbx input.old { appearance:none; -webkit-appearance:none; position:relative; top:.125rem; width:.875rem; height:.875rem; margin:0 .4375rem 0 0; border:.0625rem solid #30363d; border-radius:.1875rem; background:transparent; }
 .tbx input.old:checked { border-color:#3fb950; background:#3fb950; }
 .tbx input.old:checked::after { content:""; position:absolute; top:.0625rem; left:.25rem; width:.1875rem; height:.4375rem; border:solid #fff; border-width:0 .0938rem .0938rem 0; transform:rotate(45deg); }

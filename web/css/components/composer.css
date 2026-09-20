@@ -1,0 +1,1098 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+composer-box {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    position: relative;
+    padding: 0.3rem 1rem 0.75rem;
+    background: var(--bg-secondary);
+}
+
+/* The composer's material. The input bubble and the suggested-reply chips
+   above it are the same surface, so the declarations that make it are written
+   once and shared: a chip cannot drift away from the box it writes into. */
+composer-box composer-box-wrapper,
+reply-suggestions .reply-suggestion {
+    background: var(--bubble-user-bg);
+    border-radius: 1.25rem;
+    transition: background 150ms ease, box-shadow 150ms ease;
+}
+
+/* Composer wrapper - the visual bubble containing textarea and button */
+composer-box composer-box-wrapper {
+    display: flex;
+    flex-direction: column;
+    padding: 0.875rem 1rem 1rem;
+
+    /* Positioning context for the paste-placeholder mirror, which is absolutely
+       positioned to overlay the textarea exactly. */
+    position: relative;
+}
+
+composer-box textarea {
+    flex: none;
+    width: 100%;
+    background: transparent;
+    border: none;
+    color: var(--bubble-user-text);
+    padding: 0;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    resize: none;
+    min-height: 0;
+    max-height: none;
+}
+
+/* Drop-target highlight while dragging files over the composer — and while
+   dragging them anywhere else over the column, which hands its drops to this
+   same box, so the ring is what says where the file will end up. */
+composer-box composer-box-wrapper.drag-over,
+conversation-area.file-drag-over composer-box composer-box-wrapper {
+    box-shadow: 0 0 0 0.125rem var(--accent-color, #4a9eff);
+}
+
+/* Suggested replies: sitting on the composer's own background strip, directly
+   above the box they write into — where a phone keyboard puts its word
+   suggestions. Hidden outright when there is nothing to offer, so an empty row
+   costs the transcript no space. */
+reply-suggestions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+
+    /* The bottom padding is structural, not spacing: the composer below paints
+       an opaque background from a positioned box, so it covers anything this
+       row spills past its own edge. Without a gap here a chip's last
+       (fractional) pixel and its whole focus outline go under the composer, and
+       the button reads as clipped. */
+    padding: 0.5rem 1rem 0.25rem;
+    background: var(--bg-secondary);
+}
+
+reply-suggestions[hidden] {
+    display: none;
+}
+
+/* Text to match the textarea's, on the shared surface above. */
+reply-suggestions .reply-suggestion {
+    border: none;
+    color: var(--bubble-user-text);
+    font: inherit;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    padding: 0.3rem 0.875rem;
+    text-align: left;
+    cursor: pointer;
+}
+
+/* A chip has no border to light up, so the surface itself answers the pointer:
+   the same colour, undimmed. Keyboard focus still needs an outline — a shift
+   this quiet is not something to hunt for with a tab key. */
+reply-suggestions .reply-suggestion:hover {
+    background: var(--bubble-user-bg-hover);
+}
+
+reply-suggestions .reply-suggestion:focus-visible {
+    outline: 0.125rem solid var(--accent-blue);
+    outline-offset: 0.0625rem;
+}
+
+/* Staged image-attachment chip row. Hidden until it holds chips so it adds no
+   vertical space to an empty input. Rebuilt independently of the textarea so
+   re-rendering chips never disturbs the caret. */
+composer-box composer-box-attachments {
+    display: none;
+}
+
+composer-box composer-box-attachments.has-attachments {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+    margin-bottom: 0.5rem;
+}
+
+composer-box .attachment-chip {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    max-width: 14rem;
+    padding: 0.1875rem 0.375rem;
+    background: var(--bg-secondary);
+    border: 0.0625rem solid var(--border-color);
+    border-radius: 0.375rem;
+    font-size: 0.75rem;
+}
+
+composer-box .attachment-chip.uploading {
+    opacity: 0.6;
+}
+
+composer-box .attachment-chip .attachment-thumb {
+    width: 1.75rem;
+    height: 1.75rem;
+    object-fit: cover;
+    border-radius: 0.25rem;
+    flex-shrink: 0;
+    background: var(--bg-primary);
+}
+
+composer-box .attachment-chip .attachment-thumb.clickable {
+    cursor: zoom-in;
+}
+
+/* Dropped text file — document glyph in place of the image thumbnail. */
+composer-box .attachment-chip.text-file .attachment-icon {
+    width: 1.25rem;
+    height: 1.25rem;
+    flex-shrink: 0;
+    color: var(--text-secondary);
+}
+
+composer-box .attachment-chip .attachment-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-secondary);
+}
+
+composer-box .attachment-chip .attachment-remove {
+    flex-shrink: 0;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+    padding: 0 0.125rem;
+}
+
+composer-box .attachment-chip .attachment-remove:hover {
+    color: var(--text-primary);
+}
+
+/* Attach-image button — icon-only, matching the commands button. */
+composer-box .attach-image-btn {
+    justify-content: center;
+    padding: 0.125rem 0.5rem;
+}
+
+composer-box .attach-image-btn .attach-image-icon {
+    display: flex;
+    width: 0.875rem;
+    height: 0.875rem;
+}
+
+composer-box textarea:focus {
+    outline: none;
+}
+
+composer-box textarea:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+composer-box textarea::placeholder {
+    /* Explicit colour so transparent-text (mirrored) mode can't blank it. */
+    color: var(--text-secondary);
+}
+
+/* ── Pasted-text placeholder tokens ──────────────────────────────────────
+   A large paste collapses to an inline "[Pasted #N · size]" pill. The textarea
+   can't style a character run, so a backdrop mirror renders the same text with
+   each token wrapped in a styled span, while the textarea's own text goes
+   transparent (caret preserved). The mirror is present ONLY while a token
+   exists; a token-free composer is a plain textarea. */
+composer-box .paste-mirror {
+    position: absolute;
+    margin: 0;
+    border: 0;
+    box-sizing: border-box;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 0;
+    color: var(--bubble-user-text);
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+
+    /* Font metrics are copied from the textarea's computed style at runtime so
+       the two layers wrap identically regardless of theme. */
+}
+
+/* While mirrored: the textarea's glyphs go transparent so the pills behind show
+   through, but the caret and native selection highlight stay visible. */
+composer-box textarea.paste-mirrored {
+    position: relative;
+    z-index: 1;
+    color: transparent;
+    caret-color: var(--bubble-user-text);
+    background: transparent;
+}
+
+/* The pill itself — metric-safe properties ONLY (background/colour/radius/
+   shadow), never padding/border/font-weight, so it can't shift layout away from
+   the transparent textarea text underneath. */
+composer-box .paste-mirror .paste-token {
+    border-radius: 0.375rem;
+    color: var(--accent-color, #4a9eff);
+    background: color-mix(in srgb, var(--accent-color, #4a9eff) 20%, transparent);
+    box-shadow: 0 0 0 0.0625rem color-mix(in srgb, var(--accent-color, #4a9eff) 40%, transparent);
+
+    /* Signals the click-to-expand affordance. The mirror is pointer-events:none
+       and sits behind the textarea, so the effective cursor over a pill is set on
+       the textarea at runtime (mousemove hit-test); this is belt-and-braces. */
+    cursor: pointer;
+}
+
+/* Busy state flashed on the pill the instant it's clicked, painted before the
+   (synchronous) blob insert runs so the click is acknowledged rather than the
+   UI appearing to freeze. A static style change, not an animation — the main
+   thread is blocked by the insert, so an animation would stutter anyway. */
+composer-box .paste-mirror .paste-token.expanding {
+    opacity: 0.5;
+    background: color-mix(in srgb, var(--accent-color, #4a9eff) 38%, transparent);
+    box-shadow: 0 0 0 0.0625rem color-mix(in srgb, var(--accent-color, #4a9eff) 65%, transparent);
+}
+
+/* Workspace chip: where this conversation works, left of the strategy and the
+   model because it is the scope those two operate inside. Deliberately WITHOUT
+   a min-width floor — it is absent for every conversation working in the
+   project, so reserving width for it would leave a hole in the common case. */
+composer-box .workspace-chip-button {
+    font-size: 0.6875rem;
+    max-width: var(--config-workspace-name-max);
+}
+
+composer-box .workspace-chip-button .workspace-chip-name {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Uncommitted work in the tree. The colour is the whole signal: a second glyph
+   would be a badge on a chip that is already a badge. */
+composer-box .workspace-chip-button.dirty .workspace-chip-icon {
+    background-color: var(--accent-yellow);
+}
+
+/* The chip's menu: which workspace this is, and what can be done about it. Wide
+   enough that a row's consequence wraps to two lines rather than five — there is
+   nothing to be won by making somebody read this one through a slot. */
+.dropdown-menu.workspace-menu.show {
+    min-width: 20rem;
+    max-width: 28rem;
+}
+
+/* The band at the top is information, not a list of choices, so it is a filled
+   block flush with the card's top edge rather than a row among rows: its edge is
+   the boundary, and nothing in it can be pressed. Inline padding restores the
+   text to the same gutter the rows below use, so the column still lines up. */
+.workspace-menu .workspace-menu-header {
+    margin: calc(-1 * var(--popup-padding)) calc(-1 * var(--popup-padding-inline)) 0.25rem;
+    padding: 0.625rem calc(var(--popup-padding-inline) + 0.75rem);
+    background: var(--bg-raised);
+    border-bottom: 0.0625rem solid var(--border-divider);
+    border-radius: var(--radius-popup) var(--radius-popup) 0 0;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    cursor: default;
+    list-style: none;
+}
+
+/* A bottom sheet has a grabber above this, so the band stays inside the padding
+   and keeps its rule. */
+.workspace-menu.popup-sheet .workspace-menu-header {
+    margin-top: 0;
+    border-radius: 0;
+}
+
+.workspace-menu .workspace-menu-detail,
+.workspace-menu .workspace-menu-kind {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.workspace-menu .workspace-menu-kind {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+/* The provider's reason for having nothing to offer, which is not part of the
+   band: it is about the menu, not about the place. */
+.workspace-menu .workspace-menu-note {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    cursor: default;
+    list-style: none;
+}
+
+/* "Workspace" — the noun the setup panel, the banner and the move dialog all
+   use, so the lines under it are read as an answer to something. */
+.workspace-menu .workspace-menu-lead {
+    display: block;
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-tertiary);
+}
+
+/* The endings, under a heading that has to read as a lid on them rather than as
+   another row: a rule the full width of the card, generous space above it, and
+   almost none between it and the first row it governs. */
+.workspace-menu .category-header.workspace-menu-group {
+    margin: 0.5rem calc(-1 * var(--popup-padding-inline)) 0;
+    padding: 0.625rem calc(var(--popup-padding-inline) + 0.75rem) 0.25rem;
+    border-top: 0.0625rem solid var(--border-divider);
+}
+
+/* What a row will do, under what it is called. Wraps, because it is a sentence
+   and not a hint. */
+.workspace-menu .menu-item {
+    display: block;
+}
+
+.workspace-menu .menu-item .menu-item-note {
+    display: block;
+    margin-left: 0;
+    white-space: normal;
+    line-height: 1.35;
+}
+
+/* The path as one line. Its last segment is the name and the rest is the
+   address, so the name keeps the weight and the parents are what give way when
+   there is not room for both. */
+.workspace-menu .workspace-menu-root {
+    display: flex;
+    align-items: baseline;
+}
+
+.workspace-menu .workspace-menu-root-parent {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.workspace-menu .workspace-menu-root-name {
+    flex: none;
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+/* The keyboard cursor, in the vocabulary the model picker already uses:
+   `nav-active` is where the arrow keys are, and only ever one row has it. */
+.workspace-menu .menu-item.nav-active {
+    background: var(--bg-raised);
+}
+
+/* Strategy selector shares the .input-ctrl-btn ghost-pill style; only its
+   slightly smaller label and the chevron affordance are unique. The min-width
+   floor fits the common names so the label caps and ellipsises past it rather
+   than resizing the button. */
+composer-box .strategy-selector-button {
+    font-size: 0.6875rem;
+    min-width: var(--config-strategy-min);
+}
+
+/* Current strategy's colour is carried by the label text (not a border, which
+   would make it the odd one out among the input controls). */
+composer-box .strategy-selector-button[data-has-color="true"] .strategy-name {
+    color: var(--strategy-color);
+}
+
+/* Leading icon next to the strategy label on the selector button */
+composer-box .strategy-selector-button .strategy-icon {
+    width: 0.875rem;
+    height: 0.875rem;
+}
+
+/* Icon shares the strategy colour with the label when one is defined */
+composer-box .strategy-selector-button[data-has-color="true"] .strategy-icon {
+    color: var(--strategy-color);
+}
+
+/* Input controls row. Three unbreakable clusters — config (permission /
+   strategy / model), actions (the icon buttons), send — laid out in one source
+   order everywhere: config, actions, send. `container-type: inline-size` makes
+   this row the query container for the narrow-width fold below; height is not
+   contained, so the row is free to grow to a second line.
+
+   The --config-* custom properties are the width-stability floors: each
+   variable-width config control gets a min-width sized to its common label so
+   cycling model/thinking/strategy doesn't jog the button under its own anchored
+   popup; an outlier label ellipsises past the cap instead of growing the row. */
+composer-box input-controls {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+    margin-top: 1rem;
+    container-type: inline-size;
+
+    /* Button min-width floors: sized to comfortably exceed the COMMON label so
+       the button width pins to the floor and cycling among common values leaves
+       it steady (the slack sits past the trailing chip/chevron). The name-max
+       values only cap a pathological outlier, which ellipsises. */
+    --config-workspace-name-max: 10rem;
+    --config-perm-min: 6rem;
+    --config-strategy-min: 7rem;
+    --config-strategy-name-max: 9rem;
+    --config-model-min: 13rem;
+    --config-model-name-max: 13rem;
+}
+
+/* Each cluster is a nowrap flex unit: it can never split mid-cluster, so the
+   row can only ever break at a cluster boundary — no ragged wrapping.
+
+   `flex-shrink: 0` is load-bearing, not cosmetic: input-controls is a wrapping
+   flex row, and flexbox SHRINKS items to fit a line before it wraps them. With
+   the default shrink, it would squeeze the config cluster's box below its
+   content width — but config is nowrap with non-shrinking buttons, so the
+   buttons can't shrink and instead spill out of the shrunk box and OVERLAP the
+   next cluster. Pinning shrink to 0 makes an over-wide cluster wrap to the next
+   line instead (the narrow-column fold below then handles config itself). */
+composer-box input-controls-config,
+composer-box input-controls-actions,
+composer-box input-controls-send {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+
+/* The send cluster hugs the right edge; the elastic gap sits to its left, so
+   config/actions growth spills into that gap and never shifts the send cluster
+   (or its New-Thread neighbour). */
+composer-box input-controls-send {
+    margin-left: auto;
+}
+
+/* Permission pill: floor covers the toggled head ("✓ Edits on" / "🔒 Edits
+   off"); the "· N cmds · M paths" detail extends past the floor and only
+   changes on rule edits, never during a cycle. */
+composer-box .permission-btn {
+    min-width: var(--config-perm-min);
+    justify-content: flex-start;
+}
+
+/* Strategy name: content-sized so the chevron sits flush against it (same
+   rationale as .model-name — the button's min-width floor supplies the stable
+   width, with the slack past the chevron). max-width bounds an outlier name. */
+composer-box .strategy-selector-button .strategy-name {
+    flex: 0 1 auto;
+    max-width: var(--config-strategy-name-max);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Narrow-column fold: below the threshold, config takes the whole first row and
+   actions + send flow onto a second row (send still margin-left:auto, so it
+   stays bottom-right).
+
+   The threshold is set ABOVE the one-line fit width (config ~25rem + actions
+   ~9rem + send ~9.5rem ≈ 44rem at the floors), NOT at some smaller value. If it
+   sat below the fit width, the 40–44rem band would be above the fold but below
+   the fit, so flexbox would NATURALLY wrap instead — and because the send
+   cluster is last with margin-left:auto, it wraps alone onto row 2, leaving a
+   packed top row and a near-empty bottom one. Folding at 46rem pre-empts that
+   natural wrap with the balanced split (config row 1, actions+send row 2) the
+   moment one line stops fitting.
+
+   Below the fold the config cluster is allowed to wrap internally and its
+   buttons to shrink: the width-stability floors and `flex-shrink: 0` are what
+   keep the buttons steady at comfortable widths, but at narrow widths they'd
+   force the three config buttons to spill past the column edge and get lost.
+   Correctness (never lose a control) beats stability here — so we drop the
+   floors, let the buttons shrink (a long model name ellipsises), and let the
+   cluster wrap to as many lines as it needs rather than overflow. */
+@container (max-width: 46rem) {
+    composer-box input-controls-config {
+        flex-basis: 100%;
+        flex-wrap: wrap;
+    }
+
+    /* The config cluster's flex items are the custom-element WRAPPERS, not the
+       buttons inside them. A wrapper must be able to shrink below its content
+       width (min-width:0 + flex-shrink:1) or a single one wider than the row
+       overflows the column instead of wrapping — losing the control entirely.
+       permission-controls / model-selector default to flex-shrink:1, but
+       strategy-selector is pinned flex-shrink:0 upstream, so re-enable it. */
+    composer-box input-controls-config > permission-controls,
+    composer-box input-controls-config > strategy-selector,
+    composer-box input-controls-config > model-selector {
+        min-width: 0;
+        flex-shrink: 1;
+    }
+
+    /* And the button inside each wrapper: drop its stability floor and let it
+       clip so the ellipsised label (.model-name / .strategy-name) actually
+       shrinks with the wrapper rather than forcing an overflow. */
+    composer-box input-controls-config .permission-btn,
+    composer-box input-controls-config .strategy-selector-button,
+    composer-box input-controls-config .model-selector-button {
+        min-width: 0;
+        overflow: hidden;
+        flex-shrink: 1;
+    }
+}
+
+/* New thread button shares the .input-ctrl-btn ghost-pill style; the trailing
+   branch-off arrow sits to the right of the label. */
+.new-thread-btn .new-thread-arrow {
+    display: flex;
+    align-items: center;
+}
+
+.new-thread-btn .new-thread-arrow svg {
+    width: 0.875rem;
+    height: 0.875rem;
+}
+
+/* Schedule-send ("send after a delay") button — shares the .input-ctrl-btn
+   ghost pill. Icon-only when idle; when a send is armed it turns accent and
+   reveals a compact countdown badge to its right. */
+composer-box .schedule-send-btn {
+    justify-content: center;
+}
+
+composer-box .schedule-send-btn .schedule-send-icon {
+    display: flex;
+    align-items: center;
+    width: 0.875rem;
+    height: 0.875rem;
+}
+
+composer-box .schedule-send-btn.armed {
+    color: var(--accent-blue);
+    border-color: var(--accent-blue);
+}
+
+composer-box .schedule-send-btn .schedule-send-countdown {
+    font-size: 0.6875rem;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+}
+
+/* Delay picker — extends the .dropdown-menu base (surface, border, shadow,
+   positioning); this owns only the internal layout. */
+.dropdown-menu.schedule-send-menu.show {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: var(--popup-padding-inline);
+    min-width: 15rem;
+}
+
+.schedule-send-menu .schedule-send-heading {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.schedule-send-menu .schedule-preset-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+}
+
+.schedule-send-menu .schedule-preset {
+    flex: 1 1 auto;
+    min-width: 2.75rem;
+    padding: 0.1875rem 0.5rem;
+    font-size: 0.75rem;
+    text-align: center;
+    color: var(--text-primary);
+    background: var(--bg-tertiary);
+    border: 0.0625rem solid var(--border-color);
+    border-radius: var(--radius-md, 0.25rem);
+    cursor: pointer;
+}
+
+.schedule-send-menu .schedule-preset:hover {
+    border-color: var(--accent-blue);
+    color: var(--accent-blue);
+}
+
+.schedule-send-menu .schedule-steppers {
+    display: flex;
+    gap: 2rem;
+}
+
+.schedule-send-menu .schedule-stepper {
+    flex: 1 1 0;
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+}
+
+.schedule-send-menu .schedule-stepper-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    font-size: 1rem;
+    line-height: 1;
+    color: var(--text-primary);
+    background: var(--bg-tertiary);
+    border: 0.0625rem solid var(--border-color);
+    border-radius: var(--radius-md, 0.25rem);
+    cursor: pointer;
+}
+
+.schedule-send-menu .schedule-stepper-btn:hover {
+    border-color: var(--accent-blue);
+}
+
+.schedule-send-menu .schedule-stepper-value {
+    margin-left: auto;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+}
+
+.schedule-send-menu .schedule-stepper-unit {
+    margin-right: auto;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.schedule-send-menu .schedule-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.schedule-send-menu .schedule-confirm-btn {
+    flex: 1;
+    padding: 0.375rem 0.75rem;
+    font-size: 0.8125rem;
+    color: #fff;
+    background: var(--accent-blue);
+    border: none;
+    border-radius: var(--radius-md, 0.25rem);
+    cursor: pointer;
+}
+
+.schedule-send-menu .schedule-confirm-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.schedule-send-menu .schedule-cancel-btn {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.8125rem;
+    color: var(--text-primary);
+    background: var(--bg-tertiary);
+    border: 0.0625rem solid var(--border-color);
+    border-radius: var(--radius-md, 0.25rem);
+    cursor: pointer;
+}
+
+.schedule-send-menu .schedule-cancel-btn:hover {
+    border-color: var(--accent-red);
+    color: var(--accent-red);
+}
+
+/* The other wait, below the delay block: full-width and quiet, so the accent
+   "Schedule to send at HH:MM" stays the picker's primary action. */
+.schedule-send-menu .schedule-turn-end-btn {
+    width: 100%;
+    padding: 0.375rem 0.75rem;
+    font-size: 0.8125rem;
+    color: var(--text-primary);
+    background: var(--bg-tertiary);
+    border: 0.0625rem solid var(--border-color);
+    border-radius: var(--radius-md, 0.25rem);
+    cursor: pointer;
+}
+
+.schedule-send-menu .schedule-turn-end-btn:hover:not(:disabled) {
+    border-color: var(--accent-blue);
+    color: var(--accent-blue);
+}
+
+.schedule-send-menu .schedule-turn-end-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Armed picker: the target time sits above a full-width cancel button. */
+.schedule-send-menu .schedule-armed-target {
+    text-align: center;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+}
+
+.schedule-send-menu .schedule-cancel-only {
+    width: 100%;
+    text-align: center;
+}
+
+/* Touch-only "⋮" overflow button — a filled circular control that opens the
+   actions sheet. Shaped and sized to match the send button so the two read as a
+   peer pair (a neutral "more" beside the accent "send"); the ellipsis glyph
+   reads as "more options". Hidden on desktop; the coarse-pointer block below
+   reveals it. */
+composer-box .more-actions-btn {
+    display: none;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: var(--overlay-light-30);
+    color: var(--text-primary);
+}
+
+composer-box .more-actions-btn .more-actions-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1rem;
+    height: 1rem;
+}
+
+/* Send button — a circular accent control, always visible. On desktop Enter
+   also sends; on touch (where Enter inserts a newline) this is the send
+   affordance. Send-only: cancelling a running turn is the footer Stop button's
+   job. */
+composer-box .send-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: var(--accent-blue);
+    color: #fff;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+composer-box .send-btn .send-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1rem;
+    height: 1rem;
+}
+
+composer-box .send-btn .send-icon svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+/* No text to send yet — dim and inert (sendMessage() also no-ops on empty). */
+composer-box .send-btn.is-empty {
+    opacity: 0.4;
+    pointer-events: none;
+}
+
+/* Context-cache warning — a round amber alert sitting just before Send, shown
+   when the next send would re-read a large slice of cached context (a staged
+   strategy switch that changes the tool set, or a deleted/edited earlier
+   message). Text-free and sized to match the send button; the reason lives in
+   its tooltip (hover, or click/tap). Hidden until the strategy selector flags a
+   bust, and cleared once the transcript matches the last-sent baseline again. */
+composer-box .context-cache-warning-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: var(--accent-yellow);
+    color: #fff;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+/* Override the UA `display` so the flex layout above applies when shown; when
+   `hidden` the attribute wins and the button collapses out of the row. */
+composer-box .context-cache-warning-btn[hidden] {
+    display: none;
+}
+
+composer-box .context-cache-warning-btn .icon-warning {
+    width: 1rem;
+    height: 1rem;
+}
+
+/* Light theme: --accent-yellow is a dark, murky mustard (tuned to read as text
+   on a light surface), which makes a poor alert fill. Swap in a brighter, more
+   saturated amber with a dark glyph — bright enough to catch the eye, with the
+   symbol still legible (black-on-yellow hazard contrast). */
+:root[data-theme="light"] composer-box .context-cache-warning-btn {
+    background: #f5c518;
+    color: #3d2c00;
+}
+
+/* "⋮" actions sheet: a simple vertical list (commands, attach image, send after
+   a delay, new thread). presentPopup renders it as a bottom sheet on a narrow
+   viewport. */
+.actions-sheet.show {
+    display: flex;
+    flex-direction: column;
+    min-width: 13rem;
+}
+
+/* Every sheet row shares one comfortable tap height with the section headers, so
+   the essentials (attach image, new thread, strategy) and the command/skill rows
+   line up as a single consistent list rather than a mix of heights. */
+.actions-sheet .actions-sheet-item {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    min-height: 2.75rem;
+}
+
+.actions-sheet .actions-sheet-icon {
+    display: flex;
+    width: 1rem;
+    height: 1rem;
+    flex-shrink: 0;
+    color: var(--text-secondary);
+}
+
+.actions-sheet .actions-sheet-item code {
+    font-family: var(--font-mono, monospace);
+    font-size: 0.8125rem;
+    opacity: 0.7;
+    flex-shrink: 0;
+}
+
+.actions-sheet .actions-sheet-label {
+    color: var(--text-secondary);
+}
+
+/* Touch composer layout: Enter inserts a newline (see composer-box._isTouchComposer,
+   keyed off the same media features), so a Send button is the send affordance
+   and the secondary actions collapse into the "⋮" sheet to keep the controls
+   row single-line. Desktop keeps the full visible row. */
+@media (hover: none) and (pointer: coarse) {
+    composer-box .more-actions-btn {
+        display: inline-flex;
+    }
+
+    /* Touch has no true hover, but tapping the button (or dragging off it) leaves
+       a sticky :hover/:focus that would otherwise paint the ghost pill's wash and
+       hairline border over the circular control. Pin hover/focus to the resting
+       fill so it stays a clean solid circle; :active still dips via the shared
+       .input-ctrl-btn press scale. */
+    composer-box .more-actions-btn:hover:not(:disabled),
+    composer-box .more-actions-btn:focus:not(:disabled) {
+        background: var(--overlay-light-30);
+        border-color: transparent;
+        color: var(--text-primary);
+    }
+
+    /* The schedule-send ("timer") button is rarely used, so on touch it collapses
+       into the "⋮" actions sheet — except while a send is armed, when it stays
+       inline so the live countdown and cancel affordance remain visible. */
+    composer-box .schedule-send-btn:not(.armed) {
+        display: none;
+    }
+
+    /* Focusing the textarea pops the onscreen keyboard, and the browser scrolls
+       the focused element to sit just above it. The send button and the rest of
+       input-controls live BELOW the textarea, so that alignment hides them
+       behind the keyboard. scroll-margin-bottom makes the focus scroll-into-view
+       reserve room below the textarea — enough for the controls row (margin-top
+       1rem + button 1.5rem + wrapper padding-bottom 1rem) plus breathing room —
+       so the whole composer, send button included, lands above the keyboard. */
+    composer-box textarea {
+        scroll-margin-bottom: 4rem;
+    }
+
+    /* These live in the "⋮" actions sheet: the commands (`/`) and skill (`$`)
+       buttons collapse into its Slash-commands and Skills sections, and attach
+       image / new thread each become a row. */
+    composer-box .commands-button,
+    composer-box .skill-button,
+    composer-box .attach-image-btn,
+    composer-box .new-thread-btn {
+        display: none;
+    }
+
+    /* The strategy selector is relocated into the "⋮" sheet (see
+       composer-box._openActionsSheet); hide its inline slot. */
+    composer-box input-controls-config > strategy-selector {
+        display: none;
+    }
+
+    /* …except while its dropdown is open. Opening it from the sheet closes the
+       sheet (one popup at a time), which hands the selector straight back to
+       this inline slot — and on a tablet, wide enough that the dropdown anchors
+       to a button rather than becoming a sheet, a hidden button is a zero-sized
+       anchor and the menu lands in the top-left corner. Showing it for exactly
+       the span the menu is open keeps the anchor real. A delegated thread's
+       selector stays gone: [hidden] is excluded rather than out-specified. */
+    composer-box input-controls-config > strategy-selector:not([hidden]):has(.strategy-selector-button.open) {
+        display: flex;
+    }
+
+    /* One row, never wrapping: [permission] [model] [⋮] … [send]. Neutralise the
+       narrow-column fold (config never claims a full row here) and let the
+       config cluster shrink (min-width:0) so a long model name ellipsises
+       rather than pushing the row to a second line. */
+    composer-box input-controls {
+        flex-wrap: nowrap;
+    }
+
+    composer-box input-controls-config {
+        flex-basis: auto;
+        flex-wrap: nowrap;
+        min-width: 0;
+        flex-shrink: 1;
+        gap: 0.375rem;
+    }
+
+    /* Compact the permission pill to just "✓ Edits on" — the cmd/path counts
+       are still one tap away in the permissions popup. The head floor would
+       waste space on this tight row, so drop it too. */
+    composer-box .permission-btn {
+        min-width: 0;
+    }
+
+    composer-box .permission-btn .permission-detail {
+        display: none;
+    }
+
+    /* Let the model selector absorb the remaining width and ellipsise. */
+    composer-box model-selector,
+    composer-box .model-selector-button {
+        min-width: 0;
+        overflow: hidden;
+    }
+}
+
+/* Strategy row inside the "⋮" sheet: the relocated selector fills the row, its
+   label sitting left and the selector button pushed to the right edge. */
+.actions-sheet .actions-sheet-strategy {
+    justify-content: space-between;
+}
+
+/* Collapsible sections inside the "⋮" sheet (Slash commands, Skills). Native
+   <details>, closed by default, so the sheet opens short and each list expands
+   on tap with no JS state to manage. */
+.actions-sheet .actions-sheet-section {
+    display: flex;
+    flex-direction: column;
+}
+
+/* The <summary> is the tappable section header: a small caps label with a caret
+   that rotates from ▸ (closed) to ▾ (open). list-style/marker removal drops the
+   native disclosure triangle so only our caret shows. */
+.actions-sheet .actions-sheet-section-header {
+    list-style: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    /* A comfortable touch target — this is the sheet's primary tap affordance,
+       so it clears the ~44px minimum rather than sitting at row height. */
+    min-height: 2.75rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--radius-popup-item);
+    color: var(--text-secondary);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+}
+
+.actions-sheet .actions-sheet-section-header::-webkit-details-marker {
+    display: none;
+}
+
+.actions-sheet .actions-sheet-section-header::after {
+    content: "";
+    width: 0.4rem;
+    height: 0.4rem;
+    border-right: 0.09rem solid currentcolor;
+    border-bottom: 0.09rem solid currentcolor;
+    transform: rotate(-45deg);
+    transition: transform 150ms ease;
+    opacity: 0.7;
+}
+
+.actions-sheet .actions-sheet-section[open] .actions-sheet-section-header::after {
+    transform: rotate(45deg);
+}
+
+.actions-sheet .actions-sheet-section-header:hover {
+    background: var(--bg-raised);
+    color: var(--text-primary);
+}
+
+/* A skill description can be a full sentence — keep each expanded row a single
+   ellipsised line so the list stays tidy (command labels are short and
+   unaffected). */
+.actions-sheet .actions-sheet-section .actions-sheet-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Shell lock icon in permission button */
+composer-box .permission-btn .shell-lock-icon {
+    width: 0.75rem;
+    height: 0.75rem;
+    fill: currentcolor;
+    flex-shrink: 0;
+}
+
+/* Permission controls component */
+permission-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+}
+
+/* Permission button states — only the colour cues are bespoke; the ghost
+   chrome (incl. the borderless rest state for `.ask`) comes from .input-ctrl-btn. */
+composer-box .permission-btn.allowed {
+    color: var(--accent-green);
+}
+
+/* While its popup is open the permission button holds the house hover chrome. */
+composer-box .permission-btn.open {
+    background: var(--overlay-dark-70);
+    border-color: var(--overlay-light-30);
+}
+
+:root[data-theme="light"] composer-box .permission-btn.open {
+    background: rgb(255 255 255 / 95%);
+    border-color: var(--text-tertiary);
+}
+
+/* Light theme for permission buttons */
+:root[data-theme="light"] composer-box .permission-btn.allowed {
+    color: var(--accent-green);
+}
+
+/* Permissions popup — extends .dropdown-menu base.
+ *
+ * Layout: a stack of boxed "cards", one per section (allowed-paths plus one
+ * per registered plugin). The card chrome reuses the same look as the
+ * settings panel's `.provider-field` rows so the two surfaces feel related. */

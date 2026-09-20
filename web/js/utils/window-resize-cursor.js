@@ -5,7 +5,7 @@
 /**
  * Edge-resize cursor marker for the frameless desktop window: records on
  * `<html>`, as `data-resize-cursor`, that the pointer is over a window-resize
- * edge, so the CSS in styles.css can let that cursor through.
+ * edge, so the CSS in layout/window-chrome.css can let that cursor through.
  *
  * A frameless window has no native resize border, so the runtime hit-tests the
  * pointer itself and reports a hit by writing the cursor to
@@ -15,7 +15,7 @@
  * overrides it, and the edges that matter are all covered by one. The window
  * could be resized, but nothing said so, which reads as no resize edge at all.
  *
- * So this marks the state and styles.css spends one `!important` on it. The
+ * So this marks the state and window-chrome.css spends one `!important` on it. The
  * marker is a gate, not data: the cursor itself still comes from `body`, which
  * is why the rule can be a single `inherit` rather than a mapping of the eight
  * edge cursors.

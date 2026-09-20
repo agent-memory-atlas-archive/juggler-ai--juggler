@@ -1,0 +1,236 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+juggler-spinner {
+    --size: 2rem;
+    --duration: 1.5s;
+    --js-n: 3;
+    --js-radius: calc(var(--size) * 0.28);
+    --js-club-w: calc(var(--size) * 0.22);
+    --js-club-h: calc(var(--size) * 0.36);
+
+    display: inline-block;
+    position: relative;
+    width: var(--size);
+    height: var(--size);
+    flex-shrink: 0;
+    vertical-align: middle;
+    contain: layout style;
+}
+
+/* Do NOT add `will-change: transform` here (or on .js-orbit / .js-club). A
+   permanent layer promotion makes WebKit run these as accelerated compositor
+   animations, and an accelerated animation paused via the hidden-document rule
+   below does not reliably re-commit after the window has been occluded for a
+   long time (e.g. overnight): the layer stays frozen at its last transform even
+   though the CSS is `running` again. Only spinners created after the un-hide
+   would animate. Leaving these on the main-thread animation path resumes
+   cleanly. */
+
+/* Each club rides two nested rotations, and the split is what makes a variable
+   club count possible:
+
+     .js-pivot — STATIC rotation to this club's slot on the orbit (--js-angle,
+                 stamped inline as 360deg * i / n).
+     .js-orbit — the shared spin around the centre. Identical timing on every
+                 club, with NO animation-delay anywhere.
+
+   Rotations compose, so club i sits at (--js-angle + the common orbit angle) —
+   the same evenly-spaced cascade the delays used to produce. Splitting it this
+   way buys two things a per-club animation-delay cannot. First, all the orbit
+   animations are literally the same animation with the same start time, so they
+   can never drift apart. Second, re-spacing for a new club count only changes
+   --js-angle, and a static transform is transition-able (unlike
+   animation-delay, which is not animatable and would snap every club to a new
+   position) — so the cascade opens out and closes up smoothly instead of
+   bunching. */
+juggler-spinner .js-pivot {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 0;
+    height: 0;
+    transform: rotate(var(--js-angle, 0deg));
+    transition: transform 400ms ease, opacity 250ms ease;
+}
+
+/* Clubs joining or leaving the cascade fade rather than pop — the same
+   transparent state at both ends. On insert it is set and cleared a frame later
+   so a new club fades up while the others are still gliding apart to make room;
+   on removal it is set and the element detaches once the fade has run. The fade
+   is shorter than the re-spacing glide, so the count settles visually before
+   the spacing does. */
+juggler-spinner .js-pivot.js-faded {
+    opacity: 0;
+}
+
+juggler-spinner .js-orbit {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 0;
+    height: 0;
+    animation: juggler-spinner-orbit var(--duration) linear infinite;
+}
+
+
+
+/* The flip's slow-zone has to line up with the bottom of THIS club's orbit, so
+   it keeps a per-club phase offset — generalised from the hardcoded thirds to
+   any club count. Expressed against the --duration variable (not
+   animation-duration) so the offsets stay proportional if --duration is
+   overridden. */
+juggler-spinner .js-club {
+    position: absolute;
+    width: var(--js-club-w);
+    height: var(--js-club-h);
+    left: calc(var(--js-club-w) / -2);
+    top: calc((var(--js-radius) + var(--js-club-h) / 2) * -1);
+    animation: juggler-spinner-spin var(--duration) linear infinite;
+    animation-delay: calc(var(--duration) * var(--js-phase, 0) / var(--js-n) * -1);
+}
+
+/* Scoped through .js-club (not a bare `juggler-spinner svg`) on purpose: it
+   raises specificity to (0,1,2) so a container's own icon rule can't reach in
+   and resize the clubs. Notably `.message-action-btn svg { width:1rem }` is
+   (0,1,1) and WOULD otherwise win when the spinner sits inside such a button
+   (e.g. the footer Pause button), blowing every club up to a full 1rem square
+   and piling them in the centre. The svg always lives inside .js-club, so this
+   still matches all three. */
+juggler-spinner .js-club svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    fill: currentcolor;
+}
+
+@keyframes juggler-spinner-orbit {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}
+
+/* Non-linear cumulative rotation: big jumps near 0%/100% (club at
+   top of orbit) = fast spin; tiny jumps near 50% (club at bottom)
+   = nearly stopped. Each club's animation-delay aligns its own
+   slow-zone with its position at the bottom of the orbit, so all
+   three clubs visibly decelerate as they fall and accelerate as
+   they rise. */
+@keyframes juggler-spinner-spin {
+    0%   { transform: rotate(0deg); }
+    12%  { transform: rotate(80deg); }
+    25%  { transform: rotate(140deg); }
+    37%  { transform: rotate(170deg); }
+    50%  { transform: rotate(180deg); }
+    62%  { transform: rotate(190deg); }
+    75%  { transform: rotate(220deg); }
+    87%  { transform: rotate(280deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* ---- The drop -------------------------------------------------------------
+   Very occasionally one club is fumbled: it sags out of the ring, wobbles, and
+   is caught. Animated on the `translate` PROPERTY rather than `transform`,
+   which is what makes it composable — the club's `transform` is already fully
+   occupied by its flip, and CSS applies `translate` before `transform`, so the
+   two combine instead of one clobbering the other. The club therefore never
+   leaves the cascade's timing: it keeps flipping and keeps orbiting throughout,
+   and rejoins the ring exactly in phase.
+
+   Local +Y on the club points at the centre of the orbit, so the negative
+   offsets below push it outward — off the ring, below the orbit path at the
+   bottom of a throw. Outward is a direction in the ROTATING frame, so it only
+   coincides with screen-down while the club is near the bottom of its orbit:
+   the same offset fired at the top would fling the club upward and read as a
+   glitch rather than a fumble. That is why the club is chosen by where it is on
+   the ring (see _pickDropVictim) instead of at random — the shape below assumes
+   the fall lands in the bottom of a throw.
+
+   The duration is a fraction of the orbit rather than an absolute, so the fall
+   still finishes within one pass of the bottom whatever --duration says. */
+juggler-spinner .js-club.js-dropping {
+    animation:
+        juggler-spinner-spin var(--duration) linear infinite,
+        juggler-spinner-drop calc(var(--duration) * 0.6) linear 1;
+    animation-delay:
+        calc(var(--duration) * var(--js-phase, 0) / var(--js-n) * -1),
+        0s;
+}
+
+/* Each segment carries its own timing function (the shorthand above is
+   `linear`), because a single easing across the whole fumble is what made the
+   old one lurch: gravity accelerates, an impact decelerates hard, and a catch
+   eases out — one curve cannot be all three. The catch is deliberately the
+   longest phase, nearly half the animation, so the club is gathered back into
+   the pattern rather than snapping to its slot. */
+@keyframes juggler-spinner-drop {
+    /* dropped — accelerating away from the ring */
+    0% {
+        translate: 0 0;
+        animation-timing-function: cubic-bezier(0.45, 0, 1, 1);
+    }
+
+    /* hits the floor */
+    26% {
+        translate: 0 calc(var(--js-radius) * -1.2);
+        animation-timing-function: cubic-bezier(0, 0, 0.35, 1);
+    }
+
+    /* bounces */
+    40% {
+        translate: 0 calc(var(--js-radius) * -0.9);
+        animation-timing-function: cubic-bezier(0.45, 0, 1, 1);
+    }
+
+    /* and settles */
+    52% {
+        translate: 0 calc(var(--js-radius) * -1.2);
+        animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* scooped back into the cascade */
+    100% { translate: 0 0; }
+}
+
+/* The drop is the one thing here that is decoration rather than
+   instrumentation: the club count and the speed report real work and stay live
+   under reduced motion, but a club lurching off its orbit tells the user
+   nothing they need and is exactly the unrequested movement this preference
+   exists to stop. Suppressed, and nothing informational is withheld. */
+@media (prefers-reduced-motion: reduce) {
+    juggler-spinner .js-club.js-dropping {
+        animation:
+            juggler-spinner-spin var(--duration) linear infinite;
+        animation-delay: calc(var(--duration) * var(--js-phase, 0) / var(--js-n) * -1);
+    }
+}
+
+/* No prefers-reduced-motion slowdown: a busy spinner is an essential status
+   indicator (it signals the app is working), not decorative motion, so it
+   runs at its normal --duration everywhere. If a gentle slowdown is ever
+   wanted here, override the --duration *variable* (not animation-duration) so
+   the calc()'d per-club flip delays scale with it and each club's slow-zone
+   stays aligned with the bottom of its orbit — overriding animation-duration
+   alone desynchronises them. To change the RATE of a running spinner, set
+   playbackRate on its animations instead: that preserves each animation's
+   current time, so the cascade speeds up or slows down without jumping. */
+
+/* Pause ALL CSS animations while the document is hidden — minimised, fully
+   occluded, or on another virtual desktop. A hidden window paints nothing a
+   user can see, yet its continuously-running indicators (the busy spinner, the
+   tab/icon pulses) keep the WebProcess re-rasterising frames every refresh tick
+   — pure waste, and expensive under software compositing where each frame is a
+   CPU repaint. `data-doc-hidden` is toggled on <html> by the Page Visibility
+   hook in app.js; animations resume instantly on the next paint when the window
+   becomes visible again. Scoped high enough (attribute selector) to override
+   the per-element animation shorthands, and !important guards against any
+   equally-specific rule. */
+:root[data-doc-hidden] *,
+:root[data-doc-hidden] *::before,
+:root[data-doc-hidden] *::after {
+    animation-play-state: paused !important;
+}
+
+/* Model Selector - Hint when no providers configured */

@@ -6,12 +6,17 @@
 # removed, never added: a new violation is a build failure, and an entry that
 # stops matching anything is also a failure, so the file cannot rot.
 #
+# The ownership block arrived in one go when the sheets were split and every
+# `"owns": ["*"]` became a real list of roots. Until then the check could not
+# see anything — one file owning everything cannot misfile a rule. Nothing got
+# worse that day; the debt simply became countable. It only shrinks from here.
+#
 # Audit what is still owed:  node scripts/lint-css-arch --emit-allowlist
 
 # --- token-parity ---------------------------------------------------------
 # Two bare var()s that resolve to nothing, so the whole declaration is dropped:
-# styles.css:3478 (outline) and prism-theme.css:142 (inside a color-mix, which
-# takes the rest of the value with it).
+# components/project-setup.css:535 (outline) and vendor/prism-theme.css:142
+# (inside a color-mix, which takes the rest of the value with it).
 token-parity --accent-color
 token-parity --text-muted
 
@@ -181,3 +186,89 @@ dead-selector tradeoffs-cons
 dead-selector tradeoffs-list
 dead-selector tradeoff-item
 dead-selector block-comment
+
+
+# --- ownership ------------------------------------------------------------
+# A selector filed where manifest.json says another sheet owns its root.
+# Each line is one root in one sheet, and each names a rule that has not been
+# moved to its group yet.
+
+# A group whose rules the old files had in several places, so the split had to
+# cut it across numbered sheets. Defragmenting merges each set into one.
+ownership components/approvals-2.css:textarea
+ownership components/composer.css:conversation-area
+ownership components/messages-1.css:conversation-area
+ownership components/messages-2.css:thread-message
+ownership components/messages-3.css:tool-group-message
+ownership components/model-picker.css:composer-box
+ownership components/properties-panel.css:settings-panel
+ownership components/settings-1.css:settings-panel
+ownership components/settings-3.css:commands-menu
+ownership components/settings-3.css:find-bar
+ownership components/settings-3.css:settings-panel
+ownership components/strategy-bar.css:composer-box
+ownership utilities/utilities.css:composer-box
+
+# Cross-cutting policy that names every component it applies to — the text
+# selection rules and the menu system in app-shell, and the app-wide @media
+# stack in responsive. These move to the components they modify, which is what
+# empties layout/responsive.css entirely.
+ownership layout/app-shell.css:app-header
+ownership layout/app-shell.css:app-main
+ownership layout/app-shell.css:conversation-bar
+ownership layout/app-shell.css:conversation-footer
+ownership layout/app-shell.css:conversation-tab
+ownership layout/app-shell.css:pinboard-panel
+ownership layout/app-shell.css:properties-panel-header
+ownership layout/app-shell.css:sidebar-backdrop
+ownership layout/app-shell.css:token-display
+ownership layout/app-shell.css:update-button
+ownership layout/app-shell.css:update-notice
+ownership layout/app-shell.css:window-mode
+ownership layout/responsive.css:app-header
+ownership layout/responsive.css:body
+ownership layout/responsive.css:column-container
+ownership layout/responsive.css:header-actions
+ownership layout/responsive.css:logo
+ownership patterns/markdown.css:window-mode
+
+# Roots several unrelated components style, which is the definition of a
+# pattern: they want a patterns/ file of their own rather than an owner.
+ownership base/elements.css:ci-code-content
+ownership base/elements.css:code
+ownership base/elements.css:pre
+ownership base/reset.css:button
+ownership base/reset.css:input
+ownership base/reset.css:textarea
+ownership components/approvals-1.css:dropdown-menu
+ownership components/approvals-2.css:dropdown-menu
+ownership components/composer.css:dropdown-menu
+ownership components/context-items.css:ci-text-block
+ownership components/context-items.css:collapsed-badge
+ownership components/context-items.css:skills-badge
+ownership components/diff-viewer.css:menu-header
+ownership components/diff-viewer.css:menu-item
+ownership patterns/overlay-chrome.css:close-button
+ownership patterns/overlay-chrome.css:modal-panel
+ownership tokens/theme-dark.css:pre
+
+# The rest: a component reaching into another's root, one at a time.
+ownership components/overlays-and-updates.css:disconnection-overlay
+ownership components/overlays-and-updates.css:juggler-context-menu
+ownership components/overlays-and-updates.css:pp-panel
+ownership components/pinboard.css:button
+ownership components/pinboard.css:conversation-bar
+ownership components/pinboard.css:conversation-tabs-container
+ownership components/pinboard.css:header-actions
+ownership components/pinboard.css:header-actions-controls
+ownership components/pinboard.css:pinboard-content__body
+ownership components/pinboard.css:pinboard-placeholder__error
+ownership components/pinboard.css:sidebar-backdrop
+ownership components/project-setup.css:conversation-workspace-banner
+ownership components/properties-panel.css:code-copy-button
+ownership components/properties-panel.css:message-copy-button
+ownership layout/app-header.css:conversation-bar
+ownership layout/app-header.css:conversation-tabs-container
+ownership layout/app-header.css:no-project-overlay
+ownership vendor/prism-theme.css:properties-panel-code
+ownership vendor/prism-theme.css:properties-panel-result

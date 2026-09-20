@@ -293,7 +293,7 @@ func runTestPoolWindowApp(srv *server.Server, devMode bool, headless bool, testI
 	// theme (--bg-primary: #0d1117), so we paint the window dark on startup;
 	// the page emits 'juggler:theme' on toggle which re-runs applyWindowChrome
 	// with the new colour. Light = #ffffff. Keep these in sync with
-	// web/css/styles.css :root[data-theme="light"|"dark"] --bg-primary.
+	// web/css/tokens/theme-dark.css :root[data-theme="light"|"dark"] --bg-primary.
 	const (
 		themeDark  = "dark"
 		themeLight = "light"
@@ -393,7 +393,7 @@ func runTestPoolWindowApp(srv *server.Server, devMode bool, headless bool, testI
 		// entirely by CSS `--wails-draggable: drag` on .app-header (via
 		// the Wails runtime), and a thin no-drag strip at y=0 keeps the
 		// OS resize handle uncontested. See web/index.html and
-		// web/css/styles.css for the strip + draggable region.
+		// web/css/layout/window-chrome.css for the strip + draggable region.
 	}
 	// Strip the native title bar on Windows so the app's own header is the
 	// whole top of the window, matching the frameless macOS look. The page

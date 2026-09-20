@@ -1,0 +1,686 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+:root {
+    /* Font families - single source of truth */
+    --font-mono: 'Cousine', 'Andale Mono', 'Courier New', monospace;
+    --font-sans: 'Inter', 'Segoe UI', 'Roboto', sans-serif;
+    --font-ui: var(--font-sans); /* Font for menus, settings panels, and UI elements */
+
+    /* Icon-row geometry, shared by every surface that puts a round icon (and,
+       usually, a type lozenge) beside a title: the conversation rows, the
+       properties-panel header, the thread tile. The title row is given
+       --message-icon-row-height and centred, so every item type aligns its
+       title to the icon identically; change these to move them all. Declared
+       here rather than on the row so a block BELOW a row can indent itself to
+       the icon column. */
+    --message-icon-size: 0.875rem;
+    --message-icon-pad: 0.3rem;
+    --message-icon-row-height: calc(var(--message-icon-size) + 2 * var(--message-icon-pad));
+    --message-icon-badge-gap: 1rem;
+
+    /* Left gutter that lines a block up with the type lozenge rather than the
+       tile edge: one icon column plus the badge group's gap. Applied by the
+       .message-row-body utility; see it for when a block wants this. */
+    --message-icon-indent: calc(var(--message-icon-row-height) + var(--message-icon-badge-gap));
+
+    /* Z-Index Scale - use these instead of arbitrary values */
+    --z-base: 1;           /* Default stacking */
+    --z-raised: 10;        /* Slightly elevated elements */
+    --z-controls: 100;     /* Fixed controls, headers */
+    --z-dropdown: 1000;    /* Dropdowns, popovers */
+    --z-modal: 10000;      /* Modals, dialogs */
+    --z-above-modal: 10001; /* Dropdowns that must appear above modals (e.g. path completions) */
+    --z-toast: 10001;      /* Toast notifications (above modals) */
+
+    /* ANSI background palette (utils/ansi.js) — theme-independent and vivid so
+       an author's paired foreground (e.g. black on a yellow highlight) reads on
+       it in both themes. Foregrounds are theme-tuned separately (--ansi-fg-*);
+       backgrounds establish their own contrast, so they don't need darkening. */
+    --ansi-bg-black: #484f58;
+    --ansi-bg-red: #ff7b72;
+    --ansi-bg-green: #3fb950;
+    --ansi-bg-yellow: #d29922;
+    --ansi-bg-blue: #58a6ff;
+    --ansi-bg-magenta: #bc8cff;
+    --ansi-bg-cyan: #39c5cf;
+    --ansi-bg-white: #b1bac4;
+    --ansi-bg-bright-black: #6e7681;
+    --ansi-bg-bright-red: #ffa198;
+    --ansi-bg-bright-green: #56d364;
+    --ansi-bg-bright-yellow: #e3b341;
+    --ansi-bg-bright-blue: #79c0ff;
+    --ansi-bg-bright-magenta: #d2a8ff;
+    --ansi-bg-bright-cyan: #56d4dd;
+    --ansi-bg-bright-white: #f0f6fc;
+}
+
+/* Dark Theme (default) */
+:root,
+:root[data-theme="dark"] {
+    /* Tell Chromium/WebView2 the native rendering scheme. Our themes only swap
+       CSS variables, which the native layer never sees — so without this it
+       draws OS-default (here, dark) mouse cursors (i-beam, col/ew-resize),
+       scrollbars, and form widgets regardless of the active theme. */
+    color-scheme: dark;
+
+    /* Mouse-cursor variables. Native keywords everywhere by default; only the
+       Windows workaround block below overrides them (see it for why). */
+    --cursor-text: text;
+    --cursor-col-resize: col-resize;
+    --cursor-row-resize: ns-resize;
+
+    /* Font weights - single source of truth */
+    --font-weight-normal: 200;
+    --font-weight-medium: 400;
+    --font-weight-semibold: 500;
+    --font-weight-bold: 600;
+
+    /* Background colors */
+    --bg-primary: #0d1117;
+    --bg-secondary: #161b22;
+    --bg-raised: #1f2428;
+    --border-color: #30363d;        /* Base: inline element borders (inputs, buttons, cards, code) */
+    --border-divider: #30363d;      /* Separators/dividers between regions on a solid surface */
+    --border-floating: #a7b0bb;     /* Outline of floating surfaces (menus, dropdowns, modal windows) — stronger so edges read in dark mode */
+    --resize-handle-bg: var(--border-color);
+
+    /* Text colors */
+    --text-primary: #e6edf3;
+    --text-secondary: #c1cad4;
+    --text-tertiary: #acb4be;
+
+    /* Accent colors */
+    --accent-blue: #58a6ff;
+    --accent-green: #3fb950;
+    --accent-yellow: #d29922;
+    --accent-orange: #e3b341;
+    --accent-red: #f85149;
+    --accent-purple: #bc8cff;
+
+    /* Text-selection highlight (see TEXT SELECTION POLICY). The colour WebKit
+       paints for a dark-appearance selection on macOS: the system blue at 80%,
+       a tint the selected text still reads through. */
+    --selection-bg: rgb(63 99 139 / 80%);
+
+    /* Markdown task-list states (`- [/] step`). Box fill and glyph are separate
+       variables so a theme can retint either without touching the geometry.
+       Every value derives from an accent the light theme also defines, so these
+       follow the theme automatically and need no second block below. Done, in
+       progress and failed are filled; skipped and pending are outlines, drawn in
+       text rather than border colour so an empty box is actually visible. */
+    --task-box-size: 0.875rem;
+    --task-box-gap: 0.4375rem;
+    --task-mark-on-fill: #fff;
+    --task-done-box: var(--accent-green);
+    --task-done-mark: var(--task-mark-on-fill);
+    --task-progress-box: var(--accent-yellow);
+    --task-progress-mark: var(--task-mark-on-fill);
+    --task-failed-box: var(--accent-red);
+    --task-failed-mark: var(--task-mark-on-fill);
+    --task-skipped-border: var(--text-secondary);
+    --task-skipped-mark: var(--text-secondary);
+    --task-pending-border: var(--text-secondary);
+
+    /* showNotice toast — a prominent warm-yellow fill with near-black text. */
+    --notice-bg: #e6b93f;
+    --notice-text: #241c00;
+
+    /* Approval-button keyboard-focus ring (action-confirmation ↑/↓ cursor).
+       A neutral near-white reads clearly on every button fill in dark mode. */
+    --approval-focus-ring: var(--text-primary);
+    --approval-focus-ring-on-green: var(--text-primary);
+
+    /* Tab "awaiting your input" pulse. */
+    --tab-awaiting: #705c1c;
+
+    /* ANSI foreground palette (dark) — used by utils/ansi.js to colour bash
+       output text in the properties panel. Tuned to read well on --bg-primary.
+       Backgrounds use the theme-independent --ansi-bg-* palette (see :root). */
+    --ansi-fg-black: #484f58;
+    --ansi-fg-red: #ff7b72;
+    --ansi-fg-green: #3fb950;
+    --ansi-fg-yellow: #d29922;
+    --ansi-fg-blue: #58a6ff;
+    --ansi-fg-magenta: #bc8cff;
+    --ansi-fg-cyan: #39c5cf;
+    --ansi-fg-white: #b1bac4;
+    --ansi-fg-bright-black: #6e7681;
+    --ansi-fg-bright-red: #ffa198;
+    --ansi-fg-bright-green: #56d364;
+    --ansi-fg-bright-yellow: #e3b341;
+    --ansi-fg-bright-blue: #79c0ff;
+    --ansi-fg-bright-magenta: #d2a8ff;
+    --ansi-fg-bright-cyan: #56d4dd;
+    --ansi-fg-bright-white: #f0f6fc;
+    --ansi-fg-default: var(--text-primary);
+    --ansi-bg-default: var(--bg-primary);
+
+    /* Message bubble colors (subtle grey, semi-transparent for selection to show through) */
+    --bubble-user-bg: rgb(71 83 100 / 70%);
+
+    /* The same material undimmed, for a bubble-shaped thing under the pointer. */
+    --bubble-user-bg-hover: rgb(71 83 100);
+    --bubble-user-text: #e6edf3;
+    --bubble-assistant-bg: transparent;
+    --bubble-assistant-text: #e6edf3;
+    --bubble-content-bg: #1c2128;
+
+    /* --- PLUGIN TIER variables below ---
+       --ci-* variables are consumed by context-items.css and plugin-catalog.css,
+       not by app chrome. Keep them together so light/dark overrides stay in sync. */
+
+    /* Context item color presets - 20 distinct colors */
+    --ci-preset-slate: #475569;      /* Neutral gray-blue (default) */
+    --ci-preset-blue: #1e3a8a;       /* Classic blue */
+    --ci-preset-indigo: #3730a3;     /* Deep indigo */
+    --ci-preset-purple: #6b21a8;     /* Purple/violet */
+    --ci-preset-magenta: #a21caf;    /* Bright magenta */
+    --ci-preset-pink: #be185d;       /* Pink */
+    --ci-preset-red: #991b1b;        /* Red */
+    --ci-preset-orange: #c2410c;     /* Orange */
+    --ci-preset-amber: #d97706;      /* Amber/gold */
+    --ci-preset-yellow: #ca8a04;     /* Yellow */
+    --ci-preset-lime: #65a30d;       /* Lime green */
+    --ci-preset-green: #15803d;      /* Green */
+    --ci-preset-emerald: #047857;    /* Emerald green */
+    --ci-preset-teal: #0f766e;       /* Teal */
+    --ci-preset-cyan: #0891b2;       /* Cyan */
+    --ci-preset-sky: #0284c7;        /* Sky blue */
+    --ci-preset-brown: #92400e;      /* Brown */
+    --ci-preset-stone: #57534e;      /* Warm gray */
+    --ci-preset-zinc: #3f3f46;       /* Cool gray */
+    --ci-preset-crimson: #7f1d1d;    /* Deep red */
+
+    /* Context item text colors */
+    --ci-text: #fff;
+    --ci-text-secondary: rgb(255 255 255 / 70%);
+
+    /* Context item semantic families. Tool badges describe the consequence of an
+       item; icons and labels carry the finer distinction. Compatibility aliases
+       keep existing extensions using `system` or `todo` on the same vocabulary. */
+    --ci-family-read: var(--ci-preset-cyan);
+    --ci-family-search: var(--ci-preset-emerald);
+    --ci-family-web: var(--ci-preset-sky);
+    --ci-family-edit: var(--ci-preset-amber);
+    --ci-family-memory: var(--ci-preset-orange);
+    --ci-family-execute: var(--ci-preset-purple);
+    --ci-family-plan: var(--ci-preset-indigo);
+    --ci-family-meta: var(--ci-preset-slate);
+    --ci-family-system: var(--ci-family-meta);
+    --ci-family-ask: var(--ci-preset-yellow);
+    --ci-family-thread: var(--ci-preset-magenta);
+    --ci-family-todo: var(--ci-family-plan);
+
+    /* Syntax highlighting colors (dark theme) */
+    --syntax-comment: #8b949e;
+    --syntax-punctuation: #e6edf3;
+    --syntax-tag: #ff7b72;
+    --syntax-function: #79c0ff;
+    --syntax-number: #ffa657;
+    --syntax-property: #ffa657;
+    --syntax-keyword: #ff7b72;
+    --syntax-string: #a5d6ff;
+    --syntax-operator: #79c0ff;
+    --bash-segment-0-head: #6cb6ff;
+    --bash-segment-0-arg: #9ccbff;
+    --bash-segment-1-head: #d2a8ff;
+    --bash-segment-1-arg: #e0c3ff;
+    --bash-segment-2-head: #7ee787;
+    --bash-segment-2-arg: #a7f0ae;
+    --bash-segment-3-head: #ffa657;
+    --bash-segment-3-arg: #ffc080;
+    --bash-segment-4-head: #ff7b72;
+    --bash-segment-4-arg: #ffa198;
+    --bash-segment-5-head: #56d4dd;
+    --bash-segment-5-arg: #8be3e9;
+
+    /* Code block specific colors */
+    --bg-code-dark: #0a0a0a;
+    --bg-code-medium: #1a1a1a;
+    --border-code: #333;
+    --text-code: #e0e0e0;
+
+    /* Additional background/border colors */
+    --bg-tertiary: #282e33;           /* Between secondary and raised */
+    --border-subtle: rgb(255 255 255 / 8%); /* Very subtle borders */
+    --error-color: var(--accent-red); /* Error state color */
+    --accent-text: #6cb6ff;           /* Accent text for highlighted items */
+    --accent-green-muted: #166534;    /* Muted green for permission buttons */
+
+    /* Diff highlighting */
+    --diff-removed-text: #ffa198;
+    --diff-added-text: #56d364;
+    --diff-added-bg: #aff5b4;
+    --diff-removed-bg: #ffdcd7;
+    --diff-neutral-text: #c9d1d9;
+    --diff-warning-text: #f0c674;
+
+    /* Diff viewer (inline) line + intra-line backgrounds */
+    --diff-line-add-bg: rgb(30 110 55 / 45%);
+    --diff-line-remove-bg: rgb(140 35 30 / 45%);
+    --diff-char-add-bg: rgb(30 110 55 / 65%);
+    --diff-char-add-text: #aff5b4;
+    --diff-char-remove-bg: rgb(140 35 30 / 65%);
+    --diff-char-remove-text: #ffdcd7;
+
+    /* UI component colors */
+    --bg-dark-alt: #21262d;           /* Darker alternative for borders/backgrounds */
+    --accent-blue-light: #6cb6ff;     /* Lighter blue for buttons/highlights */
+    --accent-green-bright: #00cc7f;   /* Bright green for success/confirm */
+    --accent-red-soft: #ff6b6b;       /* Soft red for errors/warnings */
+
+    /* The dim behind a modal surface — every scrim in the app, whether it is
+       the shared <modal-backdrop> element or a panel's own overlay div: the
+       settings/about/bin/confirm modals, the project picker, the command
+       editor, the drawer sidebar and the touch sheets. It is a role, not a rung
+       on the ramp below: modals stack (the command editor opens over its own
+       manager), so a panel that picks a heavier value by eye compounds with the
+       one under it into near-black. Reach for this, never --overlay-dark-*,
+       which are button fills and shadow colours. */
+    --modal-scrim: rgb(0 0 0 / 50%);
+
+    /* Overlay colors (semi-transparent) */
+    --overlay-dark-70: rgb(0 0 0 / 70%);
+    --overlay-dark-50: rgb(0 0 0 / 50%);
+    --overlay-dark-25: rgb(0 0 0 / 25%);
+    --overlay-dark-15: rgb(0 0 0 / 15%);
+    --overlay-dark-10: rgb(0 0 0 / 10%);
+    --overlay-light-30: rgb(255 255 255 / 30%);
+    --overlay-light-20: rgb(255 255 255 / 20%);
+    --overlay-light-10: rgb(255 255 255 / 10%);
+    --overlay-light-8: rgb(255 255 255 / 8%);
+    --overlay-light-5: rgb(255 255 255 / 5%);
+
+    /* Selected conversation item — stronger than the generic overlay so the
+       highlight reads clearly against the dark background. */
+    --item-selected-bg: rgb(255 255 255 / 18%);
+
+    /* Spacing scale */
+    --spacing-xs: 0.375rem;   /* 6px */
+    --spacing-sm: 0.5rem;     /* 8px */
+    --spacing-md: 0.75rem;    /* 12px */
+    --spacing-lg: 1rem;       /* 16px */
+    --spacing-xl: 1.5rem;     /* 24px */
+    --spacing-2xl: 2rem;      /* 32px */
+
+    /* Font size scale */
+    --font-size-2xs: 0.625rem;   /* 10px */
+    --font-size-xs: 0.6875rem;   /* 11px */
+    --font-size-sm: 0.75rem;     /* 12px */
+    --font-size-base: 0.8125rem; /* 13px */
+    --font-size-md: 0.875rem;    /* 14px */
+    --font-size-lg: 1rem;        /* 16px */
+    --font-size-xl: 1.125rem;    /* 18px */
+
+    /* Border radius scale */
+    --radius-sm: 0.1875rem;  /* 3px */
+    --radius-md: 0.25rem;    /* 4px */
+    --radius-lg: 0.375rem;   /* 6px */
+    --radius-xl: 0.5rem;     /* 8px */
+
+    /* Popup / menu / modal surface — the single set of knobs every transient
+       surface (anchored dropdowns, pickers, centred dialogs) shares. Tune the
+       whole family here; see the shared `.dropdown-menu, .pp-panel, modal-panel`
+       chrome rule in the MENU UTILITY SYSTEM section. */
+    --radius-popup: 1.5rem;          /* large rounded outer corner */
+    --radius-popup-item: 0.875rem; /* inset interactive rows within a popup */
+
+    /* A popup's inset is NOT square, and the corner radius is why. The curve
+       eats the surface from the sides, so content held only --popup-padding in
+       reads as falling off the edge there while looking fine top and bottom —
+       and a row with its own --radius-popup-item corner gets that corner cut by
+       the surface's `overflow: hidden`. So the inline inset is a full radius and
+       the block inset stays tight: a popup can afford width, but height is what
+       the list inside it wants.
+
+       Every surface in the `.dropdown-menu, .pp-panel, modal-panel` family takes
+       both, and any surface that overrides its padding must keep the inline half
+       — that is the whole point of the token. */
+    --popup-padding: 1rem;             /* block: breathing room above and below */
+    --popup-padding-inline: 1.5rem;    /* inline: one --radius-popup, to clear the curve */
+    --popup-shadow: 0 1rem 3rem var(--overlay-dark-50);
+
+    /* Line height scale */
+    --leading-tight: 1.4;
+    --leading-normal: 1.5;
+    --leading-relaxed: 1.6;
+
+    /* Transition timing */
+    --transition-fast: 100ms ease;
+    --transition-base: 150ms ease;
+    --transition-slow: 200ms ease;
+
+    /* Shadows */
+    --shadow-sm: 0 0.0625rem 0.125rem rgb(0 0 0 / 10%);
+    --shadow-md: 0 0.125rem 0.5rem rgb(0 0 0 / 20%);
+    --shadow-lg: 0 0.25rem 1rem rgb(0 0 0 / 30%);
+    --shadow-xl: 0 0.5rem 1.5rem rgb(0 0 0 / 40%);
+
+    /* Tooltips — a small, borderless surface (see components.css ▸ TOOLTIP).
+       A raised solid fill that sits above the chrome, separated by a strong drop
+       shadow alone. Theme-aware: a lifted dark surface here, a clean light one
+       under the light theme below. */
+    --tooltip-bg: #2b333d;
+    --tooltip-text: var(--text-primary);
+    --tooltip-shadow: 0 0.5rem 1.25rem rgb(0 0 0 / 45%);
+
+    /* Scrollbar sizing and colors */
+    --scrollbar-size-thin: 0.375rem;
+    --scrollbar-size-medium: 0.5rem;
+    --scrollbar-track-bg: rgb(0 0 0 / 20%);
+    --scrollbar-thumb-bg: rgb(255 255 255 / 20%);
+    --scrollbar-thumb-hover-bg: rgb(255 255 255 / 30%);
+    --scrollbar-thumb-radius: 0.25rem;
+}
+
+/* ─── TEMPORARY: Windows-only white-cursor workaround ──────────────────────
+   BUG: On Windows, WebView2/Chromium draws the native i-beam and resize
+   cursors as solid white, so they're invisible on the light theme. Those are
+   monochrome *inverting* system cursors that Windows XORs against the pixels
+   behind them; under the DirectComposition / multi-plane-overlay presentation
+   path the GPU can drop the layer the cursor should invert against, so the
+   inversion resolves to white. It is a platform bug, not ours.
+
+   Things that do NOT fix it (all tried): `color-scheme` (only steers
+   scrollbars/form widgets, never the system cursor); the WebView2 flag
+   `--disable-features=UseMultiPlaneOverlay` (no such Chromium feature name — it
+   is silently ignored). The real Chromium lever, `--disable-direct-composition`,
+   would work but is heavy: the vendored Wails leans on DirectComposition for the
+   frameless Windows window (transparency, hit-testing, chrome), so disabling it
+   risks regressing the window itself.
+
+   WORKAROUND: substitute full-colour SVG cursors, which the browser rasterises
+   itself and never hands to the OS as inverting cursors, so the compositor
+   can't blank them. Shapes mirror the native Windows cursors: a thin serifed
+   i-beam (black stroke + white halo, so it reads on either theme) and
+   white-filled, black-outlined double-headed resize arrows (the same
+   white-body/black-edge as the OS cursors). The native keyword after the
+   hotspot coords stays as the fallback. Gated on `data-os="windows"` (set on
+   <html> at startup in index.html) so macOS/Linux keep their pixel-perfect
+   native cursors untouched.
+
+   REMOVE THIS BLOCK (and the `data-os` marker in index.html, and revert the
+   `var(--cursor-*)` consumers to plain keywords) once WebView2 fixes the
+   compositor cursor bug or a safe DirectComposition opt-out exists. */
+:root[data-os="windows"] {
+    --cursor-text: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='24'><g fill='none' stroke-linecap='round' stroke-linejoin='round'><path d='M5 3.5 Q7 3.5 8 5 Q9 3.5 11 3.5 M8 5 L8 19 M5 20.5 Q7 20.5 8 19 Q9 20.5 11 20.5' stroke='white' stroke-width='3'/><path d='M5 3.5 Q7 3.5 8 5 Q9 3.5 11 3.5 M8 5 L8 19 M5 20.5 Q7 20.5 8 19 Q9 20.5 11 20.5' stroke='black' stroke-width='1.25'/></g></svg>") 8 12, text;
+    --cursor-col-resize: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='16'><path d='M2 8 L7 4 L7 6.4 L17 6.4 L17 4 L22 8 L17 12 L17 9.6 L7 9.6 L7 12 Z' fill='white' stroke='black' stroke-width='1.1' stroke-linejoin='round'/></svg>") 12 8, col-resize;
+    --cursor-row-resize: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='24'><path d='M8 2 L4 7 L6.4 7 L6.4 17 L4 17 L8 22 L12 17 L9.6 17 L9.6 7 L12 7 Z' fill='white' stroke='black' stroke-width='1.1' stroke-linejoin='round'/></svg>") 8 12, ns-resize;
+}
+
+/* Blanket i-beam substitution for the same Windows bug. The UA draws the native
+   i-beam automatically over any selectable/editable text — we never wrote
+   `cursor: text` for those, so there's no per-element rule to override and every
+   untouched text region still shows the invisible white cursor. A fixed `url()`
+   cursor can't replicate the UA's context-sensitive `auto` (i-beam only over
+   glyphs, arrow over padding), so instead we set it once on each text-region
+   root and lean on `cursor` inheritance to reach all their text children. Scoped
+   to Windows so macOS/Linux keep the pixel-perfect native i-beam. Interactive
+   descendants (links/buttons) inherit it too, so the second rule re-asserts the
+   pointer for them. input/textarea already carry --cursor-text via their own
+   rule. Part of the TEMPORARY workaround — remove with the block above. */
+:root[data-os="windows"] :is(.markdown, pre, code, .ci-text-block, .ci-code-block, [contenteditable]) {
+    cursor: var(--cursor-text);
+}
+
+:root[data-os="windows"] :is(.markdown, .ci-text-block, .ci-code-block) :is(a, button, [role="button"]) {
+    cursor: pointer;
+}
+
+/* Light Theme */
+:root[data-theme="light"] {
+    /* Pair with the light variable set so Chromium draws dark (visible) native
+       cursors/scrollbars/widgets against the light theme (see the dark block). */
+    color-scheme: light;
+
+    /* Font weights - single source of truth */
+    --font-weight-normal: 400;
+    --font-weight-medium: 500;
+    --font-weight-semibold: 600;
+    --font-weight-bold: 700;
+
+    /* Background colors */
+    --bg-primary: #f6f8fa;
+    --bg-secondary: #fff;
+    --bg-raised: #e1e3e6;
+    --border-color: #d0d7de;        /* Base: inline element borders (inputs, buttons, cards, code) */
+    --border-divider: #d0d7de;      /* Separators/dividers between regions on a solid surface */
+    --border-floating: #d0d7de;     /* Outline of floating surfaces (menus, dropdowns, modal windows) — light borders already read well */
+    --resize-handle-bg: #e6ebf0;
+
+    /* Text colors */
+    --text-primary: #1f2328;
+    --text-secondary: #656d76;
+    --text-tertiary: #8c959f;
+
+    /* Accent colors */
+    --accent-blue: #0969da;
+    --accent-green: #1a7f37;
+    --accent-yellow: #9a6700;
+    --accent-orange: #bf8700;
+    --accent-red: #d1242f;
+    --accent-purple: #8250df;
+
+    /* Text-selection highlight (see TEXT SELECTION POLICY). The colour WebKit
+       paints for a light-appearance selection on macOS: over white it settles
+       at the familiar #b3d7ff, and over a darker surface it stays a tint. */
+    --selection-bg: rgb(128 188 254 / 60%);
+
+    /* showNotice toast — a prominent warm-yellow fill with dark text. */
+    --notice-bg: #ffdf7e;
+    --notice-text: #3d2c00;
+
+    /* Approval-button keyboard-focus ring (action-confirmation ↑/↓ cursor).
+       Greens rather than a harsh near-black outline: a solid green reads on the
+       light secondary buttons, a pale green rings the green primary fill. */
+    --approval-focus-ring: var(--accent-green);
+    --approval-focus-ring-on-green: color-mix(in srgb, var(--accent-green) 28%, #fff);
+
+    /* Tab "awaiting your input" pulse. */
+    --tab-awaiting: #ffe16f;
+
+    /* ANSI foreground palette (light) — tuned to read well on the light
+       --bg-primary. Mirrors GitHub's light ANSI colours. Backgrounds use the
+       theme-independent --ansi-bg-* palette (see :root). */
+    --ansi-fg-black: #24292f;
+    --ansi-fg-red: #cf222e;
+    --ansi-fg-green: #116329;
+    --ansi-fg-yellow: #4d2d00;
+    --ansi-fg-blue: #0969da;
+    --ansi-fg-magenta: #8250df;
+    --ansi-fg-cyan: #1b7c83;
+    --ansi-fg-white: #6e7781;
+    --ansi-fg-bright-black: #57606a;
+    --ansi-fg-bright-red: #a40e26;
+    --ansi-fg-bright-green: #1a7f37;
+    --ansi-fg-bright-yellow: #633c01;
+    --ansi-fg-bright-blue: #218bff;
+    --ansi-fg-bright-magenta: #a475f9;
+    --ansi-fg-bright-cyan: #3192aa;
+    --ansi-fg-bright-white: #8c959f;
+    --ansi-fg-default: var(--text-primary);
+    --ansi-bg-default: var(--bg-primary);
+
+    /* Message bubble colors (subtle grey, semi-transparent for selection to show through) */
+    --bubble-user-bg: rgb(232 236 240 / 70%);
+    --bubble-user-bg-hover: rgb(232 236 240);
+    --bubble-user-text: #1f2328;
+    --bubble-assistant-bg: transparent;
+    --bubble-assistant-text: #1f2328;
+    --bubble-content-bg: #f0f3f6;
+
+    /* --- PLUGIN TIER variables below --- */
+
+    /* Context item color presets - 20 distinct colors (light theme) */
+    --ci-preset-slate: #cbd5e1;      /* Neutral gray-blue (default) */
+    --ci-preset-blue: #dbeafe;       /* Classic blue */
+    --ci-preset-indigo: #e0e7ff;     /* Deep indigo */
+    --ci-preset-purple: #f3e8ff;     /* Purple/violet */
+    --ci-preset-magenta: #fae8ff;    /* Bright magenta */
+    --ci-preset-pink: #fce7f3;       /* Pink */
+    --ci-preset-red: #fee2e2;        /* Red */
+    --ci-preset-orange: #fed7aa;     /* Orange */
+    --ci-preset-amber: #fef3c7;      /* Amber/gold */
+    --ci-preset-yellow: #fef9c3;     /* Yellow */
+    --ci-preset-lime: #ecfccb;       /* Lime green */
+    --ci-preset-green: #d1fae5;      /* Green */
+    --ci-preset-emerald: #ccfbef;    /* Emerald green */
+    --ci-preset-teal: #ccfbf1;       /* Teal */
+    --ci-preset-cyan: #cffafe;       /* Cyan */
+    --ci-preset-sky: #e0f2fe;        /* Sky blue */
+    --ci-preset-brown: #fde8d0;      /* Brown */
+    --ci-preset-stone: #e7e5e4;      /* Warm gray */
+    --ci-preset-zinc: #e4e4e7;       /* Cool gray */
+    --ci-preset-crimson: #fecaca;    /* Deep red */
+
+    /* Context item badge colors - saturated mid-tones for light theme (white text readable on these) */
+    --ci-preset-badge-slate:   #475569bb;
+    --ci-preset-badge-blue:    #2563ebbb;
+    --ci-preset-badge-indigo:  #4f46e5bb;
+    --ci-preset-badge-purple:  #9333eabb;
+    --ci-preset-badge-magenta: #c026d3bb;
+    --ci-preset-badge-pink:    #db2777bb;
+    --ci-preset-badge-red:     #dc2626bb;
+    --ci-preset-badge-orange:  #ea580cbb;
+    --ci-preset-badge-amber:   #d97706bb;
+    --ci-preset-badge-yellow:  #ca8a04bb;
+    --ci-preset-badge-lime:    #65a30dbb;
+    --ci-preset-badge-green:   #16a34abb;
+    --ci-preset-badge-emerald: #059669bb;
+    --ci-preset-badge-teal:    #0d9488bb;
+    --ci-preset-badge-cyan:    #0891b2bb;
+    --ci-preset-badge-sky:     #0284c7bb;
+    --ci-preset-badge-brown:   #92400ebb;
+    --ci-preset-badge-stone:   #57534ebb;
+    --ci-preset-badge-zinc:    #52525bbb;
+    --ci-preset-badge-crimson: #b91c1cbb;
+
+    /* Context item text colors (dark for light backgrounds) */
+    --ci-text: #1f2328;
+    --ci-text-secondary: #656d76;
+
+    /* Context item semantic families (light theme). Base tints alias the light
+       presets; badge mid-tones alias saturated presets so white glyphs remain
+       readable. */
+    --ci-family-read: var(--ci-preset-cyan);
+    --ci-family-search: var(--ci-preset-emerald);
+    --ci-family-web: var(--ci-preset-sky);
+    --ci-family-edit: var(--ci-preset-amber);
+    --ci-family-memory: var(--ci-preset-orange);
+    --ci-family-execute: var(--ci-preset-purple);
+    --ci-family-plan: var(--ci-preset-indigo);
+    --ci-family-meta: var(--ci-preset-slate);
+    --ci-family-system: var(--ci-family-meta);
+    --ci-family-ask: var(--ci-preset-yellow);
+    --ci-family-thread: var(--ci-preset-magenta);
+    --ci-family-todo: var(--ci-family-plan);
+
+    /* badge mid-tones (saturated; white glyphs readable) */
+    --ci-family-badge-read: var(--ci-preset-badge-cyan);
+    --ci-family-badge-search: var(--ci-preset-badge-emerald);
+    --ci-family-badge-web: var(--ci-preset-badge-sky);
+    --ci-family-badge-edit: var(--ci-preset-badge-amber);
+    --ci-family-badge-memory: var(--ci-preset-badge-orange);
+    --ci-family-badge-execute: var(--ci-preset-badge-purple);
+    --ci-family-badge-plan: var(--ci-preset-badge-indigo);
+    --ci-family-badge-meta: var(--ci-preset-badge-slate);
+    --ci-family-badge-system: var(--ci-family-badge-meta);
+    --ci-family-badge-ask: var(--ci-preset-badge-yellow);
+    --ci-family-badge-thread: var(--ci-preset-badge-magenta);
+    --ci-family-badge-todo: var(--ci-family-badge-plan);
+
+    /* Code block specific colors */
+    --bg-code-dark: #f6f8fa;
+    --bg-code-medium: #f0f3f6;
+    --border-code: #d0d7de;
+    --text-code: #1f2328;
+
+    /* Additional background/border colors (light theme) */
+    --bg-tertiary: #eaeef2;
+    --bg-dark-alt: #eaeef2;
+    --border-subtle: rgb(0 0 0 / 8%);
+    --error-color: var(--accent-red);
+    --accent-text: var(--accent-blue);
+    --accent-green-muted: #1a7f37;
+    --accent-blue-light: #0969da;
+    --accent-green-bright: #1a7f37;
+    --accent-red-soft: #d1242f;
+
+    /* Overlay colors — inverted for light backgrounds so hover/active states remain visible */
+    --overlay-light-5: rgb(0 0 0 / 3%);
+    --overlay-light-8: rgb(0 0 0 / 5%);
+    --overlay-light-10: rgb(0 0 0 / 8%);
+    --overlay-light-20: rgb(0 0 0 / 12%);
+    --overlay-light-30: rgb(0 0 0 / 18%);
+    --item-selected-bg: rgb(0 0 0 / 8%);
+
+    /* Scrollbar colors for light theme */
+    --scrollbar-track-bg: rgb(0 0 0 / 5%);
+    --scrollbar-thumb-bg: rgb(0 0 0 / 20%);
+    --scrollbar-thumb-hover-bg: rgb(0 0 0 / 35%);
+
+    /* Tooltips (light) — a clean white surface lifted off the page by its
+       shadow, dark text to match the theme. */
+    --tooltip-bg: #fff;
+    --tooltip-text: var(--text-primary);
+    --tooltip-shadow: 0 0.5rem 1.25rem rgb(0 0 0 / 22%);
+
+    /* Diff highlighting (light theme) */
+    --diff-removed-text: #cf222e;
+    --diff-added-text: #1a7f37;
+    --diff-added-bg: #dafbe1;
+    --diff-removed-bg: #ffebe9;
+    --diff-neutral-text: #1f2328;
+    --diff-warning-text: #9a6700;
+
+    /* Diff viewer (inline) line + intra-line backgrounds (GitHub light) */
+    --diff-line-add-bg: #e6ffec;
+    --diff-line-remove-bg: #ffebe9;
+    --diff-char-add-bg: #abf2bc;
+    --diff-char-add-text: #1a7f37;
+    --diff-char-remove-bg: #ffc9c9;
+    --diff-char-remove-text: #cf222e;
+
+    /* Syntax highlighting colors (light theme) */
+    --syntax-comment: #6e7781;
+    --syntax-punctuation: #24292f;
+    --syntax-tag: #cf222e;
+    --syntax-function: #8250df;
+    --syntax-number: #0550ae;
+    --syntax-property: #953800;
+    --syntax-keyword: #cf222e;
+    --syntax-string: #0a3069;
+    --syntax-operator: #0550ae;
+    --bash-segment-0-head: #0550ae;
+    --bash-segment-0-arg: #356fa8;
+    --bash-segment-1-head: #8250df;
+    --bash-segment-1-arg: #986ee6;
+    --bash-segment-2-head: #116329;
+    --bash-segment-2-arg: #2f7d43;
+    --bash-segment-3-head: #953800;
+    --bash-segment-3-arg: #b05c1f;
+    --bash-segment-4-head: #cf222e;
+    --bash-segment-4-arg: #d94d56;
+    --bash-segment-5-head: #0969da;
+    --bash-segment-5-arg: #388bfd;
+}
+
+body {
+    font-family: var(--font-ui);
+    font-weight: var(--font-weight-normal);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    overflow: hidden;
+}
+
+/* Typography - relative font weights */
+strong,
+b {
+    font-weight: var(--font-weight-bold);
+}
+

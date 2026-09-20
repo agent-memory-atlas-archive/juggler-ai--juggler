@@ -69,7 +69,7 @@ func resizeHandleFlags() map[string]any {
 const closeFlushTimeout = 4 * time.Second
 
 // themeColours maps the page theme name to the NSWindow background. Keep in
-// sync with --bg-primary in web/css/styles.css :root[data-theme=...].
+// sync with --bg-primary in web/css/tokens/theme-dark.css :root[data-theme=...].
 var themeColours = map[string]application.RGBA{
 	"dark":  {Red: 13, Green: 17, Blue: 23, Alpha: 255},
 	"light": {Red: 255, Green: 255, Blue: 255, Alpha: 255},

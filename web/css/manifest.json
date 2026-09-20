@@ -1,42 +1,633 @@
 {
-  "$comment": "The authoritative sheet list and ownership map. Read by scripts/lint-css-arch and by the <link> lists in web/index.html and web/js-tests/headless-test.html, which must match it in content and order. The contract is README.md.",
-
-  "layers": ["tokens", "base", "layout", "patterns", "components", "utilities"],
-
-  "sheets": [
-    { "file": "fonts.css", "layer": "base", "owns": ["*"] },
-    { "file": "styles.css", "layer": "base", "owns": ["*"] },
-    { "file": "utilities.css", "layer": "utilities", "owns": ["*"] },
-    { "file": "components.css", "layer": "components", "owns": ["*"] },
-    { "file": "context-items.css", "layer": "components", "owns": ["*"] },
-    { "file": "plugin-catalog.css", "layer": "components", "owns": ["*"] },
-    { "file": "skills-marketplace.css", "layer": "components", "owns": ["*"] },
-    { "file": "prism-theme.css", "layer": "base", "owns": ["*"] }
-  ],
-
-  "$dynamicClasses": "Class names assembled in JS, so no literal exists to find. Each pattern below was proven by locating the composing expression (e.g. `color-${…}`) in web/js. Keep them tight: a pattern broad enough to cover a whole family stops the dead-selector check from seeing anything in it.",
-  "dynamicClasses": [
-    "color-*",
-    "status-*",
-    "origin-*",
-    "badge-*",
-    "toggle-*",
-    "char-*",
-    "ext-source-*",
-    "ext-cap-type-*",
-    "tool-category-*",
-    "tx-tool-category-*",
-    "plugin-tree-toggle-*",
-    "slash-command-scope-*",
-    "approval-source-*",
-    "pp-status--*",
-    "task-box--*",
-    "bash-command-segment-*"
-  ],
-
-  "$jsSetProperties": "Custom properties set from JS rather than declared in CSS, so a bare var() referring to one is not a dangling reference.",
-  "jsSetProperties": [
-    "--strategy-color",
-    "--logo-with-name-url"
-  ]
+	"$comment": "The authoritative sheet list and ownership map. Read by scripts/lint-css-arch and by the <link> lists in web/index.html and web/js-tests/headless-test.html, which must match it in content and order. The contract is README.md.",
+	"layers": [
+		"tokens",
+		"base",
+		"layout",
+		"patterns",
+		"components",
+		"utilities"
+	],
+	"$sheets": "Every stylesheet, in <link> order, with the layer it declares and the selector roots it owns. A root is the bare name of a selector's subject, as scripts/lint-css-arch computes it: the leading element, class or id with its punctuation dropped, skipping :root/html/body when the selector descends past them. A `*` in a pattern is a glob. Numbered sheets (messages-1, settings-2) are runs of one group the old files had scattered; defragmenting them merges each set into one.",
+	"sheets": [
+		{
+			"file": "base/fonts.css",
+			"layer": "base",
+			"owns": []
+		},
+		{
+			"file": "base/reset.css",
+			"layer": "base",
+			"owns": [
+				"select"
+			]
+		},
+		{
+			"file": "tokens/theme-dark.css",
+			"layer": "tokens",
+			"owns": [
+				"b",
+				"body",
+				"ci-text-block",
+				"strong"
+			]
+		},
+		{
+			"file": "layout/app-shell.css",
+			"layer": "layout",
+			"owns": [
+				"app-container",
+				"bell-button",
+				"bin-panel",
+				"col-resize-handle",
+				"column-container",
+				"conversation-area",
+				"conversation-message-list-wrapper",
+				"conversation-tab-loading-overlay",
+				"conversation-tabs-container",
+				"disconnection-overlay",
+				"dropdown-menu",
+				"find-bar",
+				"header-*",
+				"juggler-context-menu",
+				"logo",
+				"menu-divider",
+				"menu-group",
+				"menu-header",
+				"menu-item",
+				"menu-item-icon",
+				"menu-reset-icon",
+				"menu-settings-icon",
+				"modal-panel",
+				"network-button",
+				"open-settings-item",
+				"pinboard-content__body",
+				"pinboard-placeholder__error",
+				"pp-panel",
+				"set-default-model-item",
+				"settings-button",
+				"tool-grouping-button",
+				"update-notice__status-text",
+				"zoom-*"
+			]
+		},
+		{
+			"file": "components/messages-1.css",
+			"layer": "components",
+			"owns": [
+				"conversation-empty-hint",
+				"conversation-footer",
+				"conversation-message-list",
+				"conversation-message-list-inner",
+				"empty-*",
+				"footer-*",
+				"llm-busy-text",
+				"llm-iteration-counter",
+				"llm-next-steps",
+				"scroll-*"
+			]
+		},
+		{
+			"file": "base/elements.css",
+			"layer": "base",
+			"owns": [
+				"a",
+				"button",
+				"input",
+				"text-blue",
+				"text-green",
+				"text-red",
+				"text-secondary",
+				"text-yellow",
+				"textarea"
+			]
+		},
+		{
+			"file": "layout/responsive.css",
+			"layer": "layout",
+			"owns": [
+				"app-main",
+				"popup-*",
+				"pulse",
+				"sidebar-backdrop"
+			]
+		},
+		{
+			"file": "components/messages-2.css",
+			"layer": "components",
+			"owns": [
+				"article",
+				"assistant-message",
+				"collapsible",
+				"collapsible-toggle",
+				"color-*",
+				"context-item-message",
+				"conversation-workspace-banner",
+				"error-*",
+				"message-content-box",
+				"message-copy-button",
+				"message-icon-*",
+				"message-row-body",
+				"message-text",
+				"message-with-icon",
+				"notice-message",
+				"thinking-message",
+				"tool-action-message",
+				"tool-group-message",
+				"user-message"
+			]
+		},
+		{
+			"file": "components/project-setup.css",
+			"layer": "components",
+			"owns": [
+				"conversation-setup-panel",
+				"setup-*",
+				"workspace-banner-*"
+			]
+		},
+		{
+			"file": "components/messages-3.css",
+			"layer": "components",
+			"owns": [
+				"message-action-btn",
+				"message-actions",
+				"pending-messages",
+				"pending-messages-label",
+				"thread-*"
+			]
+		},
+		{
+			"file": "patterns/markdown.css",
+			"layer": "patterns",
+			"owns": [
+				"code-block-wrap",
+				"code-copy-button",
+				"markdown",
+				"markdown-html-scope"
+			]
+		},
+		{
+			"file": "layout/window-chrome.css",
+			"layer": "layout",
+			"owns": [
+				"window-*"
+			]
+		},
+		{
+			"file": "utilities/utilities.css",
+			"layer": "utilities",
+			"owns": [
+				"close-button",
+				"hidden",
+				"u-badge",
+				"u-badge-*",
+				"u-btn-*",
+				"u-card",
+				"u-empty-*",
+				"u-icon-*",
+				"u-interactive-row",
+				"u-scrollbar-thin"
+			]
+		},
+		{
+			"file": "patterns/overlay-chrome.css",
+			"layer": "patterns",
+			"owns": [
+				"code-block",
+				"image-lightbox",
+				"modal-backdrop",
+				"token-display"
+			]
+		},
+		{
+			"file": "components/conversation-bar.css",
+			"layer": "components",
+			"owns": [
+				"bin-empty-menu",
+				"bin-modal",
+				"conversation-bar",
+				"conversation-tab",
+				"conversation-tab-rename",
+				"conversation-tab-rename-*",
+				"info-cards-menu__check"
+			]
+		},
+		{
+			"file": "layout/app-header.css",
+			"layer": "layout",
+			"owns": [
+				"app-header"
+			]
+		},
+		{
+			"file": "components/strategy-bar.css",
+			"layer": "components",
+			"owns": [
+				"commands-menu",
+				"context-item-context-menu",
+				"no-project-overlay",
+				"strategy-dropdown",
+				"strategy-info-button",
+				"strategy-item-*",
+				"strategy-selector"
+			]
+		},
+		{
+			"file": "patterns/icons.css",
+			"layer": "patterns",
+			"owns": [
+				"icon-*",
+				"tick-*"
+			]
+		},
+		{
+			"file": "components/properties-panel.css",
+			"layer": "components",
+			"owns": [
+				"context-item-type-badge",
+				"conversation-item",
+				"file-*",
+				"live-*",
+				"pdf-*",
+				"properties-panel",
+				"properties-panel-approval-badge",
+				"properties-panel-attachment",
+				"properties-panel-attachment-*",
+				"properties-panel-attachments",
+				"properties-panel-body",
+				"properties-panel-btn",
+				"properties-panel-code",
+				"properties-panel-content",
+				"properties-panel-controls",
+				"properties-panel-copy-header",
+				"properties-panel-copyable",
+				"properties-panel-empty",
+				"properties-panel-empty-*",
+				"properties-panel-filepath",
+				"properties-panel-filepath-*",
+				"properties-panel-header",
+				"properties-panel-header-icon-btn",
+				"properties-panel-inline-copy",
+				"properties-panel-json-display",
+				"properties-panel-result",
+				"properties-panel-section",
+				"properties-panel-subsection",
+				"properties-panel-subtitle",
+				"properties-panel-text",
+				"properties-panel-thinking",
+				"properties-panel-timestamp",
+				"properties-panel-title",
+				"properties-panel-title-status",
+				"properties-panel-token-chip",
+				"properties-panel-tx-*",
+				"reveal-button",
+				"tx-field",
+				"tx-field-key",
+				"tx-out-*",
+				"tx-row",
+				"tx-row-*",
+				"tx-rows",
+				"tx-section-*",
+				"tx-text",
+				"tx-tool-*",
+				"tx-tools",
+				"tx-tools-*"
+			]
+		},
+		{
+			"file": "components/model-picker.css",
+			"layer": "components",
+			"owns": [
+				"model-*",
+				"recent-*",
+				"thinking-mini",
+				"thinking-seg",
+				"thinking-segmented",
+				"tier-*",
+				"usage-stat",
+				"usage-stat-*"
+			]
+		},
+		{
+			"file": "patterns/spinner.css",
+			"layer": "patterns",
+			"owns": [
+				"juggler-spinner"
+			]
+		},
+		{
+			"file": "components/diff-viewer.css",
+			"layer": "components",
+			"owns": [
+				"diff-viewer",
+				"menu-hint-text",
+				"menu-item-hint",
+				"menu-item-note",
+				"properties-panel-diff",
+				"provider-view-toggle",
+				"review-*"
+			]
+		},
+		{
+			"file": "components/composer.css",
+			"layer": "components",
+			"owns": [
+				"actions-sheet",
+				"composer-box",
+				"new-thread-btn",
+				"permission-controls",
+				"reply-suggestions",
+				"schedule-send-menu",
+				"workspace-menu"
+			]
+		},
+		{
+			"file": "components/approvals-1.css",
+			"layer": "components",
+			"owns": [
+				"permissions-popup"
+			]
+		},
+		{
+			"file": "patterns/modal-dialog.css",
+			"layer": "patterns",
+			"owns": [
+				"modal-dialog"
+			]
+		},
+		{
+			"file": "components/settings-1.css",
+			"layer": "components",
+			"owns": []
+		},
+		{
+			"file": "components/about-modal.css",
+			"layer": "components",
+			"owns": [
+				"about-modal"
+			]
+		},
+		{
+			"file": "components/settings-2.css",
+			"layer": "components",
+			"owns": [
+				"settings-panel"
+			]
+		},
+		{
+			"file": "components/approvals-2.css",
+			"layer": "components",
+			"owns": [
+				"action-*",
+				"approval-*",
+				"ask-user-question-details",
+				"collapsed-badge",
+				"context-item-badge",
+				"context-preview-modal",
+				"llm-description",
+				"multi-*",
+				"option-*",
+				"pattern-*",
+				"pending-approval-label",
+				"preformatted-output",
+				"question-custom-*",
+				"question-group",
+				"question-option-btn",
+				"question-options",
+				"summary-*",
+				"text-muted",
+				"text-primary",
+				"transaction-summary"
+			]
+		},
+		{
+			"file": "components/overlays-and-updates.css",
+			"layer": "components",
+			"owns": [
+				"completions-menu",
+				"disconnection-overlay__content",
+				"disconnection-overlay__countdown",
+				"disconnection-overlay__info",
+				"disconnection-overlay__info--visible",
+				"disconnection-overlay__message",
+				"disconnection-overlay__url",
+				"juggler-context-menu-*",
+				"message-edit-textarea",
+				"path-*",
+				"pp-body",
+				"pp-btn",
+				"pp-btn-*",
+				"pp-footer",
+				"pp-header",
+				"pp-input-row",
+				"pp-overlay",
+				"pp-panel-popup",
+				"pp-path-input",
+				"pp-recent-item",
+				"pp-recents",
+				"pp-recents-label",
+				"pp-status",
+				"pp-status-*",
+				"pp-subtitle",
+				"pp-title",
+				"skill-menu",
+				"transaction-band-*",
+				"update-button",
+				"update-notice"
+			]
+		},
+		{
+			"file": "patterns/tooltip.css",
+			"layer": "patterns",
+			"owns": [
+				"app-tooltip"
+			]
+		},
+		{
+			"file": "components/settings-3.css",
+			"layer": "components",
+			"owns": [
+				"command-*",
+				"escape-arm-cue",
+				"find-bar__btn",
+				"find-bar__counter",
+				"find-bar__counter--empty",
+				"find-bar__input",
+				"find-bar__toggle",
+				"slash-*",
+				"workspace-move-*"
+			]
+		},
+		{
+			"file": "components/pinboard.css",
+			"layer": "components",
+			"owns": [
+				"app-header__board-*",
+				"pinboard-add-*",
+				"pinboard-content",
+				"pinboard-content__placeholder",
+				"pinboard-content__slot",
+				"pinboard-empty",
+				"pinboard-empty__add",
+				"pinboard-empty__line",
+				"pinboard-header-button",
+				"pinboard-item-*",
+				"pinboard-panel",
+				"pinboard-panel__status",
+				"pinboard-placeholder",
+				"pinboard-placeholder__line",
+				"pinboard-placeholder__note",
+				"pinboard-resize-handle",
+				"pinboard-scrim",
+				"pinboard-shell",
+				"pinboard-tab",
+				"pinboard-tab__badge",
+				"pinboard-tab__button",
+				"pinboard-tab__grip",
+				"pinboard-tab__label",
+				"pinboard-tab__remove",
+				"pinboard-tabbar",
+				"pinboard-tabbar__add",
+				"pinboard-tabbar__list",
+				"pinboard-toolbar",
+				"pinboard-toolbar__controls",
+				"pinboard-toolbar__identity",
+				"pinboard-toolbar__popout",
+				"project-path-display",
+				"sidebar-toggle-button"
+			]
+		},
+		{
+			"file": "components/context-items.css",
+			"layer": "components",
+			"owns": [
+				"ci-badge",
+				"ci-badge-*",
+				"ci-btn",
+				"ci-code-*",
+				"ci-collapsed-content",
+				"ci-empty",
+				"ci-empty-icon",
+				"ci-error",
+				"ci-error-*",
+				"ci-expanded",
+				"ci-expanded-content",
+				"ci-file-*",
+				"ci-line",
+				"ci-line-spacer",
+				"ci-list",
+				"ci-list-item",
+				"ci-loading",
+				"ci-metadata",
+				"ci-output-label",
+				"ci-remove-btn",
+				"ci-search-*",
+				"ci-section",
+				"ci-section-*",
+				"ci-stat",
+				"ci-stat-*",
+				"ci-stats",
+				"ci-success",
+				"ci-warning",
+				"collapsed-content",
+				"collapsed-main",
+				"collapsed-meta",
+				"collapsed-preview",
+				"collapsed-subtitle",
+				"collapsed-title",
+				"expanded-*",
+				"question-answer-ci",
+				"response-json",
+				"skill-ci-expanded",
+				"skill-load-*",
+				"skill-panel-*",
+				"system-ci",
+				"thinking-block",
+				"thinking-block-*"
+			]
+		},
+		{
+			"file": "components/plugin-catalog.css",
+			"layer": "components",
+			"owns": [
+				"approach-text",
+				"backend-*",
+				"capability-*",
+				"catalog-*",
+				"ext-*",
+				"extension-*",
+				"llm-guidance-content",
+				"llm-instructions-box",
+				"operation-*",
+				"operations-*",
+				"permission-badge",
+				"permission-explained-*",
+				"permissions-explained",
+				"plugin-*",
+				"preview-*",
+				"recommendation-*",
+				"strategy-guidance-*",
+				"strategy-recommendations",
+				"tool-category",
+				"tool-category-*",
+				"tool-description",
+				"tool-header",
+				"tool-item",
+				"tool-name",
+				"tool-param",
+				"tool-param-*",
+				"tool-params-list",
+				"tool-schema",
+				"tool-schema-header",
+				"tools-list",
+				"tradeoff-item",
+				"tradeoffs-*",
+				"trigger-*",
+				"usage-content"
+			]
+		},
+		{
+			"file": "components/skills-marketplace.css",
+			"layer": "components",
+			"owns": [
+				"skills-*",
+				"tab-skills"
+			]
+		},
+		{
+			"file": "vendor/prism-theme.css",
+			"layer": "base",
+			"owns": [
+				"bash-*",
+				"code",
+				"pre",
+				"token"
+			]
+		}
+	],
+	"$dynamicClasses": "Class names assembled in JS, so no literal exists to find. Each pattern below was proven by locating the composing expression (e.g. `color-${…}`) in web/js. Keep them tight: a pattern broad enough to cover a whole family stops the dead-selector check from seeing anything in it.",
+	"dynamicClasses": [
+		"color-*",
+		"status-*",
+		"origin-*",
+		"badge-*",
+		"toggle-*",
+		"char-*",
+		"ext-source-*",
+		"ext-cap-type-*",
+		"tool-category-*",
+		"tx-tool-category-*",
+		"plugin-tree-toggle-*",
+		"slash-command-scope-*",
+		"approval-source-*",
+		"pp-status--*",
+		"task-box--*",
+		"bash-command-segment-*"
+	],
+	"$jsSetProperties": "Custom properties set from JS rather than declared in CSS, so a bare var() referring to one is not a dangling reference.",
+	"jsSetProperties": [
+		"--strategy-color",
+		"--logo-with-name-url"
+	]
 }

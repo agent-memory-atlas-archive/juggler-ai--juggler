@@ -214,6 +214,49 @@ export function neutralizeStrayOverlays() {
 }
 
 /**
+ * A probe document wearing the app's stylesheets, at a chosen viewport width.
+ *
+ * Some rules can only be measured at a width the test page itself never has —
+ * the phone breakpoints, in practice, since a lane is wider than 36rem. A child
+ * iframe narrow enough to match the query, linking the same sheets as its
+ * parent, is the only place `getComputedStyle` will report them.
+ *
+ * It resolves once every sheet has arrived, counted rather than named: a sheet
+ * that fails to load contributes no entry to `styleSheets`, so an equal count
+ * means all of them applied. Naming one instead stops waiting the day that
+ * sheet is renamed or split, and measures an unstyled document — which reads
+ * every geometry as `auto` and quietly satisfies whatever it was asked.
+ * @param {number} width - The frame's width in px.
+ * @param {number} [height] - The frame's height in px.
+ * @param {number} [timeout] - How long to wait for the sheets, in ms.
+ * @returns {Promise<{doc: Document, frame: HTMLIFrameElement}>} The probe document, and the frame to remove when done with it.
+ */
+export async function styledProbeFrame(width, height = 600, timeout = 4000) {
+  const frame = document.createElement('iframe');
+  frame.style.cssText = `position:fixed;left:-10000px;top:0;width:${width}px;height:${height}px;border:0`;
+  document.body.appendChild(frame);
+  const doc = /** @type {Document} */ (frame.contentDocument);
+  const links = [...document.querySelectorAll('link[rel="stylesheet"]')]
+    .map((l) => l.outerHTML).join('');
+  doc.open();
+  doc.write(`<!doctype html><html><head>${links}</head><body style="margin:0"></body></html>`);
+  doc.close();
+
+  const wanted = doc.querySelectorAll('link[rel="stylesheet"]').length;
+  const deadline = Date.now() + timeout;
+  while (doc.styleSheets.length < wanted) {
+    // Say so rather than measuring on: without the sheets every geometry
+    // assertion reads `auto`, and reports a layout mismatch for what is really
+    // a stylesheet that never arrived.
+    if (Date.now() > deadline) {
+      throw new Error(`the probe document loaded ${doc.styleSheets.length} of its ${wanted} stylesheets`);
+    }
+    await new Promise((r) => { setTimeout(r, 20); });
+  }
+  return { doc, frame };
+}
+
+/**
  * Create a test session.
  * Loads an existing session created by UnitTestExecutor.
  * @returns {Promise<Session>} Session instance

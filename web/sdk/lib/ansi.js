@@ -13,7 +13,7 @@
  * properties panel shows colours the way a terminal would.
  *
  * Colours resolve to `--ansi-fg-*` / `--ansi-bg-*` CSS custom properties
- * (defined per theme in styles.css), so the palette stays theme-aware and a
+ * (defined per theme in tokens/theme-dark.css), so the palette stays theme-aware and a
  * colour reads correctly whether it paints text or a background. 256-colour and
  * 24-bit truecolor escapes resolve to literal `rgb()` values.
  * @module utils/ansi

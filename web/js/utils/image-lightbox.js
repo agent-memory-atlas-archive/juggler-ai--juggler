@@ -8,7 +8,7 @@ import { presentModal } from './modal-surface.js';
  * Minimal click-to-expand image lightbox. Opens the given image full-size,
  * centered over a dimmed backdrop; click anywhere or press Escape to dismiss.
  *
- * Styling lives in `web/css/components.css` (`.image-lightbox`). Only one
+ * Styling lives in `web/css/patterns/overlay-chrome.css` (`.image-lightbox`). Only one
  * lightbox is open at a time — opening a second dismisses the first.
  */
 

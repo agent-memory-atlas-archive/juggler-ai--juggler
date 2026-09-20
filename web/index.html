@@ -43,8 +43,8 @@
     <!-- Favicon -->
     <link rel="icon" type="image/svg+xml" href="/v{{.StaticVersion}}/resources/juggler-logo.svg">
 
-    <!-- Fonts (self-hosted; see web/css/fonts.css) -->
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/fonts.css">
+    <!-- Fonts (self-hosted; see web/css/base/fonts.css) -->
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/base/fonts.css">
 
     <!-- Paint the document background from the stored theme synchronously so
          the in-process WKWebView doesn't flash white during native resize.
@@ -121,12 +121,12 @@
                 : (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
             document.documentElement.setAttribute('data-theme', theme);
             document.documentElement.style.background = theme === 'light' ? '#fff' : '#0d1117';
-            // TEMPORARY (Windows-only): mark the OS pre-paint so styles.css can
+            // TEMPORARY (Windows-only): mark the OS pre-paint so base/elements.css can
             // swap in SVG mouse cursors. Windows/WebView2 draws the native
             // i-beam and resize cursors solid white (invisible on the light
             // theme) — a DirectComposition/overlay compositor bug. Set here (not
             // only in window-mode) because it also affects Windows browser tabs.
-            // Remove with the workaround block in styles.css once the platform
+            // Remove with the workaround block in base/elements.css once the platform
             // bug is fixed.
             if (/Windows/.test(navigator.userAgent)) {
                 document.documentElement.dataset.os = 'windows';
@@ -174,14 +174,55 @@
         })();
     </script>
 
-    <!-- Styles -->
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/styles.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/utilities.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/context-items.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/plugin-catalog.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/skills-marketplace.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/prism-theme.css">
+    <!-- Styles. The sheet list and its order are web/css/manifest.json;
+         lint-css-arch checks this list against it. -->
+    <!-- Element defaults -->
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/base/reset.css">
+
+    <!-- Tokens -->
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/tokens/theme-dark.css">
+
+    <!-- The shell, and the components it frames -->
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/layout/app-shell.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/messages-1.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/base/elements.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/layout/responsive.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/messages-2.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/project-setup.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/messages-3.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/markdown.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/layout/window-chrome.css">
+
+    <!-- Utilities -->
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/utilities/utilities.css">
+
+    <!-- Shared patterns, and the feature groups -->
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/overlay-chrome.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/conversation-bar.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/layout/app-header.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/strategy-bar.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/icons.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/properties-panel.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/model-picker.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/spinner.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/diff-viewer.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/composer.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/approvals-1.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/modal-dialog.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/settings-1.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/about-modal.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/settings-2.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/approvals-2.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/overlays-and-updates.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/tooltip.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/settings-3.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/pinboard.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/context-items.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/plugin-catalog.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/skills-marketplace.css">
+
+    <!-- Vendor -->
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/vendor/prism-theme.css">
 
     <!-- Marked.js for markdown rendering (vendored) -->
     <script src="/v{{.StaticVersion}}/js/vendor/marked.min.js"></script>

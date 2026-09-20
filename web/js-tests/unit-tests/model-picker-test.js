@@ -30,7 +30,7 @@
  * @module unit-tests/model-picker-test
  */
 
-import { assert } from '../utilities/test-helpers.js';
+import { assert, styledProbeFrame } from '../utilities/test-helpers.js';
 import recentModels from '../../js/services/recent-models.js';
 import usageStatsCache from '../../js/services/usage-stats-cache.js';
 import { presentPopup } from '../../js/utils/popup-surface.js';
@@ -231,28 +231,12 @@ function pickerOnProvider(provider) {
  *   bottom, plus a cleanup that tears the iframe down.
  */
 async function layOutAsPhoneSheet(picker) {
-  const frame = document.createElement('iframe');
   // 360px is under the 36rem query, which resolves against the initial 16px
   // font size (576px) whatever the document's own root size is.
   // Short as well as narrow: the sheet caps at 85vh, and the overlap this
   // measures only appears once the content exceeds that cap and something has
   // to give. A tall viewport would let everything fit and prove nothing.
-  frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:360px;height:480px;border:0';
-  document.body.appendChild(frame);
-  const doc = /** @type {Document} */ (frame.contentDocument);
-  const links = [...document.querySelectorAll('link[rel="stylesheet"]')]
-    .map(l => l.outerHTML).join('');
-  doc.open();
-  doc.write(`<!doctype html><html><head>${links}</head><body style="margin:0"></body></html>`);
-  doc.close();
-
-  // Wait for the stylesheets to actually apply — an unstyled measurement would
-  // "pass" every assertion below by accident.
-  const deadline = Date.now() + 4000;
-  while (Date.now() < deadline) {
-    if ([...doc.styleSheets].some(s => (s.href || '').includes('styles.css'))) break;
-    await new Promise(r => setTimeout(r, 20));
-  }
+  const { doc, frame } = await styledProbeFrame(360, 480);
 
   // A plain <div> wearing the picker's classes and markup, NOT a cloneNode of
   // the element: cloning an autonomous custom element re-runs its constructor,

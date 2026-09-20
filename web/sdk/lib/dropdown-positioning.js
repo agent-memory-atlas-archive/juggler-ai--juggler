@@ -128,7 +128,7 @@ function takeScrollOffsets(dropdown) {
  *
  * The header/control buttons that open anchored popups are `.u-btn-ghost`, which
  * applies `transform: scale(0.95)` on `:active` AND transitions `transform`
- * (utilities.css). A popup opened on click is positioned while the button is
+ * (utilities/utilities.css). A popup opened on click is positioned while the button is
  * still animating back to full size, so a plain `getBoundingClientRect()` reads
  * the shrunken, mid-animation box and anchors the popup there; the first content
  * change then repositions against the settled button, nudging the popup a few px

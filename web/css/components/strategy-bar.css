@@ -1,0 +1,259 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+no-project-overlay .no-project-onboarding {
+    max-width: 34rem;
+    text-align: center;
+    color: var(--text-secondary);
+    font-family: var(--font-ui);
+    user-select: none;
+}
+
+no-project-overlay .no-project-logo {
+    height: 3rem;
+    aspect-ratio: 79.433 / 31.038;
+    margin: 0 auto 1.5rem;
+    background-color: var(--text-primary);
+    mask-image: var(--logo-with-name-url);
+    mask-size: contain;
+    mask-repeat: no-repeat;
+    mask-position: center;
+    opacity: 0.85;
+}
+
+no-project-overlay h1 {
+    margin: 0 0 1rem;
+    color: var(--text-primary);
+    font-size: 1.5rem;
+    font-weight: 600;
+}
+
+no-project-overlay p {
+    margin: 0 auto 0.875rem;
+    font-size: 0.9375rem;
+    line-height: 1.6;
+}
+
+no-project-overlay p:last-child {
+    margin-bottom: 0;
+}
+
+no-project-overlay .no-project-inline-link {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--accent-blue);
+    font: inherit;
+    cursor: pointer;
+}
+
+no-project-overlay .no-project-inline-link:hover {
+    text-decoration: underline;
+}
+
+/* Header-bar buttons use the shared .u-btn-ghost house style (utilities.css);
+   their size/padding/icon come from the co-classes (u-btn-circular-control,
+   u-btn-icon-header, u-btn-pill-control, ppd-chip, ppd-new-window-button). */
+
+strategy-selector {
+    display: flex;
+    flex-shrink: 0;
+}
+
+/* A delegated sub-agent's column hides its selector: that thread runs under a
+   strategy its calling tool owns, and is not user-steerable. `display: flex`
+   above beats the UA's [hidden] rule, so restate it here. */
+strategy-selector[hidden] {
+    display: none;
+}
+
+/* Strategy Dropdown */
+.strategy-dropdown {
+    min-width: 22rem;
+    max-width: 28rem;
+    overflow: hidden;
+}
+
+/* Strategy item - richer than standard menu-item */
+.strategy-dropdown .strategy-item {
+    padding: 0.75rem 1rem;
+    cursor: pointer;
+    transition: background 150ms ease;
+    border-bottom: 0.0625rem solid var(--border-divider);
+    position: relative;
+}
+
+.strategy-dropdown .strategy-item:last-child {
+    border-bottom: none;
+}
+
+.strategy-dropdown .strategy-item:hover {
+    background: var(--bg-raised);
+}
+
+.strategy-dropdown .strategy-item::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 0.1875rem;
+    background: var(--strategy-color, var(--text-tertiary));
+}
+
+.strategy-dropdown .strategy-item.active {
+    background: rgb(88 166 255 / 16%);
+}
+
+.strategy-dropdown .strategy-item.active::before {
+    left: -0.125rem;
+    width: 0.3125rem;
+}
+
+.strategy-dropdown .strategy-item.unavailable {
+    cursor: default;
+    opacity: 0.6;
+}
+
+/* Strategy item header */
+.strategy-item-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 0.25rem;
+    padding-right: 1.75rem;
+}
+
+/* Icon + name */
+.strategy-item-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+}
+
+/* Icon tints to the strategy's colour (the item already carries it as a var) */
+.strategy-item-icon {
+    width: 0.875rem;
+    height: 0.875rem;
+    color: var(--strategy-color, var(--text-primary));
+}
+
+.strategy-item-name {
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: var(--text-primary);
+}
+
+.strategy-info-button {
+    position: absolute;
+    top: 0.625rem;
+    right: 0.75rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    padding: 0;
+    color: var(--text-tertiary);
+}
+
+.strategy-info-button svg {
+    width: 1rem;
+    height: 1rem;
+}
+
+.strategy-info-button:focus-visible {
+    outline: 0.125rem solid var(--accent-blue);
+    outline-offset: 0.125rem;
+}
+
+/* Strategy description */
+.strategy-item-description {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    margin: 0;
+    line-height: 1.4;
+}
+
+/* Input-controls buttons share the .u-btn-ghost house style (chrome lives in
+   utilities.css, keyed off `composer-box .input-ctrl-btn`); this owns only their
+   size and layout — smaller and shorter than the header buttons. */
+composer-box .input-ctrl-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    flex-shrink: 0;
+    height: 1.5rem;
+    white-space: nowrap;
+}
+
+/* Commands button - icon-only, centered */
+composer-box .commands-button {
+    justify-content: center;
+    padding: 0.125rem 0.5rem;
+}
+
+composer-box .commands-button .icon-slash {
+    width: 0.75rem;
+    height: 0.75rem;
+}
+
+/* Skill button - icon-only, centered (mirrors the commands button). Its glyph is
+   the `$` skill-mention trigger, just as the commands button shows the `/` slash
+   trigger — a text character rather than a mask icon, so it stays crisp at any
+   zoom and follows currentcolor for free. */
+composer-box .skill-button {
+    justify-content: center;
+    padding: 0.125rem 0.5rem;
+}
+
+composer-box .skill-button .skill-glyph {
+    font-family: var(--font-mono, monospace);
+    font-size: 0.875rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+/* Commands menu - two-column grid so command names and their descriptions
+   line up vertically. Each menu-item spans both columns and adopts them via
+   subgrid, so the row still highlights on hover as one unit. */
+.commands-menu.show {
+    display: grid;
+    grid-template-columns: auto 1fr;
+}
+
+.commands-menu .menu-item {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    column-gap: 1rem;
+    align-items: baseline;
+}
+
+/* Commands menu - command name styling */
+.commands-menu .menu-item code {
+    font-family: var(--font-mono, monospace);
+    font-size: 0.8125rem;
+    opacity: 0.7;
+}
+
+.commands-menu .menu-item-desc {
+    color: var(--text-secondary);
+}
+
+/* Context Item Context Menu - uses dropdown-menu utility from styles.css
+   NOTE: Positioning handled by positionDropdown() utility */
+.context-item-context-menu {
+    z-index: var(--z-modal);
+}
+
+/* Shared close (×) icon - the glyph inside every .close-button. Drawn as a mask
+   rather than a text "×" so it is centred by geometry: a text glyph is placed by
+   the font's baseline, which leaves it visibly high or low inside a round button
+   and shifts again with the system UI font. The two strokes are symmetric about
+   the viewBox centre, so center/contain lands it dead centre everywhere. */

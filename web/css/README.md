@@ -10,9 +10,14 @@ in [Where a rule goes](#where-a-rule-goes).
   components are styled by element-name and class selectors from these
   stylesheets, and an extension can restyle what the host renders.
 - **No build step.** These files are authored by hand, embedded into the binary
-  by the `css/*` glob in `web/embed.go`, and served verbatim under a
-  per-process version prefix (`/v<id>/css/…`). Nothing bundles, minifies or
-  transforms them. What you write is what ships.
+  by the `css/*` glob in `web/embed.go` (which recurses, so the subdirectories
+  come too), and served verbatim under a per-process version prefix
+  (`/v<id>/css/…`). Nothing bundles, minifies or transforms them. What you write
+  is what ships.
+- **One directory per layer**, and a sheet's directory is its layer:
+  `tokens/ base/ layout/ patterns/ components/ utilities/`, plus `vendor/` for
+  third-party themes. `manifest.json` is the list — every sheet, its layer, and
+  the selector roots it owns.
 - **Two `<link>` lists, and they must agree**: `web/index.html` and
   `web/js-tests/headless-test.html`. A sheet missing from the second is a sheet
   the browser suite never applies, so its rules are untested. `lint-css-arch`

@@ -18,7 +18,7 @@
  * @module unit-tests/pinboard-shell-test
  */
 
-import { assert, waitFor } from '../utilities/test-helpers.js';
+import { assert, waitFor, styledProbeFrame } from '../utilities/test-helpers.js';
 import pinboardStore from '../../js/services/pinboard-store.js';
 import pinboardView from '../../js/services/pinboard-view.js';
 import pinboardItemRegistry from '../../js/registries/pinboard-item-registry.js';
@@ -1618,37 +1618,11 @@ export async function runTests(_ctx) {
 
     await run('the phone breakpoint gives the board the whole width', async () => {
       // A lane is wider than 36rem, so the phone rules never render in the test
-      // page itself. A child iframe narrow enough to match the query, wearing the
-      // same stylesheets, is the only place that CSS can be measured.
-      const frame = document.createElement('iframe');
-      frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:360px;height:480px;border:0';
-      document.body.appendChild(frame);
+      // page itself. The probe wears every sheet, not just the one the panel's
+      // own rules live in: the drawer's scrim and the z-index tokens ordering
+      // the layers are filed elsewhere again.
+      const { doc, frame } = await styledProbeFrame(360, 480, budgetFor(4000));
       try {
-        const doc = /** @type {Document} */ (frame.contentDocument);
-        const links = [...document.querySelectorAll('link[rel="stylesheet"]')]
-          .map((l) => l.outerHTML).join('');
-        doc.open();
-        doc.write(`<!doctype html><html><head>${links}</head><body style="margin:0"></body></html>`);
-        doc.close();
-        // Both sheets, and not just the one the panel's own rules live in: the
-        // drawer's scrim and the z-index tokens every layer is ordered by are in
-        // styles.css, and measuring before it lands reads every one of them as
-        // `auto`.
-        const deadline = Date.now() + budgetFor(4000);
-        const loaded = (/** @type {string} */ name) => [...doc.styleSheets]
-          .some((s) => (s.href || '').includes(name));
-        while (!(loaded('components.css') && loaded('styles.css'))) {
-          // Say so rather than measuring on: every geometry assertion below
-          // reads `auto` without these, and reports a z-index mismatch for
-          // what is really a stylesheet that never arrived.
-          if (Date.now() > deadline) {
-            throw new Error(
-              `the probe document's stylesheets never loaded (components.css: ${loaded('components.css')}, styles.css: ${loaded('styles.css')})`
-            );
-          }
-          await new Promise((r) => { setTimeout(r, 20); });
-        }
-
         // Plain elements wearing the classes, not the custom elements: a child
         // document has its own registry and would never upgrade them.
         const host = doc.createElement('div');

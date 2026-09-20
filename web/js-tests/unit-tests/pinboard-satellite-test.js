@@ -24,7 +24,7 @@
  * @module unit-tests/pinboard-satellite-test
  */
 
-import { assert } from '../utilities/test-helpers.js';
+import { assert, styledProbeFrame } from '../utilities/test-helpers.js';
 import pinboardStore from '../../js/services/pinboard-store.js';
 import pinboardView from '../../js/services/pinboard-view.js';
 import pinboardItemRegistry from '../../js/registries/pinboard-item-registry.js';
@@ -554,21 +554,7 @@ function chord() {
  * @returns {Promise<{doc: Document, frame: HTMLIFrameElement}>} The child document.
  */
 async function styledFrame(width) {
-  const frame = document.createElement('iframe');
-  frame.style.cssText = `position:fixed;left:-10000px;top:0;width:${width}px;height:600px;border:0`;
-  document.body.appendChild(frame);
-  const doc = /** @type {Document} */ (frame.contentDocument);
-  const links = [...document.querySelectorAll('link[rel="stylesheet"]')]
-    .map((l) => l.outerHTML).join('');
-  doc.open();
-  doc.write(`<!doctype html><html><head>${links}</head><body style="margin:0"></body></html>`);
-  doc.close();
-  const deadline = Date.now() + 4000;
-  while (Date.now() < deadline) {
-    if ([...doc.styleSheets].some((s) => (s.href || '').includes('components.css'))) break;
-    await new Promise((r) => { setTimeout(r, 20); });
-  }
-  return { doc, frame };
+  return styledProbeFrame(width, 600);
 }
 
 /**

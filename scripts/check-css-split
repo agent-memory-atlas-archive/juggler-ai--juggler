@@ -1,0 +1,130 @@
+#!/usr/bin/env node
+/**
+ * check-css-split — proves the split of web/css/ changed no CSS.
+ *
+ * The sheets under web/css/ were cut out of a smaller set of large files, every
+ * new sheet a contiguous run of lines from one old one. This asserts the
+ * property that makes that safe: concatenating the new sheets in <link> order
+ * reproduces the old sheets concatenated in their <link> order, byte for byte.
+ * If that holds, no rule moved relative to any other, so the cascade cannot
+ * have changed — whatever the browser, whatever the specificity.
+ *
+ * Both sides are normalised by removing each file's leading banner comment and
+ * the blank line after it, because every slice carries its own copy of the
+ * source file's banner. Exactly one leading comment is removed, so a section
+ * comment that happens to begin a slice still has to match. Nothing else is
+ * touched: every selector, declaration, blank line and stray space is compared.
+ *
+ * The old side is read from git, and the sheet order from that revision's
+ * web/index.html — so the comparison is against what actually shipped, not
+ * against a list kept by hand.
+ *
+ *   scripts/check-css-split [ref]     (default: the pre-split revision)
+ *
+ * This is a one-off proof for the restructure, not part of `make lint`. It stays
+ * because the claim it checks is the reason the restructure was safe, and it
+ * lets anyone re-establish that from the repository alone.
+ */
+
+'use strict';
+
+const { execFileSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
+const repoRoot = path.resolve(__dirname, '..');
+
+/** The last commit before the split, and so the last one with the old sheets. */
+const PRE_SPLIT_REF = 'fbf9b9b';
+
+function gitShow(ref, rel) {
+	return execFileSync('git', ['show', `${ref}:${rel}`], { cwd: repoRoot, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+}
+
+/** The css/ sheets an index.html links, in order. */
+function linkedSheets(html) {
+	return [...html.matchAll(/<link[^>]*rel=["']stylesheet["'][^>]*href=["'][^"']*\/css\/([^"']+)["']/g)].map((m) => m[1]);
+}
+
+/**
+ * A file's text with its banner removed: the leading comment block, and the
+ * blank line separating it from the first rule. Files without one are returned
+ * unchanged.
+ */
+function stripBanner(text) {
+	if (!text.startsWith('/*')) return text;
+	const end = text.indexOf('*/');
+	if (end < 0) return text;
+	let i = end + 2;
+	if (text[i] === '\n') i++;
+	if (text[i] === '\n') i++;
+	return text.slice(i);
+}
+
+/** Where two strings first differ, as a line number and the two lines. */
+function firstDifference(a, b) {
+	const as = a.split('\n');
+	const bs = b.split('\n');
+	for (let i = 0; i < Math.max(as.length, bs.length); i++) {
+		if (as[i] !== bs[i]) {
+			return {
+				line: i + 1,
+				old: as[i] === undefined ? '(end of file)' : as[i],
+				now: bs[i] === undefined ? '(end of file)' : bs[i],
+			};
+		}
+	}
+	return null;
+}
+
+/** Which new sheet a line of the concatenation came from. */
+function locate(sheets, line) {
+	let at = 1;
+	for (const sheet of sheets) {
+		const length = sheet.text.split('\n').length - 1;
+		if (line < at + length) return `${sheet.file}:${line - at + 1}`;
+		at += length;
+	}
+	return '(past the end)';
+}
+
+function main() {
+	const ref = process.argv[2] || PRE_SPLIT_REF;
+
+	let oldFiles;
+	try {
+		oldFiles = linkedSheets(gitShow(ref, 'web/index.html'));
+	} catch (err) {
+		console.error(`✗ cannot read web/index.html at ${ref} — ${err.message.trim()}`);
+		process.exit(1);
+	}
+	if (!oldFiles.length) {
+		console.error(`✗ web/index.html at ${ref} links no stylesheets`);
+		process.exit(1);
+	}
+
+	const manifest = JSON.parse(fs.readFileSync(path.join(repoRoot, 'web', 'css', 'manifest.json'), 'utf8'));
+	const newSheets = manifest.sheets.map((s) => ({
+		file: s.file,
+		text: stripBanner(fs.readFileSync(path.join(repoRoot, 'web', 'css', s.file), 'utf8')),
+	}));
+
+	const before = oldFiles.map((f) => stripBanner(gitShow(ref, `web/css/${f}`))).join('');
+	const after = newSheets.map((s) => s.text).join('');
+
+	if (before === after) {
+		console.log(`✓ css split is a no-op (${newSheets.length} sheets reproduce ${oldFiles.length} from ${ref}, ${before.length} bytes)`);
+		return;
+	}
+
+	const diff = firstDifference(before, after);
+	console.error(`✗ the css split changed the stylesheet: ${before.length} bytes at ${ref}, ${after.length} now`);
+	if (diff) {
+		console.error(`\n  first difference at concatenated line ${diff.line} — ${locate(newSheets, diff.line)}`);
+		console.error(`    ${ref}: ${diff.old}`);
+		console.error(`    now:     ${diff.now}`);
+	}
+	process.exit(1);
+}
+
+main();

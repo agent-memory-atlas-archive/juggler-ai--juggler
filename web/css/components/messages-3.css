@@ -1,0 +1,327 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+.pending-messages {
+    margin-top: 0.5rem;
+    padding: 0.5rem 0 0.25rem;
+    border-top: 1px dashed var(--border-divider, rgb(255 255 255 / 12%));
+    opacity: 0.72;
+}
+
+.pending-messages-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+    margin-bottom: 0.25rem;
+}
+
+/* Selected queued bubble regains full emphasis so the selection ring reads. */
+.pending-messages .queued-message.selected {
+    opacity: 1;
+}
+
+.pending-messages .queued-message {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.375rem;
+}
+
+.pending-messages .queued-message article.user {
+    margin-left: 0;
+}
+
+.pending-messages .queued-message-delete-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    flex-shrink: 0;
+    background: transparent;
+    border: none;
+    border-radius: 0.25rem;
+    padding: 0;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    opacity: 0.9;
+    transition: background 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+}
+
+.pending-messages .queued-message-delete-btn:hover,
+.pending-messages .queued-message-delete-btn:focus-visible {
+    color: var(--accent-red);
+    background: color-mix(in srgb, var(--accent-red) 12%, transparent);
+    opacity: 1;
+}
+
+.pending-messages .queued-message-delete-btn:focus-visible {
+    outline: 0.125rem solid color-mix(in srgb, var(--accent-red) 45%, transparent);
+    outline-offset: 0.125rem;
+}
+
+/* Terminal "Result" block synthesized at the end of an open thread column's
+   transcript (from the thread's `result` field). Distinct from the parent
+   tile and from any message bubble. */
+.thread-result-final .thread-result-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+    margin-bottom: 0.25rem;
+}
+
+.thread-result-final .thread-result-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.thread-result-final .thread-result-header-actions {
+    display: flex;
+    gap: 0.375rem;
+    flex-shrink: 0;
+}
+
+.thread-result-final .thread-result-resummarise-btn {
+    background: transparent;
+    color: var(--text-secondary, #8b949e);
+    border: 0.0625rem solid var(--border-color);
+    padding: 0.125rem 0.5rem;
+    border-radius: 0.25rem;
+    font-size: 0.6875rem;
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s;
+}
+
+.thread-result-final .thread-result-resummarise-btn:hover {
+    border-color: var(--accent-blue, #58a6ff);
+    color: var(--accent-blue, #58a6ff);
+}
+
+.thread-result-final .thread-result-body {
+    overflow-wrap: break-word;
+    font-size: 0.8125rem;
+    color: var(--text-primary);
+}
+
+.thread-result-final .thread-result-body > :first-child {
+    margin-top: 0;
+}
+
+.thread-result-final .thread-result-body > :last-child {
+    margin-bottom: 0;
+}
+
+/* Thread message - nested sub-conversation indicator */
+thread-message {
+    cursor: pointer;
+}
+
+/* The tile face is a header row (icon, lozenge, goal) with the thread's own
+   text stacked beneath it, rather than beside it: a summary is prose several
+   lines long, and sharing the header's row would wrap it into the narrow
+   column left of the badge. */
+thread-message .thread-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+/* The goal is the caller's own description of the task, so it carries the
+   shared LLM-description styling; the icon-row band lines its first line up
+   with the icon and lozenge beside it, exactly like every other item's title. */
+thread-message .thread-goal {
+    min-height: var(--message-icon-row-height);
+    display: flex;
+    align-items: center;
+}
+
+/* Stop affordance on a running tile: sits at the right end of the status
+   message row, red hover like the column header's Cancel. Only rendered while
+   the thread is not yet closed. */
+thread-message .thread-stop-btn {
+    margin-left: auto;
+    flex-shrink: 0;
+}
+
+thread-message .thread-stop-btn:hover {
+    border-color: var(--accent-red, #f85149);
+    color: var(--accent-red, #f85149);
+}
+
+thread-message .thread-summary {
+    overflow-wrap: break-word;
+    font-size: 0.8125rem;
+    color: var(--text-primary);
+}
+
+thread-message .thread-summary.not-summarised {
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+/* What the thread's own context came to against what it returned, closing the
+   tile under the summary. Quiet by design: it is a fact about the tile, read
+   once and then only when someone wonders what delegating costs. */
+thread-message .thread-cost {
+    margin-top: 0.25rem;
+    font-size: 0.6875rem;
+    color: var(--text-secondary);
+}
+
+/* Tool group — a folded run of consecutive tool rows. Its composition summary is
+   a plain `.message-text` title, so it inherits the shared icon-row band and
+   typography from the rules above and needs nothing here; it's also a container
+   you open (like a sub-thread tile), so its status line borrows the thread
+   tile's status block wholesale. Only the pointer affordance and that block's
+   text sizing are restated here. */
+tool-group-message {
+    cursor: pointer;
+}
+
+tool-group-message .thread-summary {
+    overflow-wrap: break-word;
+    font-size: 0.8125rem;
+    color: var(--text-primary);
+}
+
+.thread-summary.thread-status {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    color: var(--text-secondary);
+}
+
+.thread-summary.thread-status .thread-status-message {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-style: italic;
+}
+
+.thread-summary.thread-status .thread-status-spinner {
+    flex-shrink: 0;
+}
+
+/* Awaiting approval: a sub-thread (at any depth) is parked on a tool approval.
+   Fill the tile's status block with the same theme-aware --tab-awaiting tint
+   and pulse the conversation tab uses for .is-awaiting, letting the text keep
+   the theme's normal colours, so the "needs your input" highlight is visually
+   identical on every ancestor tile along the route. The static background
+   mirrors the pulse keyframe's tint so the reduced-motion fallback matches. */
+.thread-summary.thread-status[data-kind="paused"] {
+    background: color-mix(in srgb, var(--tab-awaiting) 85%, transparent);
+    border-radius: 0.375rem;
+    padding: 0.5rem 0.625rem;
+    animation: tab-awaiting-pulse 1.4s ease-in-out infinite;
+}
+
+.thread-summary.thread-status[data-kind="paused"] .thread-status-message {
+    font-style: normal;
+    font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .thread-summary.thread-status[data-kind="paused"] { animation: none; }
+}
+
+
+/* Thread column header - shown above thread conversation columns.
+   Uses properties-panel-section/header for consistent styling with properties panel. */
+.thread-column-header {
+    padding: 1rem;
+    background: var(--bg-secondary, #161b22);
+    flex-shrink: 0;
+}
+
+.thread-column-header properties-panel-section {
+    overflow: visible;
+    gap: 1rem;
+}
+
+.thread-column-header .thread-column-goal {
+    overflow-wrap: anywhere;
+    white-space: normal;
+    font-family: var(--font-sans);
+    font-size: 0.9rem;
+}
+
+thread-column-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin-bottom: 1rem;
+}
+
+.thread-action-btn {
+    background: transparent;
+    color: var(--text-secondary, #8b949e);
+    border: 0.0625rem solid var(--border-color);
+    padding: 0.1875rem 0.5rem;
+    border-radius: 0.25rem;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s;
+}
+
+.thread-action-btn:hover {
+    border-color: var(--accent-blue, #58a6ff);
+    color: var(--accent-blue, #58a6ff);
+}
+
+
+.thread-column .conversation-message-list {
+    padding-top: 1rem;
+    scroll-padding-top: 1rem;
+}
+
+
+/* Message action buttons (rollback, branch) */
+.message-actions {
+    margin-top: 0.5rem;
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.message-action-btn {
+    background: transparent;
+    color: var(--text-secondary, #8b949e);
+    border: 0.0625rem solid var(--border-color);
+    padding: 0.25rem 0.625rem;
+    border-radius: 0.375rem;
+    font-size: 0.8125rem;
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.message-action-btn:hover:not(:disabled) {
+    border-color: var(--accent-blue, #58a6ff);
+    color: var(--accent-blue, #58a6ff);
+}
+
+.message-action-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.message-action-btn svg {
+    width: 1rem;
+    height: 1rem;
+    fill: currentcolor;
+}
+
+/* Markdown Styles - Universal, can be used anywhere */
+
+/* Override monospace with sans font for markdown elements */

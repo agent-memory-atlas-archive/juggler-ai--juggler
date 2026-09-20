@@ -1,0 +1,35 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+/* ===================================================================
+   APP TIER CSS — styles.css
+   Design tokens (CSS variables), dark/light themes, base typography,
+   and core app layout. No plugin-specific styles here.
+
+   CSS Variable Tiers:
+     App chrome  — --bg-*, --text-*, --accent-*, --border-*, --overlay-*,
+                   --shadow-*, --spacing-*, --font-*, --radius-*, --z-*
+     Plugin tier — --ci-* (context items), --syntax-*, --diff-*
+   =================================================================== */
+
+/* Reset and Base Styles */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+/* Form controls don't inherit font-family from their ancestors — browsers give
+   them a UA default (a bare textarea defaults to the generic `monospace`
+   keyword, which resolves to Menlo on macOS, Consolas on Windows). Force them to
+   inherit so they use our embedded fonts and render identically across OSes. */
+button,
+input,
+textarea,
+select {
+    font-family: inherit;
+}
+

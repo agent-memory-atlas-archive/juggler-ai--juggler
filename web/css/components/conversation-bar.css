@@ -1,0 +1,1212 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+/* Conversation Bar Component — vertical sidebar of tabs */
+conversation-bar {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 auto;
+    width: 15rem;
+    min-width: 8rem;
+    height: 100%;
+    background: var(--bg-primary);
+    border-right: 0.0625rem solid var(--border-divider);
+    overflow: hidden;
+}
+
+conversation-bar .conversation-bar {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+}
+
+conversation-bar .conversation-tabs {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.375rem;
+    margin: 0;
+
+    /* Extra bottom padding so the last tab's rename overlay (input + auto-name
+       button + shadow, ~3rem below the tab) stays inside the scroll container. */
+    padding: 0.5rem 0.5rem 3.25rem;
+    margin-right: 0.4rem;
+    margin-left: 0.4rem;
+    list-style: none;
+    overflow: auto;
+
+    /* Takes the whole column but for what the info rail below needs, so the list
+       always runs down to the topmost card and no space is left unaccounted for.
+       It scrolls only once it has genuinely filled that room (see the info-rail
+       flex below, which sizes to its cards rather than to the leftovers). */
+    flex: 1 1 auto;
+    min-height: 0;
+
+    /* Thin, unobtrusive scrollbar — matches .conversation-message-list */
+    scrollbar-width: thin;
+    scrollbar-color: var(--overlay-light-10) transparent;
+}
+
+conversation-bar .conversation-tab,
+conversation-bar .conversation-add-item {
+    display: flex;
+    flex-shrink: 0;
+    width: 100%;
+}
+
+conversation-bar .conversation-tab {
+    position: relative;
+    background: var(--bg-primary);
+    border: 0.0625rem solid var(--border-color);
+    border-radius: 0.8rem;
+    padding: 0.5rem 0.75rem;
+    align-items: center;
+    gap: 0.2rem;
+    transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+    cursor: default;
+}
+
+conversation-bar .conversation-tab.has-close {
+    padding: 0.25rem 0.4rem;
+}
+
+/* Activity indicators, shown on every tab regardless of selection.
+   - .is-running   → pulsing green blob in the trailing slot (LLM loop active),
+                     replacing the bin button so a tab can't be binned
+                     mid-loop. Same size as the button, so the layout is stable.
+    - .is-awaiting  → tab background pulses between orange and the regular
+                      tab background (needs your input). Withheld entirely when
+                      the user turns tab highlighting off, so such a tab is
+                      indistinguishable from an idle one — see
+                      conversation-bar._refreshTabStatus.
+    - .has-scheduled-send → a static clock in its own slot before the trailing
+                      one (a send is armed on one of the conversation's
+                      threads). Its own slot because an end-of-turn send is
+                      armed while the turn runs, so it shares the tab with the
+                      green blob.
+    Idle tabs get nothing. */
+conversation-bar .conversation-tab.is-running .conversation-tab-activity {
+    display: flex;
+}
+
+conversation-bar .conversation-tab.is-running .conversation-tab-bin {
+    display: none;
+}
+
+conversation-bar .conversation-tab.has-scheduled-send .conversation-tab-schedule {
+    display: flex;
+}
+
+/* Awaiting approval: pulse the whole tab. The static value is also the
+   reduced-motion fallback (animation disabled below). */
+conversation-bar .conversation-tab:not(.active).is-awaiting {
+    background: color-mix(in srgb, var(--tab-awaiting) 85%, var(--bg-primary));
+    animation: tab-awaiting-pulse 2s ease-in-out infinite;
+}
+
+@keyframes tab-running-pulse {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    50% {
+        opacity: 0.4;
+        transform: scale(0.7);
+    }
+}
+
+@keyframes tab-awaiting-pulse {
+    0%, 100% {
+        background: color-mix(in srgb, var(--tab-awaiting) 85%, var(--bg-primary));
+        box-shadow: 0 0 0 0 color-mix(in srgb, var(--tab-awaiting) 25%, transparent);
+    }
+
+    50% {
+        background: var(--bg-primary);
+    }
+
+    70% { box-shadow: 0 0 0 0.5rem transparent; }
+}
+
+/* Needs-attention alert (attention-manager): a one-shot flash when a
+   conversation needs you while you're not looking at it, plus a standing tint on
+   the tab until you view it. Distinct from .is-awaiting (which tracks live
+   approval state regardless of focus) — this is the focus-gated "come back"
+   signal and persists until the tab is seen. A flat background tint (not an
+   edge marker) so it never curves at the tab's rounded corners; on awaiting
+   tabs the stronger .is-awaiting pulse simply overrides it. */
+conversation-bar .conversation-tab:not(.active).needs-attention {
+    background-color: color-mix(in srgb, var(--tab-awaiting) 22%, transparent);
+}
+
+/* Snap the awaiting colour hard on/off (no fade) ~200ms per state, three times,
+   then fall back to the underlying state. The :not(.active) selector matches the
+   awaiting rule's specificity and, ordered later, wins the `animation` cascade so
+   the one-shot flash overrides the awaiting pulse for its duration — when it ends
+   (fill-mode none) the tab returns to its normal pulsing. */
+conversation-bar .conversation-tab:not(.active).attention-flash {
+    animation: tab-attention-flash 0.4s step-end 3;
+}
+
+@keyframes tab-attention-flash {
+    0% { background-color: var(--tab-awaiting); }
+    50% { background-color: transparent; }
+    100% { background-color: var(--tab-awaiting); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    conversation-bar .conversation-tab-activity::before { animation: none; }
+    conversation-bar .conversation-tab:not(.active).is-awaiting { animation: none; }
+    conversation-bar .conversation-tab.attention-flash { animation: none; }
+}
+
+conversation-bar .conversation-tab:hover {
+    background: var(--bg-raised);
+}
+
+conversation-bar .conversation-tab.active {
+    /* Darken the accent-blue surface so white text clears WCAG AA at all
+       times — bare --accent-blue (#58a6ff in dark mode) on #fff is ~2.7:1
+       and was barely legible. */
+    background: color-mix(in srgb, var(--accent-blue) 70%, var(--bg-raised));
+    border-color: color-mix(in srgb, var(--accent-blue) 70%, var(--bg-raised));
+    color: #fff;
+}
+
+conversation-bar:focus {
+    outline: none;
+}
+
+conversation-bar.tab-list-focused:focus-within .conversation-tab.active {
+    outline: 0.125rem solid var(--accent-blue);
+    outline-offset: 0.125rem;
+    box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--accent-blue) 30%, transparent);
+}
+
+/* Drag-and-drop states.
+   The dragged tab is represented by a floating clone (.drag-ghost) positioned
+   `fixed` on the host, so it escapes the tab list's overflow:auto clip and can
+   travel the full height of the sidebar rather than being cut off at the short
+   list's edge. The real tab stays in place as an invisible placeholder
+   (.drag-source) that the siblings shift around. z-index sits at --z-dropdown:
+   above sidebar chrome, below modals (you can't reorder tabs with one open). */
+conversation-bar .conversation-tab.drag-ghost {
+    position: fixed;
+    margin: 0;
+    z-index: var(--z-dropdown);
+    opacity: 0.95;
+    box-shadow: 0 0.25rem 1rem rgb(0 0 0 / 30%);
+    cursor: grabbing;
+    pointer-events: none;
+    will-change: transform;
+}
+
+/* Keep the grab handle lit on the ghost — it isn't hovered, so the hover-reveal
+   rule below wouldn't otherwise show it while dragging. */
+conversation-bar .conversation-tab.drag-ghost .tab-drag-handle {
+    opacity: 1;
+}
+
+conversation-bar .conversation-tab.drag-source {
+    visibility: hidden;
+}
+
+conversation-bar .tab-drag-handle {
+    touch-action: none;
+    cursor: grab;
+    flex-shrink: 0;
+    width: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+}
+
+@media (hover: hover) {
+    conversation-bar .tab-drag-handle {
+        opacity: 0;
+    }
+
+    conversation-bar .conversation-tab:hover .tab-drag-handle {
+        opacity: 1;
+    }
+}
+
+/* Coarse pointers (touch) have no hover to reveal the handle and need a
+   larger target to grab reliably. */
+@media (pointer: coarse) {
+    conversation-bar .tab-drag-handle {
+        width: 2.75rem;
+        font-size: 1.25rem;
+    }
+}
+
+conversation-bar .conversation-tabs.is-dragging .conversation-tab:not(.drag-source) {
+    transition: transform 150ms ease;
+}
+
+conversation-bar .conversation-tab-button {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    text-align: left;
+    background: transparent;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    color: inherit;
+    white-space: nowrap;
+    font-size: 0.8125rem;
+    flex: 1;
+    min-width: 0;
+}
+
+/* Subtle "+" tab — no chrome by default, picks up a faint background on hover.
+   The "+" glyph itself carries the accent colour. */
+conversation-bar .conversation-add {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 0.0625rem solid transparent;
+    border-radius: 0.8rem;
+    padding: 0.25rem 0.75rem;
+    cursor: pointer;
+    transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+    color: var(--accent-green);
+    font-size: 1.25rem;
+    font-weight: 600;
+    line-height: 1;
+    width: 100%;
+}
+
+conversation-bar .conversation-add:hover {
+    background: var(--bg-raised);
+    border-color: var(--border-color);
+    color: var(--accent-green-bright);
+}
+
+conversation-bar .conversation-tab-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: left;
+}
+
+/* Resize handle sits at the right edge of the sidebar (reuses col-resize-handle styles) */
+conversation-bar > col-resize-handle {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 0.5rem;
+    background: transparent;
+    cursor: var(--cursor-col-resize);
+    z-index: var(--z-raised);
+    transition: background 150ms ease;
+}
+
+conversation-bar > col-resize-handle.hovered,
+conversation-bar > col-resize-handle.dragging {
+    background: var(--accent-blue);
+}
+
+/* Pulsing green activity blob — same footprint as the bin button so the
+   two can swap in the trailing slot without shifting the layout. Hidden by
+   default; .is-running flips it on (see the status-indicators section). */
+conversation-bar .conversation-tab-activity {
+    width: 1.25rem;
+    height: 1.25rem;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+conversation-bar .conversation-tab-activity::before {
+    content: "";
+    width: 0.625rem;
+    height: 0.625rem;
+    border-radius: 50%;
+    background: #08dc3c;
+    box-shadow: 0 0 0.5rem rgb(93 255 133 / 60%);
+    animation: tab-running-pulse 1.4s ease-in-out infinite;
+}
+
+/* Scheduled-send clock. Static and muted — it reports a pending send, it isn't
+   asking for anything. Hidden by default; .has-scheduled-send flips it on (see
+   the status-indicators section). */
+conversation-bar .conversation-tab-schedule {
+    width: 0.875rem;
+    height: 0.875rem;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    opacity: 0.7;
+}
+
+conversation-bar .conversation-tab-schedule svg {
+    width: 0.875rem;
+    height: 0.875rem;
+}
+
+conversation-bar .conversation-tab-bin {
+    background: none;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    padding: 0;
+    width: 1.25rem;
+    height: 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 150ms ease, background 150ms ease;
+    line-height: 1;
+    flex-shrink: 0;
+    border-radius: 50%;
+}
+
+conversation-bar .conversation-tab-bin svg {
+    width: 1rem;
+    height: 1rem;
+}
+
+/* Hover-only on devices that support hover. Touch devices keep the
+   button visible so users can reach it without a hover target. */
+@media (hover: hover) {
+    conversation-bar .conversation-tab:hover .conversation-tab-bin {
+        opacity: 0.8;
+    }
+}
+
+@media (hover: none) {
+    conversation-bar .conversation-tab-bin {
+        opacity: 0.7;
+    }
+}
+
+conversation-bar .conversation-tab-bin:hover {
+    opacity: 1;
+    background: rgb(0 0 0 / 15%);
+}
+
+conversation-bar .conversation-tab.active .conversation-tab-bin:hover {
+    background: rgb(255 255 255 / 15%);
+}
+
+/* Inline rename editor. Appended INSIDE the tab <li> (position: relative —
+   see the .conversation-tab rule), so it tracks the tab on reorder without
+   any JS re-anchoring. It spills a small bleed beyond the tab's box plus a
+   drop shadow below it. The .conversation-tabs menu's overflow:auto clips at
+   its padding box, so the menu carries 0.5rem side padding + a 0.375rem gap
+   for the horizontal/inter-tab halo, and 1.25rem of *bottom* padding so the
+   last tab's shadow isn't cropped by the scroll edge (see that rule).
+   conversation-bar's overflow:hidden sits further out and doesn't crop. The overlay IS the visual tab while editing: same surface, one
+   accent border. The input has no border or background of its own, so
+   there's only ever one frame on screen. Inherits text colour so the
+   active-tab's white-on-blue stays readable without a separate palette.
+   .conversation-tab-rename-actions holds the "Auto-name" button stacked
+   beneath the input. */
+.conversation-tab-rename {
+    position: absolute;
+
+    /* Slight halo around the tab, on all sides. Stays within the menu's clip
+       box at every sidebar width (see the comment above). Only top/left/right
+       are pinned — the bottom is left `auto` so the overlay grows downward to
+       fit its content (e.g. the collision error line) instead of clamping to
+       the tab's height and clipping the overflow. min-height keeps the
+       no-error state identical to the old top/bottom-pinned box. */
+    inset: -0.25rem -0.25rem auto;
+    min-height: calc(100% + 0.5rem);
+    min-width: max(100%, 10rem);
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.25rem;
+    padding: 0.5rem 0.75rem;
+
+    /* Match the active-tab surface (darkened accent-blue) so the overlay
+       reads as a "bigger version of the tab" with one frame, not as a
+       second floating element. */
+    background: color-mix(in srgb, var(--accent-blue) 70%, var(--bg-raised));
+    color: #fff;
+    border: 0.125rem solid var(--accent-blue);
+    border-radius: 0.8rem;
+    box-shadow: 0 0.25rem 0.75rem rgb(0 0 0 / 30%);
+    box-sizing: border-box;
+}
+
+.conversation-tab-rename-input {
+    width: 100%;
+    box-sizing: border-box;
+    background: transparent;
+    color: inherit;
+    border: none;
+    padding: 0;
+    margin: 0;
+    font-family: var(--font-ui);
+    font-size: 0.8125rem;
+    line-height: 1.2;
+    outline: none;
+}
+
+/* The one surface that opts out of the shared --selection-bg: this field sits on
+   the accent-blue rename overlay in white text, where a blue tint would barely
+   show. A white wash is the readable equivalent there. */
+.conversation-tab-rename-input::selection {
+    background: rgb(255 255 255 / 35%);
+}
+
+.conversation-tab-rename-error {
+    color: #ffd9d9;
+    font-size: 0.75rem;
+    line-height: 1.2;
+}
+
+.conversation-tab-rename-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.25rem;
+    margin-top: 0.5rem;
+}
+
+/* "Auto-name" button beneath the rename input: a low-key ghost button on the
+   overlay's accent surface, so it reads as a secondary action to typing a name. */
+.conversation-tab-rename-auto {
+    align-self: flex-start;
+    padding: 0.125rem 0.5rem;
+    font-family: var(--font-ui);
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: inherit;
+    background: rgb(255 255 255 / 12%);
+    border: 0.0625rem solid rgb(255 255 255 / 30%);
+    border-radius: 0.5rem;
+    cursor: pointer;
+}
+
+.conversation-tab-rename-auto:hover {
+    background: rgb(255 255 255 / 22%);
+}
+
+.conversation-tab-rename-actions:empty {
+    display: none;
+}
+
+/* Bottom-of-bar Bin entry — opens the bin modal. Carries .u-btn-ghost, so the
+   resting/hover/press chrome is the shared house style; this owns the row
+   layout (icon, label, size hint, count badge) and the type scale. */
+conversation-bar .conversation-bin-button {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0.25rem 0.5rem;
+    padding: 0.25rem 1rem;
+    font-size: 0.8125rem;
+    flex-shrink: 0;
+}
+
+conversation-bar .conversation-bin-button svg {
+    width: 1rem;
+    height: 1rem;
+    flex-shrink: 0;
+}
+
+conversation-bar .conversation-bin-label {
+    flex: 1;
+    text-align: left;
+}
+
+conversation-bar .conversation-bin-size {
+    flex-shrink: 0;
+    color: var(--text-tertiary, var(--text-secondary, inherit));
+    font-size: 0.6875rem;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+conversation-bar .conversation-bin-size.is-large {
+    color: var(--diff-warning-text);
+}
+
+conversation-bar .conversation-bin-count {
+    flex-shrink: 0;
+    min-width: 1.25rem;
+    padding: 0.0625rem 0.375rem;
+    border-radius: 0.625rem;
+    background: var(--bg-raised);
+    color: var(--text-secondary, inherit);
+    font-size: 0.6875rem;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    line-height: 1.1;
+}
+
+/* Transient Undo button, docked directly above the Bin entry for a few seconds
+   after a conversation is binned (see conversation-bar _showBinUndo). Carries
+   the accent colour rather than the sidebar's muted chrome — it is the one
+   control here that is only worth showing because something just disappeared,
+   and it is worth nothing if it isn't seen before it goes. It rises out of the
+   Bin as it appears, so the eye is already on the right part of the sidebar.
+   Then it pulses twice over about a second, because a single 260ms arrival in
+   the corner of the eye is genuinely easy to miss. Two pulses, not three: the
+   flash-threshold guidance draws its line at three in one second, and this must
+   never be the reason someone has a bad day. Hidden by the `hidden` attribute
+   the rest of the time. */
+conversation-bar .conversation-bin-undo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    margin: 0.25rem 0.5rem;
+    padding: 0.3125rem 1rem;
+    border: 0.0625rem solid var(--accent-blue, #58a6ff);
+    border-radius: 1rem;
+    background: rgb(88 166 255 / 15%);
+    color: var(--accent-blue, #58a6ff);
+    font-family: var(--font-ui);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    cursor: pointer;
+    flex-shrink: 0;
+
+    /* Rise, then pulse. Split across two animations so the flash owns the fill
+       and the rise owns the movement — reduced motion keeps only the flash. */
+    animation:
+        bin-undo-in 260ms cubic-bezier(0.2, 0.8, 0.3, 1.15),
+        bin-undo-flash 480ms ease-in-out 2;
+}
+
+conversation-bar .conversation-bin-undo[hidden] {
+    display: none;
+}
+
+conversation-bar .conversation-bin-undo:hover {
+    background: rgb(88 166 255 / 28%);
+}
+
+conversation-bar .conversation-bin-undo:active {
+    transform: scale(0.97);
+}
+
+conversation-bar .conversation-bin-undo svg {
+    width: 1rem;
+    height: 1rem;
+    flex-shrink: 0;
+}
+
+/* The arrival: rises from the Bin below and settles. Movement only — the fill
+   belongs to the flash below, so the two never fight over `background`. */
+@keyframes bin-undo-in {
+    from {
+        opacity: 0;
+        transform: translateY(0.75rem) scale(0.94);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* The flash: fill and border brighten and a soft halo swells, then both fall
+   back to the resting tint. Two passes of this is the whole attention budget —
+   after that the button just sits there being a button. */
+@keyframes bin-undo-flash {
+    0%,
+    100% {
+        background: rgb(88 166 255 / 15%);
+        border-color: var(--accent-blue, #58a6ff);
+        box-shadow: 0 0 0 0 rgb(88 166 255 / 0%);
+    }
+
+    50% {
+        background: rgb(88 166 255 / 45%);
+        border-color: rgb(139 195 255);
+        box-shadow: 0 0 0.5rem 0.0625rem rgb(88 166 255 / 40%);
+    }
+}
+
+/* Reduced motion keeps the arrival legible without the movement: the button
+   still flashes where it is, nothing travels. */
+@media (prefers-reduced-motion: reduce) {
+    conversation-bar .conversation-bin-undo {
+        animation: bin-undo-flash 480ms ease-in-out 2;
+    }
+
+    conversation-bar .conversation-bin-undo:active {
+        transform: none;
+    }
+}
+
+/* ----------------------------------------------------------------------------
+   Info-cards "i" menu (web/js/components/info-cards-button.js) — a small
+   affordance heading the info rail that re-shows cards hidden via their ×. It is
+   the rail's first child, so it rides directly above the topmost card, left-
+   aligned. The menu itself is a standard `.dropdown-menu` presented on <body> by
+   popup-surface.js, so only the trigger button lives here; the surface inherits
+   the shared popup chrome and placement.
+   ---------------------------------------------------------------------------- */
+conversation-bar info-cards-button {
+    display: flex;
+    justify-content: flex-start;
+
+    /* The glyph sits 0.25rem inside the 1.5rem button box, so nudging the box in
+       by 0.15rem lines the icon up with the 0.4rem-inset card text below it. */
+    margin-left: 0.15rem;
+    flex-shrink: 0;
+}
+
+conversation-bar info-cards-button[hidden] {
+    display: none;
+}
+
+conversation-bar .info-cards-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-radius: 0.25rem;
+    color: var(--text-secondary, inherit);
+    cursor: pointer;
+    opacity: 0.7;
+    transition: opacity 150ms ease, background 150ms ease, color 150ms ease;
+}
+
+conversation-bar .info-cards-button svg {
+    width: 1rem;
+    height: 1rem;
+}
+
+conversation-bar .info-cards-button:hover,
+conversation-bar .info-cards-button[aria-expanded="true"] {
+    opacity: 1;
+    background: var(--bg-raised);
+    color: var(--text-primary, inherit);
+}
+
+/* The show/hide tick gutter inside the info-cards menu. The menu is a standard
+   `.dropdown-menu` (heading → `.category-header`, rows → `.menu-item`, shown rows
+   → `.menu-item.active`) hosted on <body>, so these rules are UNSCOPED — a
+   `conversation-bar` prefix would never match the relocated surface. A
+   fixed-width gutter keeps unticked rows aligned with ticked ones; the glyph is
+   the shared material check, greened by `.menu-item.active` on shown rows. */
+.info-cards-menu__check {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 0.875rem;
+}
+
+.info-cards-menu__check svg {
+    width: 0.875rem;
+    height: 0.875rem;
+    fill: currentcolor;
+}
+
+/* ----------------------------------------------------------------------------
+   Ambient info rail (web/js/components/info-rail.js) — a stack of info cards
+   (Tips, Git status, …) sitting above the Bin. The rail sizes to its own cards
+   (flex: 0 0 auto) and the conversation list takes everything above it (see
+   .conversation-tabs), so the list always runs right down to the topmost card:
+   it scrolls only when the column is genuinely full, never beside dead space.
+   The max-height is the one thing the cards don't get to win: the rail may take
+   at most half the column, so a short window still shows a usable list. That
+   budget is also what info-rail.js measures against (it reads this resolved
+   max-height), so the share lives here and nowhere else — and the count cap that
+   keeps the rail modest in a tall window is MAX_CARDS in the component.
+   The button and the cards bottom-align so they rest just above the Bin, so
+   overflow:hidden cuts the top card's top — the one card the component will
+   mount without room for it all. Deliberately low-key: no per-card
+   background or shadow — just muted text on the sidebar panel, with a hairline
+   divider between adjacent cards for gentle zoning (see .info-card + .info-card).
+   .app-main sets a monospace font-family that the sidebar inherits, so the
+   host forces the card text (title, body, keycap) back to the UI sans font.
+   ---------------------------------------------------------------------------- */
+conversation-bar info-rail {
+    /* Depth of the fade over a clipped card's cut edge. The rail keeps at least
+       twice this much of the card visible (MIN_CLIPPED_REVEAL_REM in info-rail.js),
+       so the fade never covers the whole of what it is signing. */
+    --info-card-fade: 1.5rem;
+
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    overflow: hidden;
+    box-sizing: border-box;
+    margin: 0 0.4rem;
+    padding: 0.5rem 0 0.85rem;
+    font-family: var(--font-ui);
+
+    /* Sized by its content, so the rail asks for exactly the cards it is showing
+       and the list above gets everything else — with no card it is its "i" row,
+       and with none installed (or under test) that row hides and it is nothing. */
+    flex: 0 0 auto;
+
+    /* The cards' one hard limit. Below this the component drops cards from the
+       tail rather than the rail growing, so a short window keeps a usable list.
+       info-rail.js reads this resolved value as its budget. */
+    max-height: 50%;
+}
+
+/* Nothing to show at all: the menu hides itself when no cards are installed (or
+   under test), and a rail holding a hidden button is still holding its padding —
+   dead space above the Bin. It gives that up too, so the list takes the column
+   right down to the Bin. (Cards hidden one by one via their × don't come here: the
+   menu stays, because it is the way back.) */
+conversation-bar info-rail:has(info-cards-button[hidden]) {
+    padding: 0;
+}
+
+/* Set while the top card overflows the rail. The stack is bottom-aligned, so the
+   overflow leaves past the top edge and the fade puts it behind the tab list above
+   — a card carrying on out of view, rather than one that failed to draw. Applied
+   only when something is actually cut, so a card that fits keeps its full contrast. */
+conversation-bar info-rail[data-clipped] {
+    mask-image: linear-gradient(to bottom, transparent 0, #000 var(--info-card-fade));
+}
+
+conversation-bar info-rail[hidden] {
+    display: none;
+}
+
+conversation-bar .info-card {
+    display: flex;
+    flex-direction: column;
+    padding: 0.5rem 0.4rem;
+}
+
+/* Zone adjacent cards with a hairline divider (never above the first card). The
+   rail's 0.5rem gap sits above the line and the card's own top padding below it,
+   so the separator rests centred in the space between two cards. Kept low-key —
+   still no per-card background, just a quiet region divider on the flat panel. */
+conversation-bar .info-card + .info-card {
+    border-top: 0.0625rem solid var(--border-divider);
+}
+
+conversation-bar .info-card__content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+/* Cards whose content advances on click (Tips) take a pointer cursor. Selection
+   is already off for the whole sidebar; see the selection policy in styles.css. */
+conversation-bar .info-card__content--interactive {
+    cursor: pointer;
+}
+
+conversation-bar .info-card__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.3125rem;
+}
+
+conversation-bar .info-card__eyebrow {
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--accent-green, var(--text-secondary));
+}
+
+conversation-bar .info-card__close {
+    flex-shrink: 0;
+    width: 1.125rem;
+    height: 1.125rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--text-secondary, inherit);
+    font-size: 0.9375rem;
+    line-height: 1;
+    cursor: pointer;
+    border-radius: 0.25rem;
+    opacity: 0.6;
+    transition: opacity 150ms ease, background 150ms ease, color 150ms ease;
+}
+
+conversation-bar .info-card__close:hover {
+    opacity: 1;
+    background: var(--bg-tertiary);
+    color: var(--text-primary, inherit);
+}
+
+conversation-bar .info-card__title {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    line-height: 1.5;
+    color: var(--text-primary, inherit);
+}
+
+/* Inline keycap: inverted (panel colours swapped) so it reads as a key against
+   the flat sidebar, and an inline-block <span> so following title text wraps
+   around it rather than dropping to its own line. */
+conversation-bar .info-card__key {
+    display: inline-block;
+    margin-right: 0.5rem;
+    padding: 0.0625rem 0.375rem;
+    border-radius: var(--radius-md, 0.25rem);
+
+    /* Softened so the chip reads as a quiet key, not a high-contrast badge. */
+    background: color-mix(in srgb, var(--text-primary) 60%, transparent);
+    color: var(--bg-primary);
+    font-family: var(--font-ui);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    white-space: nowrap;
+    vertical-align: baseline;
+}
+
+conversation-bar .info-card__body {
+    margin: 0;
+    font-size: 0.75rem;
+    line-height: 1.45;
+    color: var(--text-secondary, inherit);
+}
+
+/* Active provider and optional plan above the shared usage meter rows. */
+conversation-bar .info-card__usage-sub {
+    font-size: 0.6875rem;
+    line-height: 1.35;
+    color: var(--text-secondary, inherit);
+}
+
+/* Git-status per-repo rows: a subtle name badge + the monospaced counts. The
+   whole row is set in the mono face so path labels and counts share the tabular
+   look of the working tree they describe. */
+conversation-bar .info-card__git-line {
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    line-height: 1.5;
+}
+
+/* Quiet chip: a barely-there fill and hairline so the repo name reads as a tag
+   without competing with the counts — deliberately softer than the keycap. */
+conversation-bar .info-card__git-repo {
+    flex-shrink: 0;
+    padding: 0.0625rem 0.3125rem;
+    border-radius: var(--radius-md, 0.25rem);
+    background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--text-primary) 12%, transparent);
+    color: var(--text-primary, inherit);
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+conversation-bar .info-card__git-counts {
+    color: var(--text-secondary, inherit);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+}
+
+/* The card's whole content is a button that opens the Git pin. It must not look
+   like one: the card is ambient, and a control drawn as a control would pull
+   more attention than the counts it wraps. So it is a bare region that reveals
+   itself on hover and focus. */
+conversation-bar .info-card__git-launch {
+    display: block;
+    width: 100%;
+    margin: -0.25rem;
+    padding: 0.25rem;
+    border: none;
+    border-radius: var(--radius-md, 0.25rem);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+conversation-bar .info-card__git-launch:hover {
+    background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+}
+
+conversation-bar .info-card__git-launch:focus-visible {
+    outline: 0.125rem solid var(--accent-blue);
+    outline-offset: 0.125rem;
+}
+
+/* Counts say what has changed; this says that something can be done about it. */
+conversation-bar .info-card__git-review {
+    margin-top: 0.125rem;
+    color: var(--accent-blue);
+    font-size: 0.75rem;
+}
+
+/* Bin modal — list of binned conversations with row actions. */
+bin-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-modal, 1000);
+    align-items: center;
+    justify-content: center;
+}
+
+bin-modal.is-open {
+    display: flex;
+}
+
+bin-modal .bin-panel {
+    max-width: 32rem;
+    width: 90%;
+    padding: 0;
+}
+
+bin-modal .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 0.0625rem solid var(--border-divider);
+}
+
+bin-modal .modal-title {
+    font-size: 1.125rem;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+bin-modal .bin-close {
+    background: none;
+    border: none;
+    color: inherit;
+    font-size: 1.25rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    opacity: 0.7;
+}
+
+bin-modal .bin-close:hover {
+    opacity: 1;
+    background: var(--bg-raised);
+}
+
+bin-modal .bin-body {
+    max-height: 60vh;
+    overflow: auto;
+    padding: 1rem 1.5rem;
+}
+
+bin-modal .bin-empty {
+    padding: 1rem;
+    color: var(--text-secondary, inherit);
+    text-align: center;
+}
+
+bin-modal .bin-size-notice {
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.5rem;
+    border-radius: 0.375rem;
+    background: var(--bg-raised);
+    color: var(--text-secondary, inherit);
+    font-size: 0.8125rem;
+    line-height: 1.4;
+}
+
+bin-modal .bin-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+bin-modal .bin-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.5rem 0.75rem;
+}
+
+bin-modal .bin-row-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+    gap: 0.2rem;
+}
+
+bin-modal .bin-row-name {
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+bin-modal .bin-row-date {
+    font-size: 0.7rem;
+    color: var(--text-secondary, inherit);
+}
+
+bin-modal .bin-row-actions {
+    display: flex;
+    gap: 0.375rem;
+    flex-shrink: 0;
+}
+
+bin-modal .bin-action {
+    background: transparent;
+    border: 0.0625rem solid var(--border-color);
+    border-radius: 0.25rem;
+    padding: 0.25rem 0.625rem;
+    cursor: pointer;
+    color: inherit;
+    font-size: 0.8125rem;
+    transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+bin-modal .bin-restore:hover {
+    background: var(--accent-blue);
+    border-color: var(--accent-blue);
+    color: #fff;
+}
+
+bin-modal .bin-delete:hover {
+    background: var(--accent-red, #d33);
+    border-color: var(--accent-red, #d33);
+    color: #fff;
+}
+
+/* Header actions cluster (Empty Bin + close). */
+bin-modal .bin-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+bin-modal .bin-empty-now {
+    background: transparent;
+    border: 0.0625rem solid var(--border-color);
+    border-radius: 0.25rem;
+    padding: 0.25rem 0.625rem;
+    cursor: pointer;
+    color: inherit;
+    font-size: 0.8125rem;
+    transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+bin-modal .bin-empty-now:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+bin-modal .bin-empty-now:not(:disabled):hover {
+    background: var(--accent-red, #d33);
+    border-color: var(--accent-red, #d33);
+    color: #fff;
+}
+
+/* Empty Bin menu — the cutoff choices, anchored to the button above. It is
+   appended to <body> while the modal itself sits at --z-modal, so it needs the
+   same above-modal layer the path completions use. Rows are single-line labels;
+   keep them so rather than wrapping a cutoff across two lines. */
+.bin-empty-menu {
+    min-width: 13rem;
+    z-index: var(--z-above-modal);
+}
+
+.bin-empty-menu .menu-item {
+    white-space: nowrap;
+}
+
+/* Lazy-load overlay shown while the conversation's Yjs doc is hydrating. */
+conversation-tab .conversation-tab-loading-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-primary);
+    z-index: 10;
+}
+
+conversation-tab .conversation-tab-loading-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    color: var(--text-muted, #888);
+}
+
+conversation-tab .conversation-tab-loading-content juggler-spinner {
+    --size: 5rem;
+}
+
+conversation-tab .conversation-tab-loading-message {
+    font-size: 0.9rem;
+}
+
+conversation-tab .conversation-tab-loading-retry {
+    background: var(--accent-blue);
+    color: #fff;
+    border: none;
+    border-radius: 0.25rem;
+    padding: 0.35rem 0.9rem;
+    cursor: pointer;
+    font-size: 0.85rem;
+}
+
+conversation-tab .conversation-tab-loading-retry:hover {
+    filter: brightness(1.1);
+}
+
+conversation-bar .conversation-bar-empty {
+    padding: 0.75rem 1rem;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+/* Custom scrollbar for conversation bar — matches .conversation-message-list */
+conversation-bar .conversation-tabs::-webkit-scrollbar {
+    width: 0.375rem;
+}
+
+conversation-bar .conversation-tabs::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+conversation-bar .conversation-tabs::-webkit-scrollbar-thumb {
+    background: var(--overlay-light-10);
+    border-radius: 0.1875rem;
+}
+
+
+/* Project control in the header: a clickable chip showing the current project
+   (folder icon + path + chevron — click to change it) plus an inline
+   "open new window" button. Pushes header-actions to the right edge via
+   margin-right: auto. */

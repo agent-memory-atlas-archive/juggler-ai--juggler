@@ -6,10 +6,10 @@
  * Fullscreen marker for the native desktop window: records on `<html>` whether
  * the window is fullscreen, as `data-window-fullscreen="1"`.
  *
- * One thing reads it — the macOS traffic-light gutter in styles.css. The header
- * reserves 80px at its left for the lights AppKit draws over the top-left of the
- * webview; fullscreen removes them, so without this the gutter is just a hole to
- * the left of the logo.
+ * One thing reads it — the macOS traffic-light gutter in
+ * layout/window-chrome.css. The header reserves 80px at its left for the lights
+ * AppKit draws over the top-left of the webview; fullscreen removes them, so
+ * without this the gutter is just a hole to the left of the logo.
  *
  * State arrives two ways, because neither alone covers the window's life:
  *   - The runtime's fullscreen events, for every toggle the user makes. These

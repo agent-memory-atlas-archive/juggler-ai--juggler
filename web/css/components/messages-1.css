@@ -1,0 +1,419 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+.conversation-message-list {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden auto;
+    padding: 1rem 1rem 0;
+    margin-right: 0.75rem; /* Space for scrollbar + gap before resize handle */
+
+    /* column-reverse makes the scroller bottom-anchored: the flex-start edge is
+       the bottom, so new content appended at the visual end keeps the bottom
+       pinned and older content scrolls off the top — the chat-stickiness the
+       browser gives for free, with no scrollTop bookkeeping. The items
+       themselves live in a normal-order inner column (see below) so DOM /
+       selection / copy order stay natural. */
+    display: flex;
+    flex-direction: column-reverse;
+
+    /* Disable the browser's own scroll anchoring. This component does all its own
+       anchoring — column-reverse pins the bottom natively, and the reader anchor
+       (conversation-area's _setupReaderAnchor) holds a mid-scroll read position by
+       hand — so the built-in mechanism is redundant, and two mechanisms correcting
+       the same drift fight each other: the browser nudges scrollTop mid-relayout
+       and undoes it when the real layout lands, a visible bump against the reader's
+       scroll. `none` hands anchoring authority solely to us. */
+    overflow-anchor: none;
+
+    /* Animate the programmatic scrolls that DO move the viewport — jump-to-bottom
+       from a scrolled-up position, selection, continue. (Native bottom-anchoring
+       during streaming is a layout effect, not a scroll, so it stays instant —
+       correct and jank-free.) Per-call behavior:'instant' overrides this where a
+       scroll must not lag (initial scroll-restore). */
+    scroll-behavior: smooth;
+
+    /* Thin, unobtrusive scrollbar */
+    scrollbar-width: thin;
+    scrollbar-color: var(--overlay-light-10) transparent;
+}
+
+/* Normal-order content column inside the reversed scroller. margin-bottom:auto
+   absorbs free space below the content when the thread is shorter than the
+   viewport, holding it top-aligned; once content overflows the auto margin
+   collapses and the reversed scroller takes over its stick-to-bottom job. */
+.conversation-message-list-inner {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: auto;
+}
+
+/* While a new conversation is being asked where it works, the column fills the
+   scroller instead of absorbing the free space below itself, so the setup card
+   at its foot can take that space as auto margins and centre in it — the place
+   the starting hint occupies on a conversation with nothing to ask. Only ever
+   set on a conversation with no history, so there is no scroll position for the
+   changed sizing to disturb. */
+.conversation-message-list-inner.awaiting-setup {
+    flex: 1 0 auto;
+    margin-bottom: 0;
+}
+
+/* A file dragged anywhere over the column washes the transcript, while the
+   composer below takes the drop ring (see components.css): the wash says the
+   whole panel will accept the drop, the ring says where the file lands. */
+conversation-area.file-drag-over conversation-message-list-wrapper::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--accent-blue);
+    opacity: 0.06;
+    pointer-events: none;
+}
+
+/* The starting hint for a conversation with no history yet (see
+   conversation-area's _updateEmptyHint / _positionEmptyHint). It is laid OVER
+   the empty background rather than placed in the transcript: an
+   absolutely-positioned sibling of the scroller, so the id-based item diff
+   never sees it and no reader-anchor or scroll invariant has to account for a
+   row appearing and vanishing. pointer-events:none leaves the click that
+   focuses the composer to pass straight through.
+
+   top and height are MEASURED AND SET FROM JS: a new conversation is not an
+   empty one (seeded standing-context items and the idle footer sit at the top
+   of the band), so the hint is given exactly the space that is actually clear
+   — bottom of the rendered content down to the composer — and centred there.
+   The CSS placement here is only the pre-measurement default; the hint is
+   hidden until the first measurement lands, so it is never painted
+   unpositioned. Horizontally it always spans the column. */
+conversation-empty-hint {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 0 1rem;
+    pointer-events: none;
+    color: var(--text-tertiary);
+    font-size: var(--font-size-md);
+    text-align: center;
+}
+
+/* No room for the hint in the clear band (small viewports): nothing rather
+   than a clash. Owned solely by _positionEmptyHint, never by _updateEmptyHint,
+   so the retire/show decision and the fit decision cannot fight over one
+   class. visibility rather than display so the stack keeps its layout box and
+   a later re-measure (the viewport grew back) still reads a real height. */
+conversation-empty-hint.no-room {
+    visibility: hidden;
+}
+
+/* The hint's content as one block, so the fit test measures a single height.
+   flex-shrink:0 keeps it content-sized — a frame too short for it must be
+   detectable from JS, not absorbed as a silent clip. */
+.empty-hint-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    flex-shrink: 0;
+}
+
+.empty-hint-lead {
+    margin: 0;
+    padding: 1rem 0;
+}
+
+.empty-hint-keys {
+    display: grid;
+    grid-template-columns: max-content max-content;
+    gap: 0.375rem 0.75rem;
+    align-items: center;
+    text-align: left;
+}
+
+/* Each row hands its two cells straight to the grid above, so the keys line up
+   in one column and hiding a row is a single toggle. */
+.empty-hint-row {
+    display: contents;
+}
+
+.empty-hint-key {
+    justify-self: end;
+    min-width: 2rem;
+    padding: 0.125rem 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.375rem;
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    text-align: center;
+
+    /* System UI stack: reliably carries the ↵ ⇧ glyphs (unlike the mono font). */
+    font-family: -apple-system, system-ui, var(--font-ui), sans-serif;
+}
+
+/* A touch composer sends with a button and takes Enter as a newline, and has
+   nothing to drag an image from — keyed off the same media query the composer
+   keys that behaviour off, so the hint and the keys never disagree. */
+@media (hover: none) and (pointer: coarse) {
+    .empty-hint-pointer {
+        display: none;
+    }
+}
+
+.conversation-message-list::-webkit-scrollbar {
+    width: 0.375rem;
+}
+
+.conversation-message-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.conversation-message-list::-webkit-scrollbar-thumb {
+    background: var(--overlay-light-10);
+    border-radius: 0.1875rem;
+}
+
+/* Subtle jump-to-top / jump-to-bottom controls, overlaid top-right of the
+   message list. Each button hides itself when there's nowhere to travel in its
+   direction (see _updateScrollControls), so the group only ever shows the moves
+   that are actually available. */
+.scroll-controls {
+    position: absolute;
+    top: 0.5rem;
+    right: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    z-index: 2;
+    pointer-events: none;
+}
+
+.scroll-control-btn {
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    padding: 0;
+    border: 0.0625rem solid var(--border-color);
+    border-radius: 0.375rem;
+    background: var(--bg-secondary, #161b22);
+    color: var(--text-secondary, #8b949e);
+    cursor: pointer;
+    opacity: 0.55;
+    transition: opacity 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.scroll-control-btn:hover {
+    opacity: 1;
+    color: var(--accent-blue, #58a6ff);
+    border-color: var(--accent-blue, #58a6ff);
+}
+
+.scroll-control-btn.hidden {
+    display: none;
+}
+
+/* The composer and the suggestion row above it are fixed furniture at the foot
+   of the column; only the transcript above them gives way. */
+conversation-area composer-box,
+conversation-area reply-suggestions {
+    flex-shrink: 0;
+}
+
+/* Conversation Footer - Shows spinner when processing, continue button when idle */
+conversation-footer {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.75rem 0.5rem;
+    min-width: 0;
+    overflow: hidden;
+}
+
+footer-processing {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+footer-processing[data-message-id] {
+    cursor: pointer;
+}
+
+/* Right-align the Pause + Stop pair, keeping the spinner + status text on the
+   left. margin-left:auto on the first (Pause) pushes the whole group right; Stop
+   then follows immediately after it via footer-processing's gap. */
+.footer-pause-btn {
+    margin-left: auto;
+}
+
+/* Pause pending: the current step is finishing before the worker rests. A
+   transient active appearance, cleared the moment the conversation reaches idle. */
+.footer-pause-btn.active {
+    border-color: var(--accent-blue, #58a6ff);
+    color: var(--accent-blue, #58a6ff);
+}
+
+/* Pause pending: swap the static pause glyph for a spinner + "Pausing…" label.
+   A plain display swap is all it takes — the spinner's negative-delay cascade is
+   phase-correct whenever it starts, so revealing it from display:none is fine. */
+.footer-pause-spinner {
+    display: none;
+}
+
+.footer-pause-btn.pending .footer-pause-icon {
+    display: none;
+}
+
+.footer-pause-btn.pending .footer-pause-spinner {
+    display: inline-block;
+}
+
+/* A landed Pause, on the idle row. The Pause button and its "Pausing…" cue are
+   gone by then — this is what tells the user the pause actually took, rather
+   than leaving them to read it off a conversation that merely went quiet. */
+.footer-paused {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.footer-paused-label {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+/* Undo offer: shown for a span delete, at the end of the column the items were
+   removed from. Deliberately louder than the other footer rows — it is the one
+   thing here that is only worth showing because something just disappeared. */
+.footer-undo-offer {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--accent-blue, #58a6ff);
+    border-radius: 0.375rem;
+    background-color: rgb(88 166 255 / 8%);
+}
+
+.footer-undo-text {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.footer-undo-btn {
+    margin-left: auto;
+}
+
+footer-idle {
+    display: flex; /* Visible by default */
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+/* Each row spans the footer width so its groups can left/right-align. */
+.footer-idle-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+/* Main row: Add Context Item on the left, Continue group pushed right. */
+.footer-idle-main {
+    align-items: center;
+}
+
+.footer-idle-left {
+    display: flex;
+    gap: 0.75rem;
+}
+
+.footer-idle-right {
+    display: flex;
+    gap: 0.75rem;
+    margin-left: auto; /* right-align even when the left group is empty */
+}
+
+/* Readings row: the token meter and the thread's last-updated time. Neither is
+   a control, so they share a line above the buttons. */
+.footer-meta {
+    display: flex;
+    flex-wrap: wrap; /* a narrow column drops the time to its own line */
+    align-items: center;
+    gap: 0.75rem;
+}
+
+/* Left-align the count to match the button rows below (override the
+ * component's default centring). */
+conversation-footer token-display {
+    justify-content: flex-start;
+}
+
+/* The last-updated time and the button that opens this conversation's log,
+   right-aligned and wrapping as one unit so the button never strands itself on
+   a line of its own. */
+.footer-activity {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-left: auto;
+}
+
+/* Typeset as the token count beside it — same size, weight and muted colour, so
+   the row reads as one line of figures. */
+.footer-last-activity {
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.llm-busy-text {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    contain: layout style paint;
+}
+
+.llm-next-steps {
+    color: var(--text-tertiary);
+    font-size: 0.8125rem;
+    font-style: italic;
+    padding-left: 2.25rem; /* Align with text after spinner */
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+}
+
+.llm-iteration-counter {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    padding: 0.125rem 0.5rem;
+    border-radius: 0.25rem;
+    background-color: var(--bg-secondary);
+    margin-left: 0.5rem;
+    font-weight: 500;
+}
+
+.llm-iteration-counter.iteration-normal {
+    color: var(--accent-green);
+    background-color: rgb(76 175 80 / 10%);
+}
+
+.llm-iteration-counter.iteration-warning {
+    color: var(--accent-yellow);
+    background-color: rgb(255 193 7 / 10%);
+}
+
+.llm-iteration-counter.iteration-critical {
+    color: var(--error-color);
+    background-color: rgb(244 67 54 / 10%);
+}
+

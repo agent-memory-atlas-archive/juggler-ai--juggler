@@ -1,0 +1,711 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+.menu-item-hint {
+    cursor: default;
+    padding: 0.75rem 1rem;
+}
+
+.menu-item-hint:hover {
+    background: transparent;
+}
+
+.menu-hint-text {
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    text-align: center;
+    display: block;
+}
+
+/* Recommended model styling */
+.menu-item.recommended {
+    color: var(--accent-text);
+    font-weight: 500;
+}
+
+.menu-item-note {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    margin-left: 0.35rem;
+}
+
+/* Provider section header: name on the left, tri-state list toggle on the right. */
+.menu-header.provider-menu-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+/* Tri-state list toggle ("none" / "top" / "all") in a provider header bar. */
+.provider-view-toggle {
+    flex-shrink: 0;
+    appearance: none;
+    border: 0.0625rem solid var(--border-color);
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    line-height: 1;
+    min-width: 2.75rem;
+    text-align: center;
+    padding: 0.2rem 0.45rem;
+    border-radius: 0.3125rem;
+    cursor: pointer;
+    transition: border-color 0.1s ease, color 0.1s ease, background-color 0.1s ease;
+}
+
+.provider-view-toggle:hover {
+    background-color: var(--bg-raised);
+    border-color: var(--accent-blue);
+    color: var(--accent-blue);
+}
+
+.provider-view-toggle:active {
+    background-color: var(--bg-primary);
+}
+
+.provider-view-toggle:focus-visible {
+    outline: none;
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--accent-blue) 25%, transparent);
+}
+
+/* Diff Viewer Component - Inline View */
+
+/* The code rows are as wide as the longest line and scroll sideways inside the
+   viewer; comments must not. `container-type: inline-size` makes the viewer the
+   container a comment row sizes itself against, so `100cqi` is the width of the
+   panel rather than of the widest line in the file. */
+diff-viewer {
+    display: block;
+    container-type: inline-size;
+    max-height: 25rem;
+    overflow: auto;
+    background: var(--bg-primary);
+    border: 0.0625rem solid var(--border-color);
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    box-shadow: 0 0.125rem 0.5rem rgb(0 0 0 / 20%);
+}
+
+diff-viewer diff-content {
+    display: flex;
+    flex-direction: column;
+    min-width: max-content;
+}
+
+diff-viewer diff-header {
+    display: none;
+    top: 0;
+    z-index: 2;
+    font-weight: 500;
+    min-width: fit-content;
+    width: 100%;
+}
+
+diff-viewer diff-inline-view {
+    display: block;
+    min-width: max-content;
+}
+
+diff-viewer diff-no-changes {
+    padding: 2rem;
+    text-align: center;
+    color: var(--text-tertiary);
+    font-style: italic;
+}
+
+diff-viewer diff-hunk {
+    margin-bottom: 0.5rem;
+}
+
+diff-viewer diff-hunk-header {
+    padding: 0.25rem 0.75rem;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    border-top: 0.0625rem solid var(--bg-dark-alt);
+    border-bottom: 0.0625rem solid var(--bg-dark-alt);
+    top: 2.75rem;
+    z-index: 1;
+    min-width: fit-content;
+    width: 100%;
+}
+
+/* Inline diff line layout */
+diff-viewer .diff-line {
+    display: flex;
+    align-items: flex-start;
+    padding: 0.125rem 0;
+    min-height: 1.5rem;
+    min-width: max-content; /* Extend background to cover long lines */
+    border-bottom: 0.0625rem solid var(--bg-dark-alt);
+}
+
+diff-viewer .diff-line.remove {
+    background: var(--diff-line-remove-bg);
+}
+
+diff-viewer .diff-line.add {
+    background: var(--diff-line-add-bg);
+}
+
+diff-viewer .diff-line.equal {
+    background: var(--bg-primary);
+}
+
+/* Two gutters, old then new: a line that exists on one side only leaves the
+   other blank, which is what says which file it is in. */
+diff-viewer .line-num {
+    flex-shrink: 0;
+    width: 2.75rem;
+    padding: 0 0.375rem;
+    text-align: right;
+    color: var(--text-tertiary);
+    -webkit-user-select: none;
+    user-select: none;
+    font-size: 0.75rem;
+}
+
+/* Revealed by hovering the line, but never removed from the tab order or the
+   accessibility tree: on a keyboard or a touchscreen there is no hover to do it
+   with, so the anchor has to be reachable without one. */
+diff-viewer .diff-comment-btn {
+    flex-shrink: 0;
+    width: 1.25rem;
+    height: 1.25rem;
+    padding: 0;
+    border: 0;
+    border-radius: 0.25rem;
+    background: var(--accent-blue);
+    color: #fff;
+    font-family: inherit;
+    font-size: 0.8125rem;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0;
+}
+
+diff-viewer .diff-line:hover .diff-comment-btn,
+diff-viewer .diff-comment-btn:focus-visible {
+    opacity: 1;
+}
+
+@media (hover: none) {
+    diff-viewer .diff-comment-btn {
+        opacity: 1;
+    }
+}
+
+diff-viewer .line-prefix {
+    flex-shrink: 0;
+    width: 1.5rem;
+    text-align: center;
+    color: var(--text-tertiary);
+    -webkit-user-select: none;
+    user-select: none;
+    font-weight: bold;
+}
+
+diff-viewer .line-content {
+    flex: 1;
+    padding: 0 0.75rem;
+    white-space: pre;
+    color: var(--diff-neutral-text);
+}
+
+/* Character-level highlighting (GitHub style). Line content is syntax-
+   highlighted, so a mark can contain `.token` spans: the mark supplies the
+   background while each token keeps its own colour, which is what lets a changed
+   identifier still read as an identifier. The `color` below therefore reaches
+   only the parts of the range that carry no token of their own. */
+diff-viewer .line-content mark.char-add {
+    background: var(--diff-char-add-bg);
+    color: var(--diff-char-add-text);
+    padding: 0.0625rem 0;
+}
+
+diff-viewer .line-content mark.char-remove {
+    background: var(--diff-char-remove-bg);
+    color: var(--diff-char-remove-text);
+    padding: 0.0625rem 0;
+}
+
+diff-viewer diff-stats {
+    padding: 0.5rem 1rem;
+    background: var(--bg-secondary);
+    border-top: 0.0625rem solid var(--border-divider);
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+}
+
+diff-viewer diff-stats .add-count {
+    color: var(--diff-added-text);
+    margin-right: 0.75rem;
+    font-weight: 500;
+}
+
+diff-viewer diff-stats .remove-count {
+    color: var(--accent-red);
+    font-weight: 500;
+}
+
+/* What the lines cannot say: a binary file, an unresolved conflict, a patch cut
+   short, a file too large to diff, a load that failed or has not landed. */
+diff-viewer diff-notice {
+    display: block;
+    position: sticky;
+    left: 0;
+    width: 100cqi;
+    box-sizing: border-box;
+    padding: 0.5rem 0.75rem;
+    background: var(--bg-secondary);
+    border-bottom: 0.0625rem solid var(--border-divider);
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+}
+
+diff-viewer diff-notice[data-kind="error"] {
+    color: var(--accent-red);
+}
+
+diff-viewer .diff-notice-detail {
+    display: block;
+    margin-top: 0.25rem;
+    color: var(--text-tertiary);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+/* Comments anchored to a line sit under it at the width of the panel, pinned to
+   the left edge so the code can scroll sideways underneath without taking the
+   comment being read (or written) off the side with it. */
+diff-viewer .diff-comments,
+diff-viewer diff-file-comments {
+    display: block;
+    position: sticky;
+    left: 0;
+    width: 100cqi;
+    box-sizing: border-box;
+    padding: 0.375rem 0.75rem;
+    background: var(--bg-secondary);
+    border-bottom: 0.0625rem solid var(--border-divider);
+}
+
+diff-viewer .diff-comment {
+    padding: 0.375rem 0;
+    font-family: var(--font-sans);
+    font-size: 0.8125rem;
+    color: var(--text-primary);
+}
+
+diff-viewer .diff-comment + .diff-comment {
+    border-top: 0.0625rem solid var(--border-divider);
+}
+
+diff-viewer .diff-comment-body {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+diff-viewer .diff-comment-quote {
+    margin: 0 0 0.375rem;
+    padding: 0.25rem 0.5rem;
+    background: var(--bg-primary);
+    border-left: 0.125rem solid var(--border-color);
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+diff-viewer .diff-comment-heading {
+    margin: 0;
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+diff-viewer .diff-comment-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.25rem;
+}
+
+diff-viewer .diff-comment-actions button {
+    padding: 0.125rem 0.375rem;
+    border: 0.0625rem solid var(--border-color);
+    border-radius: 0.25rem;
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+    cursor: pointer;
+}
+
+diff-viewer .diff-file-comment-list.stale .diff-comment {
+    color: var(--text-secondary);
+}
+
+/* Review panel — the file rail, one diff, and the draft under both.
+
+   A container query, not a media query: the docked Pinboard can be 20rem wide on
+   a desktop, so the viewport says nothing about the room this panel has. */
+.review-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    height: 100%;
+    min-height: 0;
+    container-type: inline-size;
+}
+
+.review-panel__scope {
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+}
+
+/* An incomplete review has to be as visible as the list it is incomplete
+   relative to; a partial list drawn as a whole one is the one failure here that
+   the reader cannot detect. */
+.review-panel__warnings {
+    padding: 0.5rem 0.625rem;
+    border-radius: 0.375rem;
+    background: color-mix(in srgb, var(--error-color, var(--text-secondary)) 8%, transparent);
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+}
+
+.review-panel__warnings-lead {
+    font-weight: 600;
+}
+
+.review-panel__warning-list {
+    margin: 0.25rem 0 0;
+    padding-left: 1.25rem;
+}
+
+.review-panel__error {
+    color: var(--text-tertiary);
+    font-size: var(--font-size-sm);
+    overflow-wrap: anywhere;
+}
+
+.review-panel__main {
+    display: flex;
+    flex: 1 1 auto;
+    gap: 0.75rem;
+    min-height: 0;
+}
+
+/* A share of the room rather than a fixed column: a row has to hold a status,
+   a file name, its directory and a diffstat, and at any fixed width that fits a
+   wide board it leaves a narrow one no diff to read. Bounded at both ends, so
+   it can neither squeeze the diff nor run on past the longest path. */
+.review-panel__rail {
+    flex: 0 0 35%;
+    min-width: 12rem;
+    max-width: 22rem;
+    overflow: auto;
+}
+
+.review-panel__diff {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+}
+
+@container (width < 34rem) {
+    .review-panel__main {
+        flex-direction: column;
+    }
+
+    .review-panel__rail {
+        flex: 0 0 auto;
+        max-width: none;
+        max-height: 12rem;
+    }
+}
+
+.review-panel__group + .review-panel__group {
+    margin-top: 0.75rem;
+}
+
+.review-panel__group-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.5rem;
+    padding: 0 0.375rem 0.25rem;
+}
+
+.review-panel__group-name {
+    font-weight: 600;
+}
+
+.review-panel__group-detail {
+    color: var(--text-tertiary);
+    font-size: var(--font-size-sm);
+    font-family: var(--font-mono);
+}
+
+.review-panel__group-note {
+    padding: 0 0.375rem 0.25rem;
+    color: var(--text-tertiary);
+    font-size: var(--font-size-sm);
+    overflow-wrap: anywhere;
+}
+
+.review-panel__row {
+    display: flex;
+    min-width: 0;
+}
+
+.review-panel__file {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+    padding: 0.25rem 0.375rem;
+    border: 0;
+    border-radius: 0.375rem;
+    background: transparent;
+    color: inherit;
+    font-family: inherit;
+    font-size: var(--font-size-sm);
+    line-height: 1.4;
+    text-align: left;
+    cursor: pointer;
+}
+
+.review-panel__file:hover {
+    background: color-mix(in srgb, var(--text-primary) 5%, transparent);
+}
+
+.review-panel__file[aria-current="true"] {
+    background: color-mix(in srgb, var(--accent-blue) 18%, transparent);
+}
+
+.review-panel__code {
+    flex-shrink: 0;
+    color: var(--text-tertiary);
+    font-family: var(--font-mono);
+    white-space: pre;
+}
+
+/* A path is longer than the rail is wide, so the row is not one string that
+   wraps but two boxes that yield in order: the directory first, the name last.
+   Wrapping instead puts a character per line and stretches the row to nine of
+   them, and eliding the whole path from the end hides the one part that tells
+   two rows apart. */
+.review-panel__path {
+    display: flex;
+    flex: 1;
+    align-items: baseline;
+    gap: 0.375rem;
+    min-width: 0;
+}
+
+.review-panel__name {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    font-family: var(--font-mono);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Basis 0: the directory takes what is left after the name rather than a share
+   of the row, so it shrinks to nothing before the name loses a character. */
+.review-panel__dir {
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-tertiary);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.review-panel__stat {
+    flex-shrink: 0;
+    color: var(--text-tertiary);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    white-space: nowrap;
+}
+
+.review-panel__count {
+    flex-shrink: 0;
+    color: var(--text-tertiary);
+    font-size: 0.75rem;
+}
+
+.review-panel__count:not(:empty) {
+    padding: 0 0.375rem;
+    border-radius: 0.625rem;
+    background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+}
+
+.review-panel__diff-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    padding-bottom: 0.25rem;
+    min-width: 0;
+}
+
+/* A basis rather than a share: below it the controls wrap to a line of their
+   own instead of squeezing the path they are about. */
+.review-panel__diff-path {
+    flex: 1 1 12rem;
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    overflow-wrap: anywhere;
+}
+
+.review-panel__diff diff-viewer {
+    flex: 1 1 auto;
+    max-height: none;
+    min-height: 0;
+    border-radius: 0.375rem;
+}
+
+.review-panel__placeholder {
+    padding: 2rem 0;
+    color: var(--text-tertiary);
+    text-align: center;
+}
+
+/* The editor is a node the panel owns and re-hangs after every redraw, so it
+   lives at the width of the panel wherever it lands in the diff. */
+.review-panel__editor {
+    position: sticky;
+    left: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    box-sizing: border-box;
+    width: 100cqi;
+    padding: 0.5rem 0.75rem;
+    background: var(--bg-secondary);
+    border-bottom: 0.0625rem solid var(--border-divider);
+}
+
+.review-panel__editor-label {
+    color: var(--text-secondary);
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+}
+
+.review-panel__editor-text {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0.375rem 0.5rem;
+    border: 0.0625rem solid var(--border-color);
+    border-radius: 0.375rem;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: 0.8125rem;
+    resize: vertical;
+}
+
+.review-panel__editor-error {
+    color: var(--accent-red);
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+    overflow-wrap: anywhere;
+}
+
+.review-panel__editor-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.review-panel__file-comment,
+.review-panel__editor-actions button,
+.review-panel__discard,
+.review-panel__compose {
+    padding: 0.1875rem 0.5rem;
+    border: 0.0625rem solid var(--border-color);
+    border-radius: 0.25rem;
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+/* Qualified by the row it sits in, and it has to stay that way: the shared rule
+   above reaches the editor's buttons as `.review-panel__editor-actions button`,
+   which outweighs a lone class and would paint the accepting button in the same
+   grey as the one that cancels it — an enabled primary action that reads as a
+   disabled one. */
+.review-panel__editor-actions .review-panel__save,
+.review-panel__compose {
+    background: var(--accent-blue);
+    border-color: var(--accent-blue);
+    color: #fff;
+}
+
+/* Both buttons act on the draft, not on the Pinboard item, so they live with the
+   count of what they would act on rather than in the item toolbar. */
+.review-panel__footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 0.0625rem solid var(--border-divider);
+    font-size: var(--font-size-sm);
+}
+
+.review-panel__draft-count {
+    flex: 1;
+    min-width: 0;
+    color: var(--text-secondary);
+}
+
+.review-panel__footer-note {
+    color: var(--text-tertiary);
+}
+
+.review-panel__footer-error {
+    flex-basis: 100%;
+    color: var(--text-tertiary);
+    overflow-wrap: anywhere;
+}
+
+/* DiffViewer inside properties panel */
+.properties-panel-diff {
+    margin-top: 0.5rem;
+    border-radius: 0.375rem;
+
+    /* Expand vertically to show all rows; horizontal scroll still works via
+       overflow: auto inherited from the diff-viewer element rule. */
+    max-height: none;
+}
+
+/* Composer Component */

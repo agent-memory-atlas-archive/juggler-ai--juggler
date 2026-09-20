@@ -12,7 +12,7 @@
  * every button's `pointer`, the composer's `text`, the header's `default`. The
  * window resized perfectly well; nothing said so.
  *
- * utils/window-resize-cursor.js marks the state on <html> and styles.css spends
+ * utils/window-resize-cursor.js marks the state on <html> and window-chrome.css spends
  * one `!important` on it. These tests pin both halves:
  *
  *   1. The marker tracks the runtime's verdict, and clears when it goes.

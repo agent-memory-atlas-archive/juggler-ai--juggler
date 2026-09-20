@@ -1,0 +1,391 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+settings-panel .get-api-key-link {
+    font-size: 0.75rem;
+    color: var(--accent-blue);
+    text-decoration: none;
+    font-weight: normal;
+    align-self: flex-start;
+}
+
+settings-panel .get-api-key-link:hover {
+    text-decoration: underline;
+}
+
+/* Settings panel - Key source hint */
+settings-panel .key-source-hint {
+    font-size: 0.75rem;
+    color: var(--accent-green, #3fb950);
+    margin-top: 0.375rem;
+    padding-left: 0.125rem;
+}
+
+/* Per-provider model visibility: a collapsed disclosure listing every model the
+   provider publishes, each with a checkbox deciding whether the model menu
+   offers it. Collapsed by default because most providers are left alone, and the
+   list is long enough to bury the API-key field it sits under. */
+settings-panel .model-visibility {
+    margin-top: 0.625rem;
+    min-width: 0;
+}
+
+/* The whole line is the toggle, so it carries its own caret (the native marker
+   is dropped) and a hit area wider than its text. */
+settings-panel .model-visibility-summary {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    list-style: none;
+    padding: 0.1875rem 0.25rem;
+    margin-left: -0.25rem;
+    border-radius: 0.25rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    user-select: none;
+}
+
+settings-panel .model-visibility-summary::-webkit-details-marker {
+    display: none;
+}
+
+settings-panel .model-visibility-summary::before {
+    content: "";
+    width: 0.35rem;
+    height: 0.35rem;
+    border-right: 0.09rem solid currentcolor;
+    border-bottom: 0.09rem solid currentcolor;
+    transform: rotate(-45deg);
+    transition: transform 150ms ease;
+    opacity: 0.7;
+    flex-shrink: 0;
+}
+
+settings-panel .model-visibility[open] .model-visibility-summary::before {
+    transform: rotate(45deg);
+}
+
+settings-panel .model-visibility-summary:hover {
+    background: var(--bg-raised);
+    color: var(--text-primary);
+}
+
+settings-panel .model-visibility-summary:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 0.125rem rgb(88 166 255 / 40%);
+}
+
+/* The count is the part that changes, so it stays a shade brighter than its
+   label rather than trailing off after it. */
+settings-panel .model-visibility-count {
+    color: var(--text-tertiary);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Matches the panel's other compact sub-inputs (.mcp-input): a field on
+   --bg-primary rather than the browser default the global input rule leaves. */
+settings-panel .model-visibility-filter {
+    width: 100%;
+    box-sizing: border-box;
+    margin-top: 0.5rem;
+    padding: 0.375rem 0.5rem;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border: 0.0625rem solid var(--border-color);
+    border-radius: 0.375rem;
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+}
+
+settings-panel .model-visibility-filter:focus {
+    outline: none;
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 0.1875rem rgb(88 166 255 / 10%);
+}
+
+/* Capped and scrollable: OpenRouter lists several hundred models, and without a
+   ceiling one provider's list would push every other provider off the page. */
+settings-panel .model-visibility-list {
+    display: flex;
+    flex-direction: column;
+    max-height: 16rem;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    margin-top: 0.375rem;
+    padding: 0.1875rem;
+    background: var(--bg-primary);
+    border: 0.0625rem solid var(--border-color);
+    border-radius: 0.375rem;
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb-bg) transparent;
+}
+
+settings-panel .model-visibility-list::-webkit-scrollbar {
+    width: var(--scrollbar-size-thin);
+}
+
+settings-panel .model-visibility-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+settings-panel .model-visibility-list::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb-bg);
+    border-radius: var(--scrollbar-thumb-radius);
+}
+
+settings-panel .model-visibility-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 1.625rem;
+    padding: 0.125rem 0.375rem;
+    border-radius: 0.25rem;
+}
+
+settings-panel .model-visibility-row:hover {
+    background: var(--bg-raised);
+}
+
+/* Only the checkbox and the name are the label — the token-limit fields beside
+   them are not, or clicking into one would toggle the model's visibility. */
+settings-panel .model-visibility-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex: 1 1 auto;
+    min-width: 0;
+    cursor: pointer;
+    user-select: none;
+}
+
+settings-panel .model-limit-legend {
+    margin-top: 0.375rem;
+    font-size: 0.6875rem;
+    color: var(--text-tertiary);
+}
+
+settings-panel .model-limit-fields {
+    display: flex;
+    gap: 0.25rem;
+    flex: 0 0 auto;
+}
+
+settings-panel .model-limit-input {
+    width: 5.5rem;
+    padding: 0.0625rem 0.25rem;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 0.0625rem solid var(--border-color);
+    border-radius: 0.25rem;
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    text-align: right;
+}
+
+settings-panel .model-limit-input:focus {
+    outline: none;
+    border-color: var(--accent-blue);
+}
+
+/* An overridden limit is the exception, so it reads as one rather than sitting
+   at the same weight as the placeholder showing the provider's own number. */
+settings-panel .model-limit-input:not(:placeholder-shown) {
+    color: var(--accent-blue);
+}
+
+settings-panel .model-visibility-check {
+    width: 0.875rem;
+    height: 0.875rem;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: none;
+    accent-color: var(--accent-blue);
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+settings-panel .model-visibility-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* A model the menu won't offer reads back as struck-through and muted, so the
+   list can be scanned without reading every checkbox. */
+settings-panel .model-visibility-row.is-hidden .model-visibility-name {
+    color: var(--text-tertiary);
+    text-decoration: line-through;
+    text-decoration-thickness: 0.0625rem;
+}
+
+settings-panel .model-visibility-empty {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+    padding: 0.375rem;
+}
+
+/* Only ever an error — the save is silent when it works. */
+settings-panel .model-visibility-status {
+    font-size: 0.75rem;
+    color: var(--accent-red, #f85149);
+    margin-top: 0.375rem;
+    padding-left: 0.125rem;
+}
+
+/* A labelled sub-field inside a provider card's control column, each with its
+   own transient save-status line. The saved value stays visible in the input, so
+   the status note is a light confirmation rather than the only proof the save
+   landed. */
+settings-panel .provider-subfield {
+    position: relative; /* anchor for the floating save-status note */
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+settings-panel .provider-subfield-label {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+/* Floats over the top-right of the field (on the label line) so it claims no
+   layout space of its own — the row height stays fixed whether or not a note is
+   showing. pointer-events: none keeps it from intercepting clicks on the label. */
+settings-panel .provider-subfield-status {
+    position: absolute;
+    top: 0;
+    right: 0.125rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    pointer-events: none;
+    transition: color 150ms ease;
+}
+
+settings-panel .provider-subfield-status[data-kind="ok"] {
+    color: var(--accent-green, #3fb950);
+}
+
+settings-panel .provider-subfield-status[data-kind="error"] {
+    color: var(--accent-red, #f85149);
+}
+
+/* The user's own endpoints: the same provider cards as everything above them,
+   plus the few controls only an endpoint has. */
+settings-panel .custom-endpoints-note {
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    margin-bottom: 0.625rem;
+}
+
+settings-panel .custom-endpoint .provider-control {
+    gap: 0.75rem;
+}
+
+/* The provider id: not editable, because everything stored names it. */
+settings-panel .custom-endpoint-id {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+}
+
+/* Always in the card, so saying something later costs no rebuild. Empty means
+   there is nothing wrong, and it takes no room. */
+settings-panel .custom-endpoint-problem {
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: var(--accent-red, #f85149);
+}
+
+settings-panel .custom-endpoint-problem:empty {
+    display: none;
+}
+
+settings-panel .custom-endpoint-toggle-note {
+    font-size: 0.75rem;
+    color: var(--accent-red, #f85149);
+}
+
+settings-panel .custom-endpoint-headers {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+}
+
+/* Name, value, and the button that drops the row. The name column is narrower:
+   a header's name is a word, its value can be anything. */
+settings-panel .custom-endpoint-header-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr) auto;
+    gap: 0.375rem;
+    align-items: center;
+}
+
+settings-panel .custom-endpoint-header-remove {
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    border: 0.0625rem solid var(--border-color);
+    min-width: 0;
+    padding: 0.375rem 0.5rem;
+    line-height: 1;
+}
+
+settings-panel .custom-endpoint-header-remove:hover {
+    color: var(--text-primary);
+    border-color: var(--text-secondary);
+}
+
+settings-panel .custom-endpoint-header-add {
+    align-self: flex-start;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    border: 0.0625rem solid var(--border-color);
+    margin-top: 0.375rem;
+}
+
+settings-panel .custom-endpoint-header-add:hover {
+    color: var(--text-primary);
+    border-color: var(--text-secondary);
+}
+
+settings-panel .custom-endpoint-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+}
+
+/* The add form is a card in waiting: same grid, dashed while it holds nothing. */
+settings-panel .custom-endpoint-add {
+    border: 0.0625rem dashed var(--border-color);
+}
+
+settings-panel .custom-endpoint-add-id {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+}
+
+settings-panel .custom-endpoint-add-open {
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    border: 0.0625rem solid var(--border-color);
+}
+
+settings-panel .custom-endpoint-add-open:hover {
+    color: var(--text-primary);
+    border-color: var(--text-secondary);
+}
+
+/* About Modal Component */

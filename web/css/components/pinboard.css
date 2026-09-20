@@ -1,0 +1,816 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+pinboard-shell {
+    /* Named once: the slide's duration is also the delay before the panel is
+       hidden on the way out, and the two must agree. */
+    --pinboard-slide: 0.2s;
+
+    position: absolute;
+    inset: 0;
+    z-index: var(--z-controls);
+    pointer-events: none;
+}
+
+pinboard-shell[hidden] {
+    display: none;
+}
+
+.pinboard-scrim {
+    position: absolute;
+    inset: 0;
+    background: var(--overlay-dark-25);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity var(--pinboard-slide) ease, visibility 0s linear var(--pinboard-slide);
+}
+
+pinboard-shell.open .pinboard-scrim {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transition: opacity var(--pinboard-slide) ease, visibility 0s;
+}
+
+.pinboard-panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    width: var(--pinboard-width, 34rem);
+    max-width: 100%;
+    background: var(--bg-primary);
+    border-left: 0.0625rem solid var(--border-divider);
+    box-shadow: -0.5rem 0 1.5rem var(--overlay-dark-25);
+    transform: translateX(100%);
+    visibility: hidden;
+    pointer-events: auto;
+
+    /* Deliberately no `touch-action`. The panel can be swiped away to the right
+       (attachSwipeDismiss, in js/utils/swipe-dismiss.js), and the drawer buys
+       its equivalent gesture with `touch-action: pan-y` — but that forbids
+       horizontal panning for a whole subtree, and this one is full of things
+       that need it: code files are `white-space: pre` in an `overflow-x: auto`
+       block, and so are markdown fences, tables and directory listings. The
+       swipe defers to those by scroll position instead, and holds its gesture
+       by cancelling the touchmove once it owns one. */
+
+    /* Visibility is what takes the closed panel out of the tab order and the
+       accessibility tree, so it must flip the INSTANT the board opens — not
+       midway through the slide, which is where a transitioned discrete property
+       lands, and where a focus() aimed at a tab would silently go nowhere. It is
+       delayed on the way out instead, so the panel is still there to slide. */
+    transition: transform var(--pinboard-slide) ease, visibility 0s linear var(--pinboard-slide);
+}
+
+pinboard-shell.open .pinboard-panel {
+    transform: translateX(0);
+    visibility: visible;
+    transition: transform var(--pinboard-slide) ease, visibility 0s;
+}
+
+/* Drag the panel's left edge. Pointer-only, so it is hidden from assistive
+   technology rather than announced as a control that answers no keys. */
+.pinboard-resize-handle {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 0.375rem;
+    transform: translateX(-50%);
+    background: transparent;
+    cursor: col-resize;
+
+    /* Half the strip lies over the panel's interior, and `pinboard-content` is
+       a positioned later sibling, so without this the pin is painted over the
+       inner half and the handle answers only along the sliver outside the
+       panel — a handle that still looks its full width and isn't. */
+    z-index: var(--z-raised);
+    transition: background var(--transition-base);
+}
+
+.pinboard-resize-handle:hover,
+.pinboard-resize-handle.dragging {
+    background: var(--resize-handle-bg);
+}
+
+/* Band 1: the board toolbar. It establishes the surface, so no item beneath it
+   has to repeat the word. */
+.pinboard-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-bottom: 0.0625rem solid var(--border-divider);
+    font-family: var(--font-ui);
+}
+
+.pinboard-toolbar__identity {
+    color: var(--text-secondary);
+    font-size: var(--font-size-xs);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.pinboard-toolbar__controls {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+}
+
+/* Icon and word together: the glyph is what the eye finds beside the close
+   button, and the word is what stops it being guessed at. The chrome is
+   .u-btn-ghost's; this owns only the size and the pairing. */
+.pinboard-toolbar__popout {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.75rem;
+    font-family: inherit;
+    font-size: var(--font-size-xs);
+    line-height: 1.5;
+}
+
+.pinboard-toolbar__popout svg {
+    width: 0.875rem;
+    height: 0.875rem;
+    fill: currentcolor;
+}
+
+.pinboard-toolbar__popout:focus-visible {
+    outline: 0.125rem solid var(--accent-blue);
+    outline-offset: 0.125rem;
+}
+
+/* Band 2: the tab strip. Tabs wrap onto as many rows as they need — the board
+   is a narrow column with height to spare, so a second row costs less than
+   hiding half the pins behind a pair of arrows. `+` is pinned to the top so it
+   holds its corner however many rows the tabs take. */
+pinboard-tabbar {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-xs);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-bottom: 0.0625rem solid var(--border-divider);
+    font-family: var(--font-ui);
+}
+
+/* An author `display` beats the UA sheet's `[hidden]` whatever the specificity,
+   so every band that sets one needs its own rule or the panel cannot put it
+   away. */
+pinboard-tabbar[hidden] {
+    display: none;
+}
+
+.pinboard-tabbar__list {
+    display: flex;
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-xs);
+    min-width: 0;
+}
+
+/* Adding a pin is the board's one creating action, so it wears the house's
+   green fill rather than sitting in the strip as another quiet glyph. */
+.pinboard-tabbar__add {
+    flex-shrink: 0;
+    align-self: flex-start;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: var(--accent-green);
+    color: var(--bg-primary);
+    cursor: pointer;
+    transition: background var(--transition-base), transform var(--transition-base);
+}
+
+.pinboard-tabbar__add svg {
+    width: 1.125rem;
+    height: 1.125rem;
+    fill: currentcolor;
+}
+
+.pinboard-tabbar__add:hover {
+    background: var(--accent-green-bright);
+}
+
+.pinboard-tabbar__add:active {
+    transform: scale(0.95);
+}
+
+.pinboard-tabbar__add:focus-visible {
+    outline: 0.125rem solid var(--accent-blue);
+    outline-offset: 0.125rem;
+}
+
+/* Pills, on the pattern of the conversation sidebar's tabs — the board's tabs
+   wrap into rows rather than sitting on one edge, so there is no edge for a
+   folder tab to be attached to. */
+.pinboard-tab {
+    display: flex;
+    align-items: center;
+    max-width: 14rem;
+    border: 0.0625rem solid var(--border-color);
+    border-radius: 0.8rem;
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    transition: background var(--transition-base), border-color var(--transition-base), color var(--transition-base);
+}
+
+.pinboard-tab:hover {
+    background: var(--bg-raised);
+    color: var(--text-primary);
+}
+
+/* Purple, where the conversation tabs are blue. The two strips are the same
+   shape and sit a few centimetres apart, so sharing an accent made the board
+   read as more conversation tabs; the hue is the whole of the difference.
+   Darkened by the same mix the conversation tabs use, for the same reason —
+   white text on the raw accent clears nothing in either theme. */
+.pinboard-tab.active {
+    background: color-mix(in srgb, var(--accent-purple) 70%, var(--bg-raised));
+    border-color: color-mix(in srgb, var(--accent-purple) 70%, var(--bg-raised));
+    color: #fff;
+}
+
+/* Drag to reorder, on the shared gesture (utils/reorder-drag.js). The dragged
+   tab travels as a floating clone while the real one stays in the strip as an
+   invisible placeholder, and the rest slide into the order the drop would
+   produce — so the strip shows the answer rather than a marker predicting it.
+   The clone is parked on the tabbar rather than in the list, so it is not one
+   of the tabs being measured around it. */
+.pinboard-tab.drag-ghost {
+    position: fixed;
+    z-index: var(--z-dropdown);
+    margin: 0;
+    opacity: 0.95;
+    box-shadow: 0 0.25rem 1rem var(--overlay-dark-25);
+    cursor: grabbing;
+    pointer-events: none;
+    will-change: transform;
+}
+
+/* The bin is hover-revealed, and a clone is never hovered. */
+.pinboard-tab.drag-ghost .pinboard-tab__remove {
+    opacity: 0;
+}
+
+/* The grip is hover-revealed too, and this one is the thing being held. */
+.pinboard-tab.drag-ghost .pinboard-tab__grip {
+    opacity: 1;
+}
+
+.pinboard-tab.drag-source {
+    visibility: hidden;
+}
+
+/* Only while a drag is live: the rest of the time the tabs must take their new
+   places instantly, or a board edit made elsewhere animates like a drag. */
+.pinboard-tabbar__list.is-dragging .pinboard-tab:not(.drag-source) {
+    transition: transform 150ms ease;
+}
+
+/* The ring goes on the wrapper, because the wrapper is the pill: the button
+   holds only the label and stops short of the bin beside it, so a ring drawn on
+   it traces a shape that is not the one being focused. Scoped to the tab button
+   so that focusing the bin rings the bin, not the whole tab. */
+.pinboard-tab:has(.pinboard-tab__button:focus-visible) {
+    outline: 0.125rem solid var(--accent-blue);
+    outline-offset: 0.125rem;
+}
+
+.pinboard-tab__button:focus-visible {
+    outline: none;
+}
+
+/* The grip a finger drags a tab by. It carries `touch-action: none`, which is
+   the whole of what makes a touch reorder possible: without it the browser keeps
+   the gesture and cancels the drag as soon as the finger moves. Kept in the
+   layout at zero opacity where there is a hover to reveal it, so a touchscreen
+   that also has a mouse still has something to grab. */
+.pinboard-tab__grip {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1rem;
+    margin-left: 0.25rem;
+    font-size: 0.75rem;
+    touch-action: none;
+    cursor: grab;
+}
+
+@media (hover: hover) {
+    .pinboard-tab__grip {
+        opacity: 0;
+    }
+
+    .pinboard-tab:hover .pinboard-tab__grip {
+        opacity: 1;
+    }
+}
+
+/* A finger has no hover to find it with, and needs a target it can hit. */
+@media (pointer: coarse) {
+    .pinboard-tab__grip {
+        width: 1.75rem;
+        font-size: 1.125rem;
+    }
+}
+
+.pinboard-tab__button {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    min-width: 0;
+    padding: 0.375rem 0.625rem;
+    border: 0;
+    border-radius: inherit;
+    background: transparent;
+    color: inherit;
+    font-family: inherit;
+    font-size: var(--font-size-base);
+    line-height: 1.2;
+    cursor: pointer;
+}
+
+.pinboard-tab__label {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.pinboard-tab__badge {
+    flex-shrink: 0;
+    padding: 0 0.25rem;
+    border-radius: var(--radius-sm);
+    background: var(--overlay-light-8);
+    font-size: var(--font-size-2xs);
+}
+
+/* Out of the way for the pointer, never out of reach for the keyboard. */
+.pinboard-tab__remove {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    margin-right: 0.375rem;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: inherit;
+    line-height: 1;
+    opacity: 0;
+    cursor: pointer;
+    transition: opacity var(--transition-base), background var(--transition-base);
+}
+
+.pinboard-tab:hover .pinboard-tab__remove,
+.pinboard-tab__remove:focus-visible {
+    opacity: 0.8;
+}
+
+.pinboard-tab__remove:focus-visible {
+    outline: 0.125rem solid var(--accent-blue);
+    outline-offset: 0.125rem;
+}
+
+.pinboard-tab__remove:hover {
+    opacity: 1;
+    background: var(--overlay-light-10);
+    color: var(--text-primary);
+}
+
+.pinboard-tab.active .pinboard-tab__remove:hover {
+    background: rgb(255 255 255 / 15%);
+}
+
+@media (hover: none) {
+    .pinboard-tab__remove {
+        opacity: 0.7;
+    }
+}
+
+/* Band 3: the active item — its toolbar, then the body its type fills. */
+pinboard-content {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    font-family: var(--font-ui);
+
+    /* The find bar floats in here rather than in the body it searches, so it
+       does not scroll with the pin. That needs a positioned box to hang from. */
+    position: relative;
+}
+
+pinboard-content[hidden] {
+    display: none;
+}
+
+/* Focused only under focusBody(), which is a place to type from rather than a
+   thing selected — and the band it spans is the whole lower half of the board,
+   which is far too big a shape to ring. */
+pinboard-content:focus {
+    outline: none;
+}
+
+.pinboard-item-toolbar {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-bottom: 0.0625rem solid var(--border-divider);
+}
+
+/* An author `display` beats the UA sheet's [hidden], so a board with nothing on
+   it would otherwise keep the last pin's name and its divider above the empty
+   state. */
+.pinboard-item-toolbar[hidden] {
+    display: none;
+}
+
+/* The name of the thing takes the width; the actions keep theirs. */
+.pinboard-item-toolbar__text {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.pinboard-item-toolbar__title,
+.pinboard-item-toolbar__subtitle {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.pinboard-item-toolbar__title {
+    color: var(--text-primary);
+    font-size: var(--font-size-md);
+}
+
+/* A pin that names a file is titled by the path itself. Only the directories
+   ellipse: a narrow board should lose where the file is buried, never the name
+   of the thing on screen. Two elements rather than one clipped string, because
+   `direction: rtl` clips the right end but carries the leading separator round
+   to the other side with it. */
+.pinboard-item-toolbar__title--path {
+    display: flex;
+    align-items: baseline;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+}
+
+.pinboard-item-toolbar__dir {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: var(--text-tertiary);
+}
+
+.pinboard-item-toolbar__name {
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+.pinboard-item-toolbar__subtitle {
+    color: var(--text-tertiary);
+    font-size: var(--font-size-sm);
+}
+
+.pinboard-item-toolbar__actions {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: var(--spacing-xs);
+}
+
+/* One height for both, set here rather than left to each one's padding: they
+   stand side by side, and a word and a glyph do not agree on their own. The
+   chrome is .u-btn-ghost's. */
+.pinboard-item-toolbar__action,
+.pinboard-item-toolbar__more {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 1.75rem;
+    padding: 0 var(--spacing-md);
+    font-family: var(--font-ui);
+    font-size: var(--font-size-sm);
+    line-height: 1;
+}
+
+/* An action shown as its icon: square, and the same 1.75rem tall as the words
+   beside it. It turns while it is working, which for a refresh is the only
+   answer to "did that do anything" a card that looks unchanged can give. */
+.pinboard-item-toolbar__action--icon {
+    width: 1.75rem;
+    padding: 0;
+}
+
+.pinboard-item-toolbar__action--icon svg {
+    display: block;
+    width: 1rem;
+    height: 1rem;
+}
+
+.pinboard-item-toolbar__action--icon.is-spinning svg {
+    animation: u-spin 0.8s linear infinite;
+    transform-origin: center;
+}
+
+.pinboard-item-toolbar__action:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.pinboard-item-toolbar__action:focus-visible,
+.pinboard-item-toolbar__more:focus-visible {
+    outline: 0.125rem solid var(--accent-blue);
+    outline-offset: 0.125rem;
+}
+
+.pinboard-item-toolbar__more {
+    width: 1.75rem;
+    padding: 0;
+    font-size: var(--font-size-base);
+}
+
+.pinboard-content__body {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: var(--spacing-md);
+    overflow: auto;
+}
+
+/* Each mounted pin gets a slot of its own, so a retained pin can be hidden
+   without disturbing the one on screen. The slot is transparent to layout —
+   full height, no box of its own — because a pin sizing itself against the
+   body is what every item type was written against. */
+.pinboard-content__slot,
+.pinboard-content__placeholder {
+    height: 100%;
+}
+
+.pinboard-content__slot[hidden],
+.pinboard-content__placeholder[hidden] {
+    display: none;
+}
+
+.pinboard-empty,
+.pinboard-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-md);
+    height: 100%;
+    padding: var(--spacing-xl);
+    color: var(--text-secondary);
+    text-align: center;
+}
+
+/* The placeholder stands in place of the board, so an unhidden one does not sit
+   quietly behind it: it takes a share of the panel's height and pushes the pins
+   into what is left. */
+.pinboard-placeholder[hidden] {
+    display: none;
+}
+
+.pinboard-empty__line,
+.pinboard-placeholder__line {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: var(--font-size-md);
+}
+
+.pinboard-placeholder__note {
+    margin: 0;
+    font-size: var(--font-size-sm);
+}
+
+.pinboard-placeholder__error {
+    max-width: 100%;
+    margin: 0;
+    overflow: auto;
+    color: var(--text-tertiary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    white-space: pre-wrap;
+    text-align: left;
+}
+
+.pinboard-empty__add {
+    padding: var(--spacing-xs) var(--spacing-lg);
+    border: 0.0625rem solid var(--border-color);
+    border-radius: 1rem;
+    background: var(--bg-raised);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: var(--font-size-base);
+    cursor: pointer;
+    transition: background var(--transition-base), border-color var(--transition-base);
+}
+
+.pinboard-empty__add:hover {
+    background: var(--bg-secondary);
+    border-color: var(--text-tertiary);
+}
+
+/* What the last edit had to say for itself, and nothing at all when it went
+   through. */
+.pinboard-panel__status {
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-top: 0.0625rem solid var(--border-divider);
+    color: var(--text-secondary);
+    font-family: var(--font-ui);
+    font-size: var(--font-size-sm);
+}
+
+.pinboard-add-picker__filter {
+    width: 100%;
+    margin-bottom: var(--spacing-xs);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border: 0.0625rem solid var(--border-color);
+    border-radius: var(--radius-lg);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: var(--font-ui);
+    font-size: var(--font-size-base);
+}
+
+.pinboard-add-picker__note {
+    margin-left: auto;
+    padding-left: var(--spacing-md);
+    color: var(--text-tertiary);
+    font-size: var(--font-size-sm);
+}
+
+/* Away with the rest of the surface while there is no project to have a board,
+   or nothing that can fill one: .u-btn-icon-header's display would otherwise
+   beat the UA sheet's [hidden]. */
+.pinboard-header-button[hidden] {
+    display: none;
+}
+
+@media (width <= 36rem) {
+    /* Full width, not a narrow overlay squeezed onto a narrow screen. */
+    .pinboard-panel {
+        width: 100%;
+        border-left: 0;
+    }
+
+    .pinboard-resize-handle {
+        display: none;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pinboard-panel,
+    .pinboard-scrim {
+        transition: none;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   DETACHED BOARD (?view=pinboard)
+
+   The same board in a window of its own, so the conversation shell around it
+   is left out and the panel stops being an overlay: no slide, no scrim, no
+   toggle, and the window's own frame is the width control. The attribute
+   is set pre-paint in index.html so none of this arrives a frame late.
+
+   The shell keeps its markup — the elements below are still in the document,
+   because a viewer's boot path wants them there — and CSS is what makes this
+   a board rather than a Juggler with a board in it.
+   -------------------------------------------------------------------------- */
+[data-view="pinboard"] conversation-bar,
+[data-view="pinboard"] conversation-tabs-container,
+[data-view="pinboard"] .sidebar-backdrop,
+[data-view="pinboard"] .pinboard-header-button,
+[data-view="pinboard"] .pinboard-scrim,
+[data-view="pinboard"] .pinboard-resize-handle {
+    display: none;
+}
+
+/* The header stays. It is the window's drag region, and on Windows and Linux it
+   carries the only close button — so a board window keeps the strip and loses
+   what it held: a sidebar toggle for a sidebar that is not there, a project chip
+   for a project this window does not navigate, and controls belonging to the
+   window that opened it.
+
+   The theme button is the exception, and stays. A board window is read where
+   the window that opened it is not — the other screen, the other light — so it
+   keeps the one control that answers to that. It is the app's own button, wired
+   by UIEventManager in every mode and cycling the same System → Light → Dark,
+   so a board themes exactly as Juggler does. */
+[data-view="pinboard"] .sidebar-toggle-button,
+[data-view="pinboard"] project-path-display,
+[data-view="pinboard"] header-actions > :not(.header-actions-controls),
+[data-view="pinboard"] .header-actions-controls > :not(.theme-button) {
+    display: none;
+}
+
+/* What is left says what the window is showing. Written by the board itself, so
+   it is empty and out of the way everywhere else. */
+.app-header__board-title {
+    display: none;
+}
+
+[data-view="pinboard"] .app-header__board-title {
+    display: flex;
+    align-items: baseline;
+    gap: var(--spacing-lg);
+    flex: 1 1 auto;
+    min-width: 0;
+    margin-right: auto;
+    overflow: hidden;
+    font-family: var(--font-ui);
+    white-space: nowrap;
+}
+
+/* Which conversation the window is a view of. It follows the logo and reads as
+   the window's name: the one thing about a board that never changes, and the one
+   thing nothing else on screen says. As wide as the words and no wider — it is a
+   control, and the room left over belongs to the window's drag region — but free
+   to give way to the ellipsis when there is not enough of it. */
+.app-header__board-conversation {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-primary);
+    font-size: var(--font-size-base);
+    font-weight: 500;
+    text-overflow: ellipsis;
+}
+
+/* The same words, as the control that takes you to the conversation itself. It
+   is drawn as a button only where there is a window to send it to, so it keeps
+   the type it had as text and takes none of a button's chrome — what marks it as
+   a control is that it answers the pointer. */
+button.app-header__board-conversation {
+    padding: 0;
+    border: 0;
+    background: none;
+    font-family: inherit;
+    line-height: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+button.app-header__board-conversation:hover {
+    text-decoration: underline;
+}
+
+button.app-header__board-conversation:focus-visible {
+    outline: 0.125rem solid var(--accent-blue);
+    outline-offset: 0.125rem;
+}
+
+/* What the window is, in the treatment the board's own toolbar band used to
+   wear — it says this once now, and says it here. Held at the far end, away from
+   the name: a label read at a glance and then not again. */
+.app-header__board-kind {
+    flex-shrink: 0;
+    margin-left: auto;
+    color: var(--text-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+[data-view="pinboard"] pinboard-shell {
+    pointer-events: auto;
+}
+
+[data-view="pinboard"] .pinboard-panel {
+    position: static;
+    width: 100%;
+    height: 100%;
+    border-left: 0;
+    box-shadow: none;
+
+    /* Open is the only state this board has, so it is not animated into it. */
+    transform: none;
+    visibility: visible;
+    transition: none;
+}
