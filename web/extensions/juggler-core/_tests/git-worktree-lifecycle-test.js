@@ -20,7 +20,7 @@ import { unregisterWorkspace, listWorkspaces } from '../../../js/services/worksp
 import { provisionWorkspace, workspaceStatus, finishWorkspace } from '../../../js/services/workspace-provisioning.js';
 import { setupRows, probeSetupAdoptions } from '../../../js/services/conversation-setup.js';
 import workspaceProviderRegistry from '../../../js/registries/workspace-provider-registry.js';
-import { defaultLocation } from '../workspaces/git-worktree-workspace-provider.js';
+import GitWorktreeWorkspaceProvider, { defaultLocation } from '../workspaces/git-worktree-workspace-provider.js';
 import {
   runWorktreeSuite,
   PROVIDER_ID,
@@ -209,6 +209,118 @@ export async function runTests() {
         if (outcome) await unregisterWorkspace(outcome.workspace.id).catch(() => {});
         await ops.shell({ command: `rm -rf ${tree} ${repo}` }).catch(() => {});
       }
+    });
+
+    await run('discarding is done from the repository, never from inside the tree', async () => {
+      // Where the removal is run FROM is the whole of this case. Operations
+      // handed to a finish are pinned to the workspace, so a discard driven
+      // through them starts a shell whose working directory is the tree it is
+      // about to delete. A POSIX shell can step out of that and carry on; on
+      // Windows the directory cannot be removed at all while any process holds
+      // it, and `Git\bin\bash.exe` is a launcher that holds it for the whole
+      // command while the real shell it spawned does the stepping out. The
+      // removal therefore goes through the base operations, naming the
+      // repository relative to them, exactly as the provision's own rollback
+      // does.
+      //
+      // Asked with a recorder rather than a real tree because the question is
+      // which facade was used, which no amount of removed directories can show
+      // — and asked with Windows-shaped paths so the platform that has to be
+      // right about this is the one being described.
+      const provider = new GitWorktreeWorkspaceProvider({ session });
+      /** @type {string[]} */
+      const fromTree = [];
+      /** @type {string[]} */
+      const fromBase = [];
+      /**
+       * @param {string[]} into - Where to record what was asked for.
+       * @returns {any} A facade that records and reports the tree gone.
+       */
+      const recorder = (into) => ({
+        /**
+         * @param {any} request - What the provider wants run.
+         * @returns {Promise<any>} A shell result saying nothing is left.
+         */
+        shell: async (request) => {
+          into.push(String(request.command));
+          return { success: true, stdout: 'REMOVED', stderr: '', exitCode: 0 };
+        }
+      });
+      const finished = await provider.finish(
+        {
+          meta: {
+            repoDir: 'C:\\src\\app',
+            dir: 'C:\\src\\app-feat-tunnels',
+            treeRel: '../app-feat-tunnels',
+            branch: BRANCH,
+            branchCreatedByUs: true
+          }
+        },
+        'discard',
+        {
+          session: { workspaceRoot: (/** @type {string} */ id) => (id ? 'C:\\src\\elsewhere' : 'C:\\src') },
+          baseWorkspaceId: '',
+          ops: recorder(fromTree),
+          baseOps: recorder(fromBase),
+          signal: new AbortController().signal
+        }
+      );
+
+      assert(finished.done === true,
+        `the discard reports the workspace finished with, got ${JSON.stringify(finished)}`);
+      assert(fromTree.length === 0,
+        `and nothing was run from inside the tree being removed, got ${JSON.stringify(fromTree)}`);
+      assert(fromBase.length === 1,
+        `while the base ran it, in one shell, got ${JSON.stringify(fromBase)}`);
+      const removal = fromBase[0] ?? '';
+      assert(/^cd "app" \|\| exit 1;/.test(removal),
+        `starting by stepping INTO the repository rather than out of the tree, got ${JSON.stringify(removal)}`);
+      assert(removal.includes('git worktree remove --force "../app-feat-tunnels"'),
+        `and naming the tree relative to that repository, got ${JSON.stringify(removal)}`);
+      assert(!/[A-Za-z]:[/\\]/.test(removal),
+        `while no command carries an absolute Windows path, got ${JSON.stringify(removal)}`);
+    });
+
+    await run('a removal that fails says what the shell said about it', async () => {
+      // The message is the only thing anyone gets when a discard does not take:
+      // there is no second command to ask, and the tree is on a machine the
+      // reader may not have. The shell operation answers with both streams
+      // merged into `stdout` and an empty `stderr`, so a message built from
+      // `stderr` alone reports the bare fallback and loses git's reason every
+      // time — which is precisely how a CI failure spent three runs saying only
+      // that the directory was still there.
+      const provider = new GitWorktreeWorkspaceProvider({ session });
+      const finished = await provider.finish(
+        {
+          meta: {
+            repoDir: 'C:\\src\\app',
+            dir: 'C:\\src\\app-feat-tunnels',
+            treeRel: '../app-feat-tunnels',
+            branch: BRANCH,
+            branchCreatedByUs: false
+          }
+        },
+        'discard',
+        {
+          session: { workspaceRoot: () => 'C:\\src' },
+          baseWorkspaceId: '',
+          ops: { shell: async () => ({ success: true, stdout: '', stderr: '', exitCode: 0 }) },
+          baseOps: {
+            shell: async () => ({
+              success: false,
+              stdout: 'fatal: validation failed, cannot remove working tree: it is locked\nSTILL-THERE',
+              stderr: '',
+              exitCode: 1
+            })
+          },
+          signal: new AbortController().signal
+        }
+      );
+
+      assert(finished.done === false,
+        `a tree that is still there is not reported as finished with, got ${JSON.stringify(finished)}`);
+      assert(/cannot remove working tree: it is locked/.test(String(finished.message)),
+        `and the message carries what the shell said, got ${JSON.stringify(finished.message)}`);
     });
 
     await run('unbinding leaves the tree and the branch exactly where they are', async () => {

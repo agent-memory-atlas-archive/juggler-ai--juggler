@@ -247,18 +247,21 @@ export async function runTests() {
       const ops = createBoundOps(() => ({ workspaceId: id }));
       const tag = Math.random().toString(36).slice(2, 8);
       const started = `ws-cancel-started-${tag}.txt`;
+      const release = `ws-cancel-release-${tag}.txt`;
       const finished = `ws-cancel-finished-${tag}.txt`;
-      // What the command sleeps for between its two markers, and the whole
-      // margin this case has: the abort must land inside that sleep, and the
-      // wait for the second marker must outlast it. A machine slow enough to
-      // spend the sleep noticing the first marker would otherwise abort a
-      // command that had already finished, and read the file it duly wrote as
-      // a cancel that did not bite.
-      const sleepMs = 3000;
+      // The command waits for a file this case writes, rather than for a clock.
+      // A command that slept between its two markers could be beaten by a slow
+      // enough machine — the abort landing after it had already finished, and
+      // the marker it duly wrote reading as a cancel that did not bite — and
+      // the answer to that is not a longer sleep, which only moves the machine
+      // that loses. Nothing here can write the second marker until this case
+      // releases it, and it is released only after the abort has settled. So a
+      // surviving command writes that marker however slow the machine is, and a
+      // killed one cannot write it however fast.
       try {
         const controller = new AbortController();
         const running = ops.shell(
-          { command: `echo yes > ${started}; sleep ${sleepMs / 1000}; echo yes > ${finished}` },
+          { command: `echo yes > ${started}; while [ ! -e ${release} ]; do sleep 0.1; done; echo yes > ${finished}` },
           controller.signal
         );
         // Collected rather than assigned to a local: an assignment made inside
@@ -274,9 +277,6 @@ export async function runTests() {
         // pass this case must not be able to score.
         assert(await fileTurnsUp(ops, started, budgetFor(5000)),
           'the command never started, so there was nothing for the abort to prove');
-        // The sleep began no later than the moment its first marker was seen,
-        // so a command nobody killed writes its second marker by here.
-        const due = Date.now() + sleepMs;
         controller.abort();
         await settled;
 
@@ -284,7 +284,17 @@ export async function runTests() {
           `aborting rejects the operation rather than resolving it, got ${rejections.length} rejections`);
         assert(/abort/i.test(String(rejections[0]?.name ?? rejections[0])),
           `and rejects with the caller's abort rather than some later failure, got ${String(rejections[0])}`);
-        assert(!(await fileTurnsUp(ops, finished, due - Date.now() + budgetFor(1500))),
+
+        // Everything that was going to stop has stopped by now. Anything still
+        // in that loop is something the cancel did not reach, and this is what
+        // lets it say so.
+        await ops.writeFile({ path: release, content: 'go' });
+        // A release that was never written would hold the second marker back on
+        // its own, and this case would pass without a single process having
+        // been killed. It is the same guard the first marker gets above.
+        assert(await fileTurnsUp(ops, release, budgetFor(3000)),
+          'the release the command waits on was never written, so nothing below is a test of anything');
+        assert(!(await fileTurnsUp(ops, finished, budgetFor(3000))),
           'and the command died with it — the second marker means it ran to completion in a tree nobody was watching any more');
       } finally {
         session.workspaces = saved;

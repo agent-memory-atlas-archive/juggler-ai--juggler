@@ -1106,7 +1106,10 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     // thing to read than a commit authored by a tool they did not choose.
     const staged = await ctx.ops.shell({ command: 'git add -A' }, ctx.signal);
     if (!staged?.success) {
-      return { done: false, message: String(staged?.stderr || '').trim() || 'Nothing could be staged.' };
+      return {
+        done: false,
+        message: String(staged?.stderr || staged?.stdout || '').trim() || 'Nothing could be staged.'
+      };
     }
     const committed = await ctx.ops.shell(
       { command: `git commit -q -m ${singleQuoted(message)}` }, ctx.signal);
@@ -1125,18 +1128,23 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
   /**
    * Remove the tree, and the branch when it was ours to make.
    *
-   * One command, which is the whole trick: these operations are pinned to the
-   * tree, so the first thing removed is the ground every later command would
-   * have to stand on — a second call would fail before it ran, in the shell's
-   * own chdir. So this steps out of the tree first and does everything from the
-   * repository, in one shell, ending with a question whose answer is the only
-   * one the host needs: is there anything left.
+   * Run from the REPOSITORY, through the base operations, which is the same
+   * ground and the same four commands the provision's own rollback uses. The
+   * workspace's own operations are pinned to the tree, and a shell started
+   * there stands in the directory this is about to delete: a POSIX shell can
+   * step out and carry on, but on Windows the directory cannot be removed while
+   * any process holds it, and the shell there is a launcher that holds it for
+   * the whole command while the real shell it spawned does the stepping out.
+   * Nothing would be removed and nothing would say why.
    *
-   * The steps are separated by `;` rather than `&&` deliberately: each tolerates
-   * the one before it having failed, because a tree may be half-there in more
-   * ways than there are commands here.
+   * One shell, ending with a question whose answer is the only one the host
+   * needs: is there anything left. The steps are separated by `;` rather than
+   * `&&` deliberately — each tolerates the one before it having failed, because
+   * a tree may be half-there in more ways than there are commands here — so the
+   * `cd` that must NOT be tolerated exits instead, rather than leaving the rest
+   * to name a `../` path from somewhere nobody intended.
    * @param {any} workspace - The row being finished with.
-   * @param {any} ctx - Operations pinned to the tree.
+   * @param {any} ctx - Operations pinned to the tree, and the base's beside them.
    * @returns {Promise<any>} Whether anything is left.
    */
   async _discard(workspace, ctx) {
@@ -1150,9 +1158,19 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
       };
     }
 
-    const back = relativePath(String(meta?.dir ?? ''), String(meta?.repoDir)) ?? '..';
+    // The repository as the base operations can name it, which is how the
+    // provision named it when it made the tree.
+    const baseRoot = String(ctx?.session?.workspaceRoot?.(ctx?.baseWorkspaceId ?? '') ?? '');
+    const repoRel = baseRoot ? relativePath(baseRoot, String(meta.repoDir)) : null;
+    if (!repoRel) {
+      return {
+        done: false,
+        message: `${meta.repoDir} cannot be reached from ${baseRoot || 'the base workspace'}, so the tree is not ours to remove from here.`
+      };
+    }
+
     const steps = [
-      `cd "${back}" || exit 1`,
+      repoRel === '.' ? '' : `cd "${repoRel}" || exit 1`,
       `git worktree remove --force "${treeRel}"`,
       `rm -rf "${treeRel}"`,
       'git worktree prune',
@@ -1160,16 +1178,20 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
       `test -e "${treeRel}" && echo STILL-THERE || echo REMOVED`
     ].filter(Boolean).join('; ');
 
-    const result = await ctx.ops.shell({ command: steps }, ctx.signal);
+    const result = await ctx.baseOps.shell({ command: steps }, ctx.signal);
     if (/REMOVED/.test(String(result?.stdout ?? ''))) {
       return {
         done: true,
         message: `Removed ${meta.dir}${meta.branchCreatedByUs && branch ? ` and ${branch}` : ''}.`
       };
     }
+    // Why git could not remove it matters more than the fact, and the shell op
+    // merges the two streams: it answers with everything the command said on
+    // `stdout` and an empty `stderr`. Reading only `stderr` would reach for a
+    // field that is always empty and report the bare fallback every time.
     return {
       done: false,
-      message: String(result?.stderr || '').trim() || `${meta.dir} is still there.`
+      message: String(result?.stderr || result?.stdout || '').trim() || `${meta.dir} is still there.`
     };
   }
 

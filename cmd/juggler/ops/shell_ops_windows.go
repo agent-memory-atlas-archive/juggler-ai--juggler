@@ -192,26 +192,73 @@ func shellCmdFrom(ctx context.Context, p winPOSIX, command string) *exec.Cmd {
 		return &exec.Cmd{Err: p.shellErr}
 	}
 	argv := append(append([]string{}, p.shell...), command)
-	return exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	takeTreeOnCancel(cmd)
+	return cmd
 }
 
 func pythonCmdFrom(ctx context.Context, p winPOSIX) *exec.Cmd {
 	if p.python == nil {
 		return &exec.Cmd{Err: p.pythonErr}
 	}
-	return exec.CommandContext(ctx, p.python[0], p.python[1:]...)
+	cmd := exec.CommandContext(ctx, p.python[0], p.python[1:]...)
+	takeTreeOnCancel(cmd)
+	return cmd
 }
 
-// setProcGroup assigns a new process group so that taskkill /T can reliably
-// target the entire process tree.
+// takeTreeOnCancel replaces the kill os/exec performs when the command's context
+// is done.
+//
+// Its default is Process.Kill: on Windows a TerminateProcess against a single
+// pid, which terminates that process's threads and nothing it started. One pid
+// is never the whole command here. The POSIX shell resolved above is normally
+// `Git\bin\bash.exe`, which is not bash at all but a launcher that sets MSYSTEM
+// and PATH, spawns `Git\usr\bin\bash.exe` as a separate child, and waits on it.
+// Terminating the process we started therefore leaves the real shell — and the
+// build, test run or install it is part-way through — alive and orphaned.
+//
+// Orphaned is also out of reach, which is what makes the default kill worse than
+// no kill at all: taskkill /T reconstructs descendants from the parent-child
+// edges that are live when it runs, so it must start from a leader that is still
+// there. Killing the leader first destroys the only route to everything under
+// it, and the pid it leaves behind is reused within seconds by something with no
+// relation to us. So the tree is taken from here, before anything has terminated
+// the leader, rather than from a handler racing os/exec for the right to kill it
+// first.
+//
+// A cancel that killed the launcher and left the work running would be a lie the
+// user discovers through a fan and a lock file, having been told it stopped.
+func takeTreeOnCancel(cmd *exec.Cmd) {
+	// nil leaves Wait reporting the command's own exit status rather than an
+	// error of ours, as it did when the kill was os/exec's.
+	cmd.Cancel = func() error {
+		killProcessGroup(cmd)
+		return nil
+	}
+}
+
+// setProcGroup puts the command in a console process group of its own, so a
+// Ctrl-C delivered to the server's console is not also delivered to every
+// command it is running.
+//
+// It buys nothing for killing: a Windows process group is addressable only by
+// console control events, is ignorable by each recipient, and reaches no process
+// that made a console of its own. taskkill /T does not consult it — it walks
+// parent-child edges — and there is no kill-the-group call to reach for.
 func setProcGroup(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP,
 	}
 }
 
-// killProcessGroup kills the process tree on Windows using taskkill
+// killProcessGroup kills the process tree on Windows using taskkill.
+//
+// Only meaningful while the process is alive; see takeTreeOnCancel for why the
+// tree has to be taken before its leader is.
 func killProcessGroup(cmd *exec.Cmd) {
+	if cmd.Process == nil {
+		return
+	}
 	// /F = force, /T = tree (kill child processes), /PID = process ID
 	kill := exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", cmd.Process.Pid))
 	_ = kill.Run()
