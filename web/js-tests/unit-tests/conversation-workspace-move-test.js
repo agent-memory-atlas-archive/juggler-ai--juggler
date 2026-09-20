@@ -671,7 +671,7 @@ export async function runTests() {
       } finally {
         /** @type {any} */ (window).showModal = realModal;
         if (built) await unregisterWorkspace(built).catch(() => {});
-        await projectOps.shell({ command: `rm -rf ${dir}` }).catch(() => {});
+        await projectOps.shell({ command: `rm -rf ${name}` }).catch(() => {});
       }
     });
 
@@ -723,7 +723,7 @@ export async function runTests() {
           `and closing it reports that nothing happened, got ${JSON.stringify(outcome)}`);
       } finally {
         /** @type {any} */ (window).showModal = realModal;
-        await projectOps.shell({ command: `rm -rf ${dir}` }).catch(() => {});
+        await projectOps.shell({ command: `rm -rf ${name}` }).catch(() => {});
       }
     });
 
@@ -896,7 +896,7 @@ export async function runTests() {
       /** @type {any} The decoy, taken up at the end so the offer table is left as it was found. */
       let adoptedDecoy = null;
       try {
-        await projectOps.shell({ command: `mkdir -p ${dir} ${decoyDir}` });
+        await projectOps.shell({ command: `mkdir -p ${name} ${decoy}` });
         FixtureProvider.report = {
           orphanedWorkspaces: [],
           orphanedArtifacts: [{
@@ -949,7 +949,7 @@ export async function runTests() {
         session.workspaces = saved;
         if (adopted) await unregisterWorkspace(adopted.id).catch(() => {});
         if (adoptedDecoy) await unregisterWorkspace(adoptedDecoy.id).catch(() => {});
-        await projectOps.shell({ command: `rm -rf ${dir} ${decoyDir}` }).catch(() => {});
+        await projectOps.shell({ command: `rm -rf ${name} ${decoy}` }).catch(() => {});
       }
     });
 

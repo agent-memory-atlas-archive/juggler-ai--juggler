@@ -498,7 +498,7 @@ export async function runTests() {
           'and the undo is spent');
       } finally {
         unsubscribe();
-        await projectOps.shell({ command: `rm -rf ${dir}` }).catch(() => {});
+        await projectOps.shell({ command: `rm -rf ${name}` }).catch(() => {});
       }
     });
 
@@ -579,7 +579,7 @@ export async function runTests() {
         FixtureProvider.discardDescription = null;
         FixtureProvider.reported = null;
         session.workspaces = savedTable;
-        await projectOps.shell({ command: `rm -rf ${dir}` }).catch(() => {});
+        await projectOps.shell({ command: `rm -rf ${name}` }).catch(() => {});
       }
     });
 
@@ -656,7 +656,7 @@ export async function runTests() {
           'with what was built left standing');
       } finally {
         await unregisterWorkspace(workspaceId).catch(() => {});
-        await projectOps.shell({ command: `rm -rf ${dir}` }).catch(() => {});
+        await projectOps.shell({ command: `rm -rf ${name}` }).catch(() => {});
       }
     });
 

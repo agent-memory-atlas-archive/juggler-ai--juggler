@@ -207,7 +207,7 @@ export async function runTests() {
       } finally {
         session.workspaces = savedTable;
         list.remove();
-        await projectOps.shell({ command: `rm -rf ${dir}` }).catch(() => {});
+        await projectOps.shell({ command: `rm -rf ${name}` }).catch(() => {});
       }
     });
 
@@ -341,7 +341,7 @@ export async function runTests() {
       } finally {
         session.workspaces = savedTable;
         if (conversation.workspaceId) await unregisterWorkspace(conversation.workspaceId).catch(() => {});
-        await projectOps.shell({ command: `rm -rf ${dir}` }).catch(() => {});
+        await projectOps.shell({ command: `rm -rf ${name}` }).catch(() => {});
       }
     });
 
@@ -584,7 +584,7 @@ export async function runTests() {
       /** @type {any} What the refusal half adopts the ordinary way, to be forgotten again. */
       let spare = null;
       try {
-        await projectOps.shell({ command: `mkdir -p ${dir}` });
+        await projectOps.shell({ command: `mkdir -p ${name}` });
         // The table, lost — which is what a missing session.json leaves, while
         // the bindings in the conversation documents survive it.
         session.workspaces = [];
@@ -659,7 +659,7 @@ export async function runTests() {
         };
         // A second tree, because a place that is already somebody's workspace is
         // not offered at all — which is the first half of the same rule.
-        await projectOps.shell({ command: `mkdir -p ${dir}-again` });
+        await projectOps.shell({ command: `mkdir -p ${name}-again` });
         await probeSetupAdoptions(session);
         const second = setupRows(session).find((/** @type {any} */ row) =>
           row.kind === 'adopt' && row.label === `${name}-again`);
@@ -690,7 +690,7 @@ export async function runTests() {
         session.workspaces = saved;
         await unregisterWorkspace(strandedId).catch(() => {});
         if (spare?.id) await unregisterWorkspace(spare.id).catch(() => {});
-        await projectOps.shell({ command: `rm -rf ${dir} ${dir}-again` }).catch(() => {});
+        await projectOps.shell({ command: `rm -rf ${name} ${name}-again` }).catch(() => {});
       }
     });
 
@@ -767,7 +767,7 @@ export async function runTests() {
       } finally {
         session.workspaces = saved;
         if (workspaceId) await unregisterWorkspace(workspaceId).catch(() => {});
-        await projectOps.shell({ command: `rm -rf ${dir}` }).catch(() => {});
+        await projectOps.shell({ command: `rm -rf ${name}` }).catch(() => {});
       }
     });
 
@@ -1263,7 +1263,7 @@ export async function runTests() {
         assert((await projectOps.stat({ path: name })).exists === true,
           'which is worth saying precisely because the directory really is still there');
       } finally {
-        await projectOps.shell({ command: `rm -rf ${dir}` }).catch(() => {});
+        await projectOps.shell({ command: `rm -rf ${name}` }).catch(() => {});
       }
     });
 

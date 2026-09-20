@@ -28,6 +28,7 @@ import { registerWorkspace, patchWorkspace, listWorkspaces } from '../../js/serv
 import WorkspaceProvider from '../../sdk/workspace-provider.js';
 import workspaceProviderRegistry from '../../js/registries/workspace-provider-registry.js';
 import { ensureWorkspaceBanner } from '../../js/components/conversation-area-rendering.js';
+import { relativePath } from '../../extensions/juggler-core/lib/workspace-paths.js';
 
 /**
  * A workspace row as the client-side table holds it, for the cases that seed
@@ -120,6 +121,33 @@ export async function fileTurnsUp(ops, path, timeoutMs) {
 }
 
 /**
+ * The directory, named the way a command can use it: relative to the tree the
+ * operations it is handed to are pinned to.
+ *
+ * A workspace root is absolute, and an absolute path on Windows is `C:\src\app`
+ * — which a POSIX shell reads as one word with every separator escaped away, so
+ * the directory lands somewhere nobody asked for and the provision looks to
+ * have built nothing. The shipped providers name everything relative to where
+ * the command already stands, and the fixture has to do the same or it is
+ * testing a provider no real one resembles.
+ * @param {string} root - The tree the operations are pinned to.
+ * @param {string} dir - Where the workspace is going, absolutely.
+ * @returns {string} A path a command can use.
+ */
+function commandPath(root, dir) {
+  return (root && relativePath(root, dir)) || dir;
+}
+
+/**
+ * Where the base workspace's operations are standing, as the session knows it.
+ * @param {any} ctx - A hook's context.
+ * @returns {string} The root, or '' when the session cannot say.
+ */
+function rootOf(ctx) {
+  return ctx?.session?.workspaceRoot?.(ctx?.baseWorkspaceId ?? '') ?? '';
+}
+
+/**
  * A workspace provider that makes a real directory, in real steps.
  *
  * It is deliberately not the smallest thing that would satisfy the registry.
@@ -192,6 +220,7 @@ export class FixtureProvider extends WorkspaceProvider {
    */
   async provision(values, ctx) {
     const { dir, stallMs = 0, dirStallMs = 0 } = values;
+    const here = commandPath(rootOf(ctx), dir);
 
     // Both records of how to undo this step go in BEFORE the step, so there is
     // no instant at which the directory exists and nothing knows how to remove
@@ -204,7 +233,7 @@ export class FixtureProvider extends WorkspaceProvider {
       // permission that has gone, a disk that is full. The stack must go on
       // down past it, and somebody has to be told what survived.
       if (values.rollbackFailsWith) throw new Error(values.rollbackFailsWith);
-      await ctx.ops.shell({ command: `rm -rf ${dir}` }, ctx.signal);
+      await ctx.ops.shell({ command: `rm -rf "${here}"` }, ctx.signal);
     });
     // `dirStallMs` keeps the command running after it has made the directory,
     // so a cancel can land INSIDE this step rather than between steps. That is
@@ -212,7 +241,7 @@ export class FixtureProvider extends WorkspaceProvider {
     // through — the abort rejects the operation, and the line that would have
     // recorded the undo is never reached.
     const linger = dirStallMs ? `; sleep ${dirStallMs / 1000}` : '';
-    await ctx.ops.shell({ command: `mkdir -p ${dir}${linger}` }, ctx.signal);
+    await ctx.ops.shell({ command: `mkdir -p "${here}"${linger}` }, ctx.signal);
 
     if (stallMs) {
       // The slow step every real provider has — a dependency install, a clone —
@@ -229,9 +258,9 @@ export class FixtureProvider extends WorkspaceProvider {
     ctx.progress('Writing the marker');
     await ctx.checkpoint({ marked: true });
     ctx.rollback.push(async () => {
-      await ctx.ops.shell({ command: `rm -f ${dir}/made-here.txt` }, ctx.signal);
+      await ctx.ops.shell({ command: `rm -f "${here}/made-here.txt"` }, ctx.signal);
     });
-    await ctx.ops.shell({ command: `echo yes > ${dir}/made-here.txt` }, ctx.signal);
+    await ctx.ops.shell({ command: `echo yes > "${here}/made-here.txt"` }, ctx.signal);
 
     return { workspace: { root: dir, label: 'made by the fixture', meta: { dir, marked: true } } };
   }
@@ -405,10 +434,11 @@ export class FixtureProvider extends WorkspaceProvider {
     if (actionId === 'leave') return { done: false, message: 'left it be' };
     if (actionId !== 'done') return { done: false, message: `no such ending: ${actionId}` };
     const dir = workspace.meta?.dir;
-    // One command, because these operations are pinned to the very directory
-    // being removed: a second would start by trying to stand somewhere that is
-    // no longer there.
-    await ctx.ops.shell({ command: `rm -rf ${dir}` }, ctx.signal);
+    // Through the base operations, because this provider's own are pinned to
+    // the very directory being removed: a command that ran there would be
+    // standing on the ground it is taking away, which Windows refuses outright.
+    const ops = ctx.baseOps ?? ctx.ops;
+    await ops.shell({ command: `rm -rf "${commandPath(rootOf(ctx), dir)}"` }, ctx.signal);
     return { done: true, message: `removed ${dir}` };
   }
 
@@ -426,10 +456,13 @@ export class FixtureProvider extends WorkspaceProvider {
   async cleanupPartial(workspace, ctx) {
     const dir = workspace.meta?.dir;
     if (!dir) return { removed: false, message: 'nothing was checkpointed' };
+    // Against the project, because the sweep this runs in is rooted there
+    // whatever the row was built from.
+    const here = commandPath(ctx?.session?.projectPath ?? '', dir);
     // `-f` and `-rf` throughout: a checkpoint is written BEFORE the step it
     // describes, so `meta` routinely names a file that was never created.
-    await ctx.ops.shell({ command: `rm -f ${dir}/made-here.txt` }, ctx.signal);
-    await ctx.ops.shell({ command: `rm -rf ${dir}` }, ctx.signal);
+    await ctx.ops.shell({ command: `rm -f "${here}/made-here.txt"` }, ctx.signal);
+    await ctx.ops.shell({ command: `rm -rf "${here}"` }, ctx.signal);
     return { removed: true, message: `removed ${dir}` };
   }
 }

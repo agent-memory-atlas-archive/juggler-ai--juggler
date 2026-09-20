@@ -15,6 +15,7 @@
  */
 
 import { waitFor, assert } from '../utilities/test-helpers.js';
+import { budgetFor } from '../utilities/test-deadline.js';
 import { fetchJson } from '../../js/services/http.js';
 import { shellExecuteStreaming } from '../../js/services/shell-streaming.js';
 import { writeFileOp } from '../../js/services/ops-api.js';
@@ -234,10 +235,9 @@ export async function runTests() {
       // Everything a provider does while a workspace is being built runs through
       // this facade, and Cancel is only honest if the command actually dies: a
       // fifteen-minute `npm ci` that keeps going after the panel says it stopped
-      // is the one outcome the cancel story cannot survive. Both ends of that
-      // were already in place — the server kills the process group when a
-      // request context is cancelled, and `callOp` has always taken a signal.
-      // The facade in between had no way to pass one.
+      // is the one outcome the cancel story cannot survive. The server kills the
+      // process group when a request context is cancelled, and the facade's job
+      // is to carry the caller's signal that far.
       const made = await registerWorkspace({
         root: `${projectPath}/src`, label: 'src, for a cancelled command', state: 'ready'
       });
@@ -248,10 +248,17 @@ export async function runTests() {
       const tag = Math.random().toString(36).slice(2, 8);
       const started = `ws-cancel-started-${tag}.txt`;
       const finished = `ws-cancel-finished-${tag}.txt`;
+      // What the command sleeps for between its two markers, and the whole
+      // margin this case has: the abort must land inside that sleep, and the
+      // wait for the second marker must outlast it. A machine slow enough to
+      // spend the sleep noticing the first marker would otherwise abort a
+      // command that had already finished, and read the file it duly wrote as
+      // a cancel that did not bite.
+      const sleepMs = 3000;
       try {
         const controller = new AbortController();
         const running = ops.shell(
-          { command: `echo yes > ${started}; sleep 1; echo yes > ${finished}` },
+          { command: `echo yes > ${started}; sleep ${sleepMs / 1000}; echo yes > ${finished}` },
           controller.signal
         );
         // Collected rather than assigned to a local: an assignment made inside
@@ -265,8 +272,11 @@ export async function runTests() {
         // there is a process to kill leaves the second marker missing for a
         // reason that has nothing to do with cancelling anything, which is a
         // pass this case must not be able to score.
-        assert(await fileTurnsUp(ops, started, 5000),
+        assert(await fileTurnsUp(ops, started, budgetFor(5000)),
           'the command never started, so there was nothing for the abort to prove');
+        // The sleep began no later than the moment its first marker was seen,
+        // so a command nobody killed writes its second marker by here.
+        const due = Date.now() + sleepMs;
         controller.abort();
         await settled;
 
@@ -274,7 +284,7 @@ export async function runTests() {
           `aborting rejects the operation rather than resolving it, got ${rejections.length} rejections`);
         assert(/abort/i.test(String(rejections[0]?.name ?? rejections[0])),
           `and rejects with the caller's abort rather than some later failure, got ${String(rejections[0])}`);
-        assert(!(await fileTurnsUp(ops, finished, 2500)),
+        assert(!(await fileTurnsUp(ops, finished, due - Date.now() + budgetFor(1500))),
           'and the command died with it — the second marker means it ran to completion in a tree nobody was watching any more');
       } finally {
         session.workspaces = saved;

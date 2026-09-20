@@ -780,11 +780,17 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     const base = shellSafe(String(values?.base ?? 'HEAD').trim() || 'HEAD', 'base');
 
     const { repoRel, repoRoot, beside } = this._repoRoot(values, ctx);
-    const location = shellSafe(String(values?.location ?? '').trim() || defaultLocation(repoRoot, branch, beside), 'location');
+    const location = String(values?.location ?? '').trim() || defaultLocation(repoRoot, branch, beside);
     const treeRel = relativePath(repoRoot, location);
     if (!treeRel) {
       throw new Error(`Couldn't make a worktree at ${location}: it is not on the same drive as ${repoRoot}.`);
     }
+    // The relative path is what the commands below are given, and so it is the
+    // one that has to survive being quoted. The absolute location is checked by
+    // nothing here because it reaches no command — and a Windows one is written
+    // `C:\src\app`, so refusing a backslash would refuse every path on the
+    // platform.
+    shellSafe(treeRel, 'location');
     return { repoRoot, repoRel, location, treeRel, branch, base };
   }
 

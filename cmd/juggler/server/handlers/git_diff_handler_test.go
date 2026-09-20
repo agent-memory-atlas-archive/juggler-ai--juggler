@@ -73,6 +73,14 @@ func (p *gitProject) init() {
 	p.git("config", "user.email", "test@example.com")
 	p.git("config", "user.name", "Juggler Test")
 	p.git("config", "commit.gpgsign", "false")
+	// git does its housekeeping after a commit, in a process it detaches and
+	// leaves running, and it holds `.git/objects/maintenance.lock` while it
+	// works. A test that hashes the repository before and after asking the
+	// endpoint something sees that lock disappear between the two and reports
+	// it as a write of ours, so this repository keeps no housekeeping of its
+	// own. Both keys: the second is what the gits that predate the first read.
+	p.git("config", "maintenance.auto", "false")
+	p.git("config", "gc.auto", "0")
 }
 
 // git runs one git command in this repository and fails the test if it could not.

@@ -257,6 +257,50 @@ export async function runTests() {
       }
     });
 
+    await run('a repository named in Windows\' own terms is worked in relatively', async () => {
+      // The provider is handed `C:\src\app` on Windows and `/src/app`
+      // everywhere else, and every command it builds is relative so that the
+      // difference never reaches a shell. Asking that on the platform itself
+      // would mean owning a Windows runner; asking it here means driving a
+      // provision against a Windows-shaped repository with the shell replaced
+      // by a recorder, and reading back what was really run.
+      const provider = new GitWorktreeWorkspaceProvider({ session });
+      /** @type {string[]} */
+      const ran = [];
+      const ctx = {
+        session: { workspaceRoot: () => 'C:\\src\\app' },
+        ops: {
+          /**
+           * @param {any} request - What the provider wants run.
+           * @returns {Promise<any>} A shell result.
+           */
+          shell: async (request) => {
+            const command = String(request.command);
+            ran.push(command);
+            // Every probe answers no: nothing at the location, no branch of
+            // that name, no setup hook. That is the path through a provision
+            // which makes a tree and runs nothing else.
+            const probe = command.startsWith('test ') || command.includes('--verify');
+            return { success: !probe, stdout: '', stderr: '', exitCode: probe ? 1 : 0 };
+          }
+        },
+        baseWorkspaceId: '',
+        signal: new AbortController().signal,
+        rollback: { push: () => {} },
+        checkpoint: async () => {},
+        progress: () => {}
+      };
+
+      const built = await provider.provision({ branch: BRANCH, base: 'main' }, ctx);
+      assert(built.workspace.root === 'C:\\src\\app-feat-tunnels',
+        `the tree is registered beside the repository in the server's own terms, got ${JSON.stringify(built.workspace.root)}`);
+      assert(ran.some(command => command.includes('git worktree add -q -b "feat/tunnels" "../app-feat-tunnels"')),
+        `and git is asked for it by a path relative to the repository, got ${JSON.stringify(ran)}`);
+      const absolute = ran.filter(command => /[A-Za-z]:[/\\]/.test(command));
+      assert(absolute.length === 0,
+        `while no command carries an absolute Windows path, got ${JSON.stringify(absolute)}`);
+    });
+
     await run('a cancel during the setup hook leaves the repository as it was', async () => {
       // The cancel a user actually reaches: the tree is made in a second and the
       // hook after it takes a quarter of an hour, so the middle of the hook is
