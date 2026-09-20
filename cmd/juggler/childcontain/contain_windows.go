@@ -69,8 +69,9 @@ func adopt(cmd *exec.Cmd) (func(), error) {
 }
 
 func terminate(_ *exec.Cmd, child *Child) error {
-	// Closing the kill-on-close job handle terminates the full job tree. Make it
-	// idempotent by routing through Cleanup, which nils the cleanup func.
+	// Closing the kill-on-close job handle terminates the full job tree. Route
+	// through Cleanup, which closes the handle exactly once however many
+	// callers race to terminate the same child.
 	child.Cleanup()
 	return nil
 }

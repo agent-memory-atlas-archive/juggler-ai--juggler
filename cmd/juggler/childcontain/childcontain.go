@@ -47,13 +47,18 @@
 //	Other:   best-effort direct process kill only.
 package childcontain
 
-import "os/exec"
+import (
+	"os/exec"
+	"sync"
+)
 
 // Child is a contained child process. It wraps the original exec.Cmd with the
-// platform resources needed to kill/release its process tree.
+// platform resources needed to kill/release its process tree. A Child is safe
+// for concurrent use and must not be copied once created.
 type Child struct {
-	cmd     *exec.Cmd
-	cleanup func()
+	cmd      *exec.Cmd
+	released sync.Once
+	cleanup  func()
 }
 
 // Start prepares, starts, and adopts cmd into child containment.
@@ -88,12 +93,20 @@ func Adopt(cmd *exec.Cmd) (*Child, error) {
 
 // Cleanup releases OS containment resources after the child has exited. On
 // Windows, calling Cleanup while the child is still running kills the job.
+//
+// It releases exactly once however many goroutines call it: Terminate routes
+// through Cleanup on Windows and macOS, so a cancel watcher and an explicit
+// kill of the same child arrive together. Concurrent callers block until the
+// release they are sharing has finished.
 func (c *Child) Cleanup() {
-	if c == nil || c.cleanup == nil {
+	if c == nil {
 		return
 	}
-	c.cleanup()
-	c.cleanup = nil
+	c.released.Do(func() {
+		if c.cleanup != nil {
+			c.cleanup()
+		}
+	})
 }
 
 // Terminate kills the contained child process tree best-effort.
