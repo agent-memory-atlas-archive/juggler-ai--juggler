@@ -197,8 +197,21 @@ func TestGitReviewIsNotHeldToTheStatusCardsClock(t *testing.T) {
 // Both clocks are only worth naming if the read is actually run on the one its
 // caller asked for. A budget these helpers accept and then ignore in favour of
 // one written down inside them would make the constants above a fiction, and a
-// clock no read could ever beat is what tells the two apart: given a nanosecond
-// they have to give up, where a budget of their own would have them succeed.
+// clock no read could ever beat is what tells the two apart: given a budget that
+// is already spent they have to give up, where one of their own would have them
+// succeed.
+//
+// The budget is negative rather than merely tiny because context.WithTimeout
+// only reports a deadline as passed without waiting when what is left of it is
+// non-positive; any budget still in the future — a nanosecond included — is
+// handed to a timer instead, and then the read gives up only if that timer beats
+// git to the finish. Two consecutive clock reads land in the same tick often
+// enough that a nanosecond is in the future about half the time, so a positive
+// budget here tests the platform's timer resolution under load rather than these
+// helpers. It is not zero either: zero is this struct's own default, so a read
+// that had no budget plumbed into it at all would pass just as well.
+const spentClock = -time.Second
+
 func TestGitStatusReadsRunOnTheirCallersClock(t *testing.T) {
 	p := newGitProject(t)
 	p.write("file.txt", "one\n")
@@ -208,17 +221,18 @@ func TestGitStatusReadsRunOnTheirCallersClock(t *testing.T) {
 	// which layer reports it, so either way of saying so counts.
 	ranOut := func(err error) bool {
 		return err != nil &&
-			(errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "longer than 1ns"))
+			(errors.Is(err, context.DeadlineExceeded) ||
+				strings.Contains(err.Error(), "longer than "+spentClock.String()))
 	}
 
-	_, err := repoStatus(t.Context(), p.root, repoStatusOptions{maxFiles: 10, perCmd: time.Nanosecond})
+	_, err := repoStatus(t.Context(), p.root, repoStatusOptions{maxFiles: 10, perCmd: spentClock})
 	if !ranOut(err) {
-		t.Errorf("repoStatus on a 1ns clock = %v, want it to give up on that clock", err)
+		t.Errorf("repoStatus on a spent clock = %v, want it to give up on that clock", err)
 	}
 
 	var status gitRepoStatus
-	if err := repoDiffstats(t.Context(), p.root, time.Nanosecond, &status); !ranOut(err) {
-		t.Errorf("repoDiffstats on a 1ns clock = %v, want it to give up on that clock", err)
+	if err := repoDiffstats(t.Context(), p.root, spentClock, &status); !ranOut(err) {
+		t.Errorf("repoDiffstats on a spent clock = %v, want it to give up on that clock", err)
 	}
 }
 
