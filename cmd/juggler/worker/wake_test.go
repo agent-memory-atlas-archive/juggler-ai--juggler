@@ -7,10 +7,24 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 )
+
+// wakeBudget bounds how long the stub provider below sits on a ctx nobody
+// cancelled. A test-local patience limit, not a product constant: the interrupt
+// it waits for is a handful of goroutine handoffs away, so a passing run spends
+// none of it, and on a CI box running every package's tests at once under -race,
+// losing those goroutines the CPU for several seconds is ordinary.
+//
+// It is what lets the wake be asserted through the error the turn carries rather
+// than through elapsed time. The product's own backstop is the 30-minute
+// LLMTimeout, and a stub that waited for it to prove the interrupt never arrived
+// would outlast the package's `-timeout 5m`, reporting a killed package with no
+// named failure in place of this test.
+const wakeBudget = 20 * time.Second
 
 // TestSystemWakeInterruptsInFlightLLM verifies the recovery path for a
 // request orphaned by a system sleep: when the OS reports the system woke,
@@ -25,11 +39,18 @@ func TestSystemWakeInterruptsInFlightLLM(t *testing.T) {
 	providerStarted := make(chan struct{})
 	// A provider whose connection died across sleep: it blocks until the
 	// per-turn ctx is cancelled, then returns ctx.Err() — exactly what the
-	// claudecode read loop does on ctx.Done().
+	// claudecode read loop does on ctx.Done(). An interrupt that never lands
+	// leaves it holding a ctx that is never cancelled, so it gives up by itself
+	// and says so: the turn then carries that text instead of the wake's, which
+	// is what the assertion below reads.
 	w.llmCallFunc = func(ctx context.Context, _ json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
 		close(providerStarted)
-		<-ctx.Done()
-		return nil, ctx.Err()
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(wakeBudget):
+			return nil, errors.New("the per-turn ctx was never cancelled")
+		}
 	}
 
 	go func() {
@@ -37,16 +58,15 @@ func TestSystemWakeInterruptsInFlightLLM(t *testing.T) {
 		w.currentRun().interruptInFlightLLMForWake()
 	}()
 
-	start := time.Now()
 	_, err := w.currentRun().callLLM(nil)
-	elapsed := time.Since(start)
 
 	if err == nil {
 		t.Fatal("expected callLLM to return an error after a system-wake interrupt, got nil")
 	}
-	if elapsed > 2*time.Second {
-		t.Fatalf("callLLM took %v — wake interrupt did not unblock it (it rode the LLMTimeout)", elapsed)
-	}
+	// The message carries the whole verdict, and it cannot be produced by a slow
+	// runner: only an interrupt that reached the in-flight call and unblocked it
+	// names the sleep. A wake that never arrived leaves the stub's own text here,
+	// and one that arrived too late to be the reason cannot beat the stub to it.
 	low := strings.ToLower(err.Error())
 	if !strings.Contains(low, "sleep") && !strings.Contains(low, "wake") {
 		t.Errorf("expected a sleep/wake interruption message, got: %v", err)

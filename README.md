@@ -6,7 +6,7 @@ Juggler is a visual workbench for AI coding agents. Launch the desktop app and w
 
 Conversations are persistent trees rather than scrolling transcripts. Tool calls open into proper views, and every model transaction can be inspected to show what the model received and returned.
 
-Use Claude Code, OpenAI Codex, GitHub Copilot, Gemini, Ollama and other providers through one interface. Juggler is free to download, its core is open source, and it needs no account of its own: bring a subscription you already pay for or your own API keys.
+Use Claude Code, OpenAI Codex, GitHub Copilot, Gemini, Ollama and other providers through one interface. Juggler is open source, free to download, and needs no account of its own: bring a subscription you already pay for or your own API keys.
 
 **[Download Juggler](https://github.com/juggler-ai/juggler/releases)** for macOS, Windows or Linux · [Visit the website](https://juggler.studio) · [Join the Discord](https://discord.gg/HyqZwKvSMd)
 
