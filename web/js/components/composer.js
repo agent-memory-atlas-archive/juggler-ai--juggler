@@ -107,6 +107,14 @@ class Composer extends HTMLElement {
     /** @type {boolean} @private */
     this.confirmationPending = false;
 
+    // Whether the send is held while the box itself stays live, and what it is
+    // waiting for.
+    /** @type {boolean} @private */
+    this.sendBlocked = false;
+
+    /** @type {string} @private */
+    this._sendBlockedReason = '';
+
     // True from the moment a send is accepted until its `send-message` event
     // has been dispatched. sendMessage() reads the box, then awaits the skill
     // snapshot and the @-mention/dropped-file reads before dispatching, and the
@@ -784,7 +792,15 @@ class Composer extends HTMLElement {
   _updateSendButtonState() {
     const empty = this.isEmpty();
     const sendBtn = this.querySelector('#send-button');
-    if (sendBtn) sendBtn.classList.toggle('is-empty', empty);
+    if (sendBtn) {
+      // A held send wears the same look as an empty box, which is already the
+      // "there is nothing to press this for" state — and says what it is
+      // waiting for, since unlike an empty box the reason is not self-evident.
+      sendBtn.classList.toggle('is-empty', empty || this.sendBlocked);
+      const title = this.sendBlocked && this._sendBlockedReason ? this._sendBlockedReason : 'Send message';
+      sendBtn.setAttribute('title', title);
+      sendBtn.setAttribute('aria-label', title);
+    }
     this._updateNewThreadControls();
     // The schedule button follows the same empty rule; updateScheduleButton
     // re-reads emptiness itself, so just re-render it.
@@ -1287,6 +1303,14 @@ class Composer extends HTMLElement {
       return 'empty, disabled, or confirmation pending';
     }
 
+    // Nowhere to send it yet. The box is deliberately still live — the message
+    // is worth writing while the place it will run in is being built — so this
+    // is the one state where there is text, the box is enabled, and the send
+    // still does not go.
+    if (this.sendBlocked) {
+      return 'the workspace is still being built';
+    }
+
     // Refuse a second send while the first is still resolving its mentions.
     // Until it dispatches, the box still holds the text and the button is still
     // live, so a repeat press arrives here with identical input; letting it
@@ -1512,6 +1536,22 @@ class Composer extends HTMLElement {
         textarea.removeAttribute('data-confirmation-pending');
       }
     }
+  }
+
+  /**
+   * Hold the send without taking the box away.
+   *
+   * For the one state where there is nothing wrong with the message and nowhere
+   * to send it: the place this conversation will work in is still being built.
+   * Writing and editing go on — that wait is exactly when the first message gets
+   * composed — and only the send itself waits.
+   * @param {boolean} blocked - Whether the send is held.
+   * @param {string} [reason] - What it is waiting for, said on the button.
+   */
+  setSendBlocked(blocked, reason = '') {
+    this.sendBlocked = blocked;
+    this._sendBlockedReason = reason;
+    this._updateSendButtonState();
   }
 
   /**

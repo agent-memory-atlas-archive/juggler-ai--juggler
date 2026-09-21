@@ -13,10 +13,11 @@
  * It shares the panel's list of places and the panel's rendering of a provider's
  * form — same rows, same look, learned once — and shares none of its state. The
  * setup record is what an *uninitialised* conversation has been told, and the
- * send path reads it: a conversation moving house must go on sending while a
- * tree is built for it, and borrowing that record would park those sends under
- * "Waiting for the workspace". So this holds its own selection, its own form
- * values and its own progress, and calls `provisionWorkspace` directly.
+ * send path reads it: a conversation moving house is already working somewhere
+ * and must go on sending while a second tree is built for it, where borrowing
+ * that record would close its composer until the build finished. So this holds
+ * its own selection, its own form values and its own progress, and calls
+ * `provisionWorkspace` directly.
  *
  * Nothing is selected when it opens. The panel defaults to the project because a
  * conversation that answers nothing must still be bound to something; here,
@@ -33,7 +34,7 @@ import {
   probeSetupAdoptions,
   adoptSetupRow
 } from '../services/conversation-setup.js';
-import { provisionWorkspace, provisionLeftBehind } from '../services/workspace-provisioning.js';
+import { provisionWorkspace, provisionLeftBehind, recordProgress } from '../services/workspace-provisioning.js';
 import {
   rebindConversation,
   workspaceHeldWork,
@@ -143,7 +144,7 @@ export function openWorkspaceMove(conversation) {
           values: chosen,
           signal: controller.signal,
           onProgress: (step, detail) => {
-            progress.push({ step, detail });
+            recordProgress(progress, step, detail);
             render();
           }
         });

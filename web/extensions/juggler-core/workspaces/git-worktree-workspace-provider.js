@@ -833,6 +833,44 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
   }
 
   /**
+   * Run a command there and insist it worked, saying what it says while it says
+   * it.
+   *
+   * For the one step that is slow enough to need it. The command's latest line
+   * of output is handed to `report` as it arrives, so the panel shows the work
+   * rather than the wait — and carriage returns count as line ends, because that
+   * is how everything that draws a percentage draws it.
+   * @param {any} ctx - The hook's context.
+   * @param {string} repoRel - The repository, relative to the operations' root.
+   * @param {string} command - What to run.
+   * @param {(line: string) => void} report - Told each line as it lands.
+   * @param {object} [params] - Anything else for the shell operation.
+   * @returns {Promise<any>} The result, once it has succeeded.
+   * @throws {Error} With the command's own error text.
+   */
+  async _mustStream(ctx, repoRel, command, report, params = {}) {
+    const full = repoRel && repoRel !== '.' ? `cd "${repoRel}" && ${command}` : command;
+    let rest = '';
+    const result = await ctx.ops.shellStreaming({ command: full, ...params }, (/** @type {any} */ chunk) => {
+      if (!chunk?.data) return;
+      // A chunk is bytes, not lines: it can carry several, or half of one. The
+      // half is kept for the chunk that finishes it, and only the last whole
+      // line is worth reporting — the ones before it were true for a moment
+      // each and are already gone.
+      const parts = `${rest}${chunk.data}`.split(/[\r\n]+/);
+      rest = parts.pop() ?? '';
+      const latest = parts.map(part => part.trim()).filter(Boolean).pop();
+      if (latest) report(latest);
+    }, ctx.signal);
+
+    if (!result?.success) {
+      const said = String(result?.error || result?.stdout || '').trim();
+      throw new Error(said || `\`${command}\` failed with no output (exit ${result?.exitCode}).`);
+    }
+    return result;
+  }
+
+  /**
    * Make the tree.
    *
    * Two irreversible steps, and only the first has an inverse: the hook's
@@ -895,11 +933,18 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     const hasHook = await this._inRepo(ctx, repoRel, `test -f "${SETUP_HOOK}"`);
     if (hasHook?.success) {
       const backToRepo = relativePath(location, repoRoot) ?? '..';
-      ctx.progress(`Running ${SETUP_HOOK}`, location);
-      await this._mustRun(
+      // Every other step of this takes a second and is worth a line. This one
+      // clones submodules and installs dependencies, and is the whole of the
+      // wait — so it is one step that keeps talking, saying what the hook itself
+      // is saying. The step names the work; the hook's own output, which is the
+      // only thing that knows how far along it is, is the detail under it.
+      const step = 'Setting the tree up';
+      ctx.progress(step, SETUP_HOOK);
+      await this._mustStream(
         ctx,
         repoRel,
         `cd "${treeRel}" && sh "${backToRepo}/${SETUP_HOOK}"`,
+        (line) => ctx.progress(step, line),
         { timeout: HOOK_TIMEOUT_MS }
       );
     }

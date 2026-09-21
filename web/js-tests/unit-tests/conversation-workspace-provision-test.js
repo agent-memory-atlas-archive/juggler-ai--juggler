@@ -18,7 +18,7 @@ import { fetchJson } from '../../js/services/http.js';
 import { writeFileOp } from '../../js/services/ops-api.js';
 import { createBoundOps } from '../../sdk/ops.js';
 import { registerWorkspace, unregisterWorkspace, listWorkspaces } from '../../js/services/workspaces.js';
-import { provisionWorkspace } from '../../js/services/workspace-provisioning.js';
+import { provisionWorkspace, recordProgress } from '../../js/services/workspace-provisioning.js';
 import {
   PROJECT_ROW_ID,
   NEW_ROW_PREFIX,
@@ -60,6 +60,31 @@ export const needsExclusiveRun = true;
  */
 export async function runTests() {
   return runWorkspaceSuite('conversation-workspace-provision-test', async ({ run, session, projectPath, release }) => {
+    await run('a step that keeps talking updates its line rather than adding another', async () => {
+      // A provider with a slow step has two things to say and one line to say
+      // them on: what the step is, and how it is going. Appending would turn a
+      // clone that reports its percentage into a thousand-line wall, and the
+      // step it belongs to would scroll away from the answer.
+      /** @type {{step: string, detail: string}[]} */
+      const lines = [];
+      recordProgress(lines, 'Making the directory', '/tmp/somewhere');
+      recordProgress(lines, 'Setting it up', 'a-hook');
+      recordProgress(lines, 'Setting it up', 'fetching the submodules');
+      recordProgress(lines, 'Setting it up', 'linked node_modules');
+
+      assert(lines.length === 2,
+        `the same step said four times is one line, got ${JSON.stringify(lines)}`);
+      assert(lines[1].detail === 'linked node_modules',
+        `showing the latest thing it said, got ${JSON.stringify(lines[1])}`);
+
+      // A step that comes back later is a new step, not the old one continuing:
+      // the list is what has happened, in order, and folding two visits of the
+      // same name together would report the second as the first.
+      recordProgress(lines, 'Making the directory', '/tmp/elsewhere');
+      assert(lines.length === 3,
+        `while the same name after another step is a step of its own, got ${JSON.stringify(lines)}`);
+    });
+
     await run('a workspace provider is built from the registry, and a missing one is simply missing', async () => {
       // The registry is asked for providers by id, and the id comes off a
       // workspace row that outlives whatever made it. So the miss is not an

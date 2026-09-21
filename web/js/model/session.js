@@ -2105,9 +2105,10 @@ class Session {
       // if nobody said otherwise — the project, which is what the setup panel
       // offers pre-selected. Built now rather than at the first send so that the
       // conversation shows what it is actually about to send while there is
-      // still time to change it; rebuilt against another tree if the user picks
-      // one (see `conversation-setup.js`), and confirmed rather than repeated
-      // when the binding finally lands.
+      // still time to change it; rebuilt out of another tree if the user picks
+      // one, taken away entirely if they pick a place that has yet to be made
+      // (see `conversation-setup.js`), and confirmed rather than repeated when
+      // the binding finally lands.
       await this.seedConversationAutoItems(conversation, null, { workspaceId: '' });
       conversation.seededFor = '';
 

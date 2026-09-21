@@ -8,9 +8,10 @@
  * A conversation's assistant files are relative to a root: they are whichever
  * tree it works in. A blank one has not been told where that is yet, so it is
  * seeded for the tree it would work in if nobody said otherwise — the project —
- * and reseeded out of another the moment its user names one. It is showing what
- * its first turn would carry, and stays uninitialised, unbound and free to be
- * told something else until that turn arrives.
+ * and reseeded out of another the moment its user names one, or emptied if they
+ * name a place that has still to be made. It is showing what its first turn
+ * would carry, and stays uninitialised, unbound and free to be told something
+ * else until that turn arrives.
  *
  * These cases pin that: what an uninitialised conversation has (the project's
  * seeds, no binding), what picking a row does to them (the whole set rebuilt
@@ -28,10 +29,17 @@ import { INITIALISED_KEY } from '../../js/model/conversation.js';
 import { fetchJson } from '../../js/services/http.js';
 import { writeFileOp } from '../../js/services/ops-api.js';
 import { createBoundOps } from '../../sdk/ops.js';
-import { PROJECT_ROW_ID, selectSetupRow } from '../../js/services/conversation-setup.js';
+import {
+  PROJECT_ROW_ID,
+  NEW_ROW_PREFIX,
+  selectSetupRow,
+  setSetupValues,
+  createSelectedWorkspace
+} from '../../js/services/conversation-setup.js';
 import {
   runWorkspaceSuite,
   countSeeds,
+  FixtureProvider,
   makeConversation,
   seededFile,
   syncUndoState
@@ -344,6 +352,75 @@ export async function runTests() {
         session.workspaces = saved;
         await fetchJson(`/api/session/workspaces/${made.workspace.id}`, { method: 'DELETE', fallback: null });
         await project.copyTree({ to: '.', delete: [elsewhere] });
+      }
+    });
+
+    await run('a place that has not been made yet seeds nothing, and seeds itself once it has', async () => {
+      // A row offering to build somewhere names a place that is not there. There
+      // is nothing to read for it, and reading the project instead is worse than
+      // reading nothing: the files are the project's, under paths relative to a
+      // tree that is about to be somewhere else, so the moment the conversation
+      // binds they are pointing into the new tree at whatever happens to be at
+      // that path — or at nothing, which is what the panel then shows. The seeds
+      // wait for the tree, and are read from it.
+      const stamp = Math.random().toString(36).slice(2, 8);
+      const already = `seed-none-${stamp}`;
+      const built = `seed-bind-${stamp}`;
+      const project = createBoundOps(() => ({ workspaceId: '' }));
+      await writeFileOp({ path: `${already}/.cursorrules`, content: `# already there ${stamp}` });
+      // The place the provider is about to make, with an assistant file of its
+      // own waiting in it: the fixture's `mkdir -p` tolerates a directory that
+      // is already there, and the file is how the seeds are shown to have been
+      // read out of THIS tree rather than the one selected before it.
+      await writeFileOp({ path: `${built}/.cursorrules`, content: `# built here ${stamp}` });
+      const made = await fetchJson('/api/session/workspaces', {
+        method: 'POST',
+        body: { root: `${projectPath}/${already}`, label: 'a tree that already exists', state: 'ready' }
+      });
+      const saved = session.workspaces;
+      session.workspaces = [...saved, made.workspace];
+      const newRow = `${NEW_ROW_PREFIX}${FixtureProvider.MANIFEST.id}`;
+      /** @type {any} */
+      let conversation = null;
+      try {
+        conversation = await makeConversation(session, 'seeds-wait-for-a-tree', { initialise: false });
+        release(conversation);
+
+        selectSetupRow(conversation, made.workspace.id);
+        await waitFor(() => conversation.seededFor === made.workspace.id,
+          { description: 'the seeds to be rebuilt out of the tree that is there' });
+        assert(seededFile(conversation, '.cursorrules'),
+          'precondition: a tree that exists is read, and seeds what it has');
+
+        const seeds = countSeeds(session);
+        try {
+          selectSetupRow(conversation, newRow);
+          await waitFor(() => conversation.seededFor === newRow,
+            { description: 'the seeds to be answered for a place that is not there' });
+          assert(seeds.calls() === 0,
+            `nowhere is read for it, got ${seeds.calls()} seeding pass(es)`);
+        } finally {
+          seeds.restore();
+        }
+        assert(!seededFile(conversation, '.cursorrules'),
+          'and the tree selected before it has its files back');
+
+        setSetupValues(conversation, { valid: true, values: { dir: `${projectPath}/${built}` } });
+        const result = await createSelectedWorkspace(conversation);
+        assert(result.ok, `the place is built, got ${JSON.stringify(result)}`);
+
+        const seeded = seededFile(conversation, '.cursorrules');
+        assert(seeded, 'and now that there is a tree, it is read and seeds what it has');
+        const text = await seeded.createContextText({});
+        assert(text.includes(`# built here ${stamp}`),
+          `out of the tree just built rather than the one selected before it, got ${JSON.stringify(text)}`);
+      } finally {
+        session.workspaces = saved;
+        if (conversation?.workspaceId) {
+          await fetchJson(`/api/session/workspaces/${conversation.workspaceId}`, { method: 'DELETE', fallback: null });
+        }
+        await fetchJson(`/api/session/workspaces/${made.workspace.id}`, { method: 'DELETE', fallback: null });
+        await project.copyTree({ to: '.', delete: [already, built] });
       }
     });
 

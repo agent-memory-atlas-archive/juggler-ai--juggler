@@ -301,6 +301,47 @@ export async function runTests() {
         `while no command carries an absolute Windows path, got ${JSON.stringify(absolute)}`);
     });
 
+    await run('the setup hook says what it is doing, rather than that it is running', async () => {
+      // The hook is where the minutes go — a submodule clone, an `npm ci` — and
+      // it is the one step of a provision that can sit there for ten of them.
+      // "Running .juggler/worktree-setup" for the whole of that says only that
+      // nothing has crashed yet; the hook's own output is the sole account of
+      // what is actually happening, and it costs nothing to relay.
+      const tag = uniqueTag();
+      const repo = `wt-repo-${tag}`;
+      const location = defaultLocation(`${projectPath}${separator}${repo}`, BRANCH);
+      const tree = `${repo}-feat-tunnels`;
+      /** @type {any} */
+      let outcome = null;
+      try {
+        await buildRepo(ops, repo, 'hello-from-the-worktree');
+        await mustRun(ops, `mkdir -p ${repo}/.juggler`);
+        await mustRun(ops,
+          `printf 'echo fetching the submodules\\nsleep 0.3\\necho linked node_modules\\n' > ${repo}/.juggler/worktree-setup`);
+
+        /** @type {{step: string, detail: string}[]} */
+        const said = [];
+        outcome = await provisionWorkspace({
+          session,
+          providerId: PROVIDER_ID,
+          values: { repo, branch: BRANCH, base: 'main', location },
+          onProgress: (/** @type {string} */ step, /** @type {string} */ detail) => said.push({ step, detail })
+        });
+
+        const heard = said.filter(line => /fetching the submodules|linked node_modules/.test(line.detail || ''));
+        assert(heard.length >= 2,
+          `what the hook printed is what the panel is told, got ${JSON.stringify(said)}`);
+        const steps = new Set(heard.map(line => line.step));
+        assert(steps.size === 1,
+          `all of it under one step, so a panel showing it updates a line rather than growing a list, got ${JSON.stringify([...steps])}`);
+        assert(!/worktree-setup/.test([...steps][0] ?? ''),
+          `and the step is what is happening rather than the file it is happening in, got ${JSON.stringify([...steps])}`);
+      } finally {
+        if (outcome) await outcome.undo().catch(() => {});
+        await ops.shell({ command: `rm -rf ${tree} ${repo}` }).catch(() => {});
+      }
+    });
+
     await run('a cancel during the setup hook leaves the repository as it was', async () => {
       // The cancel a user actually reaches: the tree is made in a second and the
       // hook after it takes a quarter of an hour, so the middle of the hook is

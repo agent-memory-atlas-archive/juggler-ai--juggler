@@ -18,7 +18,7 @@ import {
   setupSendBlock,
   flagSetupAttention,
   isSetupProvisioning,
-  parkSetupSend
+  seedsNameATree
 } from '../services/conversation-setup.js';
 import workerManager from '../services/worker-manager.js';
 import toolExecutor from '../services/tool-executor.js';
@@ -1178,7 +1178,12 @@ class Conversation {
    */
   get workingWorkspaceId() {
     if (this.initialised) return this.workspaceId;
-    return this.seededFor ?? this.workspaceId;
+    const seededFor = this.seededFor ?? this.workspaceId;
+    // Seeded for nowhere, because the row on offer describes a place that has
+    // not been made. Nothing of ours is resolved against it — there are no seeds
+    // for a tree that is not there — but a file the user pinned themselves is
+    // still theirs to read, and the project is where it has always come from.
+    return seedsNameATree(seededFor) ? seededFor : '';
   }
 
   /**
@@ -1218,6 +1223,15 @@ class Conversation {
       this.initialised = true;
       return;
     }
+    // A workspace still being built is the one answer this hop must not give.
+    // There is nothing to bind yet, so binding here means binding the project —
+    // and being initialised is exactly what makes the commit at the end of the
+    // provision a no-op, so the tree the user is waiting for would never be
+    // bound at all and the work would run in the wrong one. The provision
+    // commits this conversation itself when it lands; what brought us here
+    // parks until it does.
+    if (isSetupProvisioning(this)) return;
+
     // A row picked a moment ago may still be rebuilding the seeds it named. Let
     // that finish first, so that binding and the items in the document are
     // answers to the same question.
@@ -2002,27 +2016,6 @@ class Conversation {
       /** @type {any} */ (composer).clearInput();
     }
 
-    // A send made while the workspace is still being built PARKS rather than
-    // being refused: the composer stays live the whole time a tree is being
-    // made, which is the point of provisioning in the background, and a message
-    // typed during it should go the moment there is somewhere to run it. It
-    // waits in the same queue a message typed mid-turn waits in — visible,
-    // deletable, and labelled with the reason — and the setup state lets it go
-    // when the workspace is ready.
-    if (isSetupProvisioning(this)) {
-      /** @type {any} */
-      const parked = { type: 'user', content: userMessage, attachments: options.attachments || [] };
-      messageThread?.enqueuePendingItem(parked);
-      parkSetupSend(this, {
-        itemId: parked.itemId,
-        // The box has already been emptied on this send's behalf, so the one
-        // that eventually runs must not claim it a second time.
-        send: () => this.sendMessage(userMessage, threadItemId, messageThread,
-          { ...options, consumeComposer: false })
-      });
-      return null;
-    }
-
     // Cancel any pending approval dialogs for this conversation — but NOT
     // when queueing: a message typed while a tool awaits approval must not
     // dismiss that approval; the queued message waits its turn.
@@ -2750,9 +2743,10 @@ class Conversation {
    * that quietly resolved to the project would edit the wrong tree and look like
    * working.
    *
-   * A workspace still being BUILT is not this: that send parks and goes the
-   * moment there is somewhere to run it, which is the whole point of provisioning
-   * in the background.
+   * A workspace still being BUILT is not this. It is not a binding that cannot
+   * be honoured, it is one that does not exist yet, and it is already answered
+   * where it is caused: the setup panel shows it being built and the composer is
+   * closed for as long as that takes, so nothing reaches here to refuse.
    * @returns {string} The reason, ready to read, or '' when there is nothing wrong.
    * @private
    */

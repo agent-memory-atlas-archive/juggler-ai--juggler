@@ -25,7 +25,8 @@ import {
   provisionWorkspace,
   workspaceStatus,
   workspaceFinishOptions,
-  provisionLeftBehind
+  provisionLeftBehind,
+  recordProgress
 } from './workspace-provisioning.js';
 import { registerWorkspace, isWorkspaceUsable } from './workspaces.js';
 import { createBoundOps } from '../../sdk/ops.js';
@@ -81,7 +82,6 @@ export const ADOPT_ROW_PREFIX = 'adopt:';
  *   undo: (() => Promise<string>)|null,
  *   workspaceId: string,
  *   seededItemIds: string[],
- *   parked: {itemId: string, send: () => Promise<any>}|null,
  *   seedGeneration: number,
  *   seedTimer: any,
  *   seeding: Promise<void>|null
@@ -158,7 +158,6 @@ function recordFor(conversation) {
       undo: null,
       workspaceId: '',
       seededItemIds: [],
-      parked: null,
       seedGeneration: 0,
       seedTimer: null,
       seeding: null
@@ -475,19 +474,42 @@ export function selectSetupRow(conversation, rowId) {
 /**
  * Which tree a row's seeds should be read out of.
  *
- * A row naming a workspace that exists and can be worked in reads that one.
- * Everything else reads the project, and for the other three kinds that is not a
- * fallback but the answer: the project is what a "New…" row would be built from
- * (the panel opens every provider form against it), what an adoptable artifact
- * was made from, and what the project row is.
+ * A row naming a workspace that exists and can be worked in reads that one. An
+ * adoptable artifact and the project row read the project, and for those two
+ * that is not a fallback but the answer: it is what the artifact was made from,
+ * and what the project row is.
+ *
+ * A "New…" row is the one kind with no tree to read. Reading the project for it
+ * would be worse than reading nothing: the files found are the project's, under
+ * paths relative to a tree that is about to be somewhere else, so the moment the
+ * conversation binds they are pointing into the new tree at whatever happens to
+ * be at that path — which is how a conversation ends up showing a file it never
+ * had. Its own row id is the answer instead, which is no tree, and never equals
+ * the binding that eventually arrives.
  * @param {any} conversation - The conversation being set up.
  * @param {string} rowId - The selected row.
- * @returns {string} A workspace id, or '' for the project.
+ * @returns {string} A workspace id, '' for the project, or the row itself for a place not yet made.
  */
 function seedRootFor(conversation, rowId) {
-  if (!rowId || rowId.startsWith(NEW_ROW_PREFIX) || rowId.startsWith(ADOPT_ROW_PREFIX)) return PROJECT_ROW_ID;
+  if (rowId?.startsWith(NEW_ROW_PREFIX)) return rowId;
+  if (!rowId || rowId.startsWith(ADOPT_ROW_PREFIX)) return PROJECT_ROW_ID;
   const workspace = conversation?.session?.getWorkspace?.(rowId);
   return workspace?.state === 'ready' ? rowId : PROJECT_ROW_ID;
+}
+
+/**
+ * Whether what a conversation was seeded for names a tree at all.
+ *
+ * Three things a conversation can be seeded for, and a reader resolving paths
+ * has to tell them apart: a workspace, the project (''), and nowhere — which is
+ * what a row offering to build somewhere answers, because the place it describes
+ * does not exist. Asked rather than pattern-matched, so that what a row id looks
+ * like stays the business of this module.
+ * @param {string|null|undefined} seededFor - What the conversation recorded.
+ * @returns {boolean} True when it names a tree that can be read.
+ */
+export function seedsNameATree(seededFor) {
+  return !String(seededFor ?? '').startsWith(NEW_ROW_PREFIX);
 }
 
 /**
@@ -561,8 +583,13 @@ async function rebuildSeeds(conversation, record, generation) {
   }
   if (record.seedGeneration !== generation) return;
 
-  await session.seedConversationAutoItems(conversation, null, { workspaceId: root });
-  if (record.seedGeneration !== generation) return;
+  // A place that is not there yet is answered by taking the last tree's seeds
+  // away and reading nothing: there is no tree to read, and the set will be
+  // built once — out of the tree itself — when the conversation binds to it.
+  if (!root.startsWith(NEW_ROW_PREFIX)) {
+    await session.seedConversationAutoItems(conversation, null, { workspaceId: root });
+    if (record.seedGeneration !== generation) return;
+  }
   conversation.seededFor = root;
 
   // Ours rather than the user's, exactly as at creation — but never at the cost
@@ -668,17 +695,23 @@ export function pendingSetupPatch(conversation) {
  * Why this conversation cannot be sent to yet, if it cannot.
  *
  * The sharpest edge in the feature: the user typed a message, pressed Enter, and
- * we refused. So it exists for exactly one situation — a "New…" row is selected
- * and the place it describes has not been made — and it reads as *finish this
- * first* rather than as an error. Everything else sends: a conversation with
- * nothing picked binds the project, exactly as it always did.
+ * we refused. So it covers only the two states in which there is nowhere for the
+ * work to run — a row describing a place that has not been made, and one being
+ * made now — and it reads as *not yet* rather than as an error. Everything else
+ * sends: a conversation with nothing picked binds the project, exactly as it
+ * always did.
  * @param {any} conversation - The conversation being sent to.
  * @returns {{reason: string, fieldId: string}|null} What to say, and what to point at.
  */
 export function setupSendBlock(conversation) {
   const record = records.get(conversation?.id ?? '');
   if (!record || conversation?.initialised) return null;
-  // Provisioning parks the send instead, and a settled one has its workspace.
+  // Being built: the message stays in the box, where it can still be edited,
+  // rather than queueing against a tree that may yet fail to appear.
+  if (record.phase === 'provisioning') {
+    return { reason: 'Still building the workspace.', fieldId: '' };
+  }
+  // A settled one has its workspace.
   if (record.phase !== 'choosing') return null;
   if (!selectedProviderId(record)) return null;
   return record.valid
@@ -704,37 +737,6 @@ export function flagSetupAttention(conversation) {
  */
 export function isSetupProvisioning(conversation) {
   return records.get(conversation?.id ?? '')?.phase === 'provisioning';
-}
-
-/**
- * Hold a send until the workspace it needs exists.
- *
- * The message is already in the conversation's queue by the time this is called,
- * so what is held here is only how to let it go again. One at a time: a second
- * send while one is parked replaces it, because the queue it is rendered from
- * shows them both and sending the older one twice is worse than either.
- * @param {any} conversation - The conversation whose send is waiting.
- * @param {{itemId: string, send: () => Promise<any>}} parked - The queued item, and how to send it.
- */
-export function parkSetupSend(conversation, parked) {
-  recordFor(conversation).parked = parked;
-  notify(conversation.id);
-}
-
-/**
- * Let a parked send go, now that there is somewhere for it to run.
- * @param {any} conversation - The conversation that has just been bound.
- * @param {SetupRecord} record - Its record.
- * @returns {Promise<void>} When the message has been sent.
- */
-async function releaseParked(conversation, record) {
-  const parked = record.parked;
-  if (!parked) return;
-  record.parked = null;
-  // Out of the queue first: the send about to run writes the message properly,
-  // and two copies of it is the one outcome worse than a delay.
-  conversation.rootMessageThread?.removeItemById(parked.itemId);
-  await parked.send();
 }
 
 /**
@@ -777,9 +779,11 @@ async function commit(conversation, record, workspaceId, seedItems = []) {
  * provider has finished — unwinds the lot. What is added here is the part the
  * panel shows: the progress lines, and the undo that outlives success.
  *
- * Binding happens on success even though nothing has been sent yet. The
- * conversation is then a bound, initialised, empty conversation, which is what
- * lets the user keep typing into the composer while the tree is being built.
+ * Binding happens on success even though nothing has been sent yet: the
+ * conversation is then a bound, initialised, empty conversation, and the moment
+ * it is, it is open for business. Until then it is not — there is nowhere for
+ * the work to run, so a send is turned away rather than queued against a tree
+ * that may yet fail to appear.
  * @param {any} conversation - The conversation being set up.
  * @returns {Promise<{ok: boolean, error?: string}>} Whether it now has a workspace.
  */
@@ -804,7 +808,7 @@ export async function createSelectedWorkspace(conversation) {
       values: record.values,
       signal: controller.signal,
       onProgress: (step, detail) => {
-        record.progress.push({ step, detail });
+        recordProgress(record.progress, step, detail);
         notify(conversation.id);
       }
     });
@@ -816,10 +820,6 @@ export async function createSelectedWorkspace(conversation) {
     record.undo = outcome.undo;
     record.undoable = true;
     notify(conversation.id);
-
-    // A message sent while this was building has been sitting in the queue
-    // waiting for somewhere to run. This is that moment.
-    await releaseParked(conversation, record);
     return { ok: true };
   } catch (error) {
     // Cancelled and failed are the same unwinding and different things to say.

@@ -361,6 +361,32 @@ export function provisionLeftBehind(error) {
 }
 
 /**
+ * Write what a provider has just said into the list a view is reading.
+ *
+ * One line per step, and a step that goes on talking keeps the line it already
+ * has: a provision's slow step is slow enough to have something new to say every
+ * second — a percentage, a file, a submodule — and appending each would bury the
+ * step itself under its own commentary. So the latest thing said about a step
+ * replaces the last, and only a step that has actually changed starts a line.
+ *
+ * Same name, but later: that is a second visit, not the first continuing, and it
+ * gets a line of its own. The list is what happened, in order.
+ * @param {{step: string, detail?: string}[]} lines - The progress so far; appended to in place.
+ * @param {string} step - What is being waited on.
+ * @param {string} [detail] - The latest thing known about it.
+ * @returns {{step: string, detail?: string}[]} The same list, for chaining.
+ */
+export function recordProgress(lines, step, detail = '') {
+  const last = lines[lines.length - 1];
+  if (last && last.step === step) {
+    last.detail = detail;
+    return lines;
+  }
+  lines.push({ step, detail });
+  return lines;
+}
+
+/**
  * Build a workspace with a provider, and leave nothing behind if it does not
  * finish.
  *
@@ -476,6 +502,17 @@ export async function provisionWorkspace(request) {
       state: 'ready',
       ...(descriptor.meta ? { meta: descriptor.meta } : {})
     });
+
+    // Onto this window's table by hand, before the caller is told it can bind
+    // to this. The row is the server's the moment it is registered, but a client
+    // learns of it through the `workspaces-changed` broadcast — and everything a
+    // conversation bound here goes on to do is refused for a workspace this
+    // session cannot resolve, so the first act in a tree we just built would be
+    // turned away for it being too new. The broadcast will bring it again,
+    // harmlessly.
+    if (session && !session.workspaces?.some?.((/** @type {any} */ known) => known.id === workspace.id)) {
+      session.workspaces = [...(session.workspaces ?? []), workspace];
+    }
 
     return {
       workspace,

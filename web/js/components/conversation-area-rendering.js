@@ -147,17 +147,8 @@ export function ensurePendingMessages(area, messageList) {
     zone.className = PENDING_ZONE_CLASS;
     const label = document.createElement('div');
     label.className = 'pending-messages-label';
+    label.textContent = 'Queued';
     zone.appendChild(label);
-  }
-  // Two reasons a message waits, and they are different things to be told: a
-  // turn is running, or the place this conversation is going to work in is
-  // still being built. Written on every pass rather than only at creation,
-  // because the second becomes the first the moment the workspace is ready.
-  const label = /** @type {HTMLElement|null} */ (zone.querySelector('.pending-messages-label'));
-  if (label) {
-    label.textContent = isSetupProvisioning(area?._conversation)
-      ? 'Waiting for the workspace'
-      : 'Queued';
   }
   // Keep the zone pinned at the very end (after the footer).
   if (messageList.lastElementChild !== zone) {
@@ -277,6 +268,16 @@ export function ensureConversationChrome(area, messageList) {
   const isRootColumn = !area?._threadYMap && !area?._isGroupColumn;
   const conversation = isRootColumn ? area?._conversation : null;
   const panel = /** @type {any} */ (messageList.querySelector('conversation-setup-panel'));
+
+  // A conversation whose workspace is being built has nowhere to send to yet —
+  // but the wait is exactly when the first message gets written, so the box
+  // stays live and only the send is held. Released the moment the workspace
+  // exists, which is a setup notification like any other and comes straight back
+  // through here.
+  if (conversation) {
+    const composer = /** @type {any} */ (area?.querySelector?.('composer-box'));
+    composer?.setSendBlocked?.(isSetupProvisioning(conversation), 'Still building the workspace');
+  }
 
   // A conversation nobody has asked yet, in an app that could offer it
   // somewhere else to work. With no provider installed there is nothing to ask —
@@ -465,7 +466,8 @@ async function undoFromBanner(conversation, detail) {
  * and there is no label left to name it by, so the line says only what is known.
  *
  * The fourth is silence. A workspace still being built is a conversation
- * waiting, not one stranded, and the parked send already covers it.
+ * waiting, not one stranded, and the setup panel is already showing it being
+ * built.
  * @param {any} workspace - The row it is bound to, or null when the table has none.
  * @returns {string} The line, or '' for a binding that is nobody's problem yet.
  */

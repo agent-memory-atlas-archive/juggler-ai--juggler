@@ -299,14 +299,28 @@ export async function runTests() {
       }
     });
 
-    await run('a send made while the workspace is building waits in the queue and then goes', async () => {
-      const name = `parked-send-${Math.random().toString(36).slice(2, 8)}`;
+    await run('a send made while the workspace is being built is refused, and goes once it is there', async () => {
+      const name = `blocked-send-${Math.random().toString(36).slice(2, 8)}`;
       const dir = `${projectPath}/${name}`;
       const projectOps = createBoundOps(() => ({}));
       const conversation = await makeConversation(session, 'sends-while-building', { initialise: false });
       release(conversation);
       const mt = conversation.rootMessageThread;
-      const { area, list } = columnFor(conversation);
+      // What the column's composer was last told. The real one is a whole
+      // component; what is being pinned here is that the chrome holds the SEND
+      // while there is nowhere to send to — never the box itself, which stays
+      // live for the message being written during the wait — and lets it go
+      // again when there is.
+      /** @type {{on: boolean, reason: string}[]} */
+      const told = [];
+      const composerStub = {
+        setSendBlocked: (/** @type {boolean} */ on, /** @type {string} */ reason) => told.push({ on, reason }),
+        setBlocked: () => { throw new Error('the box itself must stay live: only the send waits'); },
+        setDisabled: () => { throw new Error('the box itself must stay live: only the send waits'); }
+      };
+      const { area, list } = columnFor(conversation, {
+        querySelector: (/** @type {string} */ selector) => (selector === 'composer-box' ? composerStub : null)
+      });
       const savedTable = session.workspaces;
       try {
         selectSetupRow(conversation, `${NEW_ROW_PREFIX}${FixtureProvider.MANIFEST.id}`);
@@ -315,29 +329,49 @@ export async function runTests() {
 
         await waitFor(() => getSetupState(conversation).phase === 'provisioning',
           { description: 'the provision to start' });
-        const parked = await conversation.sendMessage('what shall we do first', null, mt, {
+        const refused = await conversation.sendMessage('what shall we do first', null, mt, {
           consumeComposer: false
         });
-        assert(parked === null,
-          `the send is accepted rather than refused — the composer is live the whole time, got ${JSON.stringify(parked)}`);
-        await waitFor(() => mt.pendingItems.length === 1,
-          { description: 'the message to reach the queue' });
-
-        ensurePendingMessages(area, list);
-        const zone = list.querySelector('.pending-messages');
-        assert(zone?.querySelector('.pending-messages-label')?.textContent === 'Waiting for the workspace',
-          `and it waits under the reason it is waiting for, got ${JSON.stringify(zone?.textContent)}`);
-
-        const result = await creating;
-        assert(result.ok, `the provision finished, got ${JSON.stringify(result)}`);
-        await waitFor(() => mt.items.some((/** @type {any} */ item) => item?.get?.('type') === 'user'),
-          { description: 'the parked message to be sent once there was somewhere to run it' });
+        assert(refused === 'workspace not ready',
+          `a conversation with nowhere to work is not sent to, got ${JSON.stringify(refused)}`);
         assert(mt.pendingItems.length === 0,
-          `and it leaves the queue rather than being sent twice, got ${mt.pendingItems.length} still waiting`);
+          `and the message is not queued behind the tree either, got ${mt.pendingItems.length} waiting`);
+        assert(!mt.items.some((/** @type {any} */ item) => item?.get?.('type') === 'user'),
+          'nor is it in the conversation — it is still in the box, which is where it can be edited');
 
         ensurePendingMessages(area, list);
         assert(!list.querySelector('.pending-messages'),
-          'with the zone gone, since nothing is waiting any more');
+          'with no queue zone, because nothing is waiting');
+
+        ensureConversationChrome(area, list);
+        const held = told[told.length - 1];
+        assert(held?.on === true && held.reason,
+          `the send is held while it is being built, and says why, got ${JSON.stringify(held)}`);
+        assert(list.querySelector('.setup-progress juggler-spinner'),
+          'and the panel shows the building happening rather than a still list of lines');
+        assert(list.querySelector('.setup-section-title')?.textContent === 'Building the workspace',
+          `under what is now happening rather than the question already answered, got ${JSON.stringify(list.querySelector('.setup-section-title')?.textContent)}`);
+
+        const result = await creating;
+        assert(result.ok, `the provision finished, got ${JSON.stringify(result)}`);
+        // The tree was built for THIS conversation, so this conversation has to
+        // end up in it. A send taken mid-provision that bound on its way past
+        // would have bound the project, and the commit that follows finds a
+        // conversation already initialised and leaves it there — the work then
+        // runs in the wrong tree, under a panel naming the right one.
+        const built = getSetupState(conversation).workspaceId;
+        assert(built && conversation.workspaceId === built,
+          `and the conversation works in the tree it just built, got ${JSON.stringify(conversation.workspaceId)}`);
+
+        ensureConversationChrome(area, list);
+        const released = told[told.length - 1];
+        assert(released?.on === false,
+          `and the send is let go the moment there is somewhere for it, got ${JSON.stringify(released)}`);
+
+        const sent = await conversation.sendMessage('off we go', null, mt, { consumeComposer: false });
+        assert(sent === null, `now there is somewhere to run it, the send goes, got ${JSON.stringify(sent)}`);
+        await waitFor(() => mt.items.some((/** @type {any} */ item) => item?.get?.('type') === 'user'),
+          { description: 'the message to reach the conversation' });
       } finally {
         session.workspaces = savedTable;
         if (conversation.workspaceId) await unregisterWorkspace(conversation.workspaceId).catch(() => {});
@@ -507,10 +541,11 @@ export async function runTests() {
         release(early);
         assert(bannerFor(early) === null,
           'a workspace that is merely still being built says nothing at all');
-        // Nor is it refused: that send parks and goes the moment there is
-        // somewhere to run it, which is the point of building in the background.
+        // Nor is it this refusal's to make: a conversation whose workspace is
+        // being built is stopped at the composer, which says what it is waiting
+        // for, rather than here, which would say it is lost.
         assert(early._unusableWorkspace() === '',
-          `and a send into one is not refused either, got ${JSON.stringify(early._unusableWorkspace())}`);
+          `and a binding still being built is not called unusable, got ${JSON.stringify(early._unusableWorkspace())}`);
       } finally {
         session.workspaces = saved;
       }
@@ -546,8 +581,9 @@ export async function runTests() {
 
         // A workspace being built has no root either, and is the one unusable
         // binding that must stay silent: that conversation is waiting, not
-        // stranded, and the parked send already covers it. A half-built tree has
-        // no root on disk yet, so it arrives here unavailable as well.
+        // stranded, and the setup panel is already showing it being built. A
+        // half-built tree has no root on disk yet, so it arrives here
+        // unavailable as well.
         session.workspaces = [workspaceRow('ws_half', '/tmp/half-made', {
           label: 'half-made', state: 'provisioning', available: false
         })];

@@ -309,8 +309,9 @@ export function handlePlaceRowKey(event, host) {
 }
 
 /**
- * What is happening, while it happens: one line per step, and the Cancel that is
- * available for the whole of it.
+ * What is happening, while it happens: the steps so far, and the Cancel that is
+ * available for the whole of it. A block of its own, in the shape the rows it
+ * replaced had, because it stands where they stood and for as long as they did.
  *
  * The lines arrive before their step rather than after it, so this is a list of
  * what is being waited on rather than of what is finished.
@@ -322,6 +323,24 @@ export function buildProvisionProgress(lines, onCancel) {
   const view = document.createElement('div');
   view.className = 'setup-progress';
 
+  const running = document.createElement('div');
+  running.className = 'setup-progress-running';
+  view.appendChild(running);
+
+  // Beside the steps rather than over them, at the size the spinner is
+  // everywhere else. What it reports is the whole block, not any one step: a
+  // build is the one thing in a conversation that takes minutes and shows no
+  // output while it does, so the part that says "still going" is the part worth
+  // seeing from across the room.
+  const spinner = document.createElement('juggler-spinner');
+  spinner.className = 'setup-progress-spinner';
+  running.appendChild(spinner);
+
+  const steps = document.createElement('div');
+  steps.className = 'setup-progress-steps';
+  running.appendChild(steps);
+
+  let said = '';
   for (const line of lines) {
     const step = document.createElement('div');
     step.className = 'setup-progress-step';
@@ -329,13 +348,18 @@ export function buildProvisionProgress(lines, onCancel) {
     what.className = 'setup-progress-what';
     what.textContent = line.step;
     step.appendChild(what);
-    if (line.detail) {
+    // Where each step happens, said when it changes and not again. A provider
+    // that names the same place on every line is describing one piece of work,
+    // and a column repeating one path down the card is a wall of text saying
+    // nothing the line above it did not.
+    if (line.detail && line.detail !== said) {
       const detail = document.createElement('span');
       detail.className = 'setup-progress-detail';
       detail.textContent = line.detail;
       step.appendChild(detail);
     }
-    view.appendChild(step);
+    said = line.detail || said;
+    steps.appendChild(step);
   }
 
   const actions = document.createElement('div');

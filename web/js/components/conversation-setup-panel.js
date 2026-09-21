@@ -56,7 +56,7 @@ export const SETUP_PANEL_TAG = 'CONVERSATION-SETUP-PANEL';
  * @typedef {object} SetupSection
  * @property {string} id - Which field of the commit patch it answers for
  * @property {number} order - Where it sits; lower is higher up
- * @property {string} title - What the section is called
+ * @property {(panel: ConversationSetupPanel) => string} title - What the section is called, for the state it is in
  * @property {(panel: ConversationSetupPanel, body: HTMLElement) => void} render - Fill the body
  */
 
@@ -70,7 +70,13 @@ const workspaceSection = {
   // A question, because it is one, and because a heading reading WORKSPACE over
   // a list of paths is a label on something already decided. Answering is
   // optional — the first row is already chosen — so it asks plainly and once.
-  title: 'Choose a workspace for this conversation',
+  //
+  // Once the answer is being acted on it stops being a question: a heading still
+  // asking it, over a list of steps that are the consequence of having answered,
+  // reads as though nothing was heard.
+  title: (panel) => (getSetupState(panel.conversation).phase === 'provisioning'
+    ? 'Building the workspace'
+    : 'Choose a workspace for this conversation'),
   render(panel, body) {
     const conversation = panel.conversation;
     const state = getSetupState(conversation);
@@ -252,7 +258,18 @@ class ConversationSetupPanel extends HTMLElement {
     if (!conversation) return;
     const state = getSetupState(conversation);
     const rows = setupRows(conversation.session);
-    const shape = [state.phase, state.selection, state.error, state.progress.length].join('\u0000');
+    // The last line as well as how many there are: a slow step reports itself
+    // by replacing its own detail rather than adding a line, so a count alone
+    // would hold the panel still for the whole of the only step long enough to
+    // need reporting.
+    const latest = state.progress[state.progress.length - 1];
+    const shape = [
+      state.phase,
+      state.selection,
+      state.error,
+      state.progress.length,
+      latest?.detail ?? ''
+    ].join('\u0000');
     const listing = rows
       .map(row => `${row.id}\u0001${row.label}\u0001${cachedSetupStatus(row.id)?.detail ?? row.detail ?? ''}`)
       .join('\u0002');
@@ -284,7 +301,7 @@ class ConversationSetupPanel extends HTMLElement {
 
       const title = document.createElement('div');
       title.className = 'setup-section-title';
-      title.textContent = section.title;
+      title.textContent = section.title(this);
       block.appendChild(title);
 
       const body = document.createElement('div');
