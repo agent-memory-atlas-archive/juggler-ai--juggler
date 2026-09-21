@@ -2,12 +2,13 @@
 /**
  * lint-css-arch — checks the CSS architecture contract in web/css/README.md.
  *
- * Four checks, all driven by web/css/manifest.json:
+ * Five checks, all driven by web/css/manifest.json:
  *
  *   ownership     a selector lives in the file that owns its root
  *   dead-selector a class in the CSS is referenced by no JS, HTML or extension
  *   token-parity  every var() resolves; theme colour tokens exist in both themes
  *   link-parity   index.html and headless-test.html link the manifest's sheets
+ *   asset-url     every relative url() resolves to a file that exists
  *
  * Known violations live in web/css/.lint-css-allowlist, one per line, as
  * `<check> <item>` with an optional `# note`. The allowlist is the outstanding
@@ -379,6 +380,32 @@ function checkLinkParity(manifest) {
 	return failures;
 }
 
+/**
+ * asset-url: every relative url() resolves to a file that exists.
+ *
+ * A browser resolves a url() against the stylesheet's own URL, not the
+ * document's, so a sheet that moves between directories takes its asset
+ * references with it and every relative one silently 404s.
+ */
+function checkAssetUrls(sheets, sources) {
+	const failures = [];
+	for (const sheet of sheets) {
+		const clean = stripComments(sources.get(sheet.file));
+		for (const match of clean.matchAll(/url\(\s*(["']?)([^"')]+)\1\s*\)/g)) {
+			const ref = match[2].trim();
+			if (/^(data:|https?:|\/|#)/.test(ref)) continue;
+			const target = path.resolve(path.dirname(sheet.abs), ref.split(/[?#]/)[0]);
+			if (fs.existsSync(target)) continue;
+			const resolved = path.relative(repoRoot, target).split(path.sep).join('/');
+			failures.push({
+				item: `${sheet.file}:${ref}`,
+				message: `${sheet.file} references ${ref}, which resolves to ${resolved} and does not exist`,
+			});
+		}
+	}
+	return dedupe(failures);
+}
+
 function dedupe(failures) {
 	const seen = new Set();
 	return failures.filter((f) => (seen.has(f.item) ? false : seen.add(f.item)));
@@ -407,6 +434,7 @@ function main() {
 		'dead-selector': checkDeadSelectors(manifest, sheets, sources),
 		'token-parity': checkTokenParity(manifest, sheets, sources),
 		'link-parity': checkLinkParity(manifest),
+		'asset-url': checkAssetUrls(sheets, sources),
 	};
 
 	// `--emit-allowlist` prints every current failure in allowlist format,
