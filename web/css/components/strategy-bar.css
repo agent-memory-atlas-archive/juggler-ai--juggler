@@ -4,57 +4,6 @@
  *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
  */
 
-no-project-overlay .no-project-onboarding {
-    max-width: 34rem;
-    text-align: center;
-    color: var(--text-secondary);
-    font-family: var(--font-ui);
-    user-select: none;
-}
-
-no-project-overlay .no-project-logo {
-    height: 3rem;
-    aspect-ratio: 79.433 / 31.038;
-    margin: 0 auto 1.5rem;
-    background-color: var(--text-primary);
-    mask-image: var(--logo-with-name-url);
-    mask-size: contain;
-    mask-repeat: no-repeat;
-    mask-position: center;
-    opacity: 0.85;
-}
-
-no-project-overlay h1 {
-    margin: 0 0 1rem;
-    color: var(--text-primary);
-    font-size: 1.5rem;
-    font-weight: 600;
-}
-
-no-project-overlay p {
-    margin: 0 auto 0.875rem;
-    font-size: 0.9375rem;
-    line-height: 1.6;
-}
-
-no-project-overlay p:last-child {
-    margin-bottom: 0;
-}
-
-no-project-overlay .no-project-inline-link {
-    margin: 0;
-    padding: 0;
-    border: 0;
-    background: none;
-    color: var(--accent-blue);
-    font: inherit;
-    cursor: pointer;
-}
-
-no-project-overlay .no-project-inline-link:hover {
-    text-decoration: underline;
-}
-
 /* Header-bar buttons use the shared .u-btn-ghost house style (utilities.css);
    their size/padding/icon come from the co-classes (u-btn-circular-control,
    u-btn-icon-header, u-btn-pill-control, ppd-chip, ppd-new-window-button). */

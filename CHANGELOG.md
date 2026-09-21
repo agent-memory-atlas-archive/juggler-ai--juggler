@@ -15,6 +15,7 @@ of changes; this project follows semantic versioning.
 - An OpenAI-compatible endpoint that publishes model capabilities is no longer assumed to be 128k
 - Attaching a file partway through a conversation no longer rebuilds the whole prompt cache
 - A conversation no longer compacts repeatedly, or summarizes history it had room for, after one mismeasured turn
+- Binning your last conversation now leaves a panel saying how to start another, not a blank window
 
 ## [0.6.4] - 2026-09-14
 

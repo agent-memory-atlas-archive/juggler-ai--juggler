@@ -287,6 +287,16 @@ conversation-bar .conversation-add {
     width: 100%;
 }
 
+/* The same button carrying its name, while an empty list leaves nothing else
+   to explain it: label-sized rather than glyph-sized, and a visible edge so it
+   reads as the one thing to press. */
+conversation-bar .conversation-add-labelled {
+    border-color: var(--border-color);
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
 conversation-bar .conversation-add:hover {
     background: var(--bg-raised);
     border-color: var(--border-color);

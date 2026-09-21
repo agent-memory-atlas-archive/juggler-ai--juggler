@@ -119,26 +119,21 @@
     color: var(--accent-blue, #58a6ff);
 }
 
-/* No-project overlay: full-area onboarding copy. */
-no-project-overlay {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 3rem;
-}
-
-no-project-overlay[hidden] {
-    display: none;
-}
-
 /* With no project loaded there are no conversations, so the sidebar and the
    tab column have nothing to show and the overlay gets the whole main area.
    <no-project-overlay> toggles `no-project` on <body>; the layout consequence
    is stated here once rather than as inline styles written onto two siblings
-   from the outside. */
+   from the outside. (The overlays themselves are styled in
+   components/onboarding.css.) */
 body.no-project conversation-bar,
 body.no-project conversation-tabs-container {
+    display: none;
+}
+
+/* Same mechanism, one state along: a project is loaded and the sidebar must
+   stay — it holds the "+" that ends this state — but the tab column has no
+   tabs to hold, so <no-conversations-overlay> takes the room it would claim. */
+body.no-conversations conversation-tabs-container {
     display: none;
 }
 

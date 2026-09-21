@@ -81,23 +81,23 @@ class NoProjectOverlay extends HTMLElement {
   /** @private */
   _render() {
     this.innerHTML = `
-      <section class="no-project-onboarding" aria-label="Welcome to Juggler">
-        <div class="no-project-logo" role="img" aria-label="Juggler"></div>
+      <section class="onboarding-panel" aria-label="Welcome to Juggler">
+        <div class="onboarding-logo" role="img" aria-label="Juggler"></div>
         <h1>Welcome to Juggler</h1>
         <p>
           Juggler is an AI coding agent designed around transparency, control, and fast iteration.
         </p>
         <p>
-          Click <button type="button" class="no-project-inline-link no-project-project-link">'Set project folder'</button>
+          Click <button type="button" class="onboarding-link no-project-project-link">'Set project folder'</button>
           above to open the codebase you want to work on.
         </p>
         <p class="no-project-settings-note">
           Set up your LLM provider keys in the
-          <button type="button" class="no-project-inline-link no-project-settings-link">settings</button>.
+          <button type="button" class="onboarding-link no-project-settings-link">settings</button>.
         </p>
         <p class="no-project-settings-note">
           New here? Browse the
-          <button type="button" class="no-project-inline-link no-project-shortcuts-link">keyboard shortcuts</button>.
+          <button type="button" class="onboarding-link no-project-shortcuts-link">keyboard shortcuts</button>.
         </p>
         <p class="no-project-settings-note">
           Once you've opened a project, you can ask Juggler about itself -

@@ -1,0 +1,81 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+/* The full-area placeholders that fill the main area when there is nothing to
+   show in it: <no-project-overlay> (no project loaded) and
+   <no-conversations-overlay> (a project, but every conversation binned). They
+   share the .onboarding-* panel because they are one idiom — logo, centred
+   copy, a pointer at the control that ends the state. */
+
+no-project-overlay,
+no-conversations-overlay {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem;
+}
+
+no-project-overlay[hidden],
+no-conversations-overlay[hidden] {
+    display: none;
+}
+
+no-project-overlay .onboarding-panel,
+no-conversations-overlay .onboarding-panel {
+    max-width: 34rem;
+    text-align: center;
+    color: var(--text-secondary);
+    font-family: var(--font-ui);
+    user-select: none;
+}
+
+no-project-overlay .onboarding-logo,
+no-conversations-overlay .onboarding-logo {
+    height: 3rem;
+    aspect-ratio: 79.433 / 31.038;
+    margin: 0 auto 1.5rem;
+    background-color: var(--text-primary);
+    mask-image: var(--logo-with-name-url);
+    mask-size: contain;
+    mask-repeat: no-repeat;
+    mask-position: center;
+    opacity: 0.85;
+}
+
+no-project-overlay h1,
+no-conversations-overlay h1 {
+    margin: 0 0 1rem;
+    color: var(--text-primary);
+    font-size: 1.5rem;
+    font-weight: 600;
+}
+
+no-project-overlay p,
+no-conversations-overlay p {
+    margin: 0 auto 0.875rem;
+    font-size: 0.9375rem;
+    line-height: 1.6;
+}
+
+no-project-overlay p:last-child,
+no-conversations-overlay p:last-child {
+    margin-bottom: 0;
+}
+
+no-project-overlay .onboarding-link {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--accent-blue);
+    font: inherit;
+    cursor: pointer;
+}
+
+no-project-overlay .onboarding-link:hover {
+    text-decoration: underline;
+}

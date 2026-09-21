@@ -269,6 +269,5 @@ ownership components/properties-panel.css:code-copy-button
 ownership components/properties-panel.css:message-copy-button
 ownership layout/app-header.css:conversation-bar
 ownership layout/app-header.css:conversation-tabs-container
-ownership layout/app-header.css:no-project-overlay
 ownership vendor/prism-theme.css:properties-panel-code
 ownership vendor/prism-theme.css:properties-panel-result

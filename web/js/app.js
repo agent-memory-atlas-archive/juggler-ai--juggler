@@ -489,6 +489,12 @@ class JugglerApp {
       overlay.setSession(session);
     }
 
+    // Its counterpart for a loaded project whose last conversation was binned.
+    const noConversations = /** @type {any} */ (document.querySelector('no-conversations-overlay'));
+    if (noConversations && typeof noConversations.setSession === 'function') {
+      noConversations.setSession(session);
+    }
+
     // Wire the pinboard shell to the session: it resolves the active context its
     // pins render against, and fetches the project's board once there is one.
     const pinboard = /** @type {any} */ (document.querySelector('pinboard-shell'));

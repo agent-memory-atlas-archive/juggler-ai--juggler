@@ -210,6 +210,7 @@ import { runTests as runAutoFollowHoldsTheEndTests } from '../unit-tests/auto-fo
 import { runTests as runUserSendFollowTests } from '../unit-tests/user-send-follow-test.js';
 import { runTests as runThreadColumnLandingTests } from '../unit-tests/thread-column-landing-test.js';
 import { runTests as runEmptyConversationHintTests } from '../unit-tests/empty-conversation-hint-test.js';
+import { runTests as runNoConversationsOnboardingTests } from '../unit-tests/no-conversations-onboarding-test.js';
 import { runTests as runColumnFileDropTests } from '../unit-tests/column-file-drop-test.js';
 import { runTests as runColumnNavigationTests } from '../unit-tests/column-navigation-test.js';
 import { runTests as runDeleteSelectionNeighbourTests } from '../unit-tests/delete-selection-neighbour-test.js';
@@ -585,6 +586,7 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:user-send-follow', run: runUserSendFollowTests },
   { name: 'unit:thread-column-landing', run: runThreadColumnLandingTests },
   { name: 'unit:empty-conversation-hint', run: runEmptyConversationHintTests },
+  { name: 'unit:no-conversations-onboarding', run: runNoConversationsOnboardingTests },
   { name: 'unit:column-file-drop', run: runColumnFileDropTests },
   { name: 'unit:column-navigation', run: runColumnNavigationTests },
   // Exclusive for the shared origin: one case writes the tool-grouping

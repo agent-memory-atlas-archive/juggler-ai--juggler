@@ -765,6 +765,18 @@ class ConversationBar extends JugglerElement {
       tabsMenu.insertBefore(addButton, tabsMenu.firstChild);
     }
 
+    // With no tabs below it the bare "+" is the only mark in an empty column,
+    // and reads as decoration rather than the way out. Spell it out while the
+    // list is empty; it shrinks back to the glyph as soon as a tab exists,
+    // where the tabs themselves make what it does obvious.
+    const addBtn = /** @type {HTMLElement|null} */ (addButton.querySelector('.conversation-add'));
+    if (addBtn) {
+      const labelled = conversations.length === 0;
+      addBtn.classList.toggle('conversation-add-labelled', labelled);
+      const label = labelled ? '+ New conversation' : '+';
+      if (addBtn.textContent !== label) addBtn.textContent = label;
+    }
+
     // Track which conversation IDs are still present
     /** @type {Set<string>} */
     const currentConversationIds = new Set(conversations.map(c => c.id));

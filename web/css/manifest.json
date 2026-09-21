@@ -226,11 +226,18 @@
 			"owns": [
 				"commands-menu",
 				"context-item-context-menu",
-				"no-project-overlay",
 				"strategy-dropdown",
 				"strategy-info-button",
 				"strategy-item-*",
 				"strategy-selector"
+			]
+		},
+		{
+			"file": "components/onboarding.css",
+			"layer": "components",
+			"owns": [
+				"no-conversations-overlay",
+				"no-project-overlay"
 			]
 		},
 		{
