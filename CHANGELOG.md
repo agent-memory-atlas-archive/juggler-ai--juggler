@@ -19,6 +19,7 @@ of changes; this project follows semantic versioning.
 - Attaching a file partway through a conversation no longer rebuilds the whole prompt cache
 - A conversation no longer compacts repeatedly, or summarizes history it had room for, after one mismeasured turn
 - Binning your last conversation now leaves a panel saying how to start another, not a blank window
+- A file no viewer can show now reports its kind, size and modification time instead of nothing
 
 ## [0.6.4] - 2026-09-14
 

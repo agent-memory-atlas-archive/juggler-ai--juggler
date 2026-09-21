@@ -86,6 +86,10 @@ export { taskMarker, taskStatusWord } from './lib/task-markers.js';
 // Misc formatting helpers
 export { FormattingHelpers } from './lib/formatting-helpers.js';
 
+// The app's one date-time renderer — a plugin showing a timestamp (a file's
+// mtime, a run's start) must read the same as the chrome around it
+export { formatRelativeDateTime } from '../js/utils/format.js';
+
 // Full-screen image overlay (shared by the image viewer and attachment thumbs)
 export { openImageLightbox, createImageThumb } from '../js/utils/image-lightbox.js';
 

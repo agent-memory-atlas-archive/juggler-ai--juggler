@@ -21,8 +21,8 @@
  * @property {string} description - Help text shown in the extensions catalog
  * @property {string[]} [mimeTypes] - Mime types this viewer claims, matched case-insensitively
  * @property {string[]} [extensions] - File extensions this viewer claims, without the leading dot
- * @property {boolean} [matchAll] - Candidate for every file regardless of mime/extension. Reserved for a genuine fallback (the text viewer); defaults to false.
- * @property {number} [priority] - Higher wins when several viewers claim the same file. Defaults to 0, which is the fallback tier.
+ * @property {boolean} [matchAll] - Candidate for every file regardless of mime/extension. Reserved for a genuine fallback (the text and binary viewers); defaults to false.
+ * @property {number} [priority] - Higher wins when several viewers claim the same file. Defaults to 0, which is the text fallback's tier; negative sits below it, where the binary viewer waits.
  * @property {number} [maxBytes] - Decline files larger than this. Defaults to unbounded.
  */
 
@@ -185,9 +185,9 @@ class FileViewer {
    * must read nothing but the descriptor — the bytes have not been fetched.
    *
    * The text viewer uses the veto to decline binary files: that is how a binary
-   * with no dedicated viewer resolves to *nothing* and lands on the host's
-   * fallback, without `isBinary` becoming a verdict that constrains any other
-   * viewer.
+   * with no dedicated viewer falls past it to the binary viewer, which states
+   * what it cannot show — all without `isBinary` becoming a verdict that
+   * constrains any other viewer.
    * @param {FileDescriptor} descriptor - Metadata for the file being resolved
    * @returns {boolean|undefined} Claim, refuse, or defer
    */

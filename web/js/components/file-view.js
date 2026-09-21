@@ -139,8 +139,9 @@ class FileView extends HTMLElement {
 
     const ViewerClass = fileViewerRegistry.resolve(toDescriptor(source));
     if (!ViewerClass) {
-      // No viewer claimed the file. This is where the old hardcoded Go warning
-      // finally lives: as a genuine fallback, in the UI, in the user's language.
+      // Nothing claimed the file at all, which takes a missing or disabled
+      // binary viewer — that one claims everything and describes what it cannot
+      // show. Say why the panel is empty rather than leaving it so.
       this._appendState('file-content-warning', source.warning || this._noViewerMessage(source));
       return;
     }

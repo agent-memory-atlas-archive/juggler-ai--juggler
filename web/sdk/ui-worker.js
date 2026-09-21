@@ -22,6 +22,9 @@ export {
   extractErrorInfo,
 } from './lib/error-utils.js';
 export { FormattingHelpers } from './lib/formatting-helpers.js';
+// Date formatting is pure `Date`/`Intl` work, so the worker gets the real one:
+// an engine-side plugin naming a time must name it the way the viewer would.
+export { formatRelativeDateTime } from '../js/utils/format.js';
 
 // Pure (DOM-free): highlightCode returns escaped/highlighted HTML as a string
 // and no-ops to escaped text when `window.Prism` is absent — which it always is

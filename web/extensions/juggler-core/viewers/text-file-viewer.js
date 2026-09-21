@@ -18,11 +18,10 @@ import { languageForPath } from 'juggler/ui';
  * from a markdown file — see `utils/code-selection`, which falls back to naming
  * the file alone.
  *
- * It is the only viewer that sets `matchAll`, so it is a candidate for every
- * file; `priority: 0` puts it in the fallback tier beneath any viewer with a
- * real claim on the format. Its `claims()` veto on binary files is what lets a
- * binary with no dedicated viewer resolve to *nothing* and land on the host's
- * "no viewer" state.
+ * It sets `matchAll`, so it is a candidate for every file; `priority: 0` puts it
+ * in the fallback tier beneath any viewer with a real claim on the format. Its
+ * `claims()` veto on binary files is what lets a binary with no dedicated viewer
+ * fall past it to the binary viewer below, which describes what it cannot show.
  * @augments FileViewer
  */
 class TextFileViewer extends FileViewer {

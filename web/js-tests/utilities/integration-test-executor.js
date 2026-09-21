@@ -256,6 +256,7 @@ import { runTests as runExtensionRegistryTests } from '../unit-tests/extension-r
 import { runTests as runFileViewerRegistryTests } from '../unit-tests/file-viewer-registry-test.js';
 import { runTests as runPdfViewerTests } from '../unit-tests/pdf-viewer-test.js';
 import { runTests as runFileViewTests } from '../unit-tests/file-view-test.js';
+import { runTests as runBinaryViewerTests } from '../unit-tests/binary-viewer-test.js';
 import { runTests as runSdkFacadeParityTests } from '../unit-tests/sdk-facade-parity-test.js';
 import { runTests as runSdkManifestValidationTests } from '../unit-tests/sdk-manifest-validation-test.js';
 import { runTests as runExtensionCollisionTests } from '../unit-tests/extension-collision-test.js';
@@ -622,6 +623,7 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:file-viewer-registry', run: runFileViewerRegistryTests },
   { name: 'unit:pdf-viewer', run: runPdfViewerTests },
   { name: 'unit:file-view', run: runFileViewTests },
+  { name: 'unit:binary-viewer', run: runBinaryViewerTests },
   { name: 'unit:sdk-facade-parity', run: runSdkFacadeParityTests },
   { name: 'unit:sdk-manifest-validation', run: runSdkManifestValidationTests },
   { name: 'unit:extension-collision', run: runExtensionCollisionTests },
