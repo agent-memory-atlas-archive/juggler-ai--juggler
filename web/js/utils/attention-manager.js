@@ -42,11 +42,11 @@
  * dropped when its conversation is binned or deleted, which is the one way a
  * flag can outlive the thing it points at.
  *
- * Preference model mirrors {@link module:utils/theme-manager}: a per-window
- * choice in localStorage, so different windows can have different needs (one
- * babysitting a long autonomous run wants alerts; one you're typing in doesn't).
- * Every toggle is independent. The header bell is the on/off for notification
- * sounds — the same `sound` pref the settings checkbox drives.
+ * These preferences follow the person, not the window or the project (see
+ * services/prefs.js): whether you want to be chimed at is a fact about you, and
+ * it should not have to be set again in the next project. Every toggle is
+ * independent. The header bell is the on/off for notification sounds — the same
+ * `sound` pref the settings checkbox drives.
  *
  * One pref here isn't an alert surface at all: `tabReorder` governs whether this
  * window floats a conversation's tab up the list. It lives with the alert prefs
@@ -64,6 +64,7 @@
 import { hasUnattendedPendingApprovalInTree } from '../model/thread-navigation.js';
 import { playChime, unlockAudio, rearmAudio, CHIME_DEFAULTS, chimePatterns, chimeSounds } from './chime-synth.js';
 import { isDesktopWindow, postWindowControl } from '../../sdk/lib/window-control.js';
+import { cachedUserPref, setUserPref, reconcilePref } from '../services/prefs.js';
 
 const PREFS_KEY = 'juggler-attention';
 /** Fired on window whenever prefs change, so the bell + settings stay in sync. */
@@ -104,17 +105,13 @@ const DEFAULT_PREFS = {
 };
 
 /**
- * Read the current per-window prefs, merged over defaults so a partial or older
- * stored blob still yields a complete object.
+ * Read the current prefs, merged over defaults so a partial or older stored blob
+ * still yields a complete object. Synchronous: the bell and the settings rows
+ * read it as they render.
  * @returns {AttentionPrefs} The merged, complete prefs object.
  */
 export function getAttentionPrefs() {
-  let stored = {};
-  try {
-    stored = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') || {};
-  } catch {
-    stored = {};
-  }
+  const stored = cachedUserPref(PREFS_KEY, {}) || {};
   // Validate each chime field against its live schema, so a stale value from an
   // older build (the pre-menu `pitch`/`length`/numeric-`pattern` knobs, or a
   // removed pattern/sound id) is dropped for the default rather than riding
@@ -140,7 +137,7 @@ export function getAttentionPrefs() {
 function savePrefs(patch) {
   const next = { ...getAttentionPrefs(), ...patch };
   if (patch.chime) next.chime = { ...getAttentionPrefs().chime, ...patch.chime };
-  localStorage.setItem(PREFS_KEY, JSON.stringify(next));
+  void setUserPref(PREFS_KEY, next);
   window.dispatchEvent(new CustomEvent(ATTENTION_PREFS_EVENT, { detail: next }));
   return next;
 }
@@ -571,6 +568,9 @@ function rearmAudioOnReturn() {
  */
 export function initAttention(sess) {
   session = sess;
+  // Ask for this person's alert preferences; the bell and the settings rows
+  // re-read on the event when the answer differs from what was cached.
+  void reconcilePref('user', PREFS_KEY, ATTENTION_PREFS_EVENT);
   prevAwaiting.clear();
   prevTurns.clear();
   clearAllFlash();

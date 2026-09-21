@@ -39,10 +39,11 @@ import { attachSwipeDismiss } from '../utils/swipe-dismiss.js';
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
 import { isPinboardView } from '../utils/view-mode.js';
 import findBar from './find-bar.js';
+import { cachedWindowPref, getWindowPref, setWindowPref } from '../services/prefs.js';
 import './pinboard-panel.js';
 
-/** localStorage key holding the panel's width, in rem. */
-const WIDTH_KEY = 'juggler-pinboard-width';
+/** The window preference holding the panel's width, in rem. */
+const WIDTH_PREF = 'juggler-pinboard-width';
 
 /**
  * Panel width bounds, in rem. Wide, on purpose: what the board is for changes
@@ -186,6 +187,13 @@ class PinboardShell extends JugglerElement {
     }));
 
     this._applyWidth(loadWidth());
+    // And again with the width this window actually has stored, once the
+    // session answers. A viewer that has never set one keeps the default rather
+    // than being handed another window's.
+    void getWindowPref(WIDTH_PREF, null).then((stored) => {
+      const rem = parseFloat(stored);
+      if (Number.isFinite(rem) && rem > 0 && rem !== this._widthRem) this._applyWidth(rem);
+    });
 
     // The toggle belongs to the header bar, beside the window's other controls,
     // and is written in the markup there — the shell only wires it up and keeps
@@ -449,18 +457,18 @@ function remPx() {
 }
 
 /**
- * The width this viewer last chose. Viewer-local by design: a laptop and a large
- * display must not argue about how wide the board is.
+ * The width this window last chose, as far as is known without waiting.
+ *
+ * The width belongs to the window it is on: a desktop window keeps it in the
+ * project's session, and a remote viewer — a phone, a second laptop — keeps its
+ * own on its own device, since the server refuses that write. That is what
+ * stops a laptop and a large display arguing about how wide the board is, and
+ * the session is what makes the answer survive a relaunch.
  * @returns {number} A width in rem.
  */
 function loadWidth() {
-  try {
-    const saved = parseFloat(localStorage.getItem(WIDTH_KEY) || '');
-    if (Number.isFinite(saved) && saved > 0) return saved;
-  } catch {
-    // localStorage unavailable
-  }
-  return DEFAULT_WIDTH_REM;
+  const saved = parseFloat(cachedWindowPref(WIDTH_PREF, null));
+  return Number.isFinite(saved) && saved > 0 ? saved : DEFAULT_WIDTH_REM;
 }
 
 /**
@@ -469,11 +477,7 @@ function loadWidth() {
  * @returns {void}
  */
 function saveWidth(rem) {
-  try {
-    localStorage.setItem(WIDTH_KEY, String(rem));
-  } catch {
-    // localStorage unavailable
-  }
+  void setWindowPref(WIDTH_PREF, rem);
 }
 
 customElements.define('pinboard-shell', PinboardShell);

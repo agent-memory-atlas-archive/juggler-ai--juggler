@@ -308,7 +308,7 @@ func TestFrameFromPanelPlacesTheWindowOverThePanel(t *testing.T) {
 		Height: 780,
 		HasPos: true,
 	}
-	if got != want {
+	if !got.SameFrame(want) {
 		t.Fatalf("frame = %+v, want %+v", got, want)
 	}
 }
@@ -399,14 +399,14 @@ func TestOpeningFrameFollowsThePanelOnlyWhenNothingIsRemembered(t *testing.T) {
 	// A board that has been open before comes back where the user put it. Where
 	// it was popped out of is a year out of date by then.
 	saved := core.WindowState{X: 500, Y: 400, Width: 1000, Height: 700, HasPos: true}
-	if got := openingFrame(saved, true, popped, opener, screens); got != saved {
+	if got := openingFrame(saved, true, popped, opener, screens); !got.SameFrame(saved) {
 		t.Errorf("frame = %+v, want the saved one %+v", got, saved)
 	}
 
 	// The first time, it opens over the panel it came out of, moved clear of it.
 	got := openingFrame(core.WindowState{}, false, popped, opener, screens)
 	want := core.WindowState{X: 656 + popOutOffset, Y: popOutOffset, Width: minWindowWidth, Height: 800, HasPos: true}
-	if got != want {
+	if !got.SameFrame(want) {
 		t.Errorf("frame = %+v, want %+v", got, want)
 	}
 
@@ -428,7 +428,7 @@ func TestOpeningFrameFollowsThePanelOnlyWhenNothingIsRemembered(t *testing.T) {
 		{"nor is there anything to measure against once the opener has gone", popped, core.WindowState{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := openingFrame(core.WindowState{}, false, tc.opts, tc.opener, screens); got != (core.WindowState{}) {
+			if got := openingFrame(core.WindowState{}, false, tc.opts, tc.opener, screens); !got.SameFrame(core.WindowState{}) {
 				t.Errorf("frame = %+v, want the centred default", got)
 			}
 		})

@@ -37,6 +37,7 @@ import {
   groupMemberIndices,
 } from '../../js/utils/item-grouping.js';
 import contextItemRegistry from '../../js/registries/context-item-registry.js';
+import { setUserPref } from '../../js/services/prefs.js';
 import { ColumnSelectionState } from '../../js/utils/column-selection.js';
 import { positionElements, buildElementMap } from '../../js/components/conversation-area-rendering.js';
 import {
@@ -549,7 +550,7 @@ export async function runTests() {
       assert(isToolGroupingEnabled() === false, 'the preference reads back what was written');
       assert(toggleToolGrouping() === true && isToolGroupingEnabled() === true, 'toggle flips it on');
       assert(toggleToolGrouping() === false && isToolGroupingEnabled() === false, 'toggle flips it back');
-      localStorage.removeItem('juggler-tool-grouping');
+      void setUserPref('juggler-tool-grouping', null);
       assert(isToolGroupingEnabled() === false, 'unset means off — the flat transcript is the default');
     } finally {
       setToolGroupingEnabled(original);

@@ -13,17 +13,18 @@
  * card, and the info-cards menu that brings a hidden card back. A hidden card is
  * simply not mounted in this window — no server round-trip, no registry change.
  *
- * The hidden set is a single JSON blob in localStorage, mirroring the other
- * per-window UI prefs.
+ * The hidden set is a single JSON blob belonging to this window (see
+ * services/prefs.js), so it is kept in the project's session and a card hidden
+ * today is still hidden after the app is relaunched onto a different port.
  * @module services/info-cards-manager
  */
 
 import infoCardRegistry from '../registries/info-card-registry.js';
-import { readPref, writePref, notifyPrefChanged } from './ui-pref-store.js';
+import { cachedWindowPref, setWindowPref, notifyPrefChanged, reconcilePref } from './prefs.js';
 import { REGISTRIES_RELOADED } from '../registries/reload-registries.js';
 
-/** localStorage key holding `{ hidden: string[] }` — the per-window hidden set. */
-const STORAGE_KEY = 'juggler-info-cards-hidden';
+/** The window preference holding `{ hidden: string[] }` — this window's hidden set. */
+const PREF_NAME = 'juggler-info-cards-hidden';
 
 /**
  * Fired on `window` whenever the shown set changes (the × on a card, the
@@ -34,24 +35,25 @@ const STORAGE_KEY = 'juggler-info-cards-hidden';
 export const INFO_CARDS_CHANGED_EVENT = 'juggler:info-cards-changed';
 
 /**
- * Read the persisted hidden set, tolerant of a missing/corrupt blob.
+ * The hidden set as it is known right now, tolerant of a missing or corrupt
+ * blob. Synchronous, because the rail and the menu read it as they render.
+ * @param {any} raw - A stored blob, defaulting to the cached one.
  * @returns {Set<string>} Ids of cards the user has hidden in this window.
  * @private
  */
-function readHidden() {
-  const raw = readPref(STORAGE_KEY, {});
+function readHidden(raw = cachedWindowPref(PREF_NAME, {})) {
   /** @type {unknown[]} */
   const list = raw && Array.isArray(raw.hidden) ? raw.hidden : [];
   return new Set(/** @type {string[]} */ (list.filter((id) => typeof id === 'string')));
 }
 
 /**
- * Persist the hidden set, best-effort.
+ * Store the hidden set, best-effort.
  * @param {Set<string>} hidden
  * @private
  */
 function writeHidden(hidden) {
-  writePref(STORAGE_KEY, { hidden: Array.from(hidden) });
+  void setWindowPref(PREF_NAME, { hidden: Array.from(hidden) });
 }
 
 /**
@@ -119,4 +121,8 @@ export function allInfoCards() {
 // set. Viewer-only: guarded on document so the engine worker never binds it.
 if (typeof document !== 'undefined') {
   document.addEventListener(REGISTRIES_RELOADED, () => notifyPrefChanged(INFO_CARDS_CHANGED_EVENT));
+  // Ask the session for this window's hidden set. A first-ever load renders the
+  // cards a frame before the answer arrives; the event is what takes the hidden
+  // ones back off.
+  void reconcilePref('window', PREF_NAME, INFO_CARDS_CHANGED_EVENT);
 }

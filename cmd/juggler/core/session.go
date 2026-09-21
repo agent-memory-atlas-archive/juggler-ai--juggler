@@ -108,19 +108,46 @@ func WindowRoleForView(view, boardID string) string {
 // window is told otherwise, and an unset one falls back to the project-wide
 // UITheme/UIZoom — so a board nobody has restyled still follows the main window.
 //
-// Geometry writes never carry them: the frame is captured from the live native
-// window (see windowgeom.Tracker.Capture) and knows nothing about appearance, so
-// SetWindowState preserves whatever is already stored.
+// UI is the same kind of fact again, one level less structured: the preferences
+// the viewer keeps for this window (see ui_prefs.go). Nothing in Go reads them,
+// so they are stored opaquely.
+//
+// Geometry writes never carry any of it: the frame is captured from the live
+// native window (see windowgeom.Tracker.Capture) and knows nothing about
+// appearance, so SetWindowState preserves whatever is already stored.
 type WindowState struct {
-	X          int    `json:"x"`
-	Y          int    `json:"y"`
-	Width      int    `json:"width"`
-	Height     int    `json:"height"`
-	HasPos     bool   `json:"hasPos"`
-	Maximised  bool   `json:"maximised"`
-	Fullscreen bool   `json:"fullscreen"`
-	Theme      string `json:"theme,omitempty"` // UI theme mode (system|light|dark) for this window; "" follows the project
-	Zoom       int    `json:"zoom,omitempty"`  // UI zoom (root font-size %) for this window; 0 follows the project
+	X          int                        `json:"x"`
+	Y          int                        `json:"y"`
+	Width      int                        `json:"width"`
+	Height     int                        `json:"height"`
+	HasPos     bool                       `json:"hasPos"`
+	Maximised  bool                       `json:"maximised"`
+	Fullscreen bool                       `json:"fullscreen"`
+	Theme      string                     `json:"theme,omitempty"` // UI theme mode (system|light|dark) for this window; "" follows the project
+	Zoom       int                        `json:"zoom,omitempty"`  // UI zoom (root font-size %) for this window; 0 follows the project
+	UI         map[string]json.RawMessage `json:"ui,omitempty"`    // This window's UI preferences, stored verbatim (the client owns the shape); nil until one is set
+}
+
+// Clone returns a private copy of one window's slot. The UI map is the reason
+// it exists: a map inside a struct value is copied by reference, so a caller
+// handed the struct would share that map with whoever else holds a copy.
+func (ws WindowState) Clone() WindowState {
+	ws.UI = cloneUIPrefs(ws.UI)
+	return ws
+}
+
+// SameFrame reports whether two slots describe the same native window frame,
+// ignoring everything that is not geometry.
+//
+// It exists because WindowState holds a map and so cannot be compared with ==.
+// That is the useful outcome rather than an obstacle: almost every comparison
+// here is asking about the frame, and one that silently started including the
+// viewer's preferences would answer a question nobody asked.
+func (ws WindowState) SameFrame(other WindowState) bool {
+	return ws.X == other.X && ws.Y == other.Y &&
+		ws.Width == other.Width && ws.Height == other.Height &&
+		ws.HasPos == other.HasPos &&
+		ws.Maximised == other.Maximised && ws.Fullscreen == other.Fullscreen
 }
 
 // Session represents the folder state with multiple conversations.
@@ -130,19 +157,20 @@ type WindowState struct {
 // the on-disk folder name (.juggler/<sanitized-name>--<id>/) is the source of
 // truth, parsed by ScanConvDirs at load time.
 type Session struct {
-	Version              int                    `json:"version"`                // Schema version
-	ConversationOrder    []string               `json:"conversationOrder"`      // Ordered list of conversation IDs (for tab ordering)
-	Conversations        []json.RawMessage      `json:"-"`                      // In-memory only, not serialized to session.json
-	ActiveConversationID string                 `json:"activeConversationId"`   // Currently selected conversation tab (persisted for refresh)
-	MessageHistory       []json.RawMessage      `json:"messageHistory"`         // Session-level history of user messages for input navigation. Opaque JSON entries: the server stores and forwards them verbatim (the client owns the shape).
-	Metadata             map[string]any         `json:"metadata,omitempty"`     // General-purpose key-value store for frontend flags
-	WindowState          *WindowState           `json:"windowState,omitempty"`  // Geometry written by a Juggler that had one window slot; folded into WindowStates["main"] on first use (see migrateWindowStates)
-	WindowStates         map[string]WindowState `json:"windowStates,omitempty"` // Native-window geometry for this project, per window role (nil until first save)
-	UIZoom               int                    `json:"uiZoom,omitempty"`       // Project-wide UI zoom (root font-size %), followed by any window without one of its own; 0 until first set
-	UITheme              string                 `json:"uiTheme,omitempty"`      // Project-wide UI theme mode (system|light|dark), followed by any window without one of its own; "" until first set
-	Pinboard             []Pin                  `json:"pinboard,omitempty"`     // Board written by a Juggler that had one; folded into Boards["main"] on first use (see migrateBoards)
-	Boards               map[string]Board       `json:"boards,omitempty"`       // Pinboard compositions by board id: "main" is the docked panel, the rest are detached windows (see pinboard.go)
-	Workspaces           []Workspace            `json:"workspaces,omitempty"`   // The places conversations run, other than the project itself (see workspace.go); nil until one is made
+	Version              int                        `json:"version"`                // Schema version
+	ConversationOrder    []string                   `json:"conversationOrder"`      // Ordered list of conversation IDs (for tab ordering)
+	Conversations        []json.RawMessage          `json:"-"`                      // In-memory only, not serialized to session.json
+	ActiveConversationID string                     `json:"activeConversationId"`   // Currently selected conversation tab (persisted for refresh)
+	MessageHistory       []json.RawMessage          `json:"messageHistory"`         // Session-level history of user messages for input navigation. Opaque JSON entries: the server stores and forwards them verbatim (the client owns the shape).
+	Metadata             map[string]any             `json:"metadata,omitempty"`     // General-purpose key-value store for frontend flags
+	WindowState          *WindowState               `json:"windowState,omitempty"`  // Geometry written by a Juggler that had one window slot; folded into WindowStates["main"] on first use (see migrateWindowStates)
+	WindowStates         map[string]WindowState     `json:"windowStates,omitempty"` // Native-window geometry for this project, per window role (nil until first save)
+	UIZoom               int                        `json:"uiZoom,omitempty"`       // Project-wide UI zoom (root font-size %), followed by any window without one of its own; 0 until first set
+	UITheme              string                     `json:"uiTheme,omitempty"`      // Project-wide UI theme mode (system|light|dark), followed by any window without one of its own; "" until first set
+	UI                   map[string]json.RawMessage `json:"ui,omitempty"`           // UI preferences shared by every window of this project, stored verbatim (the client owns the shape); see ui_prefs.go
+	Pinboard             []Pin                      `json:"pinboard,omitempty"`     // Board written by a Juggler that had one; folded into Boards["main"] on first use (see migrateBoards)
+	Boards               map[string]Board           `json:"boards,omitempty"`       // Pinboard compositions by board id: "main" is the docked panel, the rest are detached windows (see pinboard.go)
+	Workspaces           []Workspace                `json:"workspaces,omitempty"`   // The places conversations run, other than the project itself (see workspace.go); nil until one is made
 
 	// unknown holds the manifest keys this build does not recognise, kept
 	// verbatim so that saving gives them back. See UnmarshalJSON.
@@ -235,8 +263,9 @@ func NewSession() *Session {
 
 // Clone returns a private copy of the session that the caller may read or
 // mutate freely without ever touching the original. Every container the rest of
-// the code mutates — each slice, the maps inside and beside them, the
-// WindowState pointer — is duplicated, so a snapshot handed out by
+// the code mutates — each slice, the maps inside and beside them (including the
+// one inside each window's slot), the WindowState pointer — is duplicated, so a
+// snapshot handed out by
 // SessionManager.GetSession can never race the actor goroutine that owns the
 // live session. (RawMessage payloads and metadata values are shared by
 // reference: both are only ever replaced wholesale, never mutated in place.)
@@ -280,9 +309,10 @@ func (s *Session) Clone() *Session {
 	if s.WindowStates != nil {
 		c.WindowStates = make(map[string]WindowState, len(s.WindowStates))
 		for role, ws := range s.WindowStates {
-			c.WindowStates[role] = ws
+			c.WindowStates[role] = ws.Clone()
 		}
 	}
+	c.UI = cloneUIPrefs(s.UI)
 	return &c
 }
 

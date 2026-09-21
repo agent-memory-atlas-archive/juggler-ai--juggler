@@ -39,10 +39,10 @@
  * @module services/escape-behaviour
  */
 
-import { readPref, writePref, notifyPrefChanged } from './ui-pref-store.js';
+import { cachedUserPref, setUserPref, notifyPrefChanged, reconcilePref } from './prefs.js';
 import { isMac, formatBindingForPlatform } from './key-shortcut-manager.js';
 
-/** localStorage key holding the chosen preset id. */
+/** The user preference holding the chosen preset id. */
 const PREF_KEY = 'juggler-escape-behaviour';
 
 /** Fired on window whenever the preference changes, so open views re-render. */
@@ -157,7 +157,7 @@ const DEFAULT_PRESET_ID = 'stop';
  * @returns {EscapePreset} The active preset.
  */
 export function getEscapePreset() {
-  const id = readPref(PREF_KEY, DEFAULT_PRESET_ID);
+  const id = cachedUserPref(PREF_KEY, DEFAULT_PRESET_ID);
   return ESCAPE_PRESETS.find((p) => p.id === id)
     ?? /** @type {EscapePreset} */ (ESCAPE_PRESETS.find((p) => p.id === DEFAULT_PRESET_ID));
 }
@@ -173,7 +173,7 @@ export function setEscapePreset(id) {
   // Switching away mid-gesture would strand the armed state (and its cue) under
   // a preset that can never consume it.
   disarm();
-  writePref(PREF_KEY, id);
+  void setUserPref(PREF_KEY, id);
   notifyPrefChanged(ESCAPE_BEHAVIOUR_EVENT);
 }
 
@@ -485,4 +485,11 @@ export function buildEscapeBehaviourRow() {
   row.appendChild(info);
   row.appendChild(ctrl);
   return row;
+}
+
+// Ask for this person's chosen preset at boot. A keypress in the first few
+// milliseconds gets the default preset, which is the shipped behaviour rather
+// than a wrong one.
+if (typeof document !== 'undefined') {
+  void reconcilePref('user', PREF_KEY, ESCAPE_BEHAVIOUR_EVENT);
 }

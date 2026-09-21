@@ -7,14 +7,18 @@
  *
  * When on, a run of adjacent tool-use rows in a column is drawn as ONE group
  * tile; selecting it opens the run's rows in the next column. This is purely a
- * display choice — nothing about it is written to the conversation document —
- * so it lives beside the other per-window UI prefs (bell, tips, info cards) in
- * localStorage rather than in the session. It applies to every project and
- * every tab in this window.
+ * display choice — nothing about it is written to the conversation document.
+ *
+ * It belongs to the person (the `user` realm, services/prefs.js), beside the
+ * bell and the tips they have seen: how you like a transcript drawn is a fact
+ * about you, and it should hold in every project and every window. What belongs
+ * to a WINDOW instead is anything about how that window is arranged — which
+ * info cards it has hidden, how wide its columns are — and those are kept in
+ * the project's session, per window role.
  * @module utils/tool-grouping-pref
  */
 
-import { readPref, writePref, notifyPrefChanged } from '../services/ui-pref-store.js';
+import { cachedUserPref, setUserPref, notifyPrefChanged, reconcilePref } from '../services/prefs.js';
 
 const PREF_KEY = 'juggler-tool-grouping';
 
@@ -27,7 +31,7 @@ export const TOOL_GROUPING_EVENT = 'juggler:tool-grouping-changed';
  * @returns {boolean} True when grouping is enabled.
  */
 export function isToolGroupingEnabled() {
-  return readPref(PREF_KEY, false) === true;
+  return cachedUserPref(PREF_KEY, false) === true;
 }
 
 /**
@@ -36,7 +40,7 @@ export function isToolGroupingEnabled() {
  * @returns {void}
  */
 export function setToolGroupingEnabled(enabled) {
-  writePref(PREF_KEY, !!enabled);
+  void setUserPref(PREF_KEY, !!enabled);
   notifyPrefChanged(TOOL_GROUPING_EVENT);
 }
 
@@ -48,4 +52,10 @@ export function toggleToolGrouping() {
   const next = !isToolGroupingEnabled();
   setToolGroupingEnabled(next);
   return next;
+}
+
+// Ask for this person's choice at boot; a transcript already drawn re-renders on
+// the event when the answer differs from what was cached.
+if (typeof document !== 'undefined') {
+  void reconcilePref('user', PREF_KEY, TOOL_GROUPING_EVENT);
 }

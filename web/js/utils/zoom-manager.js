@@ -5,7 +5,7 @@
 /**
  * Zoom Manager - Handles UI zoom via root font-size scaling.
  *
- * Who owns the zoom depends on which client is reading it — see ui-pref-scope.js
+ * Who owns the zoom depends on which client is reading it — see services/prefs.js
  * for the rule this shares with the theme. The sources, best first:
  *
  *   - desktop window: this project's saved session zoom (window.__sessionZoom,
@@ -28,7 +28,7 @@
 import { onDocumentReady } from './document-ready.js';
 import { postWindowControl, isDesktopWindow } from '../../sdk/lib/window-control.js';
 import { fetchJson } from '../services/http.js';
-import { scopedKey, resolvePref } from './ui-pref-scope.js';
+import { scopedKey, resolvePref } from '../services/prefs.js';
 import { windowRole } from './view-mode.js';
 
 const ZOOM_KEY_BASE = 'juggler-zoom';
@@ -71,7 +71,7 @@ function sessionZoom() {
 }
 
 /**
- * This device's localStorage key for the loaded project (see ui-pref-scope.js).
+ * This device's localStorage key for the loaded project (see services/prefs.js).
  * @returns {string} The namespaced storage key.
  * @private
  */

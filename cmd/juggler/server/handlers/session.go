@@ -427,6 +427,64 @@ func (api *SessionAPI) HandleSetUITheme(w http.ResponseWriter, r *http.Request) 
 	WriteJSON(w, r, http.StatusOK, map[string]any{"ok": true})
 }
 
+// uiPrefScopeProject is the ?scope= value naming the realm every window of the
+// project shares. Anything else — including no scope at all — means the window
+// making the request, which is what almost every preference wants.
+const uiPrefScopeProject = "project"
+
+// HandleGetUIPrefs returns the UI preferences stored for the window making the
+// request, or for the project when ?scope=project. One round trip answers with
+// the whole map, so a page hydrates everything it needs at boot rather than
+// asking per preference.
+//
+// The values are opaque: the server stores what the viewer sent it and hands it
+// back. A realm with nothing in it is answered with an empty object rather than
+// null, so the client has one shape to read.
+func (api *SessionAPI) HandleGetUIPrefs(w http.ResponseWriter, r *http.Request) {
+	var prefs map[string]json.RawMessage
+	if r.URL.Query().Get("scope") == uiPrefScopeProject {
+		prefs = api.manager().GetSessionUIPrefs()
+	} else {
+		prefs = api.manager().GetWindowUIPrefs(windowRole(r))
+	}
+	if prefs == nil {
+		prefs = map[string]json.RawMessage{}
+	}
+	WriteJSON(w, r, 0, map[string]any{"ui": prefs})
+}
+
+// HandleSetUIPrefs merges a patch into one realm's stored preferences. The
+// viewer PUTs the preference it has just changed, so a key the body omits is
+// left alone and a null value deletes one.
+//
+// A patch the server will not store — too many keys, a value too big — is the
+// caller's fault rather than a storage failure, so it is answered 400 and
+// nothing at all is written. The route is wrapped in localViewerOnly: a remote
+// viewer reads these as its starting point but keeps its own on its own device.
+func (api *SessionAPI) HandleSetUIPrefs(w http.ResponseWriter, r *http.Request) {
+	body, ok := DecodeJSON[struct {
+		UI map[string]json.RawMessage `json:"ui"`
+	}](w, r)
+	if !ok {
+		return
+	}
+	var err error
+	if r.URL.Query().Get("scope") == uiPrefScopeProject {
+		err = api.manager().MergeSessionUIPrefs(body.UI)
+	} else {
+		err = api.manager().MergeWindowUIPrefs(windowRole(r), body.UI)
+	}
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, core.ErrUIPrefsRejected) {
+			status = http.StatusBadRequest
+		}
+		WriteError(w, r, status, err.Error())
+		return
+	}
+	WriteJSON(w, r, http.StatusOK, map[string]any{"ok": true})
+}
+
 // HandleGetSession retrieves the session with runtime info
 func (api *SessionAPI) HandleGetSession(w http.ResponseWriter, r *http.Request) {
 	sess := api.manager().GetSession()

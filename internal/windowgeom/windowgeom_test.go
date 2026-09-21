@@ -127,7 +127,7 @@ func TestFitOnScreenLeavesAFrameThatAlreadyFits(t *testing.T) {
 	screens := testScreens()
 	frame := core.WindowState{X: 100, Y: 80, Width: 800, Height: 700, HasPos: true}
 
-	if got := FitOnScreen(frame, screens); got != frame {
+	if got := FitOnScreen(frame, screens); !got.SameFrame(frame) {
 		t.Fatalf("FitOnScreen() = %+v, want it untouched", got)
 	}
 }
@@ -184,12 +184,12 @@ func TestFitOnScreenIgnoresAFrameWithNothingToFit(t *testing.T) {
 		{X: 4000, Y: 4000, HasPos: true},
 		{},
 	} {
-		if got := FitOnScreen(frame, screens); got != frame {
+		if got := FitOnScreen(frame, screens); !got.SameFrame(frame) {
 			t.Errorf("FitOnScreen(%+v) = %+v, want it untouched", frame, got)
 		}
 	}
 	frame := core.WindowState{X: 4000, Y: 4000, Width: 800, Height: 600, HasPos: true}
-	if got := FitOnScreen(frame, nil); got != frame {
+	if got := FitOnScreen(frame, nil); !got.SameFrame(frame) {
 		t.Errorf("FitOnScreen() with no screens = %+v, want it untouched", got)
 	}
 }
@@ -249,18 +249,18 @@ func TestRescueFrameCentresOnPrimaryAndShrinksToFit(t *testing.T) {
 // are both left exactly where they are.
 func TestRescueFrameLeavesAReachableWindowAlone(t *testing.T) {
 	onScreen := core.WindowState{X: 100, Y: 100, Width: 800, Height: 600, HasPos: true}
-	if got, moved := RescueFrame(onScreen, testScreens()); moved || got != onScreen {
+	if got, moved := RescueFrame(onScreen, testScreens()); moved || !got.SameFrame(onScreen) {
 		t.Errorf("RescueFrame() = (%+v, %v), want it untouched and false", got, moved)
 	}
 
 	// The second display's frame, which is stranded only if you forget it exists.
 	onSecond := core.WindowState{X: -1200, Y: 50, Width: 1000, Height: 800, HasPos: true}
-	if got, moved := RescueFrame(onSecond, testScreens()); moved || got != onSecond {
+	if got, moved := RescueFrame(onSecond, testScreens()); moved || !got.SameFrame(onSecond) {
 		t.Errorf("RescueFrame() on the second display = (%+v, %v), want it untouched", got, moved)
 	}
 
 	parked := core.WindowState{X: -32000, Y: -32000, Width: 800, Height: 600, HasPos: true}
-	if got, moved := RescueFrame(parked, nil); moved || got != parked {
+	if got, moved := RescueFrame(parked, nil); moved || !got.SameFrame(parked) {
 		t.Errorf("RescueFrame() with no screens = (%+v, %v), want it untouched", got, moved)
 	}
 }

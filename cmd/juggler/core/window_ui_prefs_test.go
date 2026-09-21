@@ -110,7 +110,8 @@ func TestOnlyTheMainWindowSetsTheProjectDefault(t *testing.T) {
 
 // The frame is captured from the live native window, which knows nothing about
 // appearance, and it is written on every move and resize. Dragging a window must
-// not therefore strip the theme it is wearing.
+// not therefore strip the theme it is wearing, nor the UI preferences the viewer
+// keeps in the same slot.
 func TestGeometryWritesKeepTheWindowsAppearance(t *testing.T) {
 	m := newManagerForTest(t)
 	board := WindowRolePinboardFor("board_a")
@@ -120,6 +121,9 @@ func TestGeometryWritesKeepTheWindowsAppearance(t *testing.T) {
 	}
 	if err := m.SetWindowUIZoom(board, 130); err != nil {
 		t.Fatalf("set zoom: %v", err)
+	}
+	if err := m.MergeWindowUIPrefs(board, uiPatch(t, `{"juggler-column-width":"31.5"}`)); err != nil {
+		t.Fatalf("set ui prefs: %v", err)
 	}
 	frame := WindowState{X: 1420, Y: 40, Width: 520, Height: 900, HasPos: true}
 	if err := m.SetWindowState(board, frame); err != nil {
@@ -133,8 +137,12 @@ func TestGeometryWritesKeepTheWindowsAppearance(t *testing.T) {
 	if got.Theme != "light" || got.Zoom != 130 {
 		t.Fatalf("a drag wiped the window's appearance: got theme=%q zoom=%d", got.Theme, got.Zoom)
 	}
-	if got.X != frame.X || got.Width != frame.Width || !got.HasPos {
+	if !got.SameFrame(frame) {
 		t.Fatalf("and the frame still has to be the one written: got %+v want %+v", got, frame)
+	}
+	if want := `"31.5"`; string(m.GetWindowUIPrefs(board)["juggler-column-width"]) != want {
+		t.Fatalf("a drag wiped the window's UI preferences: got %s want %s",
+			m.GetWindowUIPrefs(board)["juggler-column-width"], want)
 	}
 }
 

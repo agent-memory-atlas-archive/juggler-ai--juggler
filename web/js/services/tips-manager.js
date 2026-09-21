@@ -11,17 +11,19 @@
  * Shortcut tips are *derived* from the {@link module:services/key-shortcut-manager
  * KeyShortcutManager} by id, so their title and key glyph can't drift from the
  * real (rebindable) binding. Feature tips are hand-authored for gestures with no
- * key. "Seen" state lives in localStorage, mirroring the other per-window UI
- * prefs; there's no server round-trip. Whether the Tips card is shown at all is
- * a separate concern owned by {@link module:services/info-cards-manager}.
+ * key. "Seen" state follows the person rather than the project or the window
+ * (see services/prefs.js): a tip learnt once is learnt, and putting it in a
+ * project's session would have every new project teach every tip again. Whether
+ * the Tips card is shown at all is a separate concern owned by
+ * {@link module:services/info-cards-manager}.
  * @module services/tips-manager
  */
 
 import keyShortcutManager from './key-shortcut-manager.js';
-import { readPref, writePref, notifyPrefChanged } from './ui-pref-store.js';
+import { cachedUserPref, setUserPref, notifyPrefChanged, reconcilePref } from './prefs.js';
 
-/** localStorage key holding `{ seen: string[] }`. */
-const STORAGE_KEY = 'juggler-tips';
+/** The user preference holding `{ seen: string[] }`. */
+const PREF_NAME = 'juggler-tips';
 
 /**
  * Fired on `window` whenever a tip is retired (learn-by-doing, or the seen set
@@ -33,7 +35,7 @@ export const TIPS_CHANGED_EVENT = 'juggler:tips-changed';
 /**
  * A materialized tip ready for display.
  * @typedef {object} Tip
- * @property {string} id - Stable identifier, also the localStorage "seen" key.
+ * @property {string} id - Stable identifier, also the "seen" key.
  * @property {'shortcut'|'feature'} kind - Shortcut tips render a live key glyph.
  * @property {string} title - Short headline.
  * @property {string} body - One-line explanation.
@@ -94,7 +96,7 @@ const FEATURE_TIPS = [
  * @private
  */
 function readState() {
-  const raw = readPref(STORAGE_KEY, {});
+  const raw = cachedUserPref(PREF_NAME, {});
   return {
     seen: Array.isArray(raw.seen) ? raw.seen.filter((/** @type {any} */ x) => typeof x === 'string') : [],
   };
@@ -106,7 +108,7 @@ function readState() {
  * @private
  */
 function writeState(state) {
-  writePref(STORAGE_KEY, state);
+  void setUserPref(PREF_NAME, state);
 }
 
 /**
@@ -161,4 +163,12 @@ export function markSeen(id) {
 export function resetSeen() {
   writeState({ seen: [] });
   notifyPrefChanged(TIPS_CHANGED_EVENT);
+}
+
+// Ask for this person's seen set at boot, and tell the rail if it says something
+// the cache did not. Reads are synchronous by design — a tip shown for a moment
+// longer than it should be is a far smaller cost than a card that cannot render
+// until a round trip finishes.
+if (typeof document !== 'undefined') {
+  void reconcilePref('user', PREF_NAME, TIPS_CHANGED_EVENT);
 }

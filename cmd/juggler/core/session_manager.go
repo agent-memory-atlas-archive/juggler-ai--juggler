@@ -774,8 +774,9 @@ func (m *SessionManager) GetWindowState(role string) (WindowState, bool) {
 //
 // This is a geometry write. The frame comes from the live native window and so
 // carries no appearance, and it arrives on every drag and resize — so the
-// window's stored theme and zoom are kept, not overwritten with the blanks the
-// caller could not have filled in. SetWindowUITheme/SetWindowUIZoom own those.
+// window's stored theme, zoom and UI preferences are kept, not overwritten with
+// the blanks the caller could not have filled in. SetWindowUITheme,
+// SetWindowUIZoom and MergeWindowUIPrefs own those.
 func (m *SessionManager) SetWindowState(role string, ws WindowState) error {
 	_, err := runWrite(m, func(s *sessionState) (struct{}, error) {
 		// No session loaded (e.g. a no-project window still at the picker) —
@@ -788,7 +789,7 @@ func (m *SessionManager) SetWindowState(role string, ws WindowState) error {
 			s.session.WindowStates = map[string]WindowState{}
 		}
 		prev := s.session.WindowStates[role]
-		ws.Theme, ws.Zoom = prev.Theme, prev.Zoom
+		ws.Theme, ws.Zoom, ws.UI = prev.Theme, prev.Zoom, prev.UI
 		s.session.WindowStates[role] = ws
 		return struct{}{}, s.store.Save(s.session)
 	})

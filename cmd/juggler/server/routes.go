@@ -222,6 +222,14 @@ func (s *Server) setupSessionRoutes(sessionAPI *handlers.SessionAPI) {
 	// injected value at load and PUTs changes here — local-only, as for zoom.
 	api.HandleFunc("/session/ui-theme", sessionAPI.HandleGetUITheme).Methods("GET")
 	api.Handle("/session/ui-theme", localViewerOnly(sessionAPI.HandleSetUITheme)).Methods("PUT")
+	// The rest of the viewer's UI preferences — hidden info cards, dragged
+	// column widths — for the same reason and behind the same gate, but as one
+	// opaque map per realm (this window's, or the whole project's with
+	// ?scope=project) rather than a route per preference. Nothing in Go reads
+	// them; the client owns the keys and the shapes. PUT merges: an omitted key
+	// is unchanged, a null one is deleted.
+	api.HandleFunc("/session/ui-prefs", sessionAPI.HandleGetUIPrefs).Methods("GET")
+	api.Handle("/session/ui-prefs", localViewerOnly(sessionAPI.HandleSetUIPrefs)).Methods("PUT")
 	// Atomic conversation creation: server picks id, creates folder with
 	// the collision-resolved canonical name, returns {id, name, created}.
 	api.HandleFunc("/conversations", sessionAPI.HandleCreateConversation).Methods("POST")

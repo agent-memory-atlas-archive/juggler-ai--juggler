@@ -76,7 +76,7 @@ interface Window {
 	/**
 	 * Opaque per-project key injected pre-paint by the server, namespacing this
 	 * device's stored zoom/theme so they belong to the project they were set in
-	 * (see utils/ui-pref-scope.js). Empty/absent for a no-project window.
+	 * (see services/prefs.js). Empty/absent for a no-project window.
 	 */
 	__projectKey?: string;
 

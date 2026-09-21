@@ -5,6 +5,8 @@
 package server
 
 import (
+	"encoding/json"
+	"fmt"
 	"html/template"
 	"net/http"
 	"net/http/httptest"
@@ -191,6 +193,172 @@ func TestUIPrefReadsFallBackToTheProject(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), `"dark"`) {
 		t.Fatalf("an unstyled board should follow the project theme, got %s", rec.Body.String())
 	}
+}
+
+// The rest of the viewer's preferences — hidden info cards, dragged column
+// widths — ride one route of their own, carrying an opaque map instead of a
+// named value. The gate is the same one, for the same reason, and these repeat
+// the four shapes above against it before going on to the merge semantics the
+// map needs and the bounds that keep it from growing without limit.
+
+func TestUIPrefsRouteAcceptsLocalViewer(t *testing.T) {
+	s, mgr := newUIPrefsTestServer(t)
+
+	rec := uiPrefRequest(t, s, http.MethodPut, "/api/session/ui-prefs",
+		`{"ui":{"juggler-column-width":"31.5"}}`, localViewerAddr, false)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("local ui-prefs write: got %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	if got := string(mgr.GetWindowUIPrefs(core.WindowRoleMain)["juggler-column-width"]); got != `"31.5"` {
+		t.Fatalf("local ui-prefs write not stored: got %s", got)
+	}
+
+	rec = uiPrefRequest(t, s, http.MethodGet, "/api/session/ui-prefs", "", localViewerAddr, false)
+	if !strings.Contains(rec.Body.String(), `"31.5"`) {
+		t.Fatalf("reading it back: got %s", rec.Body.String())
+	}
+}
+
+func TestUIPrefsRouteRejectsLANViewer(t *testing.T) {
+	s, mgr := newUIPrefsTestServer(t)
+	if err := mgr.MergeWindowUIPrefs(core.WindowRoleMain, uiPrefsPatch(t, `{"juggler-column-width":"31.5"}`)); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	rec := uiPrefRequest(t, s, http.MethodPut, "/api/session/ui-prefs",
+		`{"ui":{"juggler-column-width":"90"}}`, remoteEdgeAddr, false)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("LAN ui-prefs write: got %d, want 403", rec.Code)
+	}
+	if got := string(mgr.GetWindowUIPrefs(core.WindowRoleMain)["juggler-column-width"]); got != `"31.5"` {
+		t.Fatalf("LAN viewer changed the desktop's preferences: got %s", got)
+	}
+}
+
+// The one the address check alone would miss: a DataChannel dispatch or tunnel
+// forwarder hop reaches the server over loopback.
+func TestUIPrefsRouteRejectsTunnelViewer(t *testing.T) {
+	s, mgr := newUIPrefsTestServer(t)
+
+	rec := uiPrefRequest(t, s, http.MethodPut, "/api/session/ui-prefs",
+		`{"ui":{"juggler-column-width":"90"}}`, localViewerAddr, true)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("tunnelled ui-prefs write: got %d, want 403", rec.Code)
+	}
+	if got := mgr.GetWindowUIPrefs(core.WindowRoleMain); len(got) != 0 {
+		t.Fatalf("tunnelled viewer wrote the desktop's preferences: got %v", got)
+	}
+}
+
+// Only the writes are gated: a remote viewer starts from the desktop's
+// preferences and keeps its own changes in its own localStorage.
+func TestUIPrefsRouteReadsStayOpen(t *testing.T) {
+	s, mgr := newUIPrefsTestServer(t)
+	if err := mgr.MergeWindowUIPrefs(core.WindowRoleMain, uiPrefsPatch(t, `{"juggler-column-width":"31.5"}`)); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	rec := uiPrefRequest(t, s, http.MethodGet, "/api/session/ui-prefs", "", remoteEdgeAddr, true)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("remote ui-prefs read: got %d, want 200", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `"31.5"`) {
+		t.Fatalf("remote read should return the saved preferences, got %s", rec.Body.String())
+	}
+}
+
+// Each window names itself with ?role=, and the project-wide realm is named with
+// ?scope=project. Three slots, no leakage between them.
+func TestUIPrefsRouteKeepsTheRealmsApart(t *testing.T) {
+	s, mgr := newUIPrefsTestServer(t)
+	board := core.WindowRolePinboardFor("board_a")
+
+	writes := []struct{ path, body string }{
+		{"/api/session/ui-prefs", `{"ui":{"juggler-column-width":"20"}}`},
+		{"/api/session/ui-prefs?role=" + board, `{"ui":{"juggler-column-width":"55"}}`},
+		{"/api/session/ui-prefs?scope=project", `{"ui":{"juggler-column-width":"80"}}`},
+	}
+	for _, wr := range writes {
+		if rec := uiPrefRequest(t, s, http.MethodPut, wr.path, wr.body, localViewerAddr, false); rec.Code != http.StatusOK {
+			t.Fatalf("PUT %s: got %d: %s", wr.path, rec.Code, rec.Body.String())
+		}
+	}
+
+	for _, want := range []struct{ path, value string }{
+		{"/api/session/ui-prefs?role=main", `"20"`},
+		{"/api/session/ui-prefs?role=" + board, `"55"`},
+		{"/api/session/ui-prefs?scope=project", `"80"`},
+	} {
+		rec := uiPrefRequest(t, s, http.MethodGet, want.path, "", localViewerAddr, false)
+		if !strings.Contains(rec.Body.String(), want.value) {
+			t.Fatalf("GET %s: got %s, want %s", want.path, rec.Body.String(), want.value)
+		}
+	}
+	// A window nobody has told anything is answered with nothing rather than
+	// another window's or the project's.
+	rec := uiPrefRequest(t, s, http.MethodGet,
+		"/api/session/ui-prefs?role="+core.WindowRolePinboardFor("board_b"), "", localViewerAddr, false)
+	if strings.Contains(rec.Body.String(), "juggler-column-width") {
+		t.Fatalf("an untouched window inherited someone else's preferences: %s", rec.Body.String())
+	}
+	if _, ok := mgr.GetSessionUIPrefs()["juggler-pinboard-width"]; ok {
+		t.Fatal("a window's preference reached the project's realm")
+	}
+}
+
+// The viewer PUTs the preference it just changed, so a key the body omits is
+// unchanged; null is how it drops one it no longer has.
+func TestUIPrefsRouteMergesAndDeletes(t *testing.T) {
+	s, _ := newUIPrefsTestServer(t)
+
+	put := func(body string) {
+		t.Helper()
+		if rec := uiPrefRequest(t, s, http.MethodPut, "/api/session/ui-prefs", body, localViewerAddr, false); rec.Code != http.StatusOK {
+			t.Fatalf("PUT %s: got %d: %s", body, rec.Code, rec.Body.String())
+		}
+	}
+	put(`{"ui":{"a":1,"b":2}}`)
+	put(`{"ui":{"a":3}}`)
+
+	rec := uiPrefRequest(t, s, http.MethodGet, "/api/session/ui-prefs", "", localViewerAddr, false)
+	if body := rec.Body.String(); !strings.Contains(body, `"a":3`) || !strings.Contains(body, `"b":2`) {
+		t.Fatalf("a partial write must not drop the keys it omits: got %s", body)
+	}
+
+	put(`{"ui":{"a":null}}`)
+	rec = uiPrefRequest(t, s, http.MethodGet, "/api/session/ui-prefs", "", localViewerAddr, false)
+	if body := rec.Body.String(); strings.Contains(body, `"a"`) || !strings.Contains(body, `"b":2`) {
+		t.Fatalf("null must delete just that key: got %s", body)
+	}
+}
+
+// A patch past the bounds is the caller's fault, not the server's, and is
+// refused whole — 400, with what was already stored left alone.
+func TestUIPrefsRouteRefusesAPatchOverTheBounds(t *testing.T) {
+	s, mgr := newUIPrefsTestServer(t)
+	if err := mgr.MergeWindowUIPrefs(core.WindowRoleMain, uiPrefsPatch(t, `{"kept":1}`)); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	body := fmt.Sprintf(`{"ui":{"big":%q}}`, strings.Repeat("x", 9<<10))
+	rec := uiPrefRequest(t, s, http.MethodPut, "/api/session/ui-prefs", body, localViewerAddr, false)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("an oversized preference: got %d, want 400", rec.Code)
+	}
+	prefs := mgr.GetWindowUIPrefs(core.WindowRoleMain)
+	if len(prefs) != 1 || string(prefs["kept"]) != `1` {
+		t.Fatalf("a refused patch must leave what was stored alone: got %v", prefs)
+	}
+}
+
+// uiPrefsPatch builds a patch for seeding, from the JSON object a viewer sends.
+func uiPrefsPatch(t *testing.T, body string) map[string]json.RawMessage {
+	t.Helper()
+	var patch map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(body), &patch); err != nil {
+		t.Fatalf("uiPrefsPatch(%s): %v", body, err)
+	}
+	return patch
 }
 
 // serveIndex injects the theme the page must paint on its very first frame. It

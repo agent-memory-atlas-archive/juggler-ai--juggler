@@ -317,8 +317,8 @@ class ConnectionManager {
     // the window's answer, not any one surface's: they share it, and they must.
     this._unfollowGit = followSession(this._session);
 
-    // Load session data from backend
-    // If session doesn't exist (404), clear localStorage and reload to get a new session
+    // Load session data from backend.
+    // If the session doesn't exist (404), reload to get a new one.
     let loadError = null;
     try {
       await this._session.load();
@@ -329,7 +329,6 @@ class ConnectionManager {
         // The recovery here is a viewer page reload; the engine worker has
         // no page and recovers via the server reissuing session state.
         if (typeof window !== 'undefined') {
-          localStorage.removeItem('jugglerSessionId');
           window.location.reload();
           return;
         }

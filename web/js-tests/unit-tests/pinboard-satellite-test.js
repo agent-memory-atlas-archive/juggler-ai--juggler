@@ -36,7 +36,7 @@ import {
   __setViewModeForTests, isPinboardView, ownerViewerId, initialPinId, boardConversationId,
   viewMode, windowRole, VIEW_MAIN, VIEW_PINBOARD,
 } from '../../js/utils/view-mode.js';
-import { scopedKey } from '../../js/utils/ui-pref-scope.js';
+import { scopedKey } from '../../js/services/prefs.js';
 import PinboardItemType from 'juggler/pinboard-item-type';
 import '../../js/components/pinboard-shell.js';
 import '../../js/components/conversation-bar.js';

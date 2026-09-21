@@ -7,6 +7,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"maps"
 	"net/http"
@@ -64,19 +65,36 @@ func (s *settingsStore) get() core.GlobalSettings {
 
 // set persists next and, on a successful save, adopts it as the in-memory copy.
 // A save failure leaves the in-memory state unchanged and returns the error.
-func (s *settingsStore) set(next core.GlobalSettings) error {
+//
+// uiPrefs is the UI section's patch rather than its whole value, and is applied
+// against the document on disk: these preferences are shared by every project's
+// server, so two of them writing different keys at once would otherwise have the
+// second replace the first's whole map. A patch the bounds refuse aborts the
+// save and returns core.ErrUIPrefsRejected.
+func (s *settingsStore) set(next core.GlobalSettings, uiPrefs map[string]json.RawMessage) error {
 	resp := make(chan error, 1)
 	s.reqs <- func(cur *core.GlobalSettings) *core.GlobalSettings {
 		// Merge onto the document as it stands on disk rather than replacing it:
 		// another project's server may have written since this one loaded, and
-		// the four sections below are the whole of what the API owns.
+		// the sections below are the whole of what the API owns.
+		var mergeErr error
 		stored, err := core.UpdateGlobalSettings(func(gs *core.GlobalSettings) bool {
+			ui, err := core.MergeUIPrefs(gs.UI, uiPrefs)
+			if err != nil {
+				mergeErr = err
+				return false
+			}
+			gs.UI = ui
 			gs.Updates.Mode = next.Updates.Mode
 			gs.Connectivity = next.Connectivity
 			gs.Network = next.Network
 			gs.Models = next.Models
 			return true
 		})
+		if mergeErr != nil {
+			resp <- mergeErr
+			return nil
+		}
 		if err != nil {
 			resp <- err
 			return nil // keep the old in-memory state on a failed write
@@ -206,6 +224,12 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	// that provider's complete set, and clearing the last one is an explicit {}.
 	incoming.Models.Hidden = cloneHiddenModels(incoming.Models.Hidden)
 	incoming.Models.Limits = cloneModelLimits(incoming.Models.Limits)
+	// The ui section is deliberately NOT seeded: emptied first, it decodes to
+	// exactly the keys this request sent, which is the patch the store merges
+	// against the document on disk. Seeding it would both have the decode write
+	// into the map the store still owns and leave a null value stored as the
+	// word null instead of deleting its key.
+	incoming.UI = nil
 	// Held rather than streamed, because the body is decoded twice: once merged
 	// onto the document above, and once on its own below to learn which provider
 	// keys this request actually named.
@@ -285,7 +309,14 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	prevLimits := prevSettings.Models.Limits
 	incoming.Updates.Mode = core.NormalizeUpdateMode(incoming.Updates.Mode)
 	incoming.Network.Proxy.Mode = core.NormalizeProxyMode(incoming.Network.Proxy.Mode)
-	if err := s.settings.set(incoming); err != nil {
+	if err := s.settings.set(incoming, incoming.UI); err != nil {
+		// A refused UI patch is the caller's fault, not a storage failure, and
+		// nothing was written — so it is answered 400, carrying which bound it
+		// crossed.
+		if errors.Is(err, core.ErrUIPrefsRejected) {
+			handlers.WriteError(w, r, http.StatusBadRequest, err.Error())
+			return
+		}
 		jlog.Error("settings: save failed: %v", err)
 		handlers.WriteError(w, r, http.StatusInternalServerError, "failed to save settings")
 		return

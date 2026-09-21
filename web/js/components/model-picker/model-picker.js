@@ -48,10 +48,11 @@ import { formatTokens } from '../../utils/format.js';
 import { renderUsageRow } from '../../utils/usage-renderer.js';
 import { escapeHtml } from '../../../sdk/lib/html.js';
 import JugglerElement from '../juggler-element.js';
+import { cachedUserPref, setUserPref } from '../../services/prefs.js';
 import './model-tuning.js';
 
-/** localStorage key holding the per-provider list view-state override map. */
-const VIEW_STATE_STORAGE_KEY = 'juggler-model-view-state';
+/** The user preference holding the per-provider list view-state override map. */
+const VIEW_STATE_PREF = 'juggler-model-view-state';
 
 /** The list view-states a provider header toggle cycles through. */
 const VIEW_STATES = ['none', 'top', 'all'];
@@ -134,9 +135,9 @@ class ModelPicker extends JugglerElement {
      * Per-provider list view state: how many of a provider's models the list
      * shows. Tri-state, cycled from the toggle in each provider's header: 'none'
      * (collapsed, no rows) → 'top' (recommended shortlist) → 'all' (full list).
-     * Unset defaults to 'top' for providers with a shortlist, else 'all'. Seeded
-     * from (and persisted to) localStorage as a sparse map of user overrides —
-     * untouched providers stay absent and fall back to the default.
+     * Unset defaults to 'top' for providers with a shortlist, else 'all'. Kept
+     * as a sparse map of user overrides against this person (services/prefs.js)
+     * — untouched providers stay absent and fall back to the default.
      * @type {Record<string, 'none'|'top'|'all'>} @private
      */
     this._viewState = this._loadViewState();
@@ -377,7 +378,7 @@ class ModelPicker extends JugglerElement {
    */
   _loadViewState() {
     try {
-      const raw = JSON.parse(localStorage.getItem(VIEW_STATE_STORAGE_KEY) || '{}') || {};
+      const raw = cachedUserPref(VIEW_STATE_PREF, {}) || {};
       /** @type {Record<string, 'none'|'top'|'all'>} */
       const clean = {};
       for (const [name, state] of Object.entries(raw)) {
@@ -396,11 +397,7 @@ class ModelPicker extends JugglerElement {
    * @private
    */
   _saveViewState() {
-    try {
-      localStorage.setItem(VIEW_STATE_STORAGE_KEY, JSON.stringify(this._viewState));
-    } catch {
-      /* best-effort — localStorage may be full or unavailable */
-    }
+    void setUserPref(VIEW_STATE_PREF, this._viewState);
   }
 
   /**

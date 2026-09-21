@@ -5,6 +5,7 @@
 package core
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"testing"
 )
@@ -49,7 +50,7 @@ func TestWindowStateRoundTrip(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected saved window state after SetWindowState")
 	}
-	if got != want {
+	if !got.SameFrame(want) {
 		t.Fatalf("round-trip mismatch: got %+v want %+v", got, want)
 	}
 }
@@ -81,7 +82,7 @@ func TestWindowStatePersistsToDisk(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected window state to survive reload from %s", filepath.Join(dir, ".juggler", "session.json"))
 	}
-	if got != want {
+	if !got.SameFrame(want) {
 		t.Fatalf("reloaded mismatch: got %+v want %+v", got, want)
 	}
 }
@@ -104,10 +105,10 @@ func TestWindowStateIndependentPerProject(t *testing.T) {
 	if !okA || !okB {
 		t.Fatalf("expected both projects to have saved state (a=%v b=%v)", okA, okB)
 	}
-	if gotA != aState {
+	if !gotA.SameFrame(aState) {
 		t.Fatalf("project a clobbered: got %+v want %+v", gotA, aState)
 	}
-	if gotB != bState {
+	if !gotB.SameFrame(bState) {
 		t.Fatalf("project b clobbered: got %+v want %+v", gotB, bState)
 	}
 }
@@ -129,11 +130,11 @@ func TestWindowStateIsIndependentPerRole(t *testing.T) {
 	}
 
 	gotMain, okMain := m.GetWindowState(WindowRoleMain)
-	if !okMain || gotMain != main {
+	if !okMain || !gotMain.SameFrame(main) {
 		t.Fatalf("the board's frame overwrote the window's: got %+v want %+v", gotMain, main)
 	}
 	gotBoard, okBoard := m.GetWindowState(WindowRolePinboard)
-	if !okBoard || gotBoard != board {
+	if !okBoard || !gotBoard.SameFrame(board) {
 		t.Fatalf("board frame: got %+v want %+v", gotBoard, board)
 	}
 }
@@ -171,7 +172,7 @@ func TestWindowStateMigratesASingleSavedFrame(t *testing.T) {
 
 	m := startManager(store, dir, "")
 	got, ok := m.GetWindowState(WindowRoleMain)
-	if !ok || got != old {
+	if !ok || !got.SameFrame(old) {
 		t.Fatalf("an older session's frame is the main window's: got %+v want %+v", got, old)
 	}
 	if _, ok := m.GetWindowState(WindowRolePinboard); ok {
@@ -191,7 +192,7 @@ func TestWindowStateMigratesASingleSavedFrame(t *testing.T) {
 	}
 	m2 := startManager(store2, dir, "")
 	t.Cleanup(m2.Shutdown)
-	if got, ok := m2.GetWindowState(WindowRoleMain); !ok || got != old {
+	if got, ok := m2.GetWindowState(WindowRoleMain); !ok || !got.SameFrame(old) {
 		t.Fatalf("the migrated frame did not survive the reopen: got %+v want %+v", got, old)
 	}
 }
@@ -207,7 +208,7 @@ func TestMigrateWindowStatesPrefersWhatIsAlreadyThere(t *testing.T) {
 
 	s.migrateWindowStates()
 
-	if s.WindowStates[WindowRoleMain] != current {
+	if !s.WindowStates[WindowRoleMain].SameFrame(current) {
 		t.Fatalf("a role entry wins over the old single field: got %+v", s.WindowStates[WindowRoleMain])
 	}
 	if s.WindowState != nil {
@@ -230,5 +231,28 @@ func TestCloneDoesNotShareTheWindowStates(t *testing.T) {
 	}
 	if _, ok := s.WindowStates[WindowRolePinboard]; ok {
 		t.Fatal("a clone's new role reached the original")
+	}
+}
+
+// A window slot holds a map of the viewer's UI preferences, and a map inside a
+// struct value is copied by reference. So the clone handed to an HTTP handler
+// would share it with the live session the actor goroutine owns unless the slot
+// is deep-copied — the one place a shallow copy of WindowStates is not enough.
+func TestCloneDoesNotShareAWindowsUIPrefs(t *testing.T) {
+	s := NewSession()
+	s.WindowStates = map[string]WindowState{
+		WindowRoleMain: {X: 1, UI: map[string]json.RawMessage{"a": json.RawMessage(`1`)}},
+	}
+	s.UI = map[string]json.RawMessage{"b": json.RawMessage(`2`)}
+
+	c := s.Clone()
+	c.WindowStates[WindowRoleMain].UI["a"] = json.RawMessage(`99`)
+	c.UI["b"] = json.RawMessage(`99`)
+
+	if got := string(s.WindowStates[WindowRoleMain].UI["a"]); got != `1` {
+		t.Fatalf("a clone's write reached the window's stored preferences: got %s want 1", got)
+	}
+	if got := string(s.UI["b"]); got != `2` {
+		t.Fatalf("a clone's write reached the project's stored preferences: got %s want 2", got)
 	}
 }

@@ -31,6 +31,14 @@ type GlobalSettings struct {
 	Connectivity ConnectivitySettings `json:"connectivity"`
 	Network      NetworkSettings      `json:"network"`
 	Models       ModelSettings        `json:"models"`
+
+	// UI holds the viewer preferences that belong to the person rather than to
+	// a project or a window — the tips they have seen, what Escape does,
+	// whether the bell rings. Stored verbatim and opaquely, like the other UI
+	// realms (see ui_prefs.go): the client owns the keys and their shapes, and
+	// nothing in Go reads one. Putting them here rather than in a project's
+	// session is what stops every new project re-teaching every tip.
+	UI map[string]json.RawMessage `json:"ui,omitempty"`
 }
 
 // ModelSettings holds preferences about which models the user wants to see.

@@ -5,6 +5,7 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -95,7 +96,7 @@ func TestHandlePutSettingsOffToOnKicksCheck(t *testing.T) {
 	})
 
 	// Start from off, then flip to automatic — that must kick an immediate check.
-	if err := s.settings.set(core.GlobalSettings{Updates: core.UpdateSettings{Mode: core.UpdateModeOff}}); err != nil {
+	if err := s.settings.set(core.GlobalSettings{Updates: core.UpdateSettings{Mode: core.UpdateModeOff}}, nil); err != nil {
 		t.Fatalf("seed off: %v", err)
 	}
 	rec := httptest.NewRecorder()
@@ -143,6 +144,79 @@ func TestHandlePutSettingsMergesConnectivityAndUpdates(t *testing.T) {
 	putSettings(t, s, `{"updates":{"mode":"off"}}`, http.StatusOK)
 	if gs := s.settings.get(); !gs.Connectivity.LANOnLaunch || gs.Connectivity.WANOnLaunch != "p2p" {
 		t.Fatalf("connectivity clobbered by later updates PUT: %+v", gs.Connectivity)
+	}
+}
+
+// The preferences that follow the person rather than the project or the window
+// — tips they have seen, what Escape does, whether the bell rings — ride the
+// settings document as one opaque map. Nothing in Go reads them; these pin the
+// merge semantics the viewer depends on and the bounds that keep the file from
+// growing without limit.
+
+// wantUserPref asserts one key of the stored ui section. Compared compacted,
+// since the settings file is written indented and a stored value has been
+// through it: the value round-trips, the exact bytes do not.
+func wantUserPref(t *testing.T, s *Server, key, want string) {
+	t.Helper()
+	got, ok := s.settings.get().UI[key]
+	if !ok {
+		t.Fatalf("no stored value for %q", key)
+	}
+	var gotBuf, wantBuf bytes.Buffer
+	if err := json.Compact(&gotBuf, got); err != nil {
+		t.Fatalf("compact %s: %v", got, err)
+	}
+	if err := json.Compact(&wantBuf, []byte(want)); err != nil {
+		t.Fatalf("compact %s: %v", want, err)
+	}
+	if gotBuf.String() != wantBuf.String() {
+		t.Fatalf("%q: got %s want %s", key, got, want)
+	}
+}
+
+func TestHandlePutSettingsUIPrefsMergeAndDelete(t *testing.T) {
+	userpathstest.Isolate(t)
+	s := &Server{settings: newSettingsStore()}
+
+	putSettings(t, s, `{"ui":{"juggler-tips":{"seen":["a"]},"juggler-tool-grouping":true}}`, http.StatusOK)
+	// A second PUT naming one key leaves the other alone: the viewer sends the
+	// preference it just changed, not the whole document.
+	putSettings(t, s, `{"ui":{"juggler-tool-grouping":false}}`, http.StatusOK)
+	wantUserPref(t, s, "juggler-tips", `{"seen":["a"]}`)
+	wantUserPref(t, s, "juggler-tool-grouping", `false`)
+
+	// Null is how a viewer drops one it no longer has.
+	putSettings(t, s, `{"ui":{"juggler-tips":null}}`, http.StatusOK)
+	if _, ok := s.settings.get().UI["juggler-tips"]; ok {
+		t.Fatal("null must delete the key")
+	}
+	wantUserPref(t, s, "juggler-tool-grouping", `false`)
+}
+
+func TestHandlePutSettingsUIPrefsPreserveOtherSections(t *testing.T) {
+	userpathstest.Isolate(t)
+	s := &Server{settings: newSettingsStore()}
+
+	putSettings(t, s, `{"updates":{"mode":"notify"}}`, http.StatusOK)
+	putSettings(t, s, `{"ui":{"juggler-tool-grouping":true}}`, http.StatusOK)
+	if mode := s.settings.get().Updates.Mode; mode != core.UpdateModeNotify {
+		t.Fatalf("updates clobbered by a ui PUT: mode=%q", mode)
+	}
+
+	putSettings(t, s, `{"updates":{"mode":"off"}}`, http.StatusOK)
+	wantUserPref(t, s, "juggler-tool-grouping", `true`)
+}
+
+func TestHandlePutSettingsUIPrefsOverTheBoundsRejected(t *testing.T) {
+	userpathstest.Isolate(t)
+	s := &Server{settings: newSettingsStore()}
+
+	putSettings(t, s, `{"ui":{"kept":1}}`, http.StatusOK)
+	putSettings(t, s, `{"ui":{"big":"`+strings.Repeat("x", 9<<10)+`"}}`, http.StatusBadRequest)
+
+	ui := s.settings.get().UI
+	if len(ui) != 1 || string(ui["kept"]) != `1` {
+		t.Fatalf("a refused patch must leave the document alone: got %v", ui)
 	}
 }
 
@@ -457,7 +531,7 @@ func TestHandleManualUpdateCheckBypassesOff(t *testing.T) {
 		CurrentVersion: "v0.0.1",
 		Enabled:        func() bool { return s.updateMode() != core.UpdateModeOff },
 	})
-	if err := s.settings.set(core.GlobalSettings{Updates: core.UpdateSettings{Mode: core.UpdateModeOff}}); err != nil {
+	if err := s.settings.set(core.GlobalSettings{Updates: core.UpdateSettings{Mode: core.UpdateModeOff}}, nil); err != nil {
 		t.Fatalf("seed off: %v", err)
 	}
 

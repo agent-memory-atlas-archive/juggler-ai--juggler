@@ -17,7 +17,7 @@
  * can never strand anyone in a fixed theme, and 'system' stays reachable
  * without ever being an option someone has to understand. See toggleTheme().
  *
- * Who owns the mode depends on which client is reading it — see ui-pref-scope.js
+ * Who owns the mode depends on which client is reading it — see services/prefs.js
  * for the rule this shares with the zoom. The sources, best first:
  *
  *   - desktop window: this project's saved session mode (window.__sessionThemeMode,
@@ -43,13 +43,13 @@
 import { windowControlURL, isDesktopWindow } from '../../sdk/lib/window-control.js';
 import { onDocumentReady } from './document-ready.js';
 import { fetchJson } from '../services/http.js';
-import { scopedKey, resolvePref } from './ui-pref-scope.js';
+import { scopedKey, resolvePref } from '../services/prefs.js';
 import { windowRole } from './view-mode.js';
 
 const THEME_KEY_BASE = 'juggler-theme';
 
 /**
- * This device's localStorage key for the loaded project (see ui-pref-scope.js).
+ * This device's localStorage key for the loaded project (see services/prefs.js).
  * @returns {string} The namespaced storage key.
  * @private
  */

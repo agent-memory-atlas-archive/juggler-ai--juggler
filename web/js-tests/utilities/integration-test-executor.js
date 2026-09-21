@@ -160,7 +160,8 @@ import { runTests as runDiffReviewTests } from '../unit-tests/diff-review-test.j
 import { runTests as runExternalLinkTests } from '../unit-tests/external-link-test.js';
 import { runTests as runLinkGuardTests } from '../unit-tests/link-guard-test.js';
 import { runTests as runAnsiTests } from '../unit-tests/ansi-test.js';
-import { runTests as runUIPrefScopeTests } from '../unit-tests/ui-pref-scope-test.js';
+import { runTests as runPrefsTests } from '../unit-tests/prefs-test.js';
+import { runTests as runColumnWidthTests } from '../unit-tests/column-width-test.js';
 import { runTests as runThemeToggleTests } from '../unit-tests/theme-toggle-test.js';
 import { runTests as runToolNameResolutionTests } from '../unit-tests/tool-name-resolution-test.js';
 import { runTests as runNewTabUxTests } from '../unit-tests/new-tab-ux-test.js';
@@ -542,7 +543,12 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:external-link', run: runExternalLinkTests },
   { name: 'unit:link-guard', run: runLinkGuardTests },
   { name: 'unit:ansi', run: runAnsiTests },
-  { name: 'unit:ui-pref-scope', run: runUIPrefScopeTests },
+  // Exclusive: it stubs window.fetch and writes localStorage keys, on an
+  // origin every lane shares.
+  { name: 'unit:prefs', run: runPrefsTests, needsExclusiveRun: true },
+  // Exclusive for the same reason: it stands in for the server and writes
+  // the localStorage cache behind the widths.
+  { name: 'unit:column-width', run: runColumnWidthTests, needsExclusiveRun: true },
   // Exclusive: it repaints data-theme and stubs matchMedia for the length of a
   // case, both of which are document-wide.
   { name: 'unit:theme-toggle', run: runThemeToggleTests, needsExclusiveRun: true },

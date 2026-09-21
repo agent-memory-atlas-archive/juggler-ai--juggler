@@ -61,11 +61,11 @@ func TestWindowStateRouteKeepsTheRolesApart(t *testing.T) {
 	}
 
 	got, ok := getFrame(t, s, "/api/session/window-state?role=main")
-	if !ok || got != main {
+	if !ok || !got.SameFrame(main) {
 		t.Fatalf("the board's close overwrote the window's frame: got %+v want %+v", got, main)
 	}
 	got, ok = getFrame(t, s, "/api/session/window-state?role=pinboard")
-	if !ok || got != board {
+	if !ok || !got.SameFrame(board) {
 		t.Fatalf("board frame: got %+v want %+v", got, board)
 	}
 }
@@ -81,10 +81,10 @@ func TestWindowStateRouteDefaultsToTheMainWindow(t *testing.T) {
 		t.Fatalf("PUT = %d: %s", rec.Code, rec.Body.String())
 	}
 
-	if got, ok := getFrame(t, s, "/api/session/window-state?role=main"); !ok || got != want {
+	if got, ok := getFrame(t, s, "/api/session/window-state?role=main"); !ok || !got.SameFrame(want) {
 		t.Fatalf("an unnamed role is the main window: got %+v want %+v", got, want)
 	}
-	if got, ok := getFrame(t, s, "/api/session/window-state"); !ok || got != want {
+	if got, ok := getFrame(t, s, "/api/session/window-state"); !ok || !got.SameFrame(want) {
 		t.Fatalf("and reads back the same way: got %+v want %+v", got, want)
 	}
 }
