@@ -42,6 +42,7 @@ import {
   finishWorkspace
 } from '../services/workspace-provisioning.js';
 import { isWorkspaceUsable } from '../services/workspaces.js';
+import { createFileActions } from '../utils/properties-panel-helpers.js';
 import { showConfirm, showPrompt, showNotice } from './modal-dialog.js';
 import { openWorkspaceMove } from './workspace-move-dialog.js';
 
@@ -344,9 +345,9 @@ class WorkspaceChip extends HTMLElement {
     /** @type {HTMLElement[]} */
     const items = [];
 
-    // The band: what this workspace is, where it is, and how it is doing. Its
-    // three lines are one statement, so they are one element — a list of rows
-    // that happens to start with facts reads as a list of things to press.
+    // The band: what this workspace is, where it is, and how it is doing. Those
+    // are one statement, so they are one element — a list of rows that happens to
+    // start with facts reads as a list of things to press.
     const header = document.createElement('li');
     header.className = 'workspace-menu-header';
     const lead = document.createElement('span');
@@ -365,7 +366,7 @@ class WorkspaceChip extends HTMLElement {
     named.textContent = kind;
     header.appendChild(named);
 
-    header.appendChild(this._pathLine(workspace ? workspace.root : (session?.projectPath ?? '')));
+    header.appendChild(this._pathRow(workspace ? workspace.root : (session?.projectPath ?? '')));
 
     // How it is doing, and — separately — why that could not be established: a
     // workspace that answered and one nobody could reach must never read alike.
@@ -453,30 +454,40 @@ class WorkspaceChip extends HTMLElement {
   }
 
   /**
-   * The path, as one line: the parents dimmed, the last segment emphasised.
+   * Where the work happens, written out in full, with the things one does with a
+   * path: copy it, show it on disk, put it on the board.
    *
-   * The last segment is the name — a column of trees under one checkout differ
-   * only there — so it is what stays when there is not room for the whole path,
-   * and the parents are what give way.
+   * Whole, because no rule about which part of a path matters survives contact
+   * with the paths providers actually make. A scratch copy's root ends in the
+   * same `work` directory for every copy ever taken, and the segment that says
+   * which copy this is sits above it — so emphasising the last segment and
+   * eliding the rest showed the one word that is identical everywhere and hid the
+   * only one that is not. It wraps rather than clips for the same reason: a path
+   * a reader has to hover to finish is a path they were not shown.
+   *
+   * The buttons are the shared ones, so a workspace root offers what every other
+   * path in the app offers. They answer the pointer only: this menu never takes
+   * focus — it is anchored to a composer nobody wants to be typing out of — and
+   * its arrow keys walk the rows that do something to the workspace, which these
+   * do not.
    * @param {string} path - Where the work happens.
-   * @returns {HTMLElement} The line.
+   * @returns {HTMLElement} The row.
    */
-  _pathLine(path) {
-    const line = document.createElement('span');
-    line.className = 'workspace-menu-root';
-    line.title = path;
-    const cut = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
-    if (cut >= 0) {
-      const parent = document.createElement('span');
-      parent.className = 'workspace-menu-root-parent';
-      parent.textContent = path.slice(0, cut + 1);
-      line.appendChild(parent);
-    }
-    const name = document.createElement('span');
-    name.className = 'workspace-menu-root-name';
-    name.textContent = cut >= 0 ? path.slice(cut + 1) : path;
-    line.appendChild(name);
-    return line;
+  _pathRow(path) {
+    const row = document.createElement('div');
+    row.className = 'workspace-menu-path-row';
+
+    const box = document.createElement('div');
+    box.className = 'workspace-menu-path properties-panel-filepath-box';
+    box.textContent = path;
+    // The same hook the right-click Open / Reveal / Copy menu reads elsewhere,
+    // so the path behaves like a path wherever it is met.
+    if (path) box.dataset.filePath = path;
+    row.appendChild(box);
+
+    const actions = createFileActions(path, { pin: path, directory: true });
+    if (actions) row.appendChild(actions);
+    return row;
   }
 
   /**

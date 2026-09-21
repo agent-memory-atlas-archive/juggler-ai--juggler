@@ -394,6 +394,13 @@ export async function runTests() {
       });
       assert(fine.querySelector('.setup-row-detail')?.textContent === 'on feat/tunnels · clean',
         'a working probe still describes the place');
+      // A probe answers in a sentence and the fallback is an address, and the
+      // two are not set alike: monospace is what makes a path scannable and
+      // what makes a sentence look like program output.
+      assert(fine.querySelector('.setup-row-detail')?.classList.contains('setup-row-said'),
+        'and is marked as the sentence it is');
+      assert(!note?.classList.contains('setup-row-said'),
+        'while the address the row falls back to is not');
       assert(!(/** @type {HTMLElement|null} */ (fine.querySelector('.setup-row'))?.title),
         'and carries no tooltip, because nothing went wrong');
     });

@@ -341,7 +341,13 @@ class ScratchCopyWorkspaceProvider extends WorkspaceProvider {
     return {
       label: named,
       kind,
-      detail: count ? `${countOf(count)} changed` : 'nothing changed yet',
+      // Said against the thing it is measured against. A bare count is a number
+      // whose question the reader has to guess at, and the guesses — changed
+      // against the project? against the last turn? — are all answers this does
+      // not give: it is the copy compared with the snapshot taken of it.
+      detail: count
+        ? `${countOf(count)} changed since the copy was made`
+        : 'Nothing changed since the copy was made',
       badge: count ? 'changed' : '',
       dirty: count > 0,
       available: true

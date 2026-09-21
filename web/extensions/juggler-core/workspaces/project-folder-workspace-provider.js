@@ -263,11 +263,14 @@ class ProjectFolderWorkspaceProvider extends WorkspaceProvider {
   }
 
   /**
-   * Where it is, said as the project sees it.
+   * What it is, and whether it is still there.
    *
-   * There is nothing else worth a round trip: a folder has no branch, no drift
-   * and no unapplied change of its own — what git has to say about it is the
-   * project's own status, which the user can already see.
+   * Nothing further is worth a round trip, and nothing further is worth a line:
+   * a folder has no branch, no drift and no unapplied change of its own — what
+   * git has to say about it is the project's own status, which the user can
+   * already see. The place is named by its `kind` and addressed by the path every
+   * surface shows beside it, so a status line here could only spell that path a
+   * second time, under the first.
    * @param {any} workspace - The row to report on.
    * @param {any} ctx - Operations pinned to it, and a signal.
    * @returns {Promise<any>} What to show for it.
@@ -281,7 +284,7 @@ class ProjectFolderWorkspaceProvider extends WorkspaceProvider {
     if (workspace.available === false) {
       return { label: rel, kind, detail: 'The folder is missing.', available: false };
     }
-    return { label: rel, kind, detail: rel, available: true };
+    return { label: rel, kind, available: true };
   }
 
   /**

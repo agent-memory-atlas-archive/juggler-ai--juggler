@@ -67,6 +67,8 @@ import { validateManifest } from './lib/manifest.js';
  * @typedef {object} PinSource
  * @property {string} kind - Source kind, e.g. 'file'
  * @property {string} [path] - Absolute path, for `kind: 'file'`
+ * @property {boolean} [isDirectory] - Whether that path names a folder rather than
+ *   a file, for a surface that already knows which it is offering
  * @property {'live'|'snapshot'} [presentation] - Whether the pin tracks the source
  *   or freezes what it said at pin time
  */

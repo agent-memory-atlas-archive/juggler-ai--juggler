@@ -200,8 +200,12 @@ async function showPath(path) {
  * to the Pinboard. Shared so that everywhere a path is shown offers the same
  * controls in the same order, whether that is a properties panel, a settings
  * tab, the Pinboard's own item toolbar, or a pin listing files of its own.
+ * A directory takes the same row one button shorter: handing a folder to the OS
+ * and showing it where it lives are the same act, so Open is left out rather than
+ * offered twice under two names.
  * @param {string} path - The path to act on. An empty one yields no row at all.
- * @param {{pin?: string}} [options] - `pin` is the absolute path to pin.
+ * @param {{pin?: string, directory?: boolean}} [options] - `pin` is the absolute
+ *   path to pin; `directory` says the path names a folder.
  * @returns {HTMLElement|null} The actions container, or null with no path.
  */
 export function createFileActions(path, options = {}) {
@@ -210,14 +214,16 @@ export function createFileActions(path, options = {}) {
   const actions = document.createElement('div');
   actions.className = 'properties-panel-filepath-actions';
 
-  const open = document.createElement('button');
-  open.type = 'button';
-  open.className = 'properties-panel-filepath-btn';
-  open.title = 'Open file';
-  open.setAttribute('aria-label', 'Open file');
-  open.innerHTML = OPEN_IN_NEW_SVG;
-  open.addEventListener('click', () => { void openPath(path); });
-  actions.appendChild(open);
+  if (!options.directory) {
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'properties-panel-filepath-btn';
+    open.title = 'Open file';
+    open.setAttribute('aria-label', 'Open file');
+    open.innerHTML = OPEN_IN_NEW_SVG;
+    open.addEventListener('click', () => { void openPath(path); });
+    actions.appendChild(open);
+  }
 
   actions.appendChild(createCopyButton(path, 'properties-panel-filepath-btn', 'Copy path to clipboard'));
 
@@ -225,7 +231,9 @@ export function createFileActions(path, options = {}) {
   reveal.setAttribute('path', path);
   actions.appendChild(reveal);
 
-  const pinButton = options.pin ? createPinButton(fileSource(options.pin)) : null;
+  const pinButton = options.pin
+    ? createPinButton(fileSource(options.pin, options.directory === true))
+    : null;
   if (pinButton) actions.appendChild(pinButton);
 
   return actions;
@@ -237,11 +245,15 @@ const PIN_LABEL = 'Pin to Pinboard';
 /**
  * What a path looks like to the Pinboard: the live file, whatever surface named
  * it, so the button and the menu row ask for one thing.
+ * A folder is the same kind of source and a different thing to show — a listing
+ * rather than contents — so it says which it is rather than leaving the pin to
+ * guess from a path that looks like any other.
  * @param {string} path - The path to pin.
+ * @param {boolean} [isDirectory] - Whether the path names a folder.
  * @returns {import('juggler/pinboard-item-type').PinSource} The source to pin.
  */
-function fileSource(path) {
-  return { kind: 'file', path, presentation: 'live' };
+function fileSource(path, isDirectory = false) {
+  return { kind: 'file', path, presentation: 'live', ...(isDirectory ? { isDirectory: true } : {}) };
 }
 
 /**

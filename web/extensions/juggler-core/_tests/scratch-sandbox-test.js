@@ -605,7 +605,11 @@ export async function runTests() {
         });
 
         const fresh = await workspaceStatus(session, outcome.workspace);
-        assert(fresh?.dirty === false && fresh?.detail === 'nothing changed yet',
+        // Both readings name what they are measured against. A bare count is a
+        // number whose question the reader has to guess at, and every guess —
+        // against the project, against the last turn — is an answer it is not
+        // giving.
+        assert(fresh?.dirty === false && fresh?.detail === 'Nothing changed since the copy was made',
           `a copy taken a moment ago holds no work of its own, got ${JSON.stringify(fresh)}`);
         assert(fresh?.label === name,
           `and is known by the name it was given, got ${JSON.stringify(fresh?.label)}`);
@@ -616,7 +620,7 @@ export async function runTests() {
         await mustRun(inside, `printf 'risky idea ${tag}' > idea.txt`);
 
         const changed = await workspaceStatus(session, outcome.workspace);
-        assert(changed?.dirty === true && changed?.detail === '1 file changed',
+        assert(changed?.dirty === true && changed?.detail === '1 file changed since the copy was made',
           `and one file added to it reads as one file changed, got ${JSON.stringify(changed)}`);
         assert(changed?.badge === 'changed',
           `with a word for it in the chip, got ${JSON.stringify(changed?.badge)}`);
@@ -689,7 +693,7 @@ export async function runTests() {
         // and a sandbox whose chip said two files while the move copied one
         // would be the kind of disagreement nobody looks for.
         const status = await workspaceStatus(session, outcome.workspace);
-        assert(status?.detail === '2 files changed',
+        assert(status?.detail === '2 files changed since the copy was made',
           `the count on screen is that same list, counted, got ${JSON.stringify(status?.detail)}`);
       } finally {
         if (outcome?.workspace?.id) await unregisterWorkspace(outcome.workspace.id).catch(() => {});

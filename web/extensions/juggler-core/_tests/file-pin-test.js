@@ -214,6 +214,14 @@ export async function runTests(ctx) {
     const config = FilePin.configFromSource({ kind: 'file', path: '/a//b/../b/c.txt', presentation: 'live' });
     assert(config?.path === '/a/b/c.txt',
       `pinning from a panel and from the picker must agree, got ${JSON.stringify(config)}`);
+
+    // A folder pinned from a surface that knows it is one — a workspace root —
+    // must become the listing pin, not a pin that tries to read a directory as
+    // bytes. The picker says the same thing with a trailing slash.
+    const folder = FilePin.configFromSource(
+      { kind: 'file', path: '/a/b/work', isDirectory: true, presentation: 'live' });
+    assert(folder?.isDirectory === true && folder?.path === '/a/b/work',
+      `a source that says it is a folder pins as one, got ${JSON.stringify(folder)}`);
   });
 
   await test('describe reads the config and never the disk', () => {
@@ -644,6 +652,17 @@ export async function runTests(ctx) {
     addFilePath(noPin, '/a/b.txt');
     assert(!pinButton(noPin),
       'a path row that was not given a path to pin offers nothing — a relative path is not an identity');
+
+    // Handing a folder to the OS and showing it where it lives are one act, so a
+    // directory's row is the same row without the Open button rather than the
+    // same button twice under two names.
+    const folder = document.createElement('div');
+    addFilePath(folder, '/a/work', undefined, { pin: '/a/work', directory: true });
+    assert(!folder.querySelector('[aria-label="Open file"]'),
+      'a folder is not offered an Open of its own, which is what Reveal already does');
+    assert(folder.querySelector('[aria-label="Copy path to clipboard"]') && folder.querySelector('reveal-button'),
+      'but keeps the two that mean something for a folder');
+    assert(!!pinButton(folder), 'and can be put on the board like anything else');
   });
 
   return { passed, failed, errors };

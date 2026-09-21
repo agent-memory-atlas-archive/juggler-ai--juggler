@@ -262,8 +262,17 @@ export async function runTests() {
           `then where it is and how it is doing, got ${JSON.stringify(text)}`);
         assert(!text.includes('(worktree)'),
           `and not the row's label as well, which the kind line has just answered, got ${JSON.stringify(text)}`);
-        assert(menu.querySelector('.workspace-menu-root-name')?.textContent === 'menu-tree',
-          `carrying the last segment of the path apart, because that is the name, got ${JSON.stringify(text)}`);
+        // The address, whole and in one piece. A band that elides part of a path
+        // hides the one segment that tells two places apart: every scratch copy
+        // ever made ends in the same `work` directory, and what it is a copy OF
+        // is the segment above that — which is exactly what an ellipsis ate.
+        const box = menu.querySelector('.workspace-menu-path');
+        assert(box?.textContent === '/tmp/menu-tree',
+          `the path is shown whole, in one element, got ${JSON.stringify(box?.textContent)}`);
+        const acts = (/** @type {string} */ selector) =>
+          menu.querySelector(`.workspace-menu-path-row ${selector}`);
+        assert(acts('[aria-label="Copy path to clipboard"]') && acts('reveal-button'),
+          'and carries the copy and reveal buttons every other path in the app has');
         assert(says('.workspace-menu-move') === 'Use a different workspace…',
           `the way out is named in the same noun, got ${JSON.stringify(says('.workspace-menu-move'))}`);
         assert(menu.querySelector('.category-header')?.textContent === 'When you’re done with this workspace',
@@ -285,8 +294,8 @@ export async function runTests() {
         const edge = (/** @type {string} */ selector) =>
           menu.querySelector(selector)?.getBoundingClientRect().left ?? -1;
         const gutter = edge('.workspace-menu-move .menu-item-name');
-        assert(gutter > 0 && Math.abs(edge('.workspace-menu-root-parent') - gutter) < 1,
-          `the path starts at the same edge as the rows below it, got ${edge('.workspace-menu-root-parent')} against ${gutter}`);
+        assert(gutter > 0 && Math.abs(edge('.workspace-menu-path-row') - gutter) < 1,
+          `the path starts at the same edge as the rows below it, got ${edge('.workspace-menu-path-row')} against ${gutter}`);
         assert(Math.abs(edge('.workspace-menu-action[data-action="leave"] .menu-item-name') - gutter) < 1,
           'and so does an ending');
 
@@ -413,6 +422,15 @@ export async function runTests() {
         const settled = openWorkspaceMove(moved);
         const dialog = /** @type {any} */ (document.querySelector('.workspace-move-overlay'));
         assert(dialog, 'opening it puts a dialog on screen');
+        // Where it works now is a standing fact, and an address is only a fact
+        // when it is whole: the dialog states the tree being left in full and
+        // offers the two things anybody wants from a path on screen.
+        const stated = dialog.querySelector('.workspace-move-now-path');
+        assert(stated?.textContent === `${projectPath}/${from}`,
+          `the tree being left is stated in full, got ${JSON.stringify(stated?.textContent)}`);
+        assert(dialog.querySelector('.workspace-move-now [aria-label="Copy path to clipboard"]')
+          && dialog.querySelector('.workspace-move-now reveal-button'),
+        'and can be copied or shown on disk without leaving the dialog');
         assert(!dialog.querySelector(`.setup-row[data-row-id="${madeFrom.id}"]`),
           'the tree it already works in is not one of the places it could move to');
         const row = /** @type {any} */ (dialog.querySelector(`.setup-row[data-row-id="${madeTo.id}"]`));
@@ -435,6 +453,11 @@ export async function runTests() {
           `a conversation moved through the dialog reads the instructions of the tree it is in, got ${JSON.stringify(after)}`);
       } finally {
         /** @type {any} */ (window).showModal = realModal;
+        // An assertion that fails between opening the dialog and pressing it
+        // leaves the overlay on screen, and every case after this one queries
+        // for one and finds it — one failure then reads as the whole suite
+        // hanging. Whatever happened above, the screen is cleared here.
+        document.querySelector('.workspace-move-overlay')?.remove();
         session.workspaces = saved;
         await unregisterWorkspace(madeFrom.id).catch(() => {});
         await unregisterWorkspace(madeTo.id).catch(() => {});

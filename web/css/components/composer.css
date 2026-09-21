@@ -295,7 +295,7 @@ composer-box .workspace-chip-button.dirty .workspace-chip-icon {
    text to the same gutter the rows below use, so the column still lines up. */
 .workspace-menu .workspace-menu-header {
     margin: calc(-1 * var(--popup-padding)) calc(-1 * var(--popup-padding-inline)) 0.25rem;
-    padding: 0.625rem calc(var(--popup-padding-inline) + 0.75rem);
+    padding: 0.75rem calc(var(--popup-padding-inline) + 0.75rem);
     background: var(--bg-raised);
     border-bottom: 0.0625rem solid var(--border-divider);
     border-radius: var(--radius-popup) var(--radius-popup) 0 0;
@@ -321,8 +321,14 @@ composer-box .workspace-chip-button.dirty .workspace-chip-icon {
 }
 
 .workspace-menu .workspace-menu-kind {
+    margin-bottom: 0.3125rem;
     color: var(--text-primary);
     font-weight: 600;
+}
+
+.workspace-menu .workspace-menu-detail {
+    margin-top: 0.3125rem;
+    line-height: 1.4;
 }
 
 /* The provider's reason for having nothing to offer, which is not part of the
@@ -339,6 +345,7 @@ composer-box .workspace-chip-button.dirty .workspace-chip-icon {
    use, so the lines under it are read as an answer to something. */
 .workspace-menu .workspace-menu-lead {
     display: block;
+    margin-bottom: 0.125rem;
     font-size: 0.6875rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -367,25 +374,22 @@ composer-box .workspace-chip-button.dirty .workspace-chip-icon {
     line-height: 1.35;
 }
 
-/* The path as one line. Its last segment is the name and the rest is the
-   address, so the name keeps the weight and the parents are what give way when
-   there is not room for both. */
-.workspace-menu .workspace-menu-root {
+/* The path, whole. It wraps instead of ellipsising because no part of a
+   workspace root is reliably the disposable part: the copies under
+   `.juggler/sandboxes` all end in the same `work`, and what tells them apart is
+   the segment above it. Two lines of address cost less than the wrong half of
+   one. The buttons hold the top line, where they stay put however far the path
+   runs on. */
+.workspace-menu .workspace-menu-path-row {
     display: flex;
-    align-items: baseline;
+    align-items: flex-start;
+    gap: 0.375rem;
 }
 
-.workspace-menu .workspace-menu-root-parent {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.workspace-menu .workspace-menu-root-name {
-    flex: none;
-    color: var(--text-primary);
-    font-weight: 600;
+.workspace-menu .properties-panel-filepath-actions {
+    /* Against the box's top line rather than the row's, so the icons sit level
+       with the first line of the path and not adrift beside a wrapped one. */
+    margin-top: 0.0625rem;
 }
 
 /* The keyboard cursor, in the vocabulary the model picker already uses:

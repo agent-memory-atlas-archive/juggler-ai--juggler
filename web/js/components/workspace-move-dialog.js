@@ -41,6 +41,7 @@ import {
   workspaceWorkList
 } from '../services/workspace-rebinding.js';
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
+import { createFileActions } from '../utils/properties-panel-helpers.js';
 import {
   setupButton,
   buildProviderFields,
@@ -297,9 +298,22 @@ export function openWorkspaceMove(conversation) {
       named.className = 'workspace-move-now-label';
       named.textContent = current ? (current.label || current.root) : 'The project folder';
       now.appendChild(named);
-      const where = document.createElement('span');
-      where.className = 'workspace-move-now-root';
-      where.textContent = current?.root || session?.projectPath || '';
+      // The address, whole and on its own line. It is the one part of this that
+      // a reader may want out of the dialog rather than in it — into a terminal,
+      // or open in a file manager beside it — so it is offered as a path and not
+      // as the tail of a sentence. Pinning is not among the offers: this is a
+      // modal, and a pin put on the board behind one is a thing that happened out
+      // of sight.
+      const where = document.createElement('div');
+      where.className = 'workspace-move-now-path-row';
+      const tree = current?.root || session?.projectPath || '';
+      const box = document.createElement('div');
+      box.className = 'workspace-move-now-path properties-panel-filepath-box';
+      box.textContent = tree;
+      if (tree) box.dataset.filePath = tree;
+      where.appendChild(box);
+      const onPath = createFileActions(tree, { directory: true });
+      if (onPath) where.appendChild(onPath);
       now.appendChild(where);
       dialog.appendChild(now);
 

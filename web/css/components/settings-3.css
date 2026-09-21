@@ -570,6 +570,7 @@
    below it. */
 .workspace-move-now {
     display: flex;
+    flex-wrap: wrap;
     align-items: baseline;
     gap: 0 0.5rem;
     padding-bottom: 0.5rem;
@@ -582,15 +583,19 @@
     font-weight: 600;
 }
 
-/* The root gives up its width first and ellipsises, as it does in the banner:
-   it is the longest part, and the one a reader scans rather than reads. */
-.workspace-move-now-root {
-    flex: 0 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    opacity: 0.8;
+/* The address takes the next line to itself and is shown whole. It is the part
+   of this a reader may want out of the dialog — into a terminal, or open beside
+   it — and a path cut to fit is a path that cannot be used for either. */
+.workspace-move-now-path-row {
+    display: flex;
+    flex: 1 0 100%;
+    align-items: flex-start;
+    gap: 0.375rem;
+    margin-top: 0.375rem;
+}
+
+.workspace-move-now .properties-panel-filepath-actions {
+    margin-top: 0.0625rem;
 }
 
 /* What the tree being left still holds, and whether to bring it. It sits under

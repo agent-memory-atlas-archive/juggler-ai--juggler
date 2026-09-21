@@ -269,6 +269,15 @@ conversation-setup-panel {
     color: var(--text-tertiary);
 }
 
+/* Unless a provider answered, in which case the line is a sentence about how the
+   place is doing — "Nothing changed since the copy was made" — and a sentence in
+   monospace reads as something a program printed rather than as something the
+   app is telling you. */
+.setup-card .setup-row-said {
+    font-family: inherit;
+    font-size: 0.8125rem;
+}
+
 /* The composer's own instructions, below the card and dimmer than it: the card
    is the thing to answer, these are what to do next. */
 .setup-hint {

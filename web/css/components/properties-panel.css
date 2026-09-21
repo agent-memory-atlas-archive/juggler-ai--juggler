@@ -327,6 +327,26 @@ file-view {
     min-width: 0;
 }
 
+/* A path as a box rather than as a line of running text: mono, framed, and
+   wrapping, for the surfaces that state ONE address and have to show it whole —
+   the workspace root in the chip's menu, the tree a move is leaving. Those have
+   no second line to fall back on, so nothing is elided: no part of a path is
+   reliably the disposable part. Pairs with `.properties-panel-filepath-actions`
+   in a flex row. */
+.properties-panel-filepath-box {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0.25rem 0.375rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.25rem;
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    line-height: 1.45;
+    word-break: break-all;
+}
+
 /* Size / line-count annotation, on its own line below the path row */
 .properties-panel-filepath-info {
     font-family: var(--font-mono);

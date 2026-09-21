@@ -390,7 +390,7 @@ export async function runTests() {
       await ops.shell({ command: `rm -rf ${folder}` }).catch(() => {});
     });
 
-    await run('a folder says where it is, and says when it is gone', async () => {
+    await run('a folder says what it is, and says when it is gone', async () => {
       const tag = uniqueTag();
       const folder = `pf-${tag}`;
       await ops.writeFile({ path: `${folder}/keep.txt`, content: 'kept' });
@@ -402,8 +402,13 @@ export async function runTests() {
         const reported = await workspaceStatus(session, outcome.workspace);
         assert(reported.kind.startsWith('Folder of '),
           `the chip says what kind of place this is, got ${JSON.stringify(reported.kind)}`);
-        assert(reported.label === folder && reported.detail === folder,
-          `named and described by where it is in the project, got ${JSON.stringify(reported)}`);
+        assert(reported.label === folder,
+          `named by where it is in the project, got ${JSON.stringify(reported)}`);
+        // And stops there. A folder has no branch, no drift and no work of its
+        // own to report, so a status line could only spell its path a second
+        // time under the path every surface already shows beside it.
+        assert(!reported.detail,
+          `with nothing further, because a folder has no state of its own, got ${JSON.stringify(reported.detail)}`);
         assert(!reported.problem,
           `and nothing is wrong with it, got ${JSON.stringify(reported.problem)}`);
 
