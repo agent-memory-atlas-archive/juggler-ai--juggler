@@ -107,3 +107,16 @@ func installAppMenu(a *appState, devMode bool) {
 
 	a.app.Menu.Set(menu)
 }
+
+// addAboutItem appends "About Juggler" to the application menu. It opens the
+// page's own about box (the one the header logo opens) instead of Wails' About
+// role, whose handler puts up the platform's stock about panel in a separate
+// window — a second, plainer about box for an app that already has one.
+func addAboutItem(a *appState, appMenu *application.Menu) {
+	appMenu.Add("About Juggler").
+		OnClick(func(_ *application.Context) {
+			if win := a.app.Window.Current(); win != nil {
+				win.ExecJS("window.dispatchEvent(new CustomEvent('juggler:open-about'))")
+			}
+		})
+}

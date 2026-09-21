@@ -6,6 +6,7 @@ package main
 
 import (
 	"errors"
+	"runtime"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -25,10 +26,29 @@ import (
 // a.app is live), from initApplication. Default: no-op.
 var afterAppInit = func(*appState) {}
 
-// buildAppMenu installs the application-menu role onto the root menu, from
-// installAppMenu. Default: the stock platform application menu, no extra items.
-var buildAppMenu = func(_ *appState, menu *application.Menu) {
-	menu.AddRole(application.AppMenu)
+// buildAppMenu installs the application menu onto the root menu, from
+// installAppMenu. Default: the platform application menu, no extra items.
+//
+// It mirrors Wails' AppMenu role (About, Services, Hide/HideOthers/UnHide,
+// Quit) rather than using it, for the one difference addAboutItem makes; macOS
+// treats the first submenu as the app menu whatever its label, and the Services
+// role keeps its native submenu injection. Like that role, it is macOS-only:
+// nothing else shows an application menu (Linux is suppressed a caller up, and
+// the frameless Windows window displays no menu bar at all).
+var buildAppMenu = func(a *appState, menu *application.Menu) {
+	if runtime.GOOS != "darwin" {
+		return
+	}
+	appMenu := menu.AddSubmenu("Juggler")
+	addAboutItem(a, appMenu)
+	appMenu.AddSeparator()
+	appMenu.AddRole(application.ServicesMenu)
+	appMenu.AddSeparator()
+	appMenu.AddRole(application.Hide)
+	appMenu.AddRole(application.HideOthers)
+	appMenu.AddRole(application.UnHide)
+	appMenu.AddSeparator()
+	appMenu.AddRole(application.Quit)
 }
 
 // UpdaterSnapshot is the in-app updater's current state, marshalled to the page

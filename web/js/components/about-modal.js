@@ -12,8 +12,10 @@ import JugglerElement from './juggler-element.js';
 /**
  * AboutModal - Shows information about the application
  *
- * Opens when clicking the logo in the header. Displays app name, version,
- * and a brief description with a link to the website.
+ * Opens when clicking the logo in the header, or on `juggler:open-about` —
+ * which is what the desktop app's "About Juggler" menu item dispatches, so the
+ * native menu shows this box rather than the platform's own about panel.
+ * Displays app name, version, and a brief description with a link to the website.
  */
 class AboutModal extends JugglerElement {
   constructor() {
@@ -29,6 +31,7 @@ class AboutModal extends JugglerElement {
   connectedCallback() {
     this.render();
     this._setupLogoClick();
+    this.onWindow('juggler:open-about', () => { void this.open(); });
   }
 
   /**
