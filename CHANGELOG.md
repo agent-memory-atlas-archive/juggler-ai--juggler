@@ -13,6 +13,9 @@ of changes; this project follows semantic versioning.
 - A plan or todo panel now offers a pin button, putting the live list on the pinboard
 - LocalAI is now a provider of its own, reading each model's real context window from the server
 - An OpenAI-compatible endpoint that publishes model capabilities is no longer assumed to be 128k
+- An OpenRouter model now takes its context window from the endpoint that serves it, not the router's maximum
+- That stops some models reserving most of their window for output, compacting every turn and then being rejected
+- A context-limit error now says whether its input figure was measured or only estimated
 - Attaching a file partway through a conversation no longer rebuilds the whole prompt cache
 - A conversation no longer compacts repeatedly, or summarizes history it had room for, after one mismeasured turn
 - Binning your last conversation now leaves a panel saying how to start another, not a blank window

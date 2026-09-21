@@ -58,9 +58,10 @@ type Limits struct {
 // would advise on every request from the first message, and folding could never
 // help — the fold's own retain budget is computed net of the very same reserve.
 //
-// That third case is a guard against a catalog shape rather than a fix for an
-// observed one: no model has been seen reporting a cap in that band. Real
-// reserves sit far below it (32k against a 200k window, 64k against 1M). Do not
+// The third case is real and current: several z.ai entries in OpenRouter's
+// catalog report a cap of 943718 against a serving window of 1048576, which is
+// 90% of it. Real reserves sit far below that (32k against a 200k window, 64k
+// against 1M), and a model is only usable here because this rule fires. Do not
 // reach for it to explain a conversation that compacts too early — that symptom
 // has been traced to the measured-prefix projection, not to the reserve.
 //

@@ -63,7 +63,7 @@ func (e *ContextLimitExceededError) InputBasis() string {
 }
 
 func (e *ContextLimitExceededError) Error() string {
-	return fmt.Sprintf("the provider rejected the request as exceeding its %d-token context window (%d tokens reserved for output; local estimate %d input tokens)", e.ContextWindowTokens, e.OutputReserveTokens, e.EstimatedInputTokens)
+	return fmt.Sprintf("the provider rejected the request as exceeding its %d-token context window (%d tokens reserved for output; %s at %d input tokens)", e.ContextWindowTokens, e.OutputReserveTokens, e.InputBasis(), e.EstimatedInputTokens)
 }
 
 // Unwrap exposes the originating provider error (if any) so the terminal error
@@ -710,6 +710,7 @@ func (cv *admissionConversation) Submit(ctx context.Context, req MessageRequest,
 			OutputReserveTokens:  reserve,
 			ContextWindowTokens:  window,
 			Breakdown:            cv.fullBreakdown(req, projection),
+			MeasuredPrefix:       projection.anchored,
 			Cause:                err,
 		}
 	}

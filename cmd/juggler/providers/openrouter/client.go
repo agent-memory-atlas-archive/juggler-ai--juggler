@@ -42,7 +42,11 @@ type openRouterModel struct {
 	Architecture  struct {
 		InputModalities []string `json:"input_modalities"`
 	} `json:"architecture"`
+	// TopProvider describes the endpoint that will actually serve the request,
+	// as opposed to the top-level ContextLength, which is the maximum across
+	// every endpoint OpenRouter can route the id to.
 	TopProvider struct {
+		ContextLength       int `json:"context_length"`
 		MaxCompletionTokens int `json:"max_completion_tokens"`
 	} `json:"top_provider"`
 }
@@ -66,7 +70,20 @@ func listModels(ctx context.Context, apiKey string, headers map[string]string) (
 
 	infos := make([]provider.ModelInfo, 0, len(parsed.Data))
 	for _, m := range parsed.Data {
+		// The serving endpoint's window, not the aggregate one, whenever it is
+		// the smaller of the two. OpenRouter reports both, and for an alias id
+		// they differ by a quarter of a million tokens; the request is served by
+		// one endpoint, so the aggregate overstates what will be accepted.
+		//
+		// Taking the smaller also keeps this window in the same denominator as
+		// max_completion_tokens below, which top_provider reports too. Mixing the
+		// two is what makes a cap like 943718 — 90% of the serving window —
+		// survive the clamp as though it were 72% of a larger one, and admission
+		// then charges the whole thing as its output reserve.
 		ctxWindow := m.ContextLength
+		if served := m.TopProvider.ContextLength; served > 0 && (ctxWindow <= 0 || served < ctxWindow) {
+			ctxWindow = served
+		}
 		if ctxWindow == 0 {
 			ctxWindow = GetContextWindow(m.ID)
 		}

@@ -586,3 +586,55 @@ func TestAdmissionAnchorTableEvictsOldestThread(t *testing.T) {
 		t.Fatalf("the root thread was evicted from a %d-entry table despite dispatching throughout", maxAnchoredThreads)
 	}
 }
+
+// A provider's own rejection has to carry the basis of its input figure, the
+// same way an advisory does. Recovery reads MeasuredPrefix to decide how far to
+// trust the number, and the terminal message names it to a reader who is
+// looking at a figure two or three times the size of anything the provider ever
+// billed. Built without it, an anchored projection arrived claiming to be a
+// guess — the one case where the number deserves belief.
+func TestAdmissionProviderRejectionNamesItsInputBasis(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		anchor    bool
+		wantBasis string
+	}{
+		{"projected from a measurement", true, "measured"},
+		{"estimated in full", false, "estimated"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stub, conversation := openAdmissionTestConversation(t, Config{
+				ModelCapabilities: ModelCapabilities{ContextWindowTokens: 10_000, MaxOutputTokens: 1_000},
+			})
+
+			history := []Message{{Type: "user", Content: "hello"}}
+			if tc.anchor {
+				stub.result = &StreamResult{InputTokens: 500}
+				if _, err := submitForTest(t, conversation, MessageRequest{Messages: history}); err != nil {
+					t.Fatalf("first submit: %v", err)
+				}
+			}
+
+			// The request clears the ceiling on the estimate, so it dispatches and
+			// the provider is the one that refuses it.
+			stub.result = nil
+			stub.submitErr = errors.New("prompt is too long: 20000 tokens > 10000 maximum")
+			appended := append(append([]Message{}, history...), Message{Type: "assistant", Content: "and hello back"})
+			_, err := submitForTest(t, conversation, MessageRequest{Messages: appended})
+
+			var limit *ContextLimitExceededError
+			if !errors.As(err, &limit) {
+				t.Fatalf("Submit error = %v, want a ContextLimitExceededError", err)
+			}
+			if limit.MeasuredPrefix != tc.anchor {
+				t.Errorf("MeasuredPrefix = %v, want %v", limit.MeasuredPrefix, tc.anchor)
+			}
+			if got := limit.InputBasis(); got != tc.wantBasis {
+				t.Errorf("InputBasis() = %q, want %q", got, tc.wantBasis)
+			}
+			if got := limit.Error(); !strings.Contains(got, tc.wantBasis+" at") {
+				t.Errorf("Error() = %q, want it to name the input as %q", got, tc.wantBasis)
+			}
+		})
+	}
+}
