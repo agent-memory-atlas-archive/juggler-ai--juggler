@@ -24,6 +24,7 @@ import { registerWorkspace, unregisterWorkspace, listWorkspaces } from '../../js
 import {
   provisionWorkspace,
   workspaceFinishWarning,
+  soleWorkspaceEnding,
   finishWorkspace,
   provisionLeftBehind
 } from '../../js/services/workspace-provisioning.js';
@@ -47,6 +48,7 @@ import {
   adoptSetupRow
 } from '../../js/services/conversation-setup.js';
 import { ensureConversationChrome, ensurePendingMessages } from '../../js/components/conversation-area-rendering.js';
+import '../../js/components/conversation-bar.js';
 import { WORKSPACE_ELSEWHERE_HINT } from '../../js/components/model-selector.js';
 import {
   runWorkspaceSuite,
@@ -803,6 +805,205 @@ export async function runTests() {
       } finally {
         session.workspaces = saved;
         if (workspaceId) await unregisterWorkspace(workspaceId).catch(() => {});
+        await projectOps.shell({ command: `rm -rf ${name}` }).catch(() => {});
+      }
+    });
+
+    await run('a tree is offered up only when the conversation leaving is the last in it', async () => {
+      // Nobody owns a workspace, so a conversation going away cannot take one
+      // with it on its own authority. What it can do is notice that it was the
+      // last thing working there and say so, which is the difference between a
+      // tidy-up and somebody else's tree disappearing under them.
+      const made = await registerWorkspace({
+        root: `${projectPath}/src`,
+        label: 'the last one out',
+        state: 'ready',
+        providerId: FixtureProvider.MANIFEST.id
+      });
+      const saved = session.workspaces;
+      session.workspaces = [...saved, made];
+      try {
+        const sole = await makeConversation(session, 'the-last-one-out', { workspaceId: made.id });
+        release(sole);
+
+        // The project is where every conversation worked before any of this
+        // existed, and binning one has to stay as immediate as it was then.
+        const inProject = await makeConversation(session, 'works-in-the-project', { initialise: false });
+        release(inProject);
+        assert(await soleWorkspaceEnding(session, inProject) === null,
+          'a conversation working in the project has no tree of its own to be asked about');
+
+        FixtureProvider.reported = { dirty: true };
+        const ending = await soleWorkspaceEnding(session, sole);
+        assert(ending?.option?.id === 'done',
+          `the offer is the provider's own destructive ending, not a second one written here, got ${JSON.stringify(ending?.option)}`);
+        assert(/Nothing else is working in this workspace/.test(ending?.message ?? ''),
+          `said with the reason it is being asked at all, got ${JSON.stringify(ending?.message)}`);
+        assert((ending?.message ?? '').includes('Removes the directory.'),
+          `in the provider's own words about what goes, got ${JSON.stringify(ending?.message)}`);
+        assert(/uncommitted/i.test(ending?.message ?? ''),
+          `and with the warning a dirty tree earns, got ${JSON.stringify(ending?.message)}`);
+
+        FixtureProvider.reported = { dirty: false };
+        const clean = await soleWorkspaceEnding(session, sole);
+        assert(!/uncommitted/i.test(clean?.message ?? ''),
+          `while a clean tree is not given a reason to hesitate, got ${JSON.stringify(clean?.message)}`);
+
+        // Nothing is offered on a provider's behalf when the provider is not
+        // there to carry it out: the row keeps working, and the ending is the
+        // part that has gone.
+        session.workspaces = [...saved, { ...made, providerId: '@someone/uninstalled' }];
+        assert(await soleWorkspaceEnding(session, sole) === null,
+          'a workspace whose extension is gone has no ending to offer');
+        session.workspaces = [...saved, made];
+
+        // Somebody else is still in here, so nothing is being left behind. The
+        // peers are the live conversations and only those: a binned one is
+        // gone, and the bin being able to hand it back later is not a claim on
+        // a tree in the meantime.
+        const peer = await makeConversation(session, 'still-working-here', { workspaceId: made.id });
+        release(peer);
+        assert(await soleWorkspaceEnding(session, sole) === null,
+          'a workspace somebody else is working in is not being left behind');
+      } finally {
+        FixtureProvider.reported = null;
+        session.workspaces = saved;
+        await unregisterWorkspace(made.id).catch(() => {});
+      }
+    });
+
+    await run('binning the last conversation in a workspace asks before the tree goes', async () => {
+      // The bin can give a conversation back and cannot give a tree back, which
+      // is exactly why the two are asked about separately. Driven through the
+      // bar's own action site, because that is where every affordance that bins
+      // — the tab button, the context menu, the shortcut — converges.
+      const name = `bin-sole-${Math.random().toString(36).slice(2, 8)}`;
+      const dir = `${projectPath}/${name}`;
+      const projectOps = createBoundOps(() => ({}));
+      await writeFileOp({ path: `${name}/made-here.txt`, content: 'yes' });
+      const made = await registerWorkspace({
+        root: dir,
+        label: 'left behind',
+        state: 'ready',
+        providerId: FixtureProvider.MANIFEST.id,
+        meta: { dir }
+      });
+      const saved = session.workspaces;
+      session.workspaces = [...saved, made];
+
+      const container = document.createElement('div');
+      container.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:300px;height:600px;';
+      container.appendChild(document.createElement('conversation-tabs-container'));
+      const bar = /** @type {any} */ (document.createElement('conversation-bar'));
+      container.appendChild(bar);
+      document.body.appendChild(container);
+      neutralizeStrayOverlays();
+
+      try {
+        const conversation = await makeConversation(session, 'last-one-in-the-tree', { workspaceId: made.id });
+        release(conversation);
+
+        /** @type {string[]} Conversations the bar asked to bin. */
+        const binned = [];
+        // The bar's own session surface, stubbed down to what it reads: the real
+        // one would put every conversation this suite has made into the bar, and
+        // the bin under test would be a real one this suite then has to undo.
+        bar._session = {
+          conversations: new Map([[conversation.id, conversation]]),
+          binnedCount: 0,
+          binSizeBytes: 0,
+          visibleConversationId: conversation.id,
+          workspaces: [made],
+          /**
+           * @param {string} id - Workspace to resolve.
+           * @returns {any} The row, or null.
+           */
+          getWorkspace: (id) => (id === made.id ? made : null),
+          /**
+           * @param {string} id - Workspace to locate.
+           * @returns {string} Where it is.
+           */
+          workspaceRoot: (id) => (id === made.id ? dir : projectPath),
+          /**
+           * @param {string} id - Conversation to bin.
+           * @returns {Promise<boolean>} Always taken.
+           */
+          binConversation: async (id) => { binned.push(id); return true; }
+        };
+        bar.render();
+
+        /**
+         * The choice dialog's buttons, once it is up.
+         * @returns {Promise<any[]>} Every button it is offering.
+         */
+        const offered = async () => {
+          /** @type {any[]} */
+          let buttons = [];
+          await waitFor(() => {
+            buttons = Array.from(document.querySelectorAll('modal-dialog.show .modal-choice-button'));
+            return buttons.length > 0;
+          }, { description: 'the choice dialog to come up' });
+          return buttons;
+        };
+
+        /**
+         * Press one of the dialog's buttons by its label.
+         * @param {string} label - What the button says.
+         * @returns {Promise<void>} When it has been pressed.
+         */
+        const press = async (label) => {
+          const button = (await offered()).find(
+            candidate => (candidate.textContent || '').trim() === label);
+          assert(!!button, `no "${label}" button in the dialog: ${JSON.stringify(
+            (await offered()).map(candidate => (candidate.textContent || '').trim()))}`);
+          button.click();
+        };
+
+        // --- the way out is a way out, and it takes nothing with it ----------
+        let binning = bar._binConversation(conversation.id);
+        const labels = (await offered()).map(button => (button.textContent || '').trim());
+        assert(labels[0] === 'Keep it',
+          `the harmless answer opens focused, ahead of the one that destroys a tree, got ${JSON.stringify(labels)}`);
+        assert(labels.includes('Done with it'),
+          `the destructive answer is the provider's own ending, in its own words, got ${JSON.stringify(labels)}`);
+        assert(labels[labels.length - 1] === 'Cancel',
+          `and the last of them is a way out, not an answer, got ${JSON.stringify(labels)}`);
+        await press('Cancel');
+        await binning;
+        assert(binned.length === 0,
+          `cancelling the question cancels the bin it was asked about, got ${JSON.stringify(binned)}`);
+        assert((await projectOps.stat({ path: name })).exists,
+          'and leaves the tree exactly where it was');
+
+        // --- keeping it bins the conversation and nothing else ---------------
+        binning = bar._binConversation(conversation.id);
+        await press('Keep it');
+        await binning;
+        assert(binned.length === 1 && binned[0] === conversation.id,
+          `keeping the workspace still bins the conversation, got ${JSON.stringify(binned)}`);
+        assert((await projectOps.stat({ path: name })).exists,
+          'with the tree left for whatever picks it up next');
+        let row = (await listWorkspaces()).find((/** @type {any} */ w) => w.id === made.id);
+        assert(row?.state === 'ready',
+          `and the row still usable, which is what keeping it means, got ${JSON.stringify(row?.state)}`);
+
+        // --- the ending runs, and the bin follows it -------------------------
+        binning = bar._binConversation(conversation.id);
+        await press('Done with it');
+        await binning;
+        assert(!(await projectOps.stat({ path: name })).exists,
+          'the provider removed the tree it made');
+        row = (await listWorkspaces()).find((/** @type {any} */ w) => w.id === made.id);
+        assert(row?.state === 'closed',
+          `and the row is tombstoned rather than left claiming a tree that has gone, got ${JSON.stringify(row?.state)}`);
+        assert((conversation.workspaceId || '') === '',
+          `the conversation goes back to the project before it is binned, which is what the offer promised, got ${JSON.stringify(conversation.workspaceId)}`);
+        assert(binned.length === 2 && binned[1] === conversation.id,
+          `and it is binned, which is what was asked for in the first place, got ${JSON.stringify(binned)}`);
+      } finally {
+        container.remove();
+        session.workspaces = saved;
+        await unregisterWorkspace(made.id).catch(() => {});
         await projectOps.shell({ command: `rm -rf ${name}` }).catch(() => {});
       }
     });

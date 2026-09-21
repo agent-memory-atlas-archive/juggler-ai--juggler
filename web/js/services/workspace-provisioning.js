@@ -242,6 +242,67 @@ export function workspaceFinishWarning(session, workspace, options = {}) {
 }
 
 /**
+ * The ending worth offering when the last conversation working somewhere is
+ * about to go away, or nothing when there is nothing to offer.
+ *
+ * A conversation and its workspace are not the same thing and are not disposed
+ * of together: nobody owns a workspace, so binning the conversation that made
+ * one leaves the tree exactly where it was, which is right when a colleague is
+ * in it and merely untidy when nobody is. Untidy is the case this answers. The
+ * offer is the provider's own destructive ending, not a second way of removing
+ * a tree written here — there is one of those already, and a user who has read
+ * "Delete this workspace" in the chip should read the same words here.
+ *
+ * Peers are read from the live conversations, and the live conversations are
+ * all there are. A binned conversation is gone; that the bin can hand it back
+ * later is not a claim on a tree in the meantime, and treating it as one would
+ * make an offer stop appearing for reasons nothing on screen explains.
+ *
+ * The common answer is `null` and it is reached without awaiting anything: a
+ * conversation working in the project has no workspace to ask about, and the
+ * bin it is heading for must stay as immediate as it has always been.
+ * @param {any} session - The session the conversation belongs to.
+ * @param {any} conversation - The conversation about to go.
+ * @param {AbortSignal} [signal] - Cancels the status probe.
+ * @returns {Promise<{workspace: any, option: any, message: string}|null>} The
+ *   row, the ending to offer for it, and what to say — or nothing to ask.
+ */
+export async function soleWorkspaceEnding(session, conversation, signal) {
+  const workspaceId = conversation?.workspaceId || '';
+  if (!workspaceId) return null;
+
+  // A row already tombstoned has been finished with; there is nothing left to
+  // offer, and offering it would be asking twice for the same thing.
+  const workspace = session?.getWorkspace?.(workspaceId);
+  if (!workspace || workspace.state === 'closed') return null;
+
+  // Nothing is offered on a provider's behalf when the provider is not there to
+  // carry it out, and a provider that removes nothing has no ending to borrow.
+  const { options, unavailableReason } = workspaceFinishOptions(session, workspace);
+  if (unavailableReason) return null;
+  const option = options.find(candidate => candidate.danger && !candidate.keepsWorkspace);
+  if (!option) return null;
+
+  // Asked before the status probe rather than after it: a workspace somebody
+  // else is working in is not being left behind, and there is no reason to go
+  // and run git in a tree to find that out.
+  if (workspaceFinishWarning(session, workspace, { conversation }).peers.length) return null;
+
+  const status = await workspaceStatus(session, workspace, signal);
+  const { warning } = workspaceFinishWarning(session, workspace, { conversation, action: option, status });
+  return {
+    workspace,
+    option,
+    // The provider's own description of what it is about to destroy, under one
+    // sentence saying why it is being asked at all. Its closing line — this
+    // conversation goes back to the project folder — is true here too: the
+    // ending runs, and the rebind with it, before anything is binned.
+    message: ['Nothing else is working in this workspace.', option.description, warning]
+      .filter(Boolean).join(' ')
+  };
+}
+
+/**
  * Carry out one of a workspace's endings, and tombstone it if that ended it.
  *
  * The refusal is checked here rather than only in the dialog that asked: a

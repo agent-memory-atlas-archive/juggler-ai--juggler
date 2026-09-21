@@ -13,6 +13,7 @@
  * @property {string} [defaultValue] - Default value for prompt input
  * @property {string[]} [choices] - Array of choice options
  * @property {boolean} [allowCustom] - Allow custom text input for choice type
+ * @property {string} [noneText] - For 'choice': the last button, which answers null. Default 'None of the above'.
  * @property {number} [duration] - For 'notice': auto-dismiss after this many ms (0 = manual). Default 5000.
  */
 
@@ -23,7 +24,7 @@
  * @property {function(string, string=): Promise<void>} showAlert - Show an alert dialog
  * @property {function(string, string=, ConfirmOptions=): Promise<boolean>} showConfirm - Show a confirmation dialog
  * @property {function(string, string=, string=): Promise<string|null>} showPrompt - Show a prompt dialog
- * @property {function(string, string[], string=, boolean=): Promise<string|null>} showChoice - Show a choice dialog
+ * @property {function(string, string[], string=, boolean=, {noneText?: string}=): Promise<string|null>} showChoice - Show a choice dialog
  * @property {function(string, {duration?: number}=): void} showNotice - Show a transient, auto-dismissing notice
  */
 
@@ -166,6 +167,7 @@ class ModalDialog extends HTMLElement {
       defaultValue = '',
       choices = [],
       allowCustom = false,
+      noneText = 'None of the above',
       duration = 5000
     } = options;
 
@@ -226,7 +228,7 @@ class ModalDialog extends HTMLElement {
       focusWhenShown(input, { select: true });
     } else if (type === 'choice' && choiceOptions && customInput) {
       choiceOptions.classList.remove('hidden');
-      this.setupChoices(choices, allowCustom, choiceOptions, customInput);
+      this.setupChoices(choices, allowCustom, choiceOptions, customInput, noneText);
     }
 
     // Setup buttons
@@ -305,8 +307,9 @@ class ModalDialog extends HTMLElement {
    * @param {boolean} allowCustom - Whether to show "Other" option
    * @param {HTMLElement} container - Container element for choices
    * @param {HTMLInputElement} customInput - Custom input element
+   * @param {string} [noneText] - The last button, which answers null
    */
-  setupChoices(choices, allowCustom, container, customInput) {
+  setupChoices(choices, allowCustom, container, customInput, noneText = 'None of the above') {
     container.innerHTML = '';
     let focusedIndex = 0;
     /** @type {HTMLButtonElement[]} */
@@ -359,10 +362,12 @@ class ModalDialog extends HTMLElement {
       this._showCleanups.push(() => customInput.removeEventListener('keydown', onCustomKeydown));
     }
 
-    // Add "None of the above" option
+    // The way out, last. It is named by the caller because "None of the above"
+    // is an answer to a question the agent asked, and a question the UI asks
+    // about something it is at that moment doing needs a word for not doing it.
     const noneButton = document.createElement('button');
     noneButton.className = 'modal-choice-button modal-choice-button-none';
-    noneButton.textContent = 'None of the above';
+    noneButton.textContent = noneText;
     noneButton.dataset.index = String(allButtons.length);
     noneButton.addEventListener('click', () => {
       this.close(null);
@@ -554,16 +559,19 @@ window.showPrompt = showPrompt;
  * @param {string[]} choices - Array of choice options
  * @param {string} [title] - Modal title
  * @param {boolean} [allowCustom] - Whether to show "Other" option for custom input
+ * @param {{noneText?: string}} [options] - What to call the button that answers
+ *   nothing; it says "None of the above" unless the caller has a better word.
  * @returns {Promise<string|null>} Selected choice text, custom input, or null if cancelled
  */
-export async function showChoice(message, choices, title = 'Question', allowCustom = false) {
+export async function showChoice(message, choices, title = 'Question', allowCustom = false, options = {}) {
   // @ts-ignore - showModal is defined above
   return await window.showModal({
     title,
     message,
     type: 'choice',
     choices,
-    allowCustom
+    allowCustom,
+    ...(options.noneText ? { noneText: options.noneText } : {})
   });
 }
 // @ts-ignore - Extending window object

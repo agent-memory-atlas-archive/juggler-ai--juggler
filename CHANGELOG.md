@@ -8,6 +8,7 @@ of changes; this project follows semantic versioning.
 - A conversation can now work in a git worktree of its own or a throwaway copy of the project, and move between them
 - Or in one folder of the project: commands run there, while the rest of the project stays readable
 - A worktree of a submodule now asks whether you want the submodule alone or the project around it
+- Binning the last conversation working in a workspace now offers to delete the workspace with it
 - A refused or timed-out bash command now tells the agent why, not just "exit code 1"
 - `dd` reading a file is no longer refused; writing to a raw disk device still is
 - A plan or todo panel now offers a pin button, putting the live list on the pinboard

@@ -33,8 +33,9 @@ import { isPinboardView } from '../utils/view-mode.js';
 import keyShortcutManager from '../services/key-shortcut-manager.js';
 import { isAutoNameEnabled, refreshAutoNameSetting } from '../services/auto-name-setting.js';
 import { isTabHighlightEnabled, ATTENTION_PREFS_EVENT } from '../utils/attention-manager.js';
+import { soleWorkspaceEnding, finishWorkspace } from '../services/workspace-provisioning.js';
 import JugglerElement from './juggler-element.js';
-import { showAlert } from './modal-dialog.js';
+import { showAlert, showChoice, showNotice } from './modal-dialog.js';
 import './bin-modal.js';
 import './info-rail.js';
 
@@ -1098,11 +1099,16 @@ class ConversationBar extends JugglerElement {
   }
 
   /**
-   * Move a conversation to the bin (.juggler/bin/). No confirmation:
-   * binning is reversible from the Bin modal at any time. Plays a
-   * brief fly-into-Bin animation in parallel with the backend call,
-   * honoring prefers-reduced-motion, and offers a few seconds of Undo
-   * above the Bin for the click the user regrets immediately.
+   * Move a conversation to the bin (.juggler/bin/). No confirmation for the
+   * conversation itself: binning is reversible from the Bin modal at any time.
+   * Plays a brief fly-into-Bin animation in parallel with the backend call,
+   * honoring prefers-reduced-motion, and offers a few seconds of Undo above the
+   * Bin for the click the user regrets immediately.
+   *
+   * The workspace it was working in is asked about separately, and that
+   * question is the one exception to the silence above — for the same reason
+   * the rest of it is silent. The bin can hand a conversation back; it cannot
+   * hand a tree back. See {@link ConversationBar#_askAboutWorkspace}.
    * @param {string} conversationId
    * @private
    * @async
@@ -1138,6 +1144,18 @@ class ConversationBar extends JugglerElement {
 
     this._binningIds.add(conversationId);
     try {
+      // Asked before the tab flies, because it can be answered "no": a question
+      // whose cancel arrived after the tab had already gone would be a question
+      // the user could not actually decline.
+      if (!await this._askAboutWorkspace(conversationId)) {
+        return;
+      }
+      // That dialog was open for as long as the user took to read it, so the
+      // two guards above are worth asking again rather than assuming: another
+      // window may have taken the conversation, and a turn may have started.
+      if (!this._session.conversations.has(conversationId) || this._isConversationBusy(conversationId)) {
+        return;
+      }
       this._flyTabToBin(conversationId);
       const binned = await this._session.binConversation(conversationId);
       if (binned) {
@@ -1146,6 +1164,60 @@ class ConversationBar extends JugglerElement {
     } finally {
       this._binningIds.delete(conversationId);
     }
+  }
+
+  /**
+   * Ask what becomes of the workspace this conversation is the last thing
+   * working in, and carry the answer out.
+   *
+   * Only asked when there is something to ask, which is the rare case: a
+   * conversation working in the project, or in a tree somebody else is in too,
+   * goes to the bin as silently as it always has. What is offered is the
+   * provider's own ending in the provider's own words, so that the row a user
+   * reads here is the one they have already read in the workspace chip rather
+   * than a second way of removing a tree with its own vocabulary.
+   *
+   * An ending that could not be carried out stops the bin. The tab going while
+   * the tree it was about quietly survived is the one outcome here that leaves
+   * someone worse off than never being asked — so the reason is said instead,
+   * and binning again is the whole of the retry.
+   * @param {string} conversationId - The conversation about to be binned.
+   * @returns {Promise<boolean>} Whether to go on and bin it.
+   * @private
+   */
+  async _askAboutWorkspace(conversationId) {
+    const conversation = this._session?.conversations?.get(conversationId);
+    const ending = await soleWorkspaceEnding(this._session, conversation);
+    if (!ending) {
+      return true;
+    }
+
+    const keep = 'Keep it';
+    const answer = await showChoice(
+      ending.message,
+      [keep, ending.option.label],
+      'This conversation’s workspace',
+      false,
+      { noneText: 'Cancel' });
+    // Cancel, Escape and the backdrop all answer null, and they all mean the
+    // same thing: this is not what the user meant to start.
+    if (answer === null) {
+      return false;
+    }
+    if (answer === keep) {
+      return true;
+    }
+
+    const result = await finishWorkspace({
+      session: this._session,
+      workspace: ending.workspace,
+      conversation,
+      actionId: ending.option.id
+    });
+    if (result?.message) {
+      showNotice(result.message);
+    }
+    return result?.done === true;
   }
 
   /**
