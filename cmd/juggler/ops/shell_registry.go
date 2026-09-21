@@ -285,10 +285,22 @@ func runShellRegistry() {
 
 		case regUpdateStatus:
 			if shell := shells[op.id]; shell != nil {
-				shell.status = op.status
+				// The first terminal verdict stands. A stop records why the task
+				// ended and cancels its context, and that cancellation is what
+				// makes the process exit — so the spawner's own terminal update
+				// follows moments later saying "command cancelled", which names
+				// the mechanism rather than the cause. Whoever stopped it is what
+				// the user reads on the tool action, and which of the two writes
+				// the machine ran last is not something to decide it.
+				if shell.status == "running" {
+					shell.status = op.status
+					shell.exitCode = op.exitCode
+					shell.errMsg = op.errMsg
+				}
+				// Output and spill accounting stay the spawner's to report
+				// either way: a task that was stopped still wrote what it wrote,
+				// and the spill file is complete by the time this lands.
 				shell.output.WriteString(op.output)
-				shell.exitCode = op.exitCode
-				shell.errMsg = op.errMsg
 				shell.outputFile = op.outputFile
 				shell.outputBytes = op.outputBytes
 				shell.outputTruncated = op.outputTruncated
