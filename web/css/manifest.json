@@ -463,6 +463,7 @@
 				"find-bar__input",
 				"find-bar__toggle",
 				"slash-*",
+				"workspace-finish-*",
 				"workspace-move-*"
 			]
 		},

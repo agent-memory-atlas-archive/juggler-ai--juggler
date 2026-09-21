@@ -973,9 +973,33 @@ beside the base rather than beside the project — a path outside an operation's
 root is refused, not sanitised, so the copy's own operations cannot reach the
 tree it is a copy of.
 
-A finish option that needs a line of text from the user — a commit message, a
-reason — says so with `prompt: { hint }`, and it arrives as `ctx.input.message`.
+A finish option that needs something typed before it runs — a commit message, a
+reason — says so with `prompt`, and what is typed arrives as `ctx.input.message`.
 An option with no `prompt` is confirmed rather than asked.
+
+```js
+prompt: {
+  label: 'Message',                  // the field's caption. Name the thing, not the act
+  placeholder: 'What this work does',
+  hint: 'What changed and why.',     // read under the field, while typing
+  multiline: true,                   // a textarea; ⌘/Ctrl+Enter runs the ending
+  requiresWork: true,                // pointless unless the workspace holds changes
+  alternative: {                     // a second answer, as its own button
+    label: 'Let this conversation write it',
+    hint: 'It has read the work; the commit happens on its next turn.'
+  }
+}
+```
+
+**An empty field must not mean something other than a full one.** Where answering
+nothing is a real choice rather than an omission, declare it as an `alternative`:
+it runs the same ending with an empty `ctx.input.message`, and the host will not
+let the primary button submit a blank field. A prompt with no `alternative` gets
+no second button — the host invents nothing.
+
+`requiresWork` is declared rather than inferred. The host knows whether the
+workspace is dirty, but "nothing has changed" is a reason to stop a commit and no
+reason at all to stop an ending that merely asks for a name.
 
 **A provider may be absent when its workspaces come back.** `kind` and `root` are
 the session's, so an extension that is disabled or broken cannot strand a

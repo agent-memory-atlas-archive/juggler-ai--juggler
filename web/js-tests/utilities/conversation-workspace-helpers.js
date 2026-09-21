@@ -387,7 +387,11 @@ export class FixtureProvider extends WorkspaceProvider {
         label: 'Leave a note',
         keepsWorkspace: true,
         description: 'Writes a line into the workspace and leaves it in use.',
-        prompt: { hint: 'Leave it empty and nothing is written.' }
+        prompt: {
+          label: 'Note',
+          placeholder: 'One line',
+          hint: 'It is written into the workspace as it stands.'
+        }
       },
       {
         id: 'leave',

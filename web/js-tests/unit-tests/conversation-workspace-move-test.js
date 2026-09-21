@@ -158,8 +158,12 @@ export async function runTests() {
       // The host used to know one provider's action id by name — it collected a
       // commit message for anything called `commit` — which is a promise it
       // could only keep for the provider that was written first. An ending now
-      // says for itself whether it needs a line of text, and the chip asks for
-      // one exactly when it is wanted.
+      // says for itself whether it needs something typed, and the chip asks for
+      // it exactly when it is wanted.
+      //
+      // The two are asked for in different surfaces, which is the point of the
+      // assertions below: an ending that wants something typed gets the finish
+      // dialog, where the field is named; one that wants nothing gets a confirm.
       const saved = session.workspaces;
       session.workspaces = [
         workspaceRow('ws_asked', '/tmp/asked-tree', {
@@ -184,13 +188,26 @@ export async function runTests() {
 
         /** @type {any} */ (chip.querySelector('.workspace-chip-button')).click();
         /** @type {any} */ (chip.querySelector('.workspace-menu-action[data-action="note"]')).click();
-        await waitFor(() => FixtureProvider.lastFinish?.actionId === 'note',
-          'the ending that asks for a line of text to run');
 
-        assert(asked[0]?.type === 'prompt',
-          `an ending declaring a prompt is prompted for, got ${JSON.stringify(asked[0]?.type)}`);
-        assert(String(asked[0]?.message ?? '').includes('Leave it empty'),
-          `with the hint the ending wrote, got ${JSON.stringify(asked[0]?.message)}`);
+        await waitFor(() => !!document.querySelector('.workspace-finish-overlay .setup-field-input'),
+          'the finish dialog for an ending that asks for something');
+        const dialog = /** @type {any} */ (document.querySelector('.workspace-finish-overlay'));
+        assert(!asked.length,
+          `an ending declaring a prompt gets its own dialog, not the generic box, got ${JSON.stringify(asked[0]?.type)}`);
+
+        const caption = /** @type {any} */ (dialog.querySelector('label.setup-field-label'));
+        const field = /** @type {any} */ (dialog.querySelector('.setup-field-input'));
+        assert(caption?.htmlFor === field?.id && caption?.textContent === 'Note',
+          `with the field named as the ending named it, got ${JSON.stringify(caption?.textContent)}`);
+        assert(dialog.textContent?.includes('It is written into the workspace'),
+          `and the hint the ending wrote, got ${JSON.stringify(dialog.textContent)}`);
+
+        field.value = 'a note';
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+        /** @type {any} */ (dialog.querySelector('.workspace-finish-commit')).click();
+
+        await waitFor(() => FixtureProvider.lastFinish?.actionId === 'note',
+          'the ending that asks for something to run');
         assert(FixtureProvider.lastFinish?.input?.message === 'a note',
           `and what was typed reaches finish, got ${JSON.stringify(FixtureProvider.lastFinish?.input)}`);
 

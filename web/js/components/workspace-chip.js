@@ -43,7 +43,8 @@ import {
 } from '../services/workspace-provisioning.js';
 import { isWorkspaceUsable } from '../services/workspaces.js';
 import { createFileActions } from '../utils/properties-panel-helpers.js';
-import { showConfirm, showPrompt, showNotice } from './modal-dialog.js';
+import { showConfirm, showNotice } from './modal-dialog.js';
+import { openWorkspaceFinish } from './workspace-finish-dialog.js';
 import { openWorkspaceMove } from './workspace-move-dialog.js';
 
 /**
@@ -613,13 +614,15 @@ class WorkspaceChip extends HTMLElement {
     /** @type {object} */
     let input = {};
     if (option.prompt) {
-      const message = await showPrompt(
-        [option.description, warning.warning, option.prompt.hint]
-          .filter(Boolean).join('\n'),
-        option.prompt.value ?? '',
-        option.label);
-      if (message === null) return;
-      input = { message };
+      // Its own dialog, because what it asks for has a name and the answer is
+      // not always typed: an ending that offers an alternative is two endings,
+      // and a generic box with one OK button can only state the one.
+      const answer = await openWorkspaceFinish(option, {
+        status: this._status,
+        warning: warning.warning
+      });
+      if (answer === null) return;
+      input = answer;
     } else {
       const agreed = await showConfirm(
         [option.description, warning.warning].filter(Boolean).join(' '),

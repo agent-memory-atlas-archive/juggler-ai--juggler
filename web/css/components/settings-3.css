@@ -691,6 +691,97 @@
     background: color-mix(in srgb, var(--accent-red) 12%, transparent);
 }
 
+/* What an ending asks for before it runs (web/js/components/workspace-finish-dialog.js).
+   The same shell as the move dialog above, because it is the same kind of thing:
+   a question about this workspace, asked over the top of the work.
+
+   The field inside it is the setup panel's own, with one change — the label goes
+   above the box rather than in a column beside it. The panel's fields hold a name
+   or a path and are read across; this one holds a commit message, which is prose,
+   wants the full width, and is several lines tall. */
+.workspace-finish-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-modal, 1000);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+}
+
+.workspace-finish-backdrop {
+    position: absolute;
+    inset: 0;
+    background: var(--modal-scrim);
+}
+
+.workspace-finish-dialog {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    width: min(32rem, 100%);
+    max-height: 90vh;
+    padding: 0.9rem 1.1rem 1.1rem;
+    overflow-y: auto;
+    background: var(--bg-raised, #1c2128);
+    border: 1px solid var(--border-floating, var(--border-color));
+    border-radius: 0.6rem;
+    box-shadow: var(--popup-shadow);
+    font-size: 0.75rem;
+}
+
+.workspace-finish-title {
+    margin: 0;
+    font-size: 1.05rem;
+}
+
+.workspace-finish-about {
+    margin: 0;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+/* Which place this is and how much is in it. Ruled off below, like the move
+   dialog's "Now using": both are standing facts rather than anything to answer. */
+.workspace-finish-status {
+    padding-bottom: 0.5rem;
+    border-bottom: 1px dashed var(--border-divider, rgb(255 255 255 / 12%));
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+}
+
+.workspace-finish-warning {
+    color: var(--warning-color, var(--error-color));
+    line-height: 1.5;
+}
+
+.workspace-finish-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-top: 0.25rem;
+}
+
+/* The note is in the second column of the panel's grid; here there is one column. */
+.workspace-finish-field .setup-field-note {
+    grid-column: auto;
+}
+
+.workspace-finish-field textarea.setup-field-input {
+    resize: vertical;
+    min-height: 4.5rem;
+    line-height: 1.45;
+}
+
+/* What the other button does, under the buttons rather than beside the field —
+   it is about an ending, not about what is being typed. */
+.workspace-finish-alternative-note {
+    color: var(--text-secondary);
+    text-align: right;
+    line-height: 1.45;
+}
+
 /* Updates settings tab: version summary, 3-way mode radios, and a manual check
    row. They share the provider-field card shell, but that shell's default
    40%/60% info/control grid doesn't fit any of them — these rules fix the

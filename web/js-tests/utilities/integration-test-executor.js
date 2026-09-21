@@ -169,6 +169,7 @@ import { runTests as runConversationWorkspaceBindingTests } from '../unit-tests/
 import { runTests as runConversationWorkspaceProvisionTests } from '../unit-tests/conversation-workspace-provision-test.js';
 import { runTests as runConversationWorkspacePanelTests } from '../unit-tests/conversation-workspace-panel-test.js';
 import { runTests as runConversationWorkspaceMoveTests } from '../unit-tests/conversation-workspace-move-test.js';
+import { runTests as runWorkspaceFinishDialogTests } from '../unit-tests/workspace-finish-dialog-test.js';
 import { runTests as runSetupPanelLoopsTests } from '../unit-tests/setup-panel-loops-test.js';
 import { runTests as runSetupFieldFocusTests } from '../unit-tests/setup-field-focus-test.js';
 import { runTests as runBinUndoToastTests } from '../unit-tests/bin-undo-toast-test.js';
@@ -553,6 +554,7 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:conversation-workspace-provision', run: runConversationWorkspaceProvisionTests, needsExclusiveRun: true },
   { name: 'unit:conversation-workspace-panel', run: runConversationWorkspacePanelTests, needsExclusiveRun: true },
   { name: 'unit:conversation-workspace-move', run: runConversationWorkspaceMoveTests, needsExclusiveRun: true },
+  { name: 'unit:workspace-finish-dialog', run: runWorkspaceFinishDialogTests },
   { name: 'unit:setup-panel-loops', run: runSetupPanelLoopsTests },
   // Exclusive: it asserts on document.activeElement, which every lane in the
   // shared origin can move.

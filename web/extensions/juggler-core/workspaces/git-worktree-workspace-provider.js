@@ -1056,6 +1056,10 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
    * workspace and did not, depending on whether a message had been typed into
    * the box — one field, two unrelated outcomes, neither of them stated.
    *
+   * The same rule governs the message itself. Handing the writing of it to this
+   * conversation is a second answer, so it is a second button that says as much,
+   * and the field means only what its label says it means.
+   *
    * Merging, rebasing and opening a pull request are deliberately absent. The
    * common ending is a bare commit or nothing at all — one commit is often
    * several tasks — and an ending that lands work is a flow with conflicts in
@@ -1072,7 +1076,17 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
         label: 'Commit the changes',
         keepsWorkspace: true,
         description: `Commits everything here onto ${branch || 'its branch'}. You carry on working in this workspace either way.`,
-        prompt: { hint: 'Leave it empty and this conversation writes the message on its next turn.' }
+        prompt: {
+          label: 'Message',
+          placeholder: 'What this work does',
+          multiline: true,
+          requiresWork: true,
+          hint: 'What changed and why, in the words you would use to someone who has not read it.',
+          alternative: {
+            label: 'Let this conversation write it',
+            hint: 'It has read the work; the commit happens on its next turn.'
+          }
+        }
       },
       {
         id: 'unbind',

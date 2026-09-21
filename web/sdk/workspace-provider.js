@@ -110,23 +110,50 @@ import { validateManifest } from './lib/manifest.js';
  *   this, and is shown apart from the endings. Such an action must return
  *   `done: false`, which is what actually keeps the workspace open; this only
  *   says where the row belongs
- * @property {string} [description] - What it will do, in a sentence. Read in the
- *   dialog that asks, where the decision is made, rather than in the menu it is
- *   chosen from — the menu shows the label alone, and this as its tooltip
- * @property {FinishPrompt} [prompt] - Ask for a line of text before doing it; it
- *   arrives as `ctx.input.message`. An ending with none is confirmed instead.
+ * @property {string} [description] - What it will do, in a sentence. Read twice:
+ *   under the label in the menu, and again in the dialog where the decision is
+ *   actually made. Write it to stand on its own in both
+ * @property {FinishPrompt} [prompt] - Ask for something to be typed before doing
+ *   it; it arrives as `ctx.input.message`. An ending with none is confirmed instead.
  */
 
 /**
- * One line of text an ending needs before it can run — a commit message, a name,
- * a reason.
+ * What an ending needs typed into it before it can run — a commit message, a
+ * name, a reason.
  *
  * The ending declares this rather than the host recognising the ending: the host
  * knowing that an action called `commit` wants a message is a promise it can
  * only keep for whichever provider was written first.
+ *
+ * An empty field must not mean something other than a full one. Where answering
+ * nothing is a real choice rather than an omission, declare that choice as an
+ * {@link FinishAlternative} button naming its outcome: one field standing for two
+ * unrelated endings is a decision the reader is left to infer from a blank box.
  * @typedef {object} FinishPrompt
- * @property {string} [hint] - A line under the description, e.g. what an empty answer means
+ * @property {string} [label] - The field's caption, e.g. `Message`. A field with
+ *   none is captioned by the ending's own label, which names the act rather than
+ *   the thing being typed
+ * @property {string} [placeholder] - What the empty field shows, e.g. an example
+ * @property {string} [hint] - A line under the field: what belongs there, or what
+ *   it is for. Under the field, where it is read while typing
  * @property {string} [value] - What to put in the field to begin with
+ * @property {boolean} [multiline] - Whether it takes more than one line. A
+ *   multi-line field commits on ⌘/Ctrl+Enter, leaving Enter to do what it does
+ *   everywhere else
+ * @property {boolean} [requiresWork] - Whether the ending is pointless unless the
+ *   workspace holds changes. The ending declares it; the host does not read it off
+ *   the status and guess, because "nothing has changed" stops a commit and means
+ *   nothing whatever to an ending that asks for a name
+ * @property {FinishAlternative} [alternative] - A second way to answer, as its own
+ *   button. It runs the ending with an empty `ctx.input.message`
+ */
+
+/**
+ * The other answer: a button beside the primary one, for the ending that takes
+ * nothing typed.
+ * @typedef {object} FinishAlternative
+ * @property {string} label - What the button says, in full, e.g. `Let this conversation write it`
+ * @property {string} [hint] - What choosing it does, read under the buttons
  */
 
 /**
