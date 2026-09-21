@@ -80,12 +80,18 @@ func reducerTestRecords(t *testing.T, contents ...string) []string {
 	return records
 }
 
-func TestHiddenCompactionRequestsBypassSilentTruncationGuard(t *testing.T) {
+func TestHiddenCompactionRequestsBypassGuardAndAreSynthetic(t *testing.T) {
 	records := reducerTestRecords(t, strings.Repeat("history ", 100))
 	stub := &stubCompactionDispatcher{}
 	stub.handle = func(_ int, req hiddenLLMRequest) (*LLMResponse, error) {
 		if !req.BypassContextGuard {
 			t.Fatal("hidden compaction request did not bypass context guard")
+		}
+		// Its transcript is the reducer's own construction under a thread id no
+		// real turn uses, so its billed count must never become a thread's
+		// measured prefix — nor churn the anchor table evicting ones that are.
+		if !req.SyntheticTranscript {
+			t.Fatal("hidden compaction request was not marked synthetic, so its measurement can anchor a thread")
 		}
 		if isCompactionFinalRequest(req) {
 			return compactionTextResponse("summary", 1, 1), nil

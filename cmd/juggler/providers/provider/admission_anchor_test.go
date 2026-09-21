@@ -353,11 +353,42 @@ func TestAdmissionAnchorsPerThread(t *testing.T) {
 	}
 }
 
-// Hidden compaction calls bypass the guard, swap the system prompt and send a
-// synthetic transcript — and the folded-summary probe sends its own under the
+// A bypassed request that is still a real turn carries the one measurement a
+// pressured conversation most needs. The recovery ladder dispatches bypassed
+// precisely when it cannot reduce any further and wants the provider to be the
+// judge; if that dispatch cannot anchor, the only request such a conversation
+// ever sends is the one request that cannot correct the number that made it
+// pressured, and a wrong or missing anchor becomes permanent.
+func TestAdmissionAnchorsGuardBypassedRealRequest(t *testing.T) {
+	stub, conversation := openAdmissionTestConversation(t, Config{
+		ModelCapabilities: ModelCapabilities{ContextWindowTokens: 100_000, MaxOutputTokens: 4_000},
+	})
+
+	history := []Message{{Type: "user", Content: "do the thing"}, {Type: "assistant", Content: "working"}}
+	stub.result = &StreamResult{InputTokens: 5_000}
+	if _, err := submitForTest(t, conversation, MessageRequest{Messages: history, BypassContextGuard: true}); err != nil {
+		t.Fatalf("bypassed submit: %v", err)
+	}
+
+	next := append(append([]Message{}, history...), Message{Type: "user", Content: "carry on"})
+	stub.result = &StreamResult{InputTokens: 5_400}
+	result, err := submitForTest(t, conversation, MessageRequest{Messages: next})
+	if err != nil {
+		t.Fatalf("second submit: %v", err)
+	}
+	if !result.AdmissionAnchored {
+		t.Fatal("a bypassed real turn left no anchor, so nothing this conversation dispatches can ever correct its projection")
+	}
+	if int64(result.AdmissionEstimateTokens) <= 5_000 {
+		t.Fatalf("projection %d did not build on the bypassed turn's 5000-token measurement", result.AdmissionEstimateTokens)
+	}
+}
+
+// Hidden compaction calls swap the system prompt and send a synthetic
+// transcript of their own — and the folded-summary probe sends its under the
 // PARENT thread's id. None of them is a turn in a thread's transcript, so none
 // may file a measurement under a key real turns read.
-func TestAdmissionDoesNotAnchorOnGuardBypassedRequest(t *testing.T) {
+func TestAdmissionDoesNotAnchorOnSyntheticRequest(t *testing.T) {
 	stub, conversation := openAdmissionTestConversation(t, Config{
 		ModelCapabilities: ModelCapabilities{ContextWindowTokens: 100_000, MaxOutputTokens: 4_000},
 	})
@@ -371,9 +402,10 @@ func TestAdmissionDoesNotAnchorOnGuardBypassedRequest(t *testing.T) {
 	// The folded-summary probe's shape: same thread id, everything else its own.
 	stub.result = &StreamResult{InputTokens: 300}
 	if _, err := submitForTest(t, conversation, MessageRequest{
-		SystemPrompt:       "summarize the transcript below",
-		Messages:           []Message{{Type: "user", Content: "…transcript…"}},
-		BypassContextGuard: true,
+		SystemPrompt:        "summarize the transcript below",
+		Messages:            []Message{{Type: "user", Content: "…transcript…"}},
+		BypassContextGuard:  true,
+		SyntheticTranscript: true,
 	}); err != nil {
 		t.Fatalf("hidden compaction submit: %v", err)
 	}
@@ -386,6 +418,139 @@ func TestAdmissionDoesNotAnchorOnGuardBypassedRequest(t *testing.T) {
 	}
 	if !result.AdmissionAnchored {
 		t.Fatal("a hidden compaction call displaced the thread's anchor")
+	}
+}
+
+// A dispatch that failed measured nothing. Providers still report usage on the
+// error path — claudecode sums whatever arrived before the failure — and when a
+// session limit means no usage for THIS request ever arrives, what is left is
+// the CLI's session-wide cumulative total. Anchoring on that files a number
+// describing something else entirely as this thread's measured prefix.
+func TestAdmissionDoesNotAnchorOnFailedDispatch(t *testing.T) {
+	stub, conversation := openAdmissionTestConversation(t, Config{
+		ModelCapabilities: ModelCapabilities{ContextWindowTokens: 100_000, MaxOutputTokens: 4_000},
+	})
+
+	history := []Message{{Type: "user", Content: "first"}}
+	stub.result = &StreamResult{InputTokens: 500}
+	if _, err := submitForTest(t, conversation, MessageRequest{Messages: history}); err != nil {
+		t.Fatalf("first submit: %v", err)
+	}
+
+	// The failing turn, in the shape a provider really returns one: a populated
+	// result carrying a count from somewhere else, alongside the error.
+	second := append(append([]Message{}, history...), Message{Type: "user", Content: "second"})
+	stub.result = &StreamResult{StopReason: StopReasonError, InputTokens: 60_000}
+	stub.submitErr = errors.New("You've hit your session limit")
+	if _, err := submitForTest(t, conversation, MessageRequest{Messages: second}); err == nil {
+		t.Fatal("the failing dispatch was expected to return its error")
+	}
+
+	third := append(append([]Message{}, second...), Message{Type: "user", Content: "third"})
+	stub.submitErr = nil
+	stub.result = &StreamResult{InputTokens: 700}
+	result, err := submitForTest(t, conversation, MessageRequest{Messages: third})
+	if err != nil {
+		t.Fatalf("third submit: %v", err)
+	}
+	if !result.AdmissionAnchored {
+		t.Fatal("a failed turn discarded the earlier measured anchor")
+	}
+	if int64(result.AdmissionEstimateTokens) >= 60_000 {
+		t.Fatalf("projection %d was anchored on the failed turn's 60000-token report", result.AdmissionEstimateTokens)
+	}
+}
+
+// A count larger than the whole context window cannot be what this request
+// cost: the provider accepted it, so it fit. Refusing it is a backstop and
+// nothing more — it catches the impossible numbers a broken turn reports, never
+// a wrong-but-plausible one — so it must never be mistaken for the reason the
+// anchor is trustworthy.
+func TestAdmissionDoesNotAnchorAboveContextWindow(t *testing.T) {
+	const window = int64(100_000)
+	stub, conversation := openAdmissionTestConversation(t, Config{
+		ModelCapabilities: ModelCapabilities{ContextWindowTokens: window, MaxOutputTokens: 4_000},
+	})
+
+	history := []Message{{Type: "user", Content: "first"}}
+	stub.result = &StreamResult{InputTokens: 500}
+	if _, err := submitForTest(t, conversation, MessageRequest{Messages: history}); err != nil {
+		t.Fatalf("first submit: %v", err)
+	}
+
+	second := append(append([]Message{}, history...), Message{Type: "user", Content: "second"})
+	stub.result = &StreamResult{InputTokens: int(window) * 8}
+	if _, err := submitForTest(t, conversation, MessageRequest{Messages: second}); err != nil {
+		t.Fatalf("second submit: %v", err)
+	}
+
+	third := append(append([]Message{}, second...), Message{Type: "user", Content: "third"})
+	stub.result = &StreamResult{InputTokens: 700}
+	result, err := submitForTest(t, conversation, MessageRequest{Messages: third})
+	if err != nil {
+		t.Fatalf("third submit advised compaction on an impossible measurement: %v", err)
+	}
+	if !result.AdmissionAnchored {
+		t.Fatal("an impossible measurement discarded the earlier usable anchor")
+	}
+	if int64(result.AdmissionEstimateTokens) >= window {
+		t.Fatalf("projection %d was anchored on a measurement larger than the %d-token window", result.AdmissionEstimateTokens, window)
+	}
+}
+
+// The whole ladder, end to end, in the shape that stranded real conversations:
+// a wrong anchor puts every request over the ceiling, the advisory sends the
+// turn down the recovery ladder, and the ladder's last move is one bypassed
+// dispatch that the provider accepts and bills honestly. That dispatch is the
+// only chance to replace the number that caused all of it — and the next
+// request has to be projected from it, or the conversation compacts forever.
+func TestAdmissionRecoversFromStaleAnchorAfterBypassedDispatch(t *testing.T) {
+	const window, reserve = int64(100_000), int64(4_000)
+	budget := ContextCeiling(window, 0) - reserve
+
+	stub, conversation := openAdmissionTestConversation(t, Config{
+		ModelCapabilities: ModelCapabilities{ContextWindowTokens: window, MaxOutputTokens: reserve},
+	})
+
+	// A wrong but not impossible measurement: inside the window, so nothing
+	// about it is self-evidently broken, and it fills the budget on its own.
+	history := []Message{{Type: "user", Content: "do the thing"}}
+	stub.result = &StreamResult{InputTokens: int(budget - 100)}
+	if _, err := submitForTest(t, conversation, MessageRequest{Messages: history}); err != nil {
+		t.Fatalf("first submit: %v", err)
+	}
+
+	pressured := append(append([]Message{}, history...), Message{
+		Type:    "user",
+		Content: strings.Repeat("the quick brown fox jumps over the lazy dog. ", 40),
+	})
+	_, err := submitForTest(t, conversation, MessageRequest{Messages: pressured})
+	var advisory *ContextCompactionAdvisory
+	if !errors.As(err, &advisory) {
+		t.Fatalf("want an advisory from the stale anchor, got %v", err)
+	}
+	if !advisory.MeasuredPrefix {
+		t.Fatal("advisory does not report that it fired from a measurement")
+	}
+
+	// The ladder's move: dispatch once with the guard bypassed and let the
+	// provider judge. It accepts, and bills the request at its real size.
+	stub.result = &StreamResult{InputTokens: 6_000}
+	if _, err := submitForTest(t, conversation, MessageRequest{Messages: pressured, BypassContextGuard: true}); err != nil {
+		t.Fatalf("bypassed dispatch: %v", err)
+	}
+
+	next := append(append([]Message{}, pressured...), Message{Type: "assistant", Content: "done"})
+	stub.result = &StreamResult{InputTokens: 6_200}
+	result, err := submitForTest(t, conversation, MessageRequest{Messages: next})
+	if err != nil {
+		t.Fatalf("the turn after the bypassed dispatch is still pressured by the stale anchor: %v", err)
+	}
+	if !result.AdmissionAnchored {
+		t.Fatal("the bypassed dispatch left no anchor, so the next turn is back to estimating the whole history")
+	}
+	if int64(result.AdmissionEstimateTokens) >= budget {
+		t.Fatalf("projection %d is still the stale anchor, not the provider's 6000-token count", result.AdmissionEstimateTokens)
 	}
 }
 

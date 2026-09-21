@@ -34,7 +34,10 @@ func (cv *admissionTestConversation) Submit(_ context.Context, req MessageReques
 	cv.submits++
 	cv.lastRequest = req
 	if cv.submitErr != nil {
-		return nil, cv.submitErr
+		// Both, when a test sets both: a provider that fails mid-turn still
+		// returns whatever usage arrived first (claudecode's finalizeTurn), and
+		// admission has to decide what that half-a-turn's numbers are worth.
+		return cv.result, cv.submitErr
 	}
 	if callback != nil {
 		cv.callbacks++

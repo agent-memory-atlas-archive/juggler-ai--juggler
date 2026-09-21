@@ -164,6 +164,7 @@ func (s *Server) createLLMCaller() worker.LLMCallFunc {
 			ToolChoice           *provider.ToolChoice `json:"toolChoice,omitempty"`
 			MaxOutputTokens      int64                `json:"maxOutputTokens,omitempty"`
 			BypassContextGuard   bool                 `json:"bypassContextGuard,omitempty"`
+			SyntheticTranscript  bool                 `json:"syntheticTranscript,omitempty"`
 			ExplicitContinuation bool                 `json:"explicitContinuation,omitempty"`
 			// 0 = the default soft ceiling; 1 = the hard window (automatic
 			// compaction is disabled for this conversation).
@@ -264,6 +265,7 @@ func (s *Server) createLLMCaller() worker.LLMCallFunc {
 			// use the client/model default; adapters apply it as a min().
 			MaxOutputTokens:        req.MaxOutputTokens,
 			BypassContextGuard:     req.BypassContextGuard,
+			SyntheticTranscript:    req.SyntheticTranscript,
 			ContextCeilingFraction: req.ContextCeilingFraction,
 			ExplicitContinuation:   req.ExplicitContinuation,
 			// The chosen level is the provider's own native string; passed through

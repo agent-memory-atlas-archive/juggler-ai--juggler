@@ -491,6 +491,11 @@ func TestContextGuardRecoveryRetryDispatchesBypassed(t *testing.T) {
 			}
 		}
 		retryBypassed = req.BypassContextGuard
+		// Bypassed, but still this thread's real transcript: marking it synthetic
+		// would silence the measurement recovery dispatched it to obtain.
+		if req.SyntheticTranscript {
+			t.Fatal("the bypassed retry was marked synthetic, so the dispatch recovery relies on can no longer re-anchor admission")
+		}
 		return &LLMResponse{Blocks: []LLMResponseBlock{{Type: provider.ContentBlockTypeText, Content: "recovered"}}, StopReason: "end_turn"}, nil
 	}
 
@@ -505,6 +510,98 @@ func TestContextGuardRecoveryRetryDispatchesBypassed(t *testing.T) {
 		if item.Type == ItemTypeError {
 			t.Fatalf("advisory escaped as terminal error: %q", item.Content)
 		}
+	}
+}
+
+// The contract handleContextOverflow states in prose twice — "an accepted
+// dispatch re-anchors admission with its billed count" — driven through real
+// admission rather than a stubbed advisory.
+//
+// Without it a conversation that has no anchor can never get one: the character
+// estimator overcounts a real transcript by half again or more, so every
+// dispatch is advised, so every dispatch is bypassed, so none of them is
+// allowed to measure anything. The silent-truncation guard switches itself off
+// and stays off for the rest of the session.
+func TestContextGuardBypassedRetryReanchorsAdmission(t *testing.T) {
+	const window, reserve, billed = int64(20_000), int64(2_000), 3_000
+	underlying, conversation := openCompactionAdmissionConversation(t, window, reserve)
+	underlying.scripted = func(_ provider.MessageRequest, callback provider.StructuredStreamCallback) (*provider.StreamResult, error) {
+		if _, err := callback(provider.StreamChunk{Type: provider.ContentBlockTypeText, Content: "answer"}); err != nil {
+			return nil, err
+		}
+		// What the provider really bills: a small fraction of what the estimator
+		// claimed for the same messages.
+		return &provider.StreamResult{StopReason: "end_turn", InputTokens: billed}, nil
+	}
+
+	// Size the opening turn by measuring rather than guessing: over the soft
+	// ceiling, so admission advises, but inside the window, so the ladder's
+	// verdict is one bypassed dispatch for a measured verdict rather than a fold.
+	// The margin is deliberate — the second turn appends a reply and a short
+	// question to this transcript, and unanchored it has to stay clearly over the
+	// ceiling, or it would fit by accident and prove nothing.
+	budget := provider.ContextCeiling(window, 0) - reserve
+	var prompt strings.Builder
+	for provider.EstimateMessageRequestTokens(provider.MessageRequest{
+		SystemPrompt: "sys",
+		Messages:     []provider.Message{{Type: ItemTypeUser, Content: prompt.String()}},
+	}) <= budget+budget/10 {
+		prompt.WriteString(strings.Repeat("the quick brown fox jumps over the lazy dog. ", 25))
+	}
+
+	w := NewConversationWorker("test-conv", "user:test")
+	defer w.doc.Destroy()
+	w.currentRun().storeState(StateProcessing)
+	w.doc.SetMetadata("defaultModelConfig", map[string]any{"provider": "test", "model": "test"})
+	go feedStrategyContextAndTools(w)
+
+	advisories := 0
+	var admitted []*provider.StreamResult
+	var wholeRequestEstimates []int64
+	w.llmCallFunc = func(ctx context.Context, raw json.RawMessage, sink func(StreamChunk)) (*LLMResponse, error) {
+		var req hiddenLLMRequest
+		if err := json.Unmarshal(raw, &req); err != nil {
+			return nil, err
+		}
+		result, err := conversation.Submit(ctx, providerRequest(req), func(chunk provider.StreamChunk) (*provider.ToolResult, error) {
+			sink(StreamChunk{Type: chunk.Type, Content: chunk.Content})
+			return nil, nil
+		})
+		if err != nil {
+			var advisory *provider.ContextCompactionAdvisory
+			if errors.As(err, &advisory) {
+				advisories++
+			}
+			return nil, err
+		}
+		admitted = append(admitted, result)
+		// What the same request would have been judged at with no anchor to
+		// project from — the number that decides whether this test has teeth.
+		wholeRequestEstimates = append(wholeRequestEstimates, provider.EstimateMessageRequestTokenBreakdown(providerRequest(req), 0).Total)
+		return &LLMResponse{Blocks: []LLMResponseBlock{{Type: provider.ContentBlockTypeText, Content: "answer"}}, StopReason: "end_turn"}, nil
+	}
+
+	w.currentRun().runStrategyLoop(prompt.String(), false)
+	if advisories != 1 || len(admitted) != 1 {
+		t.Fatalf("first turn = %d advisories, %d admitted dispatches, want one of each", advisories, len(admitted))
+	}
+
+	w.currentRun().storeState(StateProcessing)
+	w.currentRun().runStrategyLoop("and again", false)
+	if advisories != 1 {
+		t.Fatalf("advisories = %d: the turn after the bypassed dispatch was advised again, so admission never learned what the provider billed", advisories)
+	}
+	if len(admitted) != 2 || !admitted[1].AdmissionAnchored {
+		t.Fatalf("second turn = %d admitted dispatches, anchored=%v, want one dispatch projected from the measurement", len(admitted)-1, len(admitted) == 2 && admitted[1].AdmissionAnchored)
+	}
+	if int64(admitted[1].AdmissionEstimateTokens) > billed*2 {
+		t.Fatalf("projection %d is still the estimator's view of the whole transcript, not the provider's %d-token count", admitted[1].AdmissionEstimateTokens, billed)
+	}
+	// The second turn cleared the ceiling only because it was projected from the
+	// measurement. Estimated whole, as an unanchored conversation must be, it is
+	// over — which is what makes the assertions above worth making.
+	if wholeRequestEstimates[1] <= budget {
+		t.Fatalf("the second turn estimates %d against a %d budget, so it would have been admitted with or without an anchor", wholeRequestEstimates[1], budget)
 	}
 }
 

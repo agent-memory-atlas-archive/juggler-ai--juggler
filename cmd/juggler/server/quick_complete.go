@@ -183,6 +183,10 @@ func (s *Server) QuickComplete(ctx context.Context, req QuickCompleteRequest) (Q
 		MaxOutputTokens: maxTokens,
 		// The prompt is tiny and single-turn; skip the silent-truncation guard.
 		BypassContextGuard: true,
+		// An out-of-band micro-task, not a turn in any conversation. The handle it
+		// runs on is ephemeral, so its anchors die with it either way, but the
+		// messages are this call's own and are labelled as such.
+		SyntheticTranscript: true,
 		// Native provider level, passed through verbatim; the provider ignores
 		// any value it doesn't advertise.
 		ThinkingLevel: req.Model.Thinking,

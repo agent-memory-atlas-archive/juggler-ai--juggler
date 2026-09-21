@@ -106,6 +106,15 @@ type MessageRequest struct {
 	// already handles context pressure.
 	BypassContextGuard bool
 
+	// SyntheticTranscript marks a request whose messages are not a thread's
+	// transcript: the hidden compaction calls, which swap the system prompt, drop
+	// the tools and send a transcript of their own construction, and one-shot
+	// out-of-band completions. It is orthogonal to BypassContextGuard — a real
+	// turn dispatched over the ceiling bypasses the guard and is still the
+	// thread's transcript — and admission uses it to decide whether a round-trip's
+	// billed input count may be recorded as that thread's measured prefix.
+	SyntheticTranscript bool
+
 	// ContextCeilingFraction is the fraction of the context window this request
 	// may occupy before admission raises a ContextCompactionAdvisory. 0 selects
 	// DefaultContextCeilingFraction, the soft ceiling that makes compaction fire

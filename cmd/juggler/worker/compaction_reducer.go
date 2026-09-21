@@ -147,6 +147,11 @@ type hiddenLLMRequest struct {
 	TransactionID      string             `json:"transactionId"`
 	MaxOutputTokens    int64              `json:"maxOutputTokens,omitempty"`
 	BypassContextGuard bool               `json:"bypassContextGuard,omitempty"`
+	// SyntheticTranscript marks the messages as this call's own construction
+	// rather than a thread's transcript, so admission never files the round-trip
+	// as that thread's measured prefix. Every hidden compaction call sets it;
+	// a visible turn never does, however it was dispatched.
+	SyntheticTranscript bool `json:"syntheticTranscript,omitempty"`
 }
 
 // hiddenCompactionDispatcher transports one encoded hidden LLM call through
@@ -408,14 +413,15 @@ func (r *boundedReducer) finalRequest(pass int, transcript string) hiddenLLMRequ
 		prompt = r.finalPrompt
 	}
 	return hiddenLLMRequest{
-		Type:               "message",
-		SystemPrompt:       prompt,
-		Messages:           []provider.Message{{Type: "user", Content: transcript}},
-		ConversationID:     r.conversationID,
-		ThreadID:           fmt.Sprintf("%s:bounded:%d:0:%s", r.threadID, pass, generateRequestID()),
-		ModelConfig:        &r.modelConfig,
-		TransactionID:      generateTransactionID(),
-		BypassContextGuard: true,
+		Type:                "message",
+		SystemPrompt:        prompt,
+		Messages:            []provider.Message{{Type: "user", Content: transcript}},
+		ConversationID:      r.conversationID,
+		ThreadID:            fmt.Sprintf("%s:bounded:%d:0:%s", r.threadID, pass, generateRequestID()),
+		ModelConfig:         &r.modelConfig,
+		TransactionID:       generateTransactionID(),
+		BypassContextGuard:  true,
+		SyntheticTranscript: true,
 	}
 }
 
@@ -580,8 +586,9 @@ func hiddenCompactionRequest(conversationID, threadID string, modelConfig *Model
 		ConversationID: conversationID,
 		ThreadID:       fmt.Sprintf("%s:bounded:%d:%d:%s", threadID, pass, index, generateRequestID()),
 		ModelConfig:    modelConfig, TransactionID: generateTransactionID(),
-		MaxOutputTokens:    boundedCompactionMapOutputCap,
-		BypassContextGuard: true,
+		MaxOutputTokens:     boundedCompactionMapOutputCap,
+		BypassContextGuard:  true,
+		SyntheticTranscript: true,
 	}
 }
 
@@ -598,6 +605,7 @@ func providerRequest(req hiddenLLMRequest) provider.MessageRequest {
 		Messages: req.Messages, SystemPrompt: req.SystemPrompt, Tools: tools,
 		ConversationID: req.ConversationID, ThreadID: req.ThreadID, ToolChoice: choice,
 		MaxOutputTokens: req.MaxOutputTokens, BypassContextGuard: req.BypassContextGuard,
+		SyntheticTranscript: req.SyntheticTranscript,
 	}
 }
 

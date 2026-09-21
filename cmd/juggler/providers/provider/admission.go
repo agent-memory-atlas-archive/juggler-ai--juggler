@@ -519,15 +519,32 @@ func (cv *admissionConversation) fullBreakdown(req MessageRequest, p inputProjec
 }
 
 // recordAnchor stores this round-trip's measurement for the next request on the
-// same thread.
-func (cv *admissionConversation) recordAnchor(req MessageRequest, result *StreamResult) {
-	// A guard-bypassing request is not a turn in any thread's transcript: the
-	// hidden compaction calls that set it swap the system prompt, drop the tools
-	// and send a synthetic transcript of their own, and the folded-summary probe
-	// sends that under the PARENT thread's id. Recording any of them would file a
-	// measurement of a request shape no real turn ever sends under a key real
-	// turns read, and evict a good anchor to do it.
-	if req.BypassContextGuard {
+// same thread. err is the dispatch's own error, because what a failed dispatch
+// reports is not a measurement of it.
+func (cv *admissionConversation) recordAnchor(req MessageRequest, result *StreamResult, err error) {
+	// A synthetic request is not a turn in any thread's transcript: the hidden
+	// compaction calls that set it swap the system prompt, drop the tools and send
+	// a transcript of their own, and the folded-summary probe sends that under the
+	// PARENT thread's id. Recording any of them would file a measurement of a
+	// request shape no real turn ever sends under a key real turns read, and evict
+	// a good anchor to do it.
+	//
+	// Bypassing the context guard is deliberately NOT the test. A real turn
+	// dispatched over the ceiling is still that thread's transcript, and it is the
+	// dispatch a pressured conversation most needs measured: the ladder bypasses
+	// exactly when its projection is the thing in doubt, so refusing to anchor
+	// there would make a wrong or missing anchor permanent for the life of the
+	// conversation.
+	if req.SyntheticTranscript {
+		return
+	}
+	// A dispatch that failed did not measure the request it was given. Providers
+	// still populate a result on the error path — claudecode sums whatever usage
+	// arrived before the failure — and the counts that survive there can describe
+	// something else entirely: when a session limit means no usage for this
+	// request ever arrives, what is left is the CLI's session-wide cumulative
+	// total, several times the size of the request that never went out.
+	if err != nil {
 		return
 	}
 	// Only a provider-reported count may anchor. InputTokensApproximate means
@@ -539,6 +556,17 @@ func (cv *admissionConversation) recordAnchor(req MessageRequest, result *Stream
 	// carrying a larger estimated delta is strictly better than estimating the
 	// entire history again.
 	if result == nil || result.InputTokens <= 0 || result.InputTokensApproximate {
+		return
+	}
+	// A count larger than the whole context window cannot describe the request
+	// that was just accepted — it fit, so it was smaller than the window. The
+	// comparison is against the WINDOW and not the admission ceiling on purpose:
+	// a bypassed dispatch may legitimately sit between the two, and that is
+	// precisely the measurement worth having. This is only a backstop for counts
+	// that are self-evidently not this request's (a provider reporting a
+	// session-wide total); a wrong-but-plausible number still gets through, so
+	// nothing else may lean on it.
+	if window := cv.capabilities.ContextWindowTokens; window > 0 && int64(result.InputTokens) > window {
 		return
 	}
 	prefix := hashMessages(req.Messages)
@@ -691,7 +719,7 @@ func (cv *admissionConversation) Submit(ctx context.Context, req MessageRequest,
 	// here and discarded otherwise, while the reported count is only read
 	// further up. Pairing them lets the caller log the ratio the advisory fires
 	// on, and whether it fired from measurement or from estimate.
-	cv.recordAnchor(req, result)
+	cv.recordAnchor(req, result, err)
 	if result != nil {
 		result.AdmissionEstimateTokens = clampToInt(projection.total)
 		result.AdmissionAnchored = projection.anchored

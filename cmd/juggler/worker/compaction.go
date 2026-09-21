@@ -168,6 +168,10 @@ func (r *run) runFoldedThreadCompaction(modelConfig *ModelConfig, ctxResult *Con
 		ConversationID: r.conversationID, ThreadID: parentThreadID, ModelConfig: &pinnedModel,
 		ToolChoice:    map[string]any{"mode": provider.ToolChoiceNone},
 		TransactionID: generateTransactionID(), BypassContextGuard: true,
+		// It rides under the parent thread's id, so without this marker its
+		// measurement would be filed as that thread's measured prefix — a
+		// summarization request no real turn resembles, standing in for one.
+		SyntheticTranscript: true,
 	}
 	result, overflow, probeErr := probe.probeRequest(probeReq, compactionSourceFingerprint(records))
 	if probeErr != nil {

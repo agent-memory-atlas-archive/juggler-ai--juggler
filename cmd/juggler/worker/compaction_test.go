@@ -387,6 +387,12 @@ func TestRunFoldedThreadCompactionOnePassAppendsPrompt(t *testing.T) {
 	if sawReq.ThreadID != "" || len(sawReq.Tools) != 1 || sawReq.Tools[0].Name != "edit" {
 		t.Fatalf("folded probe identity/tools = (%q, %#v), want parent request shape", sawReq.ThreadID, sawReq.Tools)
 	}
+	// It borrows the parent thread's id, so an unmarked probe would file its own
+	// measurement as that thread's measured prefix — the one hidden call that can
+	// overwrite a real anchor rather than merely add one.
+	if !sawReq.SyntheticTranscript {
+		t.Fatal("folded probe was not marked synthetic, so its measurement would anchor the parent thread")
+	}
 	if fmt.Sprint(sawReq.ToolChoice["mode"]) != provider.ToolChoiceNone {
 		t.Fatalf("folded probe tool choice = %#v, want tools preserved but disabled", sawReq.ToolChoice)
 	}
