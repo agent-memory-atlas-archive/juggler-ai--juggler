@@ -106,49 +106,7 @@ func runHeadlessServerApp(srv *server.Server, selected selectedEngineHost, done 
 		return
 	}
 
-	// The headless server MUST NOT share a GtkApplication identity with the
-	// desktop viewer (juggler-app) or with sibling per-project servers. On Linux,
-	// Wails derives the GApplication ID from Name ("org.wails."+sanitized) and
-	// always registers it as *unique* on the session bus (it hardcodes
-	// G_APPLICATION_DEFAULT_FLAGS). Two live processes with the same ID collide:
-	// the second becomes a remote instance, its GTK "activate" never fires
-	// locally, and Wails' window Run() blocks forever in waitForActivation before
-	// it ever calls windowNew — so that process's window is never created. For the
-	// viewer that means no window at all plus gtk_widget_is_visible(NULL)
-	// GTK-CRITICAL spam; for a server it means the hidden engine WebView never
-	// comes up. Because both this server and juggler-app were named "Juggler",
-	// every launch that runs a server alongside the app (i.e. all of them) raced
-	// for org.wails.juggler and one side lost. Give each server a process-unique
-	// name so its GApplication ID can never collide. The server is windowless, so
-	// this name is never user-visible.
-	app := application.New(application.Options{
-		Name:        fmt.Sprintf("Juggler Server %d", os.Getpid()),
-		Description: "AI Code Agent",
-		Mac: application.MacOptions{
-			ApplicationShouldTerminateAfterLastWindowClosed: false,
-			// Background process with no main window — the engine WebView stays
-			// hidden and the app never shows or activates a window.
-			ActivationPolicy: application.ActivationPolicyAccessory,
-		},
-		// This server's lifetime is governed by signals / the done channel, NOT
-		// by how many windows are open. Its only window is the hidden engine
-		// WebView, which the lifecycle controller tears down after an idle
-		// window (engine_lifecycle.go) and recreates on demand. Without these,
-		// Wails' default "quit when the last window closes" fires the moment the
-		// idle engine is reaped, killing the headless server out from under its
-		// viewers (the desktop app sees the WS drop a few minutes after going
-		// idle: "accept tcp: use of closed network connection"). These are the
-		// Windows/Linux twins of the macOS ApplicationShouldTerminate... = false
-		// above.
-		Linux: application.LinuxOptions{
-			ProgramName:                   "Juggler",
-			DisableQuitOnLastWindowClosed: true,
-		},
-		Windows: application.WindowsOptions{
-			AdditionalBrowserArgs:         []string{"--disable-logging"},
-			DisableQuitOnLastWindowClosed: true,
-		},
-	})
+	app := application.New(headlessServerAppOptions())
 
 	app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(_ *application.ApplicationEvent) {
 		// Hand the App reference up to app_wait.go (no window in this mode), then
@@ -190,5 +148,62 @@ func runHeadlessServerApp(srv *server.Server, selected selectedEngineHost, done 
 	if err := app.Run(); err != nil {
 		jlog.Error("application.Run failed: %v", err)
 		os.Exit(1)
+	}
+}
+
+// headlessServerAppOptions builds the Wails options for the windowless
+// production server.
+//
+// The headless server MUST NOT share a GtkApplication identity with the desktop
+// viewer (juggler-app) or with sibling per-project servers. On Linux, Wails
+// derives the GApplication ID from Name ("org.wails."+sanitized) and always
+// registers it as *unique* on the session bus (it hardcodes
+// G_APPLICATION_DEFAULT_FLAGS). Two live processes with the same ID collide:
+// the second becomes a remote instance, its GTK "activate" never fires locally,
+// and Wails' window Run() blocks forever in waitForActivation before it ever
+// calls windowNew — so that process's window is never created. For the viewer
+// that means no window at all plus gtk_widget_is_visible(NULL) GTK-CRITICAL
+// spam; for a server it means the hidden engine WebView never comes up. Because
+// both this server and juggler-app were named "Juggler", every launch that runs
+// a server alongside the app (i.e. all of them) raced for org.wails.juggler and
+// one side lost. Give each server a process-unique name so its GApplication ID
+// can never collide. The server is windowless, so this name is never
+// user-visible.
+func headlessServerAppOptions() application.Options {
+	return application.Options{
+		Name:        fmt.Sprintf("Juggler Server %d", os.Getpid()),
+		Description: "AI Code Agent",
+		// This process handles SIGINT/SIGTERM itself, in waitForExit, and owes
+		// that path a full teardown before any native quit. Wails' default
+		// handler (signal_handler_desktop.go) wires the first signal straight to
+		// app.Quit() — [NSApp terminate:], which does not unwind. Both handlers
+		// receive the same signal, terminate wins because it has nothing to do
+		// first, and the process dies mid-teardown with the project lock still
+		// held. Wails must not handle signals here.
+		DisableDefaultSignalHandler: true,
+		Mac: application.MacOptions{
+			ApplicationShouldTerminateAfterLastWindowClosed: false,
+			// Background process with no main window — the engine WebView stays
+			// hidden and the app never shows or activates a window.
+			ActivationPolicy: application.ActivationPolicyAccessory,
+		},
+		// This server's lifetime is governed by signals / the done channel, NOT
+		// by how many windows are open. Its only window is the hidden engine
+		// WebView, which the lifecycle controller tears down after an idle
+		// window (engine_lifecycle.go) and recreates on demand. Without these,
+		// Wails' default "quit when the last window closes" fires the moment the
+		// idle engine is reaped, killing the headless server out from under its
+		// viewers (the desktop app sees the WS drop a few minutes after going
+		// idle: "accept tcp: use of closed network connection"). These are the
+		// Windows/Linux twins of the macOS ApplicationShouldTerminate... = false
+		// above.
+		Linux: application.LinuxOptions{
+			ProgramName:                   "Juggler",
+			DisableQuitOnLastWindowClosed: true,
+		},
+		Windows: application.WindowsOptions{
+			AdditionalBrowserArgs:         []string{"--disable-logging"},
+			DisableQuitOnLastWindowClosed: true,
+		},
 	}
 }
