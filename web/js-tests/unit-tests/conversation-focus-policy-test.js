@@ -60,13 +60,13 @@ function makeSession({ composerText = false } = {}) {
 
   session.conversations.set('caller', stubConversation('caller'));
   session.conversations.set('target', stubConversation('target'));
-  session.visibleConversationId = 'caller';
+  session._setSelection({ kind: 'conversation', id: 'caller' });
 
   /** @type {string[]} */
   const switched = [];
   session.switchConversation = (/** @type {string} */ id) => {
     switched.push(id);
-    session.visibleConversationId = id;
+    session._setSelection({ kind: 'conversation', id });
     return true;
   };
 
@@ -106,7 +106,7 @@ export async function runTests(_ctx) {
 
   run('ignores a focus request while a different conversation is on screen', () => {
     const { session, switched } = makeSession();
-    session.visibleConversationId = 'other';
+    session._setSelection({ kind: 'conversation', id: 'other' });
     session.applyConversationFocus('target', 'caller');
     assert(switched.length === 0,
       `a background conversation pulled the viewer away: ${JSON.stringify(switched)}`);
@@ -121,7 +121,7 @@ export async function runTests(_ctx) {
 
   run('follows an unattributed focus request unconditionally', () => {
     const { session, switched } = makeSession({ composerText: true });
-    session.visibleConversationId = 'other';
+    session._setSelection({ kind: 'conversation', id: 'other' });
     session.applyConversationFocus('target');
     assert(switched.length === 1 && switched[0] === 'target',
       `an unattributed request must always be followed, got ${JSON.stringify(switched)}`);

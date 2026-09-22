@@ -8,41 +8,31 @@
  * A provision makes something on disk, so every way it can stop half way is a
  * case here: cancelled, aborted inside a step, or interrupted by a restart that
  * leaves only the checkpoints behind. Each must leave nothing, and say so. The
- * setup form is the other half — what it offers, what selecting a row does, and
- * the undo window that closes once the conversation has content.
+ * places on offer are the other half — which of them can be worked in, which
+ * could be made, and how a row whose probe failed reads.
  * @module unit-tests/conversation-workspace-provision-test
  */
 
-import { waitFor, assert } from '../utilities/test-helpers.js';
+import { assert } from '../utilities/test-helpers.js';
 import { fetchJson } from '../../js/services/http.js';
 import { writeFileOp } from '../../js/services/ops-api.js';
 import { createBoundOps } from '../../sdk/ops.js';
 import { registerWorkspace, unregisterWorkspace, listWorkspaces } from '../../js/services/workspaces.js';
 import { provisionWorkspace, recordProgress } from '../../js/services/workspace-provisioning.js';
+import { rebindConversation } from '../../js/services/workspace-rebinding.js';
 import {
   PROJECT_ROW_ID,
   NEW_ROW_PREFIX,
-  setupRows,
-  getSetupState,
-  selectSetupRow,
-  setSetupValues,
-  createSelectedWorkspace,
-  cancelSetupProvision,
-  undoSetup,
-  subscribeSetup
-} from '../../js/services/conversation-setup.js';
+  setupRows
+} from '../../js/services/workspace-places.js';
 import workspaceProviderRegistry from '../../js/registries/workspace-provider-registry.js';
-import { ensureConversationChrome } from '../../js/components/conversation-area-rendering.js';
 import { buildPlaceRows } from '../../js/components/workspace-setup-form.js';
 import {
   runWorkspaceSuite,
   FixtureProvider,
   abandonProvision,
-  bannerFor,
-  columnFor,
   fileTurnsUp,
   makeConversation,
-  readIn,
   workspaceRow
 } from '../utilities/conversation-workspace-helpers.js';
 
@@ -453,331 +443,108 @@ export async function runTests() {
       }
     });
 
-    await run('selecting a row builds nothing, and committing binds what was selected', async () => {
-      // The pair of rules the panel rests on: a click costs nothing, and the
-      // conversation commits at its first content — so a selection made and
-      // then changed leaves no trace of the one it changed from.
-      const made = await registerWorkspace({
-        root: `${projectPath}/src`, label: 'src, as a choice', state: 'ready'
-      });
-      const saved = session.workspaces;
-      session.workspaces = [...saved, made];
-      try {
-        const conversation = await makeConversation(session, 'selects-a-workspace', { initialise: false });
-        release(conversation);
-
-        selectSetupRow(conversation, made.id);
-        assert(conversation.workspaceId === '' && conversation.initialised === false,
-          'selecting a row binds nothing and initialises nothing');
-        assert(getSetupState(conversation).selection === made.id,
-          `it is merely remembered, got ${JSON.stringify(getSetupState(conversation).selection)}`);
-
-        await conversation.ensureInitialised();
-        assert(conversation.workspaceId === made.id,
-          `and the first content commits to it, got ${JSON.stringify(conversation.workspaceId)}`);
-        // `greeter.js` is only in `src`, so a conversation seeded against the
-        // project would read nothing here.
-        const read = await readIn(session, conversation, 'greeter.js');
-        assert(read.exists !== false,
-          `with its tools working in that tree from the first turn, got ${JSON.stringify(read)}`);
-      } finally {
-        session.workspaces = saved;
-        await unregisterWorkspace(made.id).catch(() => {});
-      }
-    });
-
-    await run('Create builds the place, binds to it, and Undo takes both back', async () => {
-      const name = `setup-create-${Math.random().toString(36).slice(2, 8)}`;
+    await run('a place is built with nothing bound to it, and a conversation moves in afterwards', async () => {
+      // The two acts, in the order the app performs them: the place is made
+      // with no conversation in the question, and something is moved into it
+      // once it is there. Whoever is waiting on the provision is told what it
+      // is waiting on as it goes — a provider's slow step is minutes long, and
+      // a wait with nothing said is a wait nobody can tell from a hang.
+      const name = `provision-bind-${Math.random().toString(36).slice(2, 8)}`;
       const dir = `${projectPath}/${name}`;
       const projectOps = createBoundOps(() => ({}));
-      const conversation = await makeConversation(session, 'creates-a-workspace', { initialise: false });
+      const conversation = await makeConversation(session, 'moves-into-a-workspace');
       release(conversation);
-      const before = conversation.rootMessageThread.contextItems.length;
-
-      selectSetupRow(conversation, `${NEW_ROW_PREFIX}${FixtureProvider.MANIFEST.id}`);
-      setSetupValues(conversation, { valid: true, values: { dir } });
 
       /** @type {string[]} */
       const announced = [];
-      const unsubscribe = subscribeSetup(() => {
-        const step = getSetupState(conversation).progress.at(-1)?.step;
-        if (step && announced.at(-1) !== step) announced.push(step);
-      });
+      const saved = session.workspaces;
       try {
-        const result = await createSelectedWorkspace(conversation);
-        assert(result.ok, `Create finished, got ${JSON.stringify(result)}`);
+        const outcome = await provisionWorkspace({
+          session,
+          providerId: FixtureProvider.MANIFEST.id,
+          values: { dir },
+          onProgress: (/** @type {string} */ step) => {
+            if (announced.at(-1) !== step) announced.push(step);
+          }
+        });
         assert(announced.includes('Making the directory'),
-          `and the panel was told what it was waiting on as it went, got ${JSON.stringify(announced)}`);
-        assert(getSetupState(conversation).phase === 'settled',
-          `the flow is over, got ${JSON.stringify(getSetupState(conversation).phase)}`);
-
+          `whoever is waiting is told what it is waiting on as it goes, got ${JSON.stringify(announced)}`);
         assert((await projectOps.stat({ path: `${name}/made-here.txt` })).exists,
           'the place really was built');
-        assert(conversation.workspaceId && conversation.initialised === true,
-          `and the conversation is bound to it and seeded, without anything having been sent, got ${JSON.stringify(conversation.workspaceId)}`);
-        assert(getSetupState(conversation).undoable === true,
-          'with an undo for as long as the panel would have lived');
 
-        await undoSetup(conversation);
+        const moved = await rebindConversation(conversation, outcome.workspace.id);
+        assert(moved.done === true,
+          `and a conversation moves into it, got ${JSON.stringify(moved)}`);
+        assert(conversation.workspaceId === outcome.workspace.id,
+          `which is where it works from then on, got ${JSON.stringify(conversation.workspaceId)}`);
+
+        // Out again before the place is taken back: undo removes the tree, and
+        // a conversation left standing in it would be pointed at ground that
+        // has gone.
+        await rebindConversation(conversation, '');
+        await outcome.undo();
 
         assert(!(await projectOps.stat({ path: name })).exists,
           'undo runs the same compensations the cancel would have, and the tree is gone');
-        assert(conversation.workspaceId === '' && conversation.initialised === false,
-          'the conversation is unbound and back to being asked');
-        assert(conversation.rootMessageThread.contextItems.length === before,
-          `and holds nothing that binding added, got ${conversation.rootMessageThread.contextItems.length} items against ${before}`);
-        assert(getSetupState(conversation).undoable === false,
-          'and the undo is spent');
-      } finally {
-        unsubscribe();
-        await projectOps.shell({ command: `rm -rf ${name}` }).catch(() => {});
-      }
-    });
-
-    await run('Undo says what it will remove, and asks before it takes work with it', async () => {
-      // The button says one word, and what it runs is the provision's whole
-      // compensation stack — for a worktree, `git worktree remove --force` and
-      // a branch delete. "Undo" reads as unbinding the conversation, so the
-      // sentence saying otherwise has to be on the control itself.
-      const name = `setup-undo-warn-${Math.random().toString(36).slice(2, 8)}`;
-      const dir = `${projectPath}/${name}`;
-      const projectOps = createBoundOps(() => ({}));
-      const conversation = await makeConversation(session, 'undo-is-not-silent', { initialise: false });
-      release(conversation);
-
-      const savedTable = session.workspaces;
-      const realShowModal = /** @type {any} */ (window).showModal;
-      /** @type {string[]} */
-      const asked = [];
-      /** @type {boolean} */
-      let answer = false;
-      /** @type {any} */ (window).showModal = async (/** @type {any} */ options) => {
-        asked.push(options?.message || '');
-        return answer;
-      };
-      FixtureProvider.discardDescription = 'Removes the tree and deletes feat/tunnels.';
-
-      selectSetupRow(conversation, `${NEW_ROW_PREFIX}${FixtureProvider.MANIFEST.id}`);
-      setSetupValues(conversation, { valid: true, values: { dir } });
-      try {
-        const result = await createSelectedWorkspace(conversation);
-        assert(result.ok, `precondition: Create finished, got ${JSON.stringify(result)}`);
-        // The banner resolves its root through the session's table, which
-        // arrives as a broadcast rather than with the registration's reply.
-        // The banner resolves its root through the session's own table, which
-        // this harness does not keep in step with the server on its own.
-        session.workspaces = await listWorkspaces();
-        assert(typeof conversation.workspaceRoot === 'string',
-          `precondition: the binding resolves, got row ${JSON.stringify(session.getWorkspace(conversation.workspaceId))}`);
-
-        const undo = /** @type {HTMLButtonElement|null} */ (
-          bannerFor(conversation)?.querySelector('.workspace-banner-undo'));
-        assert(undo, 'the banner offers an undo while the window is open');
-        assert((undo?.title ?? '').includes('Removes the tree and deletes feat/tunnels.'),
-          `and carries what pressing it costs, in the provider's words, got ${JSON.stringify(undo?.title)}`);
-        assert((undo?.getAttribute('aria-label') ?? '').includes('Removes the tree'),
-          `including for a reader who cannot hover, got ${JSON.stringify(undo?.getAttribute('aria-label'))}`);
-
-        // A tree somebody has written in: asked, and a no leaves everything
-        // exactly where it was.
-        FixtureProvider.reported = { dirty: true };
-        answer = false;
-        undo?.click();
-        await waitFor(() => asked.length === 1, 'a dirty tree was removed without asking');
-        assert(asked[0]?.includes('Removes the tree and deletes feat/tunnels.'),
-          `the question names what goes, got ${JSON.stringify(asked[0])}`);
-        assert(asked[0]?.includes('uncommitted work'),
-          `and why it is being asked at all, got ${JSON.stringify(asked[0])}`);
-        assert(getSetupState(conversation).undoable === true,
-          'declining leaves the undo where it was');
-        assert((await projectOps.stat({ path: `${name}/made-here.txt` })).exists,
-          'and leaves the tree standing, which is the whole point of asking');
-
-        // The ordinary case — nothing has touched it — goes straight through.
-        // An undo that asked every time would not be an undo.
-        FixtureProvider.reported = { dirty: false };
-        undo?.click();
-        // Unbinding happens after the compensations have run, so this is the
-        // signal that the rollback is finished rather than merely started —
-        // `undoable` goes false before the first command is sent.
-        await waitFor(() => conversation.workspaceId === '',
-          'the undo never ran on a clean tree');
-        assert(asked.length === 1,
-          `and nothing further was asked, got ${JSON.stringify(asked)}`);
-        assert(!(await projectOps.stat({ path: name })).exists,
-          'the tree is gone, so the undo that ran was the real one');
-      } finally {
-        /** @type {any} */ (window).showModal = realShowModal;
-        FixtureProvider.discardDescription = null;
-        FixtureProvider.reported = null;
-        session.workspaces = savedTable;
-        await projectOps.shell({ command: `rm -rf ${name}` }).catch(() => {});
-      }
-    });
-
-    await run('cancelling Create leaves the form as it was, and a failure says why', async () => {
-      const name = `setup-cancel-${Math.random().toString(36).slice(2, 8)}`;
-      const dir = `${projectPath}/${name}`;
-      const projectOps = createBoundOps(() => ({}));
-      const conversation = await makeConversation(session, 'cancels-a-workspace', { initialise: false });
-      release(conversation);
-
-      selectSetupRow(conversation, `${NEW_ROW_PREFIX}${FixtureProvider.MANIFEST.id}`);
-      setSetupValues(conversation, { valid: true, values: { dir, stallMs: 2000 } });
-
-      const creating = createSelectedWorkspace(conversation);
-      assert(await fileTurnsUp(projectOps, name, 5000),
-        'the provision never started, so cancelling it proves nothing');
-      cancelSetupProvision(conversation);
-      const cancelled = await creating;
-
-      assert(cancelled.ok === false, `cancelling does not bind, got ${JSON.stringify(cancelled)}`);
-      assert(!(await projectOps.stat({ path: name })).exists,
-        'and what had been built is unwound');
-      assert(conversation.workspaceId === '' && conversation.initialised === false,
-        'the conversation is untouched by an attempt that was called off');
-
-      const state = getSetupState(conversation);
-      assert(state.phase === 'choosing', `the panel is back to the choice, got ${state.phase}`);
-      assert(/** @type {any} */ (state.values).dir === dir,
-        `with the values still in the form — a cancel over a typo costs one edit, got ${JSON.stringify(state.values)}`);
-      assert(state.error === '',
-        `and nothing that reads as an error, because the user asked for this, got ${JSON.stringify(state.error)}`);
-
-      // A failure is the same unwinding and a different thing to say: the
-      // provider gets part way and then cannot go on, and the reason is what
-      // the panel has to show against the form the user can correct.
-      const failName = `setup-failed-${Math.random().toString(36).slice(2, 8)}`;
-      setSetupValues(conversation, {
-        valid: true,
-        values: { dir: `${projectPath}/${failName}`, failWith: 'fatal: invalid reference: develop' }
-      });
-      const failed = await createSelectedWorkspace(conversation);
-      assert(failed.ok === false, 'a provision that cannot finish does not bind either');
-      assert(getSetupState(conversation).error === 'fatal: invalid reference: develop',
-        `and this time the panel is given the provider's own words, got ${JSON.stringify(getSetupState(conversation).error)}`);
-      assert(getSetupState(conversation).phase === 'choosing',
-        'while returning to the same choice state');
-      assert(!(await projectOps.stat({ path: failName })).exists,
-        'with the part it had built already unwound, not left for someone to find');
-    });
-
-    await run('the undo window closes when the conversation gets content', async () => {
-      const name = `setup-window-${Math.random().toString(36).slice(2, 8)}`;
-      const dir = `${projectPath}/${name}`;
-      const projectOps = createBoundOps(() => ({}));
-      const conversation = await makeConversation(session, 'closes-its-window', { initialise: false });
-      release(conversation);
-
-      selectSetupRow(conversation, `${NEW_ROW_PREFIX}${FixtureProvider.MANIFEST.id}`);
-      setSetupValues(conversation, { valid: true, values: { dir } });
-      const result = await createSelectedWorkspace(conversation);
-      const workspaceId = conversation.workspaceId;
-      try {
-        assert(result.ok && getSetupState(conversation).undoable === true,
-          'precondition: there is something to undo');
-
-        await conversation.ensureInitialised();
-        assert(getSetupState(conversation).undoable === false,
-          'content arriving ends the window, the same trigger that would have committed the panel');
-
-        await undoSetup(conversation);
-        assert(conversation.workspaceId === workspaceId,
-          'and undoing afterwards does nothing — from here it is the workspace’s own finish menu');
-        assert((await projectOps.stat({ path: `${name}/made-here.txt` })).exists,
-          'with what was built left standing');
-      } finally {
-        await unregisterWorkspace(workspaceId).catch(() => {});
-        await projectOps.shell({ command: `rm -rf ${name}` }).catch(() => {});
-      }
-    });
-
-    await run('with no provider loaded the transcript looks exactly as it always did', async () => {
-      // The install state most people are in. There is only one place a
-      // conversation could work, so there is nothing to ask and the panel
-      // renders nothing at all — not an empty panel, not a heading.
-      const conversation = await makeConversation(session, 'nothing-to-ask', { initialise: false });
-      release(conversation);
-      const { area, list } = columnFor(conversation);
-
-      workspaceProviderRegistry.reset();
-      try {
-        ensureConversationChrome(area, list);
-        assert(!list.querySelector('conversation-setup-panel'),
-          'a conversation with one possible answer is not asked the question');
-        assert(!list.querySelector('.conversation-workspace-banner'),
-          'and nothing announces the project, which is where everything worked before any of this');
-      } finally {
-        workspaceProviderRegistry.registerClass(FixtureProvider, { extensionId: 'test', modulePath: '(test)' });
-      }
-    });
-
-    await run('an unasked conversation is asked, and an answered one is not', async () => {
-      const made = await registerWorkspace({
-        root: `${projectPath}/src`, label: 'src, as an option', state: 'ready'
-      });
-      const saved = session.workspaces;
-      session.workspaces = [...saved, made];
-      try {
-        const conversation = await makeConversation(session, 'gets-asked', { initialise: false });
-        release(conversation);
-        const { area, list } = columnFor(conversation);
-        ensureConversationChrome(area, list);
-
-        const panel = list.querySelector('conversation-setup-panel');
-        assert(panel, 'a conversation nobody has told where it works gets the panel');
-        const labels = Array.from(panel.querySelectorAll('.setup-row-label'))
-          .map((/** @type {any} */ row) => row.textContent);
-        assert(labels[0] === 'The project folder',
-          `with the project first and preselected, named after the place rather than after its position, got ${JSON.stringify(labels)}`);
-        assert(labels.includes('src, as an option'),
-          `and what already exists is offered, got ${JSON.stringify(labels)}`);
-        // By name rather than by position. Which provider registered first is
-        // nobody's guarantee, so reading the last row asks what else is loaded
-        // and in what order, rather than the rule this line is about.
-        const makers = Array.from(panel.querySelectorAll('.setup-row[data-row-kind="new"]'))
-          .map((/** @type {any} */ row) => row.querySelector('.setup-row-label')?.textContent);
-        assert(makers.includes('Somewhere else'),
-          `and one row per provider that could make another, got ${JSON.stringify(makers)}`);
-        assert(labels.indexOf('Somewhere else') > labels.indexOf('src, as an option'),
-          `what already exists above what could be made, got ${JSON.stringify(labels)}`);
-        const project = panel.querySelector('.setup-row[aria-checked="true"]');
-        assert(project?.dataset.rowId === '',
-          `the project is the selected row until something else is picked, got ${JSON.stringify(project?.dataset.rowId)}`);
-
-        // Asked where the reader is, not filed above the transcript: the card
-        // is the LAST thing in the column, in the slot the starting hint has to
-        // itself when there is nothing to ask — and it carries that hint, so
-        // the question and what to do next are one block.
-        assert(list.lastElementChild === panel,
-          'the card is the last thing in the column, not chrome pinned above the items, but ' +
-          `the column ends with ${list.lastElementChild?.tagName}`);
-        assert(panel.querySelector('.setup-hint')?.textContent?.includes('Type your message below'),
-          'and the card carries the starting hint, which the overlay stands down for');
-
-        // What happens to somebody who answers nothing, said on the row it
-        // happens to. Preselection alone is a highlight nobody can read as "and
-        // this is what you get" — the row's own name is, which is why it does
-        // not also wear a chip saying the same word twice.
-        assert(!project?.querySelector('.setup-row-badge'),
-          'the project row does not also carry a badge saying it is the default, got ' +
-          JSON.stringify(project?.querySelector('.setup-row-badge')?.textContent));
-        assert(project?.querySelector('.setup-row-meaning')?.textContent?.includes('project folder'),
-          'and says in plain words what choosing it does');
-
-        // Every offer explains itself, including the ones an extension wrote.
-        const makeOne = /** @type {any} */ (panel.querySelector('.setup-row-new'));
-        assert(makeOne?.querySelector('.setup-row-meaning')?.textContent,
-          'a "New…" row carries its provider\'s description as its meaning, not a bare label');
-
-        await conversation.ensureInitialised();
-        ensureConversationChrome(area, list);
-        assert(!list.querySelector('conversation-setup-panel'),
-          'and the panel is gone the moment the conversation has been told');
+        const remaining = await listWorkspaces();
+        assert(!remaining.some(ws => ws.id === outcome.workspace.id),
+          'and takes the row off the table with it');
       } finally {
         session.workspaces = saved;
-        await unregisterWorkspace(made.id).catch(() => {});
+        await projectOps.shell({ command: `rm -rf ${name}` }).catch(() => {});
       }
+    });
+
+    await run('a provision called off and one that cannot finish both leave nothing, and only one has something to say', async () => {
+      // The two endings a form has to tell apart. Both unwind the same way, and
+      // what separates them is what comes back: a cancel is what the user asked
+      // for and has nothing to explain, while a failure has to arrive carrying
+      // the provider's own words, because they are the only thing that says
+      // which field to correct.
+      const name = `provision-cancel-${Math.random().toString(36).slice(2, 8)}`;
+      const dir = `${projectPath}/${name}`;
+      const projectOps = createBoundOps(() => ({}));
+      const controller = new AbortController();
+
+      const creating = provisionWorkspace({
+        session,
+        providerId: FixtureProvider.MANIFEST.id,
+        values: { dir, stallMs: 2000 },
+        signal: controller.signal
+      });
+      /** @type {any[]} */
+      const cancelled = [];
+      const settled = creating.then(() => {}, (error) => { cancelled.push(error); });
+
+      assert(await fileTurnsUp(projectOps, name, 5000),
+        'the provision never started, so cancelling it proves nothing');
+      controller.abort();
+      await settled;
+
+      assert(cancelled.length === 1,
+        `cancelling hands back no workspace, got ${cancelled.length} rejections`);
+      assert(!(await projectOps.stat({ path: name })).exists,
+        'and what had been built is unwound');
+
+      // The provider gets part way and then cannot go on, which is the other
+      // way a form's Create ends without a place to show for it.
+      const failName = `provision-failed-${Math.random().toString(36).slice(2, 8)}`;
+      /** @type {any} */
+      let failure = null;
+      try {
+        await provisionWorkspace({
+          session,
+          providerId: FixtureProvider.MANIFEST.id,
+          values: { dir: `${projectPath}/${failName}`, failWith: 'fatal: invalid reference: develop' }
+        });
+      } catch (error) {
+        failure = error;
+      }
+      assert(failure, 'a provision that cannot finish hands back no workspace either');
+      assert(failure?.message === 'fatal: invalid reference: develop',
+        `and this time it comes back in the provider's own words, got ${JSON.stringify(failure?.message)}`);
+      assert(!(await projectOps.stat({ path: failName })).exists,
+        'with the part it had built already unwound, not left for someone to find');
     });
 
   });

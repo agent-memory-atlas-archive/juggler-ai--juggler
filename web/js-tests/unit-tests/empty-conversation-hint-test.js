@@ -16,11 +16,6 @@
  * the transcript, so the second assertion also stands for the item diff never
  * having a chance to delete it.
  *
- * The other way it can go wrong is duplication: a conversation still being asked
- * where it works carries these same four lines inside its setup card, in this
- * slot, so the overlay must stand down for exactly as long as the card is there
- * and no longer.
- *
  * The hint also CENTRES ONLY IN THE CLEAR BAND between the rendered content
  * and the composer, and hides when that band cannot hold it: on a small
  * viewport the standing-context items and the footer would otherwise sit
@@ -39,7 +34,6 @@ import {
 } from '../utilities/test-helpers.js';
 import { createUserMessage } from '../../sdk/lib/message.js';
 import '../../js/components/conversation-tab.js';
-import '../../js/components/conversation-setup-panel.js';
 
 /**
  * @returns {Promise<{passed: number, failed: number, errors: string[]}>} Aggregated test results.
@@ -149,28 +143,6 @@ export async function runTests() {
     rootCol._positionEmptyHint();
     assert(hint.classList.contains('no-room') === false,
       'the hint should come back when the viewport has room for it again');
-
-    // --- A conversation still being asked where it works says it itself ---
-
-    // The setup card sits in this very slot and carries these same four lines
-    // (see ConversationSetupPanel), so the overlay stands down while it is up —
-    // otherwise the copy is laid over itself. The card is put there by hand:
-    // what is under test is the overlay's rule, and the panel's own arrival is
-    // conversation-workspace-test's.
-    const card = document.createElement('conversation-setup-panel');
-    inner.appendChild(card);
-    rootCol._updateEmptyHint([]);
-    assert(/** @type {HTMLElement} */ (hint).classList.contains('hidden'),
-      'the overlay should stand down while the setup card is in the column, since the card ' +
-      'carries the same lines');
-    assert(hint.style.top === '' && hint.style.height === '',
-      'and should drop its placement, so the band it comes back to is measured fresh');
-
-    card.remove();
-    rootCol._updateEmptyHint([]);
-    assert(/** @type {HTMLElement} */ (hint).classList.contains('hidden') === false,
-      'and should come back the moment the card goes, so there is never a conversation with ' +
-      'neither');
 
     // --- The first real message retires it ---
 

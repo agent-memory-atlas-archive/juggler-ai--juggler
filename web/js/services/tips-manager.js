@@ -88,6 +88,14 @@ const FEATURE_TIPS = [
     title: 'Paste a screenshot',
     body: 'Drag-and-drop or copy-paste an image file into the composer to attach it to your prompt.',
   },
+  {
+    id: 'workspaces',
+    kind: 'feature',
+    title: 'Workspaces',
+    body: 'A workspace is a separate place to work — a branch in its own tree, or a copy to try '
+      + 'something risky in. Make one at the foot of the conversation list, then start '
+      + 'conversations in it or drag them across.',
+  },
 ];
 
 /**

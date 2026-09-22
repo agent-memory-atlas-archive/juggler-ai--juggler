@@ -952,7 +952,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     return {
       workspace: {
         root: location,
-        label: `${branch} (worktree)`,
+        label: branch,
         meta
       }
     };
@@ -965,21 +965,20 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
    * Answered by `GET /api/git/status?workspace=`, not by parsing porcelain here.
    * That endpoint already resolves any ready workspace through the same four
    * refusals an operation makes, and returns branch, divergence and counts in one
-   * round trip — which is what makes this cheap enough for the setup panel to ask
+   * round trip — which is what makes this cheap enough for a place list to ask
    * it of every row it lists, including ones the user has not selected.
    * @param {any} workspace - The row to report on.
    * @param {any} ctx - Operations pinned to that workspace, and a signal.
    * @returns {Promise<any>} What to show for it.
    */
   async status(workspace, ctx) {
-    const named = workspace.label || baseName(workspace.root);
     // What this place IS, said in full and said first: the repository is half of
     // it, and a worktree named only by its branch leaves a reader who has three
     // checkouts open no way to tell which one they are about to commit into.
     const repoDir = String(workspace?.meta?.repoDir ?? '');
     const kind = repoDir ? `Git worktree of ${baseName(repoDir)}` : 'Git worktree';
     if (workspace.available === false) {
-      return { label: named, kind, detail: 'The tree is missing.', available: false };
+      return { kind, detail: 'The tree is missing.', available: false };
     }
 
     const answer = await api.getGitStatus(workspace.id, { signal: ctx.signal });
@@ -987,7 +986,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     if (!repo) {
       // A registered root that is no longer a repository: removed by hand, or
       // never one. Worth saying rather than reporting a clean tree.
-      return { label: named, kind, detail: 'No git repository there.', available: true };
+      return { kind, detail: 'No git repository there.', available: true };
     }
 
     let changed = repo.changed;
@@ -1003,10 +1002,6 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     const dirty = Math.max(0, total) > 0;
 
     return {
-      // The branch, because that is the name of the place as far as the user is
-      // concerned; the row's own label is the fallback for a tree with no branch
-      // to name it by.
-      label: repo.branch || named,
       kind,
       // "branch feat/x · clean" rather than "feat/x · clean": read on its own,
       // in a chip's menu or a row of a list, a bare name is a word with no job.
@@ -1091,15 +1086,15 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
       {
         id: 'unbind',
         label: 'Stop using this workspace',
-        description: `Nothing is deleted: the tree and ${branch || 'its branch'} stay exactly where they are, and you can pick them up again whenever you like. This conversation goes back to the project folder.`
+        description: `Nothing is deleted: the tree and ${branch || 'its branch'} stay exactly where they are, and you can pick them up again whenever you like.`
       },
       {
         id: 'discard',
         label: 'Delete this workspace',
         danger: true,
         description: meta.branchCreatedByUs && branch
-          ? `Deletes the tree and the branch ${branch}, with everything in them. This conversation goes back to the project folder.`
-          : 'Deletes the tree and everything in it; the branch was not ours to make, so it stays. This conversation goes back to the project folder.'
+          ? `Deletes the tree and the branch ${branch}, with everything in them.`
+          : 'Deletes the tree and everything in it; the branch was not ours to make, so it stays.'
       }
     ];
   }
@@ -1121,8 +1116,10 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     if (actionId === 'unbind') {
       return {
         done: true,
+        // What happened to the tree. Where the conversations that were working
+        // in it have gone is the host's to say — it is the host that moves
+        // them, and how many there were is not a thing a provider knows.
         message: `Stopped using ${meta.dir ?? 'the tree'}. It and ${branch || 'its branch'} are still there.`
-          + ' This conversation is back in the project folder.'
       };
     }
     if (actionId === 'commit') return this._commit(workspace, ctx);
@@ -1350,7 +1347,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
           detail: `${dir} — a worktree of ${baseName(repoDir)} with no workspace`,
           workspace: {
             root: dir,
-            label: `${tree.branch || baseName(dir)} (worktree)`,
+            label: tree.branch || baseName(dir),
             meta: {
               repoDir,
               dir,

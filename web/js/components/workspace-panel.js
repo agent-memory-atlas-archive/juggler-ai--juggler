@@ -1,0 +1,641 @@
+//     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+//     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+//   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+
+/**
+ * <workspace-panel> — a selected workspace, shown where a conversation would be.
+ *
+ * A box in the tab strip is selected the way a tab is, and this is what that
+ * selection shows: the place itself. What is here is true of the tree rather
+ * than of anyone working in it — what it is called, what kind of place it is,
+ * where it is on disk, how it is doing, and the ways of finishing with it.
+ *
+ * It is a panel rather than a menu because that is what these are. A path you
+ * may want to copy, a branch and a working state you may want to read twice,
+ * and a row of endings that each take something away are not things to hold a
+ * pointer still over: they want room, and they want to stay put while they are
+ * read. The strip's box is left with only the name on it.
+ *
+ * What is NOT here is the one thing that belongs to a single conversation:
+ * moving one to a different workspace. A workspace of three conversations
+ * names none of them, so that lives on the tab.
+ * @module components/workspace-panel
+ */
+
+import {
+  selectedWorkspace,
+  workspaceStatus,
+  workspaceKind,
+  workspaceKindNote,
+  workspaceFinishOptions,
+  workspaceFinishWarning,
+  workspaceFinishActor,
+  finishWorkspace
+} from '../services/workspace-provisioning.js';
+import { createFileActions } from '../utils/properties-panel-helpers.js';
+import { setupColumnResize } from '../utils/column-resize.js';
+import { showConfirm, showNotice } from './modal-dialog.js';
+import { openWorkspaceFinish } from './workspace-finish-dialog.js';
+
+/**
+ * WorkspacePanel - the workspace the tab strip has selected, written out.
+ */
+class WorkspacePanel extends HTMLElement {
+  constructor() {
+    super();
+
+    /** @type {any} The session holding the selection. */
+    this._session = null;
+
+    /** @type {(() => void)|null} How to stop listening to it. */
+    this._unsubscribe = null;
+
+    /** @type {any} The workspace currently drawn, or null. */
+    this._workspace = null;
+
+    /** @type {any} What its provider last said about it. */
+    this._status = null;
+
+    /** @type {AbortController|null} The status read in flight, if there is one. */
+    this._probe = null;
+
+    /** @type {HTMLElement|null} The column's right-edge resize grip. */
+    this._resizeHandle = null;
+  }
+
+  disconnectedCallback() {
+    this._unsubscribe?.();
+    this._unsubscribe = null;
+    this._probe?.abort();
+    this._probe = null;
+  }
+
+  /**
+   * @param {any} session - The session to follow.
+   * @returns {void}
+   */
+  setSession(session) {
+    this._unsubscribe?.();
+    this._unsubscribe = null;
+    this._session = session;
+    this._refresh();
+    if (!session) return;
+
+    this._unsubscribe = session.subscribe(/** @param {{type: string}} event */ (event) => {
+      // The three conversation events are here for the list of who is working
+      // in this tree: a conversation created, binned or renamed changes what
+      // that list says, and nothing about the workspace has moved to say so.
+      if (event.type === 'workspace:selected'
+        || event.type === 'conversation:switched'
+        || event.type === 'conversation:created'
+        || event.type === 'conversation:deleted'
+        || event.type === 'conversation:renamed'
+        || event.type === 'session:workspaces-changed'
+        || event.type === 'project:changed'
+        || event.type === 'session:loaded') {
+        this._refresh();
+      }
+    });
+  }
+
+  /**
+   * Show the selected workspace, or get out of the way.
+   *
+   * The tab column is hidden by one class on <body>, the way the two
+   * onboarding overlays hide it — the panel is what is on screen instead of a
+   * conversation, not something drawn over one.
+   * @private
+   */
+  _refresh() {
+    const workspace = selectedWorkspace(this._session);
+    const changed = this._workspace?.id !== workspace?.id;
+    this._workspace = workspace;
+
+    document.body.classList.toggle('workspace-selected', !!workspace);
+    this.hidden = !workspace;
+
+    if (!workspace) {
+      this._probe?.abort();
+      this._probe = null;
+      this._status = null;
+      this.replaceChildren();
+      return;
+    }
+
+    if (changed) this._status = null;
+    this.render();
+    // The row is all this can draw without asking anyone, and it says nothing
+    // about the state of the tree. So the first draw is followed by the
+    // question. Once, though: the panel redraws on events that say nothing
+    // about the workspace, and each of those aborting the last one's probe
+    // would leave a panel that never manages to say how the tree is doing.
+    if (changed || (!this._status && !this._probe)) void this.refreshStatus();
+  }
+
+  /**
+   * Ask the workspace's provider how it is doing.
+   * @returns {Promise<void>} When there is an answer, or it has been abandoned.
+   */
+  async refreshStatus() {
+    const workspace = this._workspace;
+    this._probe?.abort();
+    this._probe = null;
+    if (!workspace || !this._session) return;
+
+    const controller = new AbortController();
+    this._probe = controller;
+    const status = await workspaceStatus(this._session, workspace, controller.signal);
+    // Both are worth asking: the answer may be to a question about a workspace
+    // this panel has since stopped being about.
+    if (controller.signal.aborted || this._workspace?.id !== workspace.id) return;
+    this._probe = null;
+    this._status = status;
+    this.render();
+  }
+
+  /**
+   * What the panel calls the place: the name on its row.
+   *
+   * The row is the only thing that names a workspace. A status read says how a
+   * tree is DOING and has no say in what it is called — it arrives a walk of
+   * two trees or a git call after the first draw, so a name taken from there
+   * would change under somebody already reading it. What the probe learns about
+   * the place appears in the lines below the title, which is where a reader is
+   * expecting something to fill in.
+   * @returns {string} The name.
+   * @private
+   */
+  _label() {
+    return this._workspace?.label || this._workspace?.root || '';
+  }
+
+  /**
+   * What kind of place it is, in the words of whatever made it. The row's own
+   * label is the last resort — a workspace whose extension is gone has nobody
+   * left to name it.
+   * @returns {string} The kind.
+   * @private
+   */
+  _kind() {
+    return this._status?.kind
+      || workspaceKind(this._session, this._workspace)
+      || this._workspace?.label
+      || '';
+  }
+
+  render() {
+    const workspace = this._workspace;
+    if (!workspace) {
+      this.replaceChildren();
+      return;
+    }
+
+    const body = document.createElement('section');
+    body.className = 'workspace-panel-body';
+    body.setAttribute('aria-label', 'Workspace');
+
+    body.appendChild(this._head());
+    body.appendChild(this._where());
+
+    const state = this._state();
+    if (state) body.appendChild(state);
+
+    const { options, unavailableReason } = workspaceFinishOptions(this._session, workspace);
+
+    body.appendChild(this._doing(options, unavailableReason ?? ''));
+
+    const endings = unavailableReason ? [] : options.filter(option => !option.keepsWorkspace);
+    if (endings.length) body.appendChild(this._endings(endings));
+
+    this.replaceChildren(body, this._columnHandle());
+  }
+
+  /**
+   * The grip that widens the column, made once and put back after each redraw.
+   *
+   * A column is resized by the handle it hosts on its own right edge, and
+   * `setupColumnResize` looks for that child before it wires anything — so it
+   * is built first, and only ever wired once.
+   *
+   * Under `juggler-column-width`, the conversation column's own preference,
+   * with the conversation column's own default: the panel stands exactly where
+   * a conversation stands, so it is the same column at the same width, and
+   * widening either widens both. A width of its own would be a second answer to
+   * a question that already has one.
+   * @returns {HTMLElement} The handle.
+   * @private
+   */
+  _columnHandle() {
+    if (this._resizeHandle) return this._resizeHandle;
+    this._resizeHandle = document.createElement('col-resize-handle');
+    this.appendChild(this._resizeHandle);
+    setupColumnResize(this, 'juggler-column-width', undefined, 50);
+    return this._resizeHandle;
+  }
+
+  /**
+   * What it is, what it is called, and what that kind of place is for.
+   *
+   * In that order, and the first line is the word itself. A box in the strip is
+   * clicked before it is understood, and what it opens is a branch name over a
+   * directory path — which is a description of something, if you already know
+   * what. Nothing above the endings said "workspace" at all, so the one term the
+   * whole feature is named for was the one thing the user had to supply.
+   * @returns {HTMLElement} The panel's head.
+   * @private
+   */
+  _head() {
+    const head = document.createElement('header');
+    head.className = 'workspace-panel-head';
+
+    const what = document.createElement('p');
+    what.className = 'workspace-panel-eyebrow';
+    what.textContent = 'Workspace';
+    head.appendChild(what);
+
+    const title = document.createElement('h2');
+    title.className = 'workspace-panel-title';
+    title.textContent = this._label();
+    head.appendChild(title);
+
+    const kind = this._kind();
+    if (kind) {
+      const said = document.createElement('p');
+      said.className = 'workspace-panel-kind';
+      said.textContent = kind;
+      head.appendChild(said);
+    }
+
+    // The kind's own description, which the provider already wrote and which was
+    // being thrown away: "Scratch Copy" names the thing, and only the sentence
+    // under it says that the tree is a throwaway copy of another one.
+    const note = workspaceKindNote(this._session, this._workspace);
+    if (note) {
+      const says = document.createElement('p');
+      says.className = 'workspace-panel-kind-note';
+      says.textContent = note;
+      head.appendChild(says);
+    }
+    return head;
+  }
+
+  /**
+   * Where the work happens, written out in full, with the things one does with
+   * a path: copy it, show it on disk, put it on the board.
+   *
+   * Whole, because no rule about which part of a path matters survives contact
+   * with the paths providers actually make: a scratch copy's root ends in the
+   * same `work` directory for every copy ever taken, and the segment saying
+   * which copy this is sits above it.
+   * @returns {HTMLElement} The path section.
+   * @private
+   */
+  _where() {
+    const section = document.createElement('div');
+    section.className = 'workspace-panel-section';
+
+    const heading = document.createElement('h3');
+    heading.className = 'workspace-panel-heading';
+    heading.textContent = 'Where the work happens';
+    section.appendChild(heading);
+
+    const path = this._workspace?.root ?? '';
+    const row = document.createElement('div');
+    row.className = 'workspace-panel-path-row';
+
+    const box = document.createElement('div');
+    box.className = 'workspace-panel-path properties-panel-filepath-box';
+    box.textContent = path;
+    // The same hook the right-click Open / Reveal / Copy menu reads elsewhere,
+    // so the path behaves like a path wherever it is met.
+    if (path) box.dataset.filePath = path;
+    row.appendChild(box);
+
+    const actions = createFileActions(path, { pin: path, directory: true });
+    if (actions) row.appendChild(actions);
+
+    section.appendChild(row);
+
+    // A tree made out of another tree says so. Only when the other one is a
+    // workspace too: everything here is made from the project unless it says
+    // otherwise, and a line repeating the default on every panel is furniture.
+    const base = this._base();
+    if (base) {
+      const from = document.createElement('p');
+      from.className = 'workspace-panel-detail';
+      from.textContent = `Made from ${base}.`;
+      section.appendChild(from);
+    }
+    return section;
+  }
+
+  /**
+   * The workspace this one was made out of, when that is another workspace.
+   * @returns {string} What to call it, or '' when it was made from the project.
+   * @private
+   */
+  _base() {
+    const id = this._workspace?.baseWorkspaceId ?? '';
+    if (!id) return '';
+    const row = this._session?.getWorkspace?.(id);
+    return row ? (row.label || row.root || '') : '';
+  }
+
+  /**
+   * How the tree is doing. The problem is kept apart from the detail: a
+   * workspace that answered and one nobody could reach must never read alike.
+   * @returns {HTMLElement|null} The state section, or null when there is
+   *   nothing yet to say.
+   * @private
+   */
+  _state() {
+    const detail = this._status?.detail || '';
+    const problem = this._status?.problem || '';
+    const dirty = this._status?.dirty === true;
+    if (!detail && !problem && !dirty) return null;
+
+    const section = document.createElement('div');
+    section.className = 'workspace-panel-section';
+
+    const heading = document.createElement('h3');
+    heading.className = 'workspace-panel-heading';
+    heading.textContent = 'How it is doing';
+    section.appendChild(heading);
+
+    if (detail) {
+      const line = document.createElement('p');
+      line.className = 'workspace-panel-detail';
+      line.textContent = detail;
+      section.appendChild(line);
+    }
+    if (dirty) {
+      const line = document.createElement('p');
+      line.className = 'workspace-panel-dirty';
+      line.textContent = 'Holding uncommitted work.';
+      section.appendChild(line);
+    }
+    if (problem) {
+      const line = document.createElement('p');
+      line.className = 'workspace-panel-problem';
+      line.textContent = problem;
+      section.appendChild(line);
+    }
+    return section;
+  }
+
+  /**
+   * The things you do here that leave the workspace in use: starting a
+   * conversation, and whatever else its provider offers that keeps it.
+   *
+   * Under a list of who is already working here, which the strip cannot show
+   * from a selected box — the box's own tabs are behind the panel that replaced
+   * them. It is also the thing that makes the endings below readable: they warn
+   * about the conversations working in a tree, and this is where you can see
+   * which ones those are.
+   * @param {any[]} options - Everything the provider offered.
+   * @param {string} unavailableReason - Why it offered nothing, if it did not.
+   * @returns {HTMLElement} The section.
+   * @private
+   */
+  _doing(options, unavailableReason) {
+    const section = document.createElement('div');
+    section.className = 'workspace-panel-section workspace-panel-doing';
+
+    const heading = document.createElement('h3');
+    heading.className = 'workspace-panel-heading';
+    heading.textContent = 'Working here';
+    section.appendChild(heading);
+
+    section.appendChild(this._working());
+
+    const rows = document.createElement('div');
+    rows.className = 'workspace-panel-actions';
+
+    const create = document.createElement('button');
+    create.type = 'button';
+    create.className = 'workspace-panel-action workspace-panel-create';
+    create.appendChild(this._actionLabel(
+      'New conversation here',
+      'Starts one bound to this workspace, so its files and commands happen in this tree.'));
+    create.addEventListener('click', () => this._create());
+    rows.appendChild(create);
+
+    for (const option of (unavailableReason ? [] : options.filter(o => o.keepsWorkspace))) {
+      rows.appendChild(this._finishButton(option));
+    }
+    section.appendChild(rows);
+
+    // A provider that is not loaded has nothing to offer, and the reason is
+    // said rather than left as a gap: "this provider offers no endings" and
+    // "the extension that knew how to end this is gone" are different things to
+    // be told. Not repeated when the state section has already said it.
+    if (unavailableReason && unavailableReason !== this._status?.problem) {
+      const note = document.createElement('p');
+      note.className = 'workspace-panel-note';
+      note.textContent = unavailableReason;
+      section.appendChild(note);
+    }
+    return section;
+  }
+
+  /**
+   * The ways of finishing with the place, under a heading that says so before
+   * any label is read.
+   * @param {any[]} endings - The options that do not keep the workspace.
+   * @returns {HTMLElement} The section.
+   * @private
+   */
+  _endings(endings) {
+    const section = document.createElement('div');
+    section.className = 'workspace-panel-section workspace-panel-endings';
+
+    const heading = document.createElement('h3');
+    heading.className = 'workspace-panel-heading';
+    heading.textContent = 'When you’re done with this workspace';
+    section.appendChild(heading);
+
+    const rows = document.createElement('div');
+    rows.className = 'workspace-panel-actions';
+    for (const option of endings) rows.appendChild(this._finishButton(option));
+    section.appendChild(rows);
+    return section;
+  }
+
+  /**
+   * One thing a provider can do with this workspace, as a button.
+   *
+   * The ellipsis is the promise the rest of the app makes: a label that ends in
+   * one asks for something before it does anything. An ending that only wants
+   * agreeing to does not get one — a confirmation is not a question.
+   * @param {any} option - What the provider offered.
+   * @returns {HTMLElement} The button.
+   * @private
+   */
+  _finishButton(option) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `workspace-panel-action${option.danger ? ' danger' : ''}`;
+    button.dataset.action = option.id;
+    button.appendChild(this._actionLabel(
+      option.prompt ? `${option.label}…` : option.label,
+      option.description));
+    button.addEventListener('click', () => { void this._finish(option); });
+    return button;
+  }
+
+  /**
+   * What a button says, on two lines.
+   *
+   * The second is not decoration and is not a tooltip. Most of these end a
+   * place work is happening in, and a label alone cannot carry that — "Stop
+   * using this workspace" does not say that nothing is deleted, and nothing a
+   * pointer has to hover to find is going to be read by someone deciding
+   * whether it is safe to press.
+   * @param {string} text - What it is called.
+   * @param {string} [note] - What happens if it is pressed.
+   * @returns {DocumentFragment} The two lines.
+   * @private
+   */
+  _actionLabel(text, note = '') {
+    const fragment = document.createDocumentFragment();
+    const name = document.createElement('span');
+    name.className = 'workspace-panel-action-name';
+    name.textContent = text;
+    fragment.appendChild(name);
+    if (note) {
+      const says = document.createElement('span');
+      says.className = 'workspace-panel-action-note';
+      says.textContent = note;
+      fragment.appendChild(says);
+    }
+    return fragment;
+  }
+
+  /**
+   * The conversations working in this tree, each a way back to itself.
+   *
+   * A workspace outlives the conversations started in it and may hold several
+   * at once, so the count is never assumed: one, three, or none at all, and
+   * none is worth saying out loud — an empty tree is a place waiting to be used
+   * rather than a panel with a section missing.
+   * @returns {HTMLElement} The list, or the line that stands in for it.
+   * @private
+   */
+  _working() {
+    const id = this._workspace?.id ?? '';
+    const members = [...(this._session?.conversations?.values?.() ?? [])]
+      .filter(conversation => (conversation.workspaceId || '') === id);
+
+    if (!members.length) {
+      const none = document.createElement('p');
+      none.className = 'workspace-panel-note';
+      none.textContent = 'No conversations yet.';
+      return none;
+    }
+
+    const list = document.createElement('ul');
+    list.className = 'workspace-panel-conversations';
+    for (const conversation of members) {
+      const row = document.createElement('li');
+      const open = document.createElement('button');
+      open.type = 'button';
+      open.className = 'workspace-panel-conversation';
+      open.dataset.conversationId = conversation.id;
+      open.textContent = conversation.name || conversation.id;
+      open.addEventListener('click', () => this._session?.switchConversation?.(conversation.id));
+      row.appendChild(open);
+      list.appendChild(row);
+    }
+    return list;
+  }
+
+  /**
+   * Ask for a conversation in this workspace.
+   *
+   * Asked rather than done: starting one is the tab strip's, and carries the
+   * strip's guards — the double-activation debounce and the conversation cap,
+   * which are one set of rules however many places offer the button. Going to
+   * the new conversation is what leaves this panel, the strip having one
+   * selection.
+   * @returns {void}
+   * @private
+   */
+  _create() {
+    const workspace = this._workspace;
+    if (!workspace) return;
+    document.dispatchEvent(new CustomEvent('juggler:new-conversation-in-workspace', {
+      detail: { workspaceId: workspace.id }
+    }));
+  }
+
+  /**
+   * Ask, then do it.
+   *
+   * What is asked is the whole coordination story: nobody owns a workspace, so
+   * the confirmation names every conversation working in this one, and a turn
+   * in flight is refused rather than confirmed — removing a tree under a
+   * running agent is the one thing here that loses work. The refusal is the
+   * service's too; this only says it earlier and in a sentence.
+   *
+   * Which conversation the ending is carried out *for* is
+   * {@link workspaceFinishActor}'s answer, and it may be nobody: a workspace
+   * with three conversations names none of them, and an empty one has none to
+   * name.
+   * @param {any} option - The ending that was chosen.
+   * @returns {Promise<void>} When it has run, or been called off.
+   * @private
+   */
+  async _finish(option) {
+    const workspace = this._workspace;
+    const session = this._session;
+    if (!workspace || !session) return;
+
+    const conversation = workspaceFinishActor(session, workspace);
+    const warning = workspaceFinishWarning(session, workspace, {
+      action: option,
+      status: this._status
+    });
+    if (warning.refusal) {
+      showNotice(warning.refusal);
+      return;
+    }
+
+    /** @type {object} */
+    let input = {};
+    if (option.prompt) {
+      // Its own dialog, because what it asks for has a name and the answer is
+      // not always typed: an ending that offers an alternative is two endings,
+      // and a generic box with one OK button can only state the one.
+      const answer = await openWorkspaceFinish(option, {
+        status: this._status,
+        warning: warning.warning,
+        conversation
+      });
+      if (answer === null) return;
+      input = answer;
+    } else {
+      const agreed = await showConfirm(
+        [option.description, warning.warning].filter(Boolean).join(' '),
+        option.label,
+        { confirmText: option.label, danger: option.danger === true });
+      if (!agreed) return;
+    }
+
+    const result = await finishWorkspace({
+      session,
+      workspace,
+      conversation,
+      actionId: option.id,
+      input
+    });
+    if (result?.message) showNotice(result.message);
+    // An ending that took the workspace away takes the selection with it, and
+    // _refresh reads that off the table rather than being told.
+    this._refresh();
+    if (this._workspace) void this.refreshStatus();
+  }
+}
+
+customElements.define('workspace-panel', WorkspacePanel);
+
+export default WorkspacePanel;

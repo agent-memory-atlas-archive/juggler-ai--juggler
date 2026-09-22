@@ -17,7 +17,7 @@ import { validateManifest } from './lib/manifest.js';
  * @property {string} name - Human-readable display name (e.g. 'Git Worktree')
  * @property {string} version - Semantic version (e.g. '1.0.0')
  * @property {string} description - What kind of place this provider makes
- * @property {string} [setupLabel] - The "New…" row's label in the setup panel
+ * @property {string} [setupLabel] - The "New…" row's label in a place list
  *   (e.g. 'New git worktree'). Defaults to the name; see {@link WorkspaceProvider#getSetupLabel}.
  * @property {WorkspaceProviderRecommendations} [recommendations] - When and why to reach for it
  * @property {string} [icon] - CSS class for an icon (e.g. 'icon-git-branch')
@@ -45,13 +45,10 @@ import { validateManifest } from './lib/manifest.js';
 /**
  * @typedef {object} ProvisionResult
  * @property {WorkspaceDescriptor} workspace - The place that now exists
- * @property {object[]} [seedItems] - Context items to seed the conversation with:
- *   the binding card the model reads, and any capability warnings worth telling
- *   it about (a remote host with no `rg`, a tree with no dependencies installed).
  */
 
 /**
- * The state of a provider's setup section, as the panel reads it.
+ * The state of a provider's setup section, as its host reads it.
  * @typedef {object} SetupValue
  * @property {boolean} valid - Whether Create may be pressed
  * @property {object} values - What {@link WorkspaceProvider#provision} will be given
@@ -59,8 +56,15 @@ import { validateManifest } from './lib/manifest.js';
  */
 
 /**
+ * How a place is doing, as its provider reports it.
+ *
+ * It does not name the place. The workspace's row does that, and every surface
+ * shows that name from the instant it draws; a status is asked for afterwards
+ * and can take a walk of two trees or a git call to answer. A name from here
+ * would therefore arrive seconds late and change the title under a reader —
+ * and it would disagree with the same workspace's name in the strip, the setup
+ * list and the move dialog, all of which read the row.
  * @typedef {object} WorkspaceStatus
- * @property {string} label - One line naming the place
  * @property {string} [kind] - What kind of place this is, in full — 'Git worktree
  *   of juggler-pro', 'Copy of the project'. The provider's manifest name is the
  *   fallback, and is usually too bare to answer the question a reader actually
@@ -151,6 +155,10 @@ import { validateManifest } from './lib/manifest.js';
 /**
  * The other answer: a button beside the primary one, for the ending that takes
  * nothing typed.
+ * It is offered only when the ending is being carried out **for a conversation**
+ * — `ctx.conversation` — because handing the work to one is what an alternative
+ * is for. An ending asked for of the workspace itself, from a box several
+ * conversations share, names none of them and shows the field alone.
  * @typedef {object} FinishAlternative
  * @property {string} label - What the button says, in full, e.g. `Let this conversation write it`
  * @property {string} [hint] - What choosing it does, read under the buttons
@@ -420,7 +428,7 @@ class WorkspaceProvider {
   /**
    * How a workspace is doing — bound to a conversation or not.
    *
-   * **Must be cheap and must honour `ctx.signal`**: the setup panel calls this
+   * **Must be cheap and must honour `ctx.signal`**: a place list calls this
    * speculatively for every workspace it lists the moment it opens, not just for
    * the one in use. The default answers from the row alone, without touching
    * anything.
@@ -430,10 +438,7 @@ class WorkspaceProvider {
    */
   async status(workspace, ctx) {
     void ctx;
-    return {
-      label: workspace.label || workspace.root,
-      available: workspace.available !== false
-    };
+    return { available: workspace.available !== false };
   }
 
   /**

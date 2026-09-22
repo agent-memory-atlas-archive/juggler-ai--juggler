@@ -899,6 +899,7 @@ throwaway copy of the tree, a directory on another machine.
 | `status(workspace, ctx)` | How it is doing. **Must be cheap** — asked of every row the panel lists |
 | `finishOptions(workspace)` / `finish(workspace, id, ctx)` | The ways to be done with it, and doing one |
 | `status().kind` | What kind of place it is, in full — `'Git worktree of juggler-pro'` |
+| `status()` does **not** name it | The `label` on the row does, everywhere. A status is asked for after the first draw and can take a git call to answer, so a name from it would arrive late and change the title under the reader |
 | `reconcile(workspaces, ctx)` | What exists, set against what the session thinks it has. Only looks |
 | `cleanupPartial(workspace, ctx)` | Undo a provision that died with the tab, from `workspace.meta` alone |
 
@@ -952,7 +953,7 @@ class GitWorktreeProvider extends WorkspaceProvider {
     await ctx.ops.shell(
       { command: `git worktree add -b "${branch}" "${treeRel}" "${base}"` }, ctx.signal);
     return {
-      workspace: { root: values.location, label: `${branch} (worktree)`, meta: { branch, treeRel } }
+      workspace: { root: values.location, label: branch, meta: { branch, treeRel } }
     };
   }
 }

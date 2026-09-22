@@ -28,7 +28,7 @@
  */
 
 import { presentModal } from '../utils/modal-surface.js';
-import { setupRows, probeSetupAdoptions, adoptSetupRow } from '../services/conversation-setup.js';
+import { setupRows, probeSetupAdoptions, adoptSetupRow } from '../services/workspace-places.js';
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
 import { setupButton, buildPlaceRows, handlePlaceRowKey } from './workspace-setup-form.js';
 
@@ -78,7 +78,7 @@ export function openWorkspaceReconnect(conversation) {
 
     /**
      * The places a provider can find that no workspace speaks for — the same
-     * offers the setup panel makes, which after a lost table is every tree the
+     * offers there are, which after a lost table is every tree the
      * user ever made.
      * @returns {any[]} The rows.
      */

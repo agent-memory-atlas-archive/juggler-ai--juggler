@@ -1585,9 +1585,11 @@ export class WorkerManager {
    * @param {string} id - Server-allocated conversation id
    * @param {string} name - Server-canonical conversation name (folder name on disk)
    * @param {import('../model/session.js').default} session - Parent session
+   * @param {{workspaceId?: string}} [options] - The tree it will work in, which
+   *   is where in the tab bar it belongs — see `Session#_placeNewConversation`
    * @returns {Promise<import('../model/conversation.js').default>} Fully initialized conversation
    */
-  async createNewConversation(id, name, session) {
+  async createNewConversation(id, name, session, { workspaceId = '' } = {}) {
     const Conversation = (await import('../model/conversation.js')).default;
 
     // Check if already creating (lock via in-flight promise). In the ENGINE this
@@ -1608,7 +1610,7 @@ export class WorkerManager {
     }
 
     // Start creation (atomic)
-    const promise = this._doCreateNew(name, session, id, Conversation);
+    const promise = this._doCreateNew(name, session, id, Conversation, workspaceId);
     this._creating.set(id, promise);
 
     try {
@@ -1640,10 +1642,11 @@ export class WorkerManager {
    * @param {import('../model/session.js').default} session - Parent session
    * @param {string} id - Generated conversation ID
    * @param {typeof import('../model/conversation.js').default} Conversation - Conversation class
+   * @param {string} [workspaceId] - The tree it will work in, if it is one
    * @returns {Promise<import('../model/conversation.js').default>} Fully initialized conversation
    * @private
    */
-  async _doCreateNew(name, session, id, Conversation) {
+  async _doCreateNew(name, session, id, Conversation, workspaceId = '') {
     try {
       // 1. Create conversation instance
       const services = session.getServices();
@@ -1657,14 +1660,20 @@ export class WorkerManager {
       // The worker creates the items Y.Array in handleInit and ships it via
       // yjs-sync; the browser's ensureSystemPromptPlaceholder() below adds
       // SYSTEM_1 to that *existing* array.
-      const conversation = new Conversation(id, name, session, /** @type {import('../model/session.js').ConversationServices} */ (services), { skipBuiltInContextItems: true });
+      // Built carrying the workspace it is for, so it reports that binding from
+      // the moment it exists. The durable write happens in initialiseConversation
+      // once the worker is up, which is several renders of the tab bar away —
+      // and the bar groups the strip by this answer.
+      const conversation = new Conversation(id, name, session, /** @type {import('../model/session.js').ConversationServices} */ (services), { skipBuiltInContextItems: true, workspaceId });
 
       // CRITICAL: Add to session BEFORE spawning worker. Worker sends yjs-sync
       // messages immediately and the message handler needs to find the
-      // conversation. It goes in at the TOP, so any render that fires while the
-      // worker is still spawning (broadcast echo, etc.) sees the new tab in its
-      // final position rather than briefly painting it at the end of the bar.
-      session.adoptConversation(id, conversation, { atHead: true, from: '_doCreateNew' });
+      // conversation. It goes in at the TOP — of the bar, or of its workspace's
+      // box — so any render that fires while the worker is still spawning
+      // (broadcast echo, etc.) sees the new tab in its final position rather
+      // than briefly painting it at the end of the bar, or briefly dragging a
+      // workspace's whole box up there with it.
+      session.adoptConversation(id, conversation, { atHead: true, workspaceId, from: '_doCreateNew' });
 
       // 2. Spawn worker with full metadata (LoadFromDisk: false)
       const workerInit = conversation.getWorkerInitData();

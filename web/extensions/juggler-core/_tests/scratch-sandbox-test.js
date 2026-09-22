@@ -42,14 +42,11 @@ import {
 } from '../../../js/services/workspace-provisioning.js';
 import contextItemRegistry from '../../../js/registries/context-item-registry.js';
 import {
-  NEW_ROW_PREFIX,
-  selectSetupRow,
-  setSetupValues,
-  createSelectedWorkspace,
   probeSetupAdoptions,
   setupRows,
   adoptSetupRow
-} from '../../../js/services/conversation-setup.js';
+} from '../../../js/services/workspace-places.js';
+import { rebindConversation } from '../../../js/services/workspace-rebinding.js';
 import workspaceProviderRegistry from '../../../js/registries/workspace-provider-registry.js';
 import ScratchCopyWorkspaceProvider, { sandboxPlaces } from '../workspaces/scratch-copy-workspace-provider.js';
 
@@ -611,8 +608,13 @@ export async function runTests() {
         // giving.
         assert(fresh?.dirty === false && fresh?.detail === 'Nothing changed since the copy was made',
           `a copy taken a moment ago holds no work of its own, got ${JSON.stringify(fresh)}`);
-        assert(fresh?.label === name,
-          `and is known by the name it was given, got ${JSON.stringify(fresh?.label)}`);
+        assert(outcome.workspace.label === name,
+          `and is known by the name it was given, got ${JSON.stringify(outcome.workspace.label)}`);
+        // Named by its row alone. A copy whose status also named it renamed
+        // itself when the walk of the two trees came back, seconds after a
+        // reader had already been shown the first name.
+        assert(fresh?.label === undefined,
+          `which the status does not restate, got ${JSON.stringify(fresh)}`);
 
         // Edited the way the conversation bound to it would: through operations
         // pinned to the copy, with a relative path.
@@ -806,15 +808,20 @@ export async function runTests() {
         typeInto(form.name, name);
         const value = form.provider.getSetupValue();
 
-        conversation = await makeConversation(session, `panel-to-copy-${tag}`, { initialise: false });
+        conversation = await makeConversation(session, `panel-to-copy-${tag}`);
         release(conversation);
-        selectSetupRow(conversation, `${NEW_ROW_PREFIX}${PROVIDER_ID}`);
-        setSetupValues(conversation, value);
 
-        const result = await createSelectedWorkspace(conversation);
-        assert(result.ok, `Create made the copy, got ${JSON.stringify(result)}`);
-        assert(conversation.initialised === true && Boolean(conversation.workspaceId),
-          `and the conversation is bound to it, unsent and already seeded, got ${JSON.stringify(conversation.workspaceId)}`);
+        // Built with no conversation in the question, then moved into.
+        const built = await provisionWorkspace({
+          session, providerId: PROVIDER_ID, values: value.values
+        });
+        session.workspaces = [...(session.workspaces ?? []), built.workspace];
+        assert(built.workspace.state === 'ready',
+          `Create made the copy, got ${JSON.stringify(built.workspace.state)}`);
+
+        await rebindConversation(conversation, built.workspace.id);
+        assert(conversation.workspaceId === built.workspace.id,
+          `and the conversation works in it, got ${JSON.stringify(conversation.workspaceId)}`);
 
         const row = (await listWorkspaces()).find((/** @type {any} */ w) => w.id === conversation.workspaceId);
         assert(row?.root === places.work,

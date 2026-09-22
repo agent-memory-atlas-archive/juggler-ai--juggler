@@ -11,15 +11,6 @@ import { DEFAULT_TRUNCATION_BUDGET } from 'juggler/context-item';
 import { CHARS_PER_TOKEN } from '../utils/token-estimate.js';
 import ConversationDocument from './conversation-document.js';
 import slashCommandHandler from '../services/slash-command-handler.js';
-import {
-  pendingSetupPatch,
-  endSetupUndoWindow,
-  settleSetupSeeding,
-  setupSendBlock,
-  flagSetupAttention,
-  isSetupProvisioning,
-  seedsNameATree
-} from '../services/conversation-setup.js';
 import workerManager from '../services/worker-manager.js';
 import toolExecutor from '../services/tool-executor.js';
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
@@ -167,6 +158,7 @@ class Conversation {
    * @param {string} [options.strategyId] - Strategy ID to use (defaults to 'default')
    * @param {boolean} [options.skipBuiltInContextItems=false] - If true, skip initializing built-in context items (for loaded conversations)
    * @param {'unloaded'|'loading'|'loaded'|'error'} [options.loadState='loaded'] - Initial lazy-load lifecycle state. Stubs created during session bootstrap pass 'unloaded'; freshly-created conversations default to 'loaded'.
+   * @param {string} [options.workspaceId] - The tree this conversation is being created to work in. Reported as its binding until the durable one is written — see {@link Conversation#workspaceId}.
    */
   constructor(id, name, session, services, options = {}) {
     // Identity
@@ -193,6 +185,9 @@ class Conversation {
 
     /** @type {'unloaded'|'loading'|'loaded'|'error'} @private - per-client lazy-load state, not Yjs */
     this._loadState = options.loadState || 'loaded';
+
+    /** @type {string} @private - the workspace it was created for, until the doc carries one */
+    this._createdForWorkspaceId = typeof options.workspaceId === 'string' ? options.workspaceId : '';
 
     // Data - all state lives in Yjs document (use getters/setters for access)
     /** @type {ConversationDocument} - Yjs document for main thread (source of truth for conversation state) */
@@ -1057,11 +1052,23 @@ class Conversation {
    * It lives in doc metadata, so it rides a clone (the server copies doc.yjs
    * whole) and sits outside the UndoManager's `items` scope — no undo can take
    * a conversation's workspace away from it mid-turn.
+   *
+   * Until that metadata is written, a conversation created for a workspace
+   * answers with the workspace it was created for. The write happens once the
+   * worker has spawned, and a conversation is in the session's map — and so in
+   * the tab bar, which groups the strip by this very answer — several renders
+   * before that. Without the fallback those renders draw a new tab outside the
+   * box it was started in, and the box itself a member short: for the first
+   * conversation in one, a box read as empty is drawn past every conversation
+   * there is. The tab then jumps into the box and the box to meet it, so
+   * placing a conversation and binding it have to be one transaction, and the
+   * doc write is the slower half of it.
    * @returns {string} The bound workspace id, or '' for the project.
    */
   get workspaceId() {
     const id = this.getMetadata(WORKSPACE_ID_KEY);
-    return typeof id === 'string' ? id : '';
+    if (typeof id === 'string') return id;
+    return this._createdForWorkspaceId;
   }
 
   /**
@@ -1124,8 +1131,8 @@ class Conversation {
   }
 
   /**
-   * Whether this conversation has yet to be told where it works: the question
-   * the setup panel asks, and what the root-relative passes wait for.
+   * Whether this conversation has yet to be recorded as initialised, which is
+   * what the root-relative passes wait for.
    *
    * Not merely the absence of {@link initialised}, because that absence is also
    * what every conversation written before the flag existed looks like. Those
@@ -1178,12 +1185,10 @@ class Conversation {
    */
   get workingWorkspaceId() {
     if (this.initialised) return this.workspaceId;
-    const seededFor = this.seededFor ?? this.workspaceId;
-    // Seeded for nowhere, because the row on offer describes a place that has
-    // not been made. Nothing of ours is resolved against it — there are no seeds
-    // for a tree that is not there — but a file the user pinned themselves is
-    // still theirs to read, and the project is where it has always come from.
-    return seedsNameATree(seededFor) ? seededFor : '';
+    // An uninitialised conversation is one written before the flag existed. Its
+    // seeds, if it has any, were built for whatever it was seeded against; its
+    // binding is the answer for everything else.
+    return this.seededFor ?? this.workspaceId;
   }
 
   /**
@@ -1207,11 +1212,6 @@ class Conversation {
    * @returns {Promise<void>}
    */
   async ensureInitialised() {
-    // Content arriving is also what closes the undo window on a workspace made
-    // a moment ago: the same trigger list, because it is the same rule — you
-    // can change your mind until the conversation has something in it.
-    endSetupUndoWindow(this);
-
     if (this.initialised) return;
 
     // A conversation with history behind it was initialised long before the
@@ -1223,24 +1223,10 @@ class Conversation {
       this.initialised = true;
       return;
     }
-    // A workspace still being built is the one answer this hop must not give.
-    // There is nothing to bind yet, so binding here means binding the project —
-    // and being initialised is exactly what makes the commit at the end of the
-    // provision a no-op, so the tree the user is waiting for would never be
-    // bound at all and the work would run in the wrong one. The provision
-    // commits this conversation itself when it lands; what brought us here
-    // parks until it does.
-    if (isSetupProvisioning(this)) return;
 
-    // A row picked a moment ago may still be rebuilding the seeds it named. Let
-    // that finish first, so that binding and the items in the document are
-    // answers to the same question.
-    await settleSetupSeeding(this);
-
-    // Whatever the setup panel has been told, if anything: a row selected there
-    // binds at this hop rather than when it was clicked, so that picking one
-    // costs nothing until the conversation actually has content.
-    await this.session?.initialiseConversation?.(this, pendingSetupPatch(this));
+    // Everything else is a conversation from before the flag with nothing in it
+    // yet. It works where it is bound, which it has been since it was created.
+    await this.session?.initialiseConversation?.(this);
   }
 
   /**
@@ -1827,24 +1813,6 @@ class Conversation {
    */
   async sendMessage(userMessage, threadItemId = null, messageThread, options = {}) {
     const consumeComposer = options.consumeComposer !== false;
-
-    // Refuse anything that would commit a conversation part way through
-    // answering where it works. This is the sharpest edge in the workspace flow
-    // — the user typed a message and pressed Enter, and we said no — so it fires
-    // for one situation only: a "New…" row picked and the place it describes not
-    // made yet. The message stays in the box and the panel points at whatever is
-    // missing. First of all the guards, above even the slash commands, because
-    // those commit the conversation too: /clear re-seeds and /handoff clones,
-    // and letting either bind the project while a worktree row sits half-filled
-    // is the silent fallback this whole indirection exists to prevent. A
-    // conversation that has picked nothing at all is not blocked and binds the
-    // project, exactly as it always did.
-    const setupBlock = setupSendBlock(this);
-    if (setupBlock) {
-      flagSetupAttention(this);
-      this.showWarning(setupBlock.reason, 5000);
-      return 'workspace not ready';
-    }
 
     // Check for slash commands first (these work even when processing)
     if (options.interpretCommands !== false && userMessage.startsWith('/')) {
@@ -2744,9 +2712,8 @@ class Conversation {
    * working.
    *
    * A workspace still being BUILT is not this. It is not a binding that cannot
-   * be honoured, it is one that does not exist yet, and it is already answered
-   * where it is caused: the setup panel shows it being built and the composer is
-   * closed for as long as that takes, so nothing reaches here to refuse.
+   * be honoured, it is one that does not exist yet, and the dialog that is
+   * building it shows it being built.
    * @returns {string} The reason, ready to read, or '' when there is nothing wrong.
    * @private
    */
@@ -2755,7 +2722,7 @@ class Conversation {
     if (!id || this.workspaceRoot) return '';
 
     const workspace = this.session?.getWorkspace?.(id) ?? null;
-    if (workspace?.state === 'provisioning' || isSetupProvisioning(this)) return '';
+    if (workspace?.state === 'provisioning') return '';
     if (!workspace) return 'there is no record of the workspace this conversation works in';
 
     const named = workspace.label || workspace.root || 'it';
@@ -2835,7 +2802,7 @@ class Conversation {
    *
    * It deliberately does NOT reach for the app-level `showNotice` instead. A
    * conversation without a composer usually has another surface already saying
-   * this in place — the setup panel puts the cursor on the very field that is
+   * this in place — a setup form puts the cursor on the very field that is
    * missing — and a document-level modal raised over it takes the focus that
    * surface just placed.
    * @param {string} message - Warning message to display

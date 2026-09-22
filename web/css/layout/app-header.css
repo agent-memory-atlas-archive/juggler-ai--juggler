@@ -137,3 +137,11 @@ body.no-conversations conversation-tabs-container {
     display: none;
 }
 
+/* Same mechanism again, for a state that is chosen rather than arrived at: a
+   workspace box in the strip holds the selection, so <workspace-panel> is what
+   is on screen instead of a conversation. The sidebar stays — it is what the
+   selection was made in, and clicking a tab is the way back. */
+body.workspace-selected conversation-tabs-container {
+    display: none;
+}
+

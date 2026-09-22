@@ -18,7 +18,7 @@
 import { waitFor, assert } from '../../../js-tests/utilities/test-helpers.js';
 import { unregisterWorkspace, listWorkspaces } from '../../../js/services/workspaces.js';
 import { provisionWorkspace, workspaceStatus, finishWorkspace } from '../../../js/services/workspace-provisioning.js';
-import { setupRows, probeSetupAdoptions } from '../../../js/services/conversation-setup.js';
+import { setupRows, probeSetupAdoptions } from '../../../js/services/workspace-places.js';
 import workspaceProviderRegistry from '../../../js/registries/workspace-provider-registry.js';
 import GitWorktreeWorkspaceProvider, { defaultLocation } from '../workspaces/git-worktree-workspace-provider.js';
 import {
@@ -490,8 +490,8 @@ export async function runTests() {
     await run('a new tree reports itself clean, and says so again once it is not', async () => {
       // What the chip and the panel both read. The tree is asked through the
       // host's own `workspaceStatus`, which is how a surface asks — so a provider
-      // that threw, or that answered nothing, comes back as a label with no
-      // `dirty` at all and fails these assertions rather than passing them.
+      // that threw, or that answered nothing, comes back with no `dirty` at all
+      // and fails these assertions rather than passing them.
       const tag = uniqueTag();
       const repo = `wt-repo-${tag}`;
       const location = defaultLocation(`${projectPath}${separator}${repo}`, BRANCH);
@@ -509,10 +509,10 @@ export async function runTests() {
         const fresh = await workspaceStatus(session, outcome.workspace);
         assert(fresh.dirty === false,
           `a tree nobody has touched holds no work of the user's, got ${JSON.stringify(fresh)}`);
-        assert(fresh.label === BRANCH,
-          `and is named by its branch, got ${JSON.stringify(fresh.label)}`);
-        assert(fresh.detail?.includes('clean'),
-          `which is what it says, got ${JSON.stringify(fresh.detail)}`);
+        assert(outcome.workspace.label === BRANCH,
+          `and is named by its branch, got ${JSON.stringify(outcome.workspace.label)}`);
+        assert(fresh.detail?.includes('clean') && fresh.detail?.includes(BRANCH),
+          `which is what it says, along with the branch it says it of, got ${JSON.stringify(fresh.detail)}`);
 
         // Ours, not theirs. Nothing of Juggler's is written into a workspace
         // root any more, but a tree made by an older build may still hold one,

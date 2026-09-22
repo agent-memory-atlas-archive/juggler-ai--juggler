@@ -3,10 +3,10 @@
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
 /**
- * The chip, the menu, the move dialog, and reconcile.
+ * The box header, the workspace panel, the move dialog, and reconcile.
  *
- * The surfaces a bound conversation is seen and steered through, and the sweep
- * that puts the table back together. A move is the act with the most to lose,
+ * The surfaces a workspace is seen and steered through, and the sweep that puts
+ * the table back together. A move is the act with the most to lose,
  * so it is asked about work it would leave behind, refused audibly when the
  * service says no, and able to build somewhere new and move into it in one act
  * — or be called off leaving nothing behind and nobody moved.
@@ -27,11 +27,12 @@ import {
   NEW_ROW_PREFIX,
   setupRows,
   probeSetupAdoptions,
-  adoptSetupRow,
-  isSetupProvisioning
-} from '../../js/services/conversation-setup.js';
+  adoptSetupRow
+} from '../../js/services/workspace-places.js';
 import workspaceProviderRegistry from '../../js/registries/workspace-provider-registry.js';
 import { openWorkspaceMove } from '../../js/components/workspace-move-dialog.js';
+import '../../js/components/workspace-box-header.js';
+import '../../js/components/workspace-panel.js';
 import {
   runWorkspaceSuite,
   FixtureProvider,
@@ -57,99 +58,77 @@ export const needsExclusiveRun = true;
  */
 export async function runTests() {
   return runWorkspaceSuite('conversation-workspace-move-test', async ({ run, session, projectPath, release }) => {
-    await run('the chip says where a bound conversation works, and nothing where it does not', async () => {
-      // Where the conversation works is the outermost of the three scopes in the
-      // control row — it decides which files the strategy and the model operate
-      // on — so it sits to the left of both. What it shows is the workspace's
-      // STATE; its identity (the label and the tree) is the banner's job at the
-      // top of the transcript, which is why both earn their place.
+    await run('the box names the place; the panel says everything else about it', async () => {
+      // Everything here is true of the TREE and not of whoever is working in
+      // it — the label, the kind, the path, the endings — which is why it is
+      // said once for the workspace instead of once inside each conversation's
+      // composer. What is missing is as deliberate: moving ONE conversation
+      // names none of the tabs in a box, so it is not here, and neither is the
+      // project, which is drawn flat and has nothing to be finished with.
+      //
+      // The split between the two surfaces is the subject: a strip two hundred
+      // pixels wide gets the name, and the panel a selected box opens gets
+      // everything that wants room to be read and aimed at.
       const saved = session.workspaces;
       session.workspaces = [
-        workspaceRow('ws_chip', '/tmp/chip-tree', {
-          label: 'feat/chips',
+        workspaceRow('ws_head', '/tmp/head-tree', {
+          label: 'feat/heads',
           providerId: FixtureProvider.MANIFEST.id
         }),
         workspaceRow('ws_orphan', '/tmp/orphan-tree', {
           label: 'made by something gone',
           providerId: '@someone/uninstalled'
-        }),
-        workspaceRow('ws_gone', '/tmp/gone-tree', { label: 'finished with', state: 'closed' })
+        })
       ];
-      const chip = /** @type {any} */ (document.createElement('workspace-chip'));
-      document.body.appendChild(chip);
+      const header = /** @type {any} */ (document.createElement('workspace-box-header'));
+      document.body.appendChild(header);
+      const panel = /** @type {any} */ (document.createElement('workspace-panel'));
+      document.body.appendChild(panel);
+      panel.setSession(session);
       try {
-        const bound = await makeConversation(session, 'chip-bound', { workspaceId: 'ws_chip' });
+        const bound = await makeConversation(session, 'header-bound', { workspaceId: 'ws_head' });
         release(bound);
-        chip.setConversation(bound);
+        header.setContext({ session, workspace: session.workspaces[0] });
 
-        assert(chip.hidden === false, 'a bound conversation gets a chip');
-        const button = chip.querySelector('.workspace-chip-button');
-        assert(button?.textContent?.includes('feat/chips'),
-          `naming the place it works in, got ${JSON.stringify(button?.textContent)}`);
+        const label = header.querySelector('.conversation-box-label');
+        assert(label?.textContent === 'feat/heads',
+          `the box names the place its conversations work in, got ${JSON.stringify(label?.textContent)}`);
+        assert(!header.querySelector('button'),
+          'and nothing else: a title, a status line and two buttons in the width of a tab is what the panel exists to undo');
 
-        button.click();
-        const menu = chip.querySelector('.workspace-menu');
-        assert(menu?.textContent?.includes('/tmp/chip-tree'),
-          `and opening it says which tree that is, got ${JSON.stringify(menu?.textContent)}`);
-        assert(menu?.querySelector('.workspace-menu-action[data-action="done"]'),
-          `with the ways to be done with it, from the provider that made it, got ${JSON.stringify(menu?.textContent)}`);
-        assert(menu?.querySelector('.workspace-menu-move'),
-          `and the way to work somewhere else instead, got ${JSON.stringify(menu?.textContent)}`);
-        button.click();
-        assert(!chip.querySelector('.workspace-menu'),
-          'which closes again');
+        session.selectWorkspace('ws_head');
+        panel._refresh();
+        assert(panel.textContent?.includes('/tmp/head-tree'),
+          `selecting it says which tree that is, got ${JSON.stringify(panel.textContent)}`);
+        assert(panel.querySelector('[data-action="done"]'),
+          `with the ways to be done with it, from the provider that made it, got ${JSON.stringify(panel.textContent)}`);
+        assert(!panel.querySelector('[data-action="move"]'),
+          'and not the move, which is one conversation\'s business and belongs on its tab');
 
         // An extension can be uninstalled while its workspaces stay on the
-        // table. The conversation keeps working; only what the provider
+        // table. The conversations keep working; only what the provider
         // supplied goes, and it goes for a stated reason.
-        const orphaned = await makeConversation(session, 'chip-orphaned', { workspaceId: 'ws_orphan' });
-        release(orphaned);
-        chip.setConversation(orphaned);
-        /** @type {any} */ (chip.querySelector('.workspace-chip-button')).click();
-        const empty = chip.querySelector('.workspace-menu');
-        assert(!empty?.querySelector('.workspace-menu-action'),
+        session.selectWorkspace('ws_orphan');
+        panel._refresh();
+        assert(!panel.querySelector('[data-action]'),
           'a workspace whose provider is gone offers no endings');
-        assert(empty?.textContent?.includes(PROVIDER_UNAVAILABLE),
-          `and says why rather than looking like a workspace with nothing to do, got ${JSON.stringify(empty?.textContent)}`);
-        assert(empty?.textContent?.includes('made by something gone'),
-          `keeping the row's own name, which nothing else here is left to say, got ${JSON.stringify(empty?.textContent)}`);
-        /** @type {any} */ (chip.querySelector('.workspace-chip-button')).click();
+        assert(panel.textContent?.includes(PROVIDER_UNAVAILABLE),
+          `and says why rather than looking like a workspace with nothing to do, got ${JSON.stringify(panel.textContent)}`);
+        assert(panel.querySelector('.workspace-panel-title')?.textContent === 'made by something gone',
+          `keeping the row's own name, which nothing else here is left to say, got ${JSON.stringify(panel.textContent)}`);
 
-        // The project is where every conversation worked before any of this
-        // existed. Saying so earns its place exactly when there is somewhere
-        // else to be — which is also when it has something to offer.
-        const plain = await makeConversation(session, 'chip-unbound');
-        release(plain);
-        chip.setConversation(plain);
-        assert(chip.hidden === false && chip.textContent?.includes('Project'),
-          `a conversation in the project says so while other places exist, got ${JSON.stringify(chip.textContent)}`);
-        /** @type {any} */ (chip.querySelector('.workspace-chip-button')).click();
-        const offered = chip.querySelector('.workspace-menu');
-        assert(offered?.querySelector('.workspace-menu-move'),
-          `and offers the move that is the only thing to do about it, got ${JSON.stringify(offered?.textContent)}`);
-        assert(!offered?.querySelector('.workspace-menu-action'),
-          'with no endings, because nobody provisioned the project and nobody may finish with it');
-        /** @type {any} */ (chip.querySelector('.workspace-chip-button')).click();
-
-        // And with nowhere else to go it is back to saying nothing at all: the
-        // composer of a user who has never made a workspace is untouched.
-        const table = session.workspaces;
-        session.workspaces = [];
-        chip.setConversation(null);
-        chip.setConversation(plain);
-        assert(chip.hidden === true && !chip.querySelector('.workspace-chip-button'),
-          'a conversation with only one place to work shows nothing at all');
-        session.workspaces = table;
-
-        // A binding that cannot be honoured is the tombstone banner's to
-        // explain, with the rebind that fixes it — not the chip's to half-report.
-        const stale = await makeConversation(session, 'chip-closed', { workspaceId: 'ws_gone' });
-        release(stale);
-        chip.setConversation(stale);
-        assert(chip.hidden === true,
-          'and neither does one whose workspace has been finished with');
+        // A box is only ever drawn for a workspace there is something to say
+        // about: the bar draws one per usable row and nothing for the rest. A
+        // header told about no workspace draws nothing rather than a frame
+        // around an empty statement.
+        header.setContext({ session, workspace: null });
+        assert(!header.querySelector('.conversation-box-title'),
+          `a header about nothing shows nothing, got ${JSON.stringify(header.textContent)}`);
       } finally {
-        chip.remove();
+        header.remove();
+        panel.remove();
+        session.selection = null;
+        document.body.classList.remove('workspace-selected');
         session.workspaces = saved;
       }
     });
@@ -158,8 +137,8 @@ export async function runTests() {
       // The host used to know one provider's action id by name — it collected a
       // commit message for anything called `commit` — which is a promise it
       // could only keep for the provider that was written first. An ending now
-      // says for itself whether it needs something typed, and the chip asks for
-      // it exactly when it is wanted.
+      // says for itself whether it needs something typed, and the panel asks
+      // for it exactly when it is wanted.
       //
       // The two are asked for in different surfaces, which is the point of the
       // assertions below: an ending that wants something typed gets the finish
@@ -171,8 +150,9 @@ export async function runTests() {
           providerId: FixtureProvider.MANIFEST.id
         })
       ];
-      const chip = /** @type {any} */ (document.createElement('workspace-chip'));
-      document.body.appendChild(chip);
+      const panel = /** @type {any} */ (document.createElement('workspace-panel'));
+      document.body.appendChild(panel);
+      panel.setSession(session);
       /** @type {any[]} */
       const asked = [];
       const realModal = /** @type {any} */ (window).showModal;
@@ -181,13 +161,13 @@ export async function runTests() {
         return request.type === 'prompt' ? 'a note' : true;
       };
       try {
-        const bound = await makeConversation(session, 'chip-asked', { workspaceId: 'ws_asked' });
+        const bound = await makeConversation(session, 'header-asked', { workspaceId: 'ws_asked' });
         release(bound);
-        chip.setConversation(bound);
+        session.selectWorkspace('ws_asked');
+        panel._refresh();
         FixtureProvider.lastFinish = null;
 
-        /** @type {any} */ (chip.querySelector('.workspace-chip-button')).click();
-        /** @type {any} */ (chip.querySelector('.workspace-menu-action[data-action="note"]')).click();
+        /** @type {any} */ (panel.querySelector('[data-action="note"]')).click();
 
         await waitFor(() => !!document.querySelector('.workspace-finish-overlay .setup-field-input'),
           'the finish dialog for an ending that asks for something');
@@ -213,8 +193,8 @@ export async function runTests() {
 
         asked.length = 0;
         FixtureProvider.lastFinish = null;
-        /** @type {any} */ (chip.querySelector('.workspace-chip-button')).click();
-        /** @type {any} */ (chip.querySelector('.workspace-menu-action[data-action="leave"]')).click();
+        panel._refresh();
+        /** @type {any} */ (panel.querySelector('[data-action="leave"]')).click();
         await waitFor(() => FixtureProvider.lastFinish?.actionId === 'leave',
           'the ending that asks for nothing to run');
         assert(asked[0]?.type === 'confirm',
@@ -223,18 +203,20 @@ export async function runTests() {
           `and carries nothing it never collected, got ${JSON.stringify(FixtureProvider.lastFinish?.input)}`);
       } finally {
         /** @type {any} */ (window).showModal = realModal;
-        chip.remove();
+        panel.remove();
+        session.selection = null;
+        document.body.classList.remove('workspace-selected');
         session.workspaces = saved;
         FixtureProvider.lastFinish = null;
       }
     });
 
-    await run('the menu says each thing once, and can be driven from the keyboard', async () => {
+    await run('the panel says each thing once, in the order it is wanted', async () => {
       // A small menu found four ways to say "feat/menu", and every ending
       // printed the sentence the dialog was about to print again. What a row is
-      // FOR decides where its words go: the header names the place, the status
-      // line names the state, and the sentence somebody agrees to belongs where
-      // they agree to it. What is left is short enough to read in one look.
+      // FOR decides where its words go: the head names the place, the state
+      // section names the state, and the sentence somebody agrees to belongs
+      // where they agree to it.
       const saved = session.workspaces;
       session.workspaces = [
         workspaceRow('ws_menu', '/tmp/menu-tree', {
@@ -242,8 +224,9 @@ export async function runTests() {
           providerId: FixtureProvider.MANIFEST.id
         })
       ];
-      const chip = /** @type {any} */ (document.createElement('workspace-chip'));
-      document.body.appendChild(chip);
+      const panel = /** @type {any} */ (document.createElement('workspace-panel'));
+      document.body.appendChild(panel);
+      panel.setSession(session);
       /** @type {any[]} */
       const asked = [];
       const realModal = /** @type {any} */ (window).showModal;
@@ -253,123 +236,100 @@ export async function runTests() {
       };
       FixtureProvider.reported = { detail: 'feat/menu · clean' };
       FixtureProvider.discardDescription = 'Removes the tree and deletes feat/menu.';
-      // The menu is relocated to <body> a frame after it opens, so it is found
-      // wherever it currently is rather than where it was built.
-      const surface = () => /** @type {any} */ (
-        chip.querySelector('.workspace-menu') ?? document.querySelector('.workspace-menu'));
-      const press = (/** @type {string} */ key) => document.dispatchEvent(
-        new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
       try {
-        const bound = await makeConversation(session, 'chip-menu', { workspaceId: 'ws_menu' });
+        const bound = await makeConversation(session, 'header-menu', { workspaceId: 'ws_menu' });
         release(bound);
-        chip.setConversation(bound);
-        /** @type {any} */ (chip.querySelector('.workspace-chip-button')).click();
-        await waitFor(() => surface()?.textContent?.includes('feat/menu · clean'),
-          'the status the provider reported to reach the open menu');
+        session.selectWorkspace('ws_menu');
+        panel._refresh();
+        await waitFor(() => panel.textContent?.includes('feat/menu · clean'),
+          'the status the provider reported to reach the panel');
 
-        const menu = surface();
-        const text = String(menu?.textContent ?? '');
+        const text = String(panel.textContent ?? '');
         const says = (/** @type {string} */ selector) =>
-          menu.querySelector(`${selector} .menu-item-name`)?.textContent ?? '';
-        assert(menu.querySelector('.workspace-menu-lead')?.textContent === 'Workspace',
-          `the menu names the thing it is about, got ${JSON.stringify(text)}`);
-        assert(menu.querySelector('.workspace-menu-kind')?.textContent === FixtureProvider.MANIFEST.name,
+          panel.querySelector(`${selector} .workspace-panel-action-name`)?.textContent ?? '';
+        assert(panel.querySelector('.workspace-panel-title')?.textContent === 'feat/menu (worktree)',
+          `the panel names the place, which is the name on its row, got ${JSON.stringify(text)}`);
+        assert(panel.querySelector('.workspace-panel-kind')?.textContent === FixtureProvider.MANIFEST.name,
           `then what kind of place that is, got ${JSON.stringify(text)}`);
         assert(text.includes('/tmp/menu-tree') && text.includes('feat/menu · clean'),
           `then where it is and how it is doing, got ${JSON.stringify(text)}`);
-        assert(!text.includes('(worktree)'),
-          `and not the row's label as well, which the kind line has just answered, got ${JSON.stringify(text)}`);
-        // The address, whole and in one piece. A band that elides part of a path
-        // hides the one segment that tells two places apart: every scratch copy
-        // ever made ends in the same `work` directory, and what it is a copy OF
-        // is the segment above that — which is exactly what an ellipsis ate.
-        const box = menu.querySelector('.workspace-menu-path');
+        assert(text.split('(worktree)').length - 1 === 1,
+          `each of which is said once: a small menu once found four ways to say "feat/menu", got ${JSON.stringify(text)}`);
+
+        // The address, whole and in one piece. Anything that elides part of a
+        // path hides the one segment that tells two places apart: every scratch
+        // copy ever made ends in the same `work` directory, and what it is a
+        // copy OF is the segment above that — which is exactly what an ellipsis
+        // ate.
+        const box = panel.querySelector('.workspace-panel-path');
         assert(box?.textContent === '/tmp/menu-tree',
           `the path is shown whole, in one element, got ${JSON.stringify(box?.textContent)}`);
         const acts = (/** @type {string} */ selector) =>
-          menu.querySelector(`.workspace-menu-path-row ${selector}`);
+          panel.querySelector(`.workspace-panel-path-row ${selector}`);
         assert(acts('[aria-label="Copy path to clipboard"]') && acts('reveal-button'),
           'and carries the copy and reveal buttons every other path in the app has');
-        assert(says('.workspace-menu-move') === 'Use a different workspace…',
-          `the way out is named in the same noun, got ${JSON.stringify(says('.workspace-menu-move'))}`);
-        assert(menu.querySelector('.category-header')?.textContent === 'When you’re done with this workspace',
-          `and the endings are grouped under what they are for, got ${JSON.stringify(menu.querySelector('.category-header')?.textContent)}`);
-
-        // Reporting rows are not `.menu-item`s: that class is the whole of what
-        // makes the shared hover highlight offer a row as something to press,
-        // and a menu whose title lights up under the pointer is lying.
-        assert(!menu.querySelector('.workspace-menu-header.menu-item')
-          && !menu.querySelector('.workspace-menu-detail.menu-item'),
-        'the lines that only report are not menu items');
-        assert(menu.querySelector('menu')?.getAttribute('role') === 'menu'
-          && menu.querySelector('.workspace-menu-move')?.getAttribute('role') === 'menuitem',
-        'and the ones that do something say so to anything reading the menu aloud');
 
         // Left edges, because the fault this catches — `align-items: center`
-        // inherited into a column, which centres every stacked row — changes no
-        // class name and nothing else would see it.
-        const edge = (/** @type {string} */ selector) =>
-          menu.querySelector(selector)?.getBoundingClientRect().left ?? -1;
-        const gutter = edge('.workspace-menu-move .menu-item-name');
-        assert(gutter > 0 && Math.abs(edge('.workspace-menu-path-row') - gutter) < 1,
-          `the path starts at the same edge as the rows below it, got ${edge('.workspace-menu-path-row')} against ${gutter}`);
-        assert(Math.abs(edge('.workspace-menu-action[data-action="leave"] .menu-item-name') - gutter) < 1,
-          'and so does an ending');
+        // inherited into a column, which centres every stacked section —
+        // changes no class name and nothing else would see it.
+        const edge = (/** @type {any} */ element) => element?.getBoundingClientRect().left ?? -1;
+        const headings = [...panel.querySelectorAll('.workspace-panel-heading')];
+        const gutter = edge(headings[0]);
+        assert(gutter > 0 && headings.every((/** @type {any} */ h) => Math.abs(edge(h) - gutter) < 1),
+          `every section starts at the same edge, got ${JSON.stringify(headings.map(edge))}`);
+        assert(Math.abs(edge(panel.querySelector('.workspace-panel-path-row')) - gutter) < 1,
+          'and so does the path');
 
-        // What pressing a row will do is in the menu, where it is read BEFORE
-        // the decision. A label cannot carry it: "Leave it be" does not say that
-        // the conversation ends up back in the project, and a sentence somebody
-        // has to hover to find is a sentence nobody reads.
+        // What pressing a button will do is written under it, where it is read
+        // BEFORE the decision. A label cannot carry it: "Leave it be" does not
+        // say whether anything on disk is about to go, and a sentence somebody
+        // has to hover to find is a sentence nobody reads. An ending says what
+        // becomes of the PLACE; what becomes of the conversations working in it
+        // is the host's to say, since it is the host that moves them and a
+        // provider cannot know how many there are.
         const note = (/** @type {string} */ selector) =>
-          menu.querySelector(`${selector} .menu-item-note`)?.textContent ?? '';
-        assert(note('.workspace-menu-move').includes('keeps its history'),
-          `the move says what becomes of the conversation, got ${JSON.stringify(note('.workspace-menu-move'))}`);
-        assert(note('.workspace-menu-action[data-action="leave"]').includes('back to the project folder'),
-          `and so does every ending, got ${JSON.stringify(note('.workspace-menu-action[data-action="leave"]'))}`);
-
-        assert(says('.workspace-menu-action[data-action="note"]') === 'Leave a note…',
-          `one that will ask for something says so with an ellipsis, got ${JSON.stringify(says('.workspace-menu-action[data-action="note"]'))}`);
-        assert(says('.workspace-menu-action[data-action="leave"]') === 'Leave it be',
+          panel.querySelector(`${selector} .workspace-panel-action-note`)?.textContent ?? '';
+        assert(note('[data-action="leave"]').includes('Nothing changes on disk'),
+          `every ending says what becomes of the tree, got ${JSON.stringify(note('[data-action="leave"]'))}`);
+        assert(says('[data-action="note"]') === 'Leave a note…',
+          `one that will ask for something says so with an ellipsis, got ${JSON.stringify(says('[data-action="note"]'))}`);
+        assert(says('[data-action="leave"]') === 'Leave it be',
           'and one that only needs agreeing to does not');
 
         // An action that leaves the workspace in use is not an ending and is not
         // filed under one: committing is the case this exists for, and it sat
         // under "when you're done" for as long as it closed the workspace half
         // the time.
-        const heading = menu.querySelector('.category-header');
-        const before = [...menu.querySelectorAll('[role="menuitem"]')].filter(row =>
-          heading.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_PRECEDING);
-        assert(before.map((/** @type {any} */ row) => row.dataset.action ?? 'move').join(',') === 'move,note',
-          `what keeps the workspace sits above the endings, got ${JSON.stringify(before.map((/** @type {any} */ row) => row.textContent))}`);
+        const endings = panel.querySelector('.workspace-panel-endings');
+        assert(endings?.querySelector('.workspace-panel-heading')?.textContent
+          === 'When you’re done with this workspace',
+        'the endings are grouped under what they are for');
+        const doing = [...panel.querySelectorAll('.workspace-panel-doing [data-action]')];
+        assert(doing.map((/** @type {any} */ row) => row.dataset.action).join(',') === 'note',
+          `what keeps the workspace sits above the endings, got ${JSON.stringify(doing.map((/** @type {any} */ row) => row.textContent))}`);
+        assert([...endings.querySelectorAll('[data-action]')]
+          .map((/** @type {any} */ row) => row.dataset.action).join(',') === 'done,leave,discard',
+        'and every way of not working here any more is under the heading that says so');
 
-        const discard = menu.querySelector('.workspace-menu-action[data-action="discard"]');
-        assert(discard?.previousElementSibling?.classList.contains('menu-divider'),
-          'a destructive ending is kept off the row above it');
-
-        // Driven from the keyboard: the rows are move, note, done, leave,
-        // discard, so the fourth press lands on the one that reports and
-        // changes nothing.
-        FixtureProvider.lastFinish = null;
-        press('ArrowDown'); press('ArrowDown'); press('ArrowDown'); press('ArrowDown');
-        const rows = [...surface().querySelectorAll('[role="menuitem"]')];
-        assert(rows[3]?.dataset?.action === 'leave' && rows[3]?.classList.contains('nav-active'),
-          `four presses down highlight the fourth row, got ${JSON.stringify(rows.map(row => row.textContent))}`);
-        press('Enter');
-        await waitFor(() => FixtureProvider.lastFinish?.actionId === 'leave',
-          'and Enter runs the row it is on');
+        // A destructive ending is marked as one. That is what warns, and it
+        // warns wherever the button happens to sit.
+        assert(panel.querySelector('[data-action="discard"]')?.classList.contains('danger')
+          && !panel.querySelector('[data-action="leave"]')?.classList.contains('danger'),
+        'an ending that takes something away is marked, and one that does not is not');
 
         // And again at the point of no return, where it is agreed to.
         asked.length = 0;
         FixtureProvider.lastFinish = null;
-        /** @type {any} */ (chip.querySelector('.workspace-chip-button')).click();
-        /** @type {any} */ (surface().querySelector('.workspace-menu-action[data-action="discard"]')).click();
+        /** @type {any} */ (panel.querySelector('[data-action="discard"]')).click();
         await waitFor(() => FixtureProvider.lastFinish?.actionId === 'discard',
           'the destructive ending to run once it is agreed to');
         assert(String(asked[0]?.message ?? '').includes('Removes the tree and deletes feat/menu.'),
           `with what it costs said in the dialog, got ${JSON.stringify(asked[0]?.message)}`);
       } finally {
         /** @type {any} */ (window).showModal = realModal;
-        chip.remove();
+        panel.remove();
+        session.selection = null;
+        document.body.classList.remove('workspace-selected');
         session.workspaces = saved;
         FixtureProvider.reported = null;
         FixtureProvider.discardDescription = null;
@@ -377,31 +337,9 @@ export async function runTests() {
       }
     });
 
-    await run('the composer carries the chip and tells it which conversation', async () => {
-      // The chip could be right about everything and never be mounted.
-      const saved = session.workspaces;
-      session.workspaces = [workspaceRow('ws_mounted', '/tmp/mounted-tree', { label: 'feat/mounted' })];
-      const box = /** @type {any} */ (document.createElement('composer-box'));
-      document.body.appendChild(box);
-      try {
-        const bound = await makeConversation(session, 'chip-in-the-composer', { workspaceId: 'ws_mounted' });
-        release(bound);
-        box.setConversation(bound);
-
-        const chip = box.querySelector('input-controls-config workspace-chip');
-        assert(chip, 'the chip is in the control row, with the strategy and the model');
-        assert(chip?.previousElementSibling === null,
-          'and first among them, being the scope the other two work inside');
-        assert(chip?.textContent?.includes('feat/mounted'),
-          `bound to the composer's own conversation, got ${JSON.stringify(chip?.textContent)}`);
-      } finally {
-        box.remove();
-        session.workspaces = saved;
-      }
-    });
-
     await run('the dialog moves a conversation, and its instructions move with it', async () => {
-      // The chip reports and finishes; this is where it changes its mind. The
+      // The box header reports and finishes; this is where one conversation
+      // changes its mind about where it belongs. The
       // move itself is `rebindConversation`'s — what the dialog adds is the
       // choice, which is why the assertion below is about the instructions the
       // model reads and not only about the id in the metadata.
@@ -687,9 +625,6 @@ export async function runTests() {
         assert(!armed.disabled,
           'naming a destination arms the button, which is the form reporting itself');
         armed.click();
-
-        assert(isSetupProvisioning(moving) === false,
-          'a move builds on its own state: nothing here parks the sends of a conversation that is already under way');
 
         // A provision that cannot finish leaves the dialog open on its own
         // error, which is right for a user and a hang for a case that only ever
@@ -1021,8 +956,8 @@ export async function runTests() {
           `status says the provider is gone rather than throwing, got ${JSON.stringify(status)}`);
         assert(!status.detail,
           `and says it as a problem, not as a description of the tree, got ${JSON.stringify(status.detail)}`);
-        assert(status.label === 'made by something no longer installed',
-          `while still naming the workspace, got ${JSON.stringify(status.label)}`);
+        assert(made.label === 'made by something no longer installed',
+          `while the row goes on naming the workspace, which is what every surface reads, got ${JSON.stringify(made.label)}`);
 
         const finish = await workspaceFinishOptions(session, made);
         assert(finish.options.length === 0 && finish.unavailableReason === PROVIDER_UNAVAILABLE,

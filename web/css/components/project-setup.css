@@ -5,6 +5,39 @@
  */
 
 
+/* The name half of the banner, which is a way to the workspace panel. Drawn as
+   the line it has always been — no button chrome on a rule across the top of a
+   transcript — and it answers the pointer the way the Undo beside it does, by
+   underlining. What it opens is worth finding; it is not worth a box. */
+.workspace-banner-open {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0 0.375rem;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.workspace-banner-open:hover {
+    color: var(--text-primary);
+}
+
+.workspace-banner-open:hover .workspace-banner-lead {
+    text-decoration: underline;
+}
+
+.workspace-banner-open:focus-visible {
+    outline: 0.125rem solid var(--accent-blue);
+    outline-offset: 0.125rem;
+    border-radius: 0.25rem;
+}
+
 .workspace-banner-lead {
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -27,12 +60,11 @@
     opacity: 0.8;
 }
 
-/* The Undo the banner carries for as long as a workspace made a moment ago can
-   still be given back. A link rather than a button: it sits at the end of a line
-   of prose and must not read as the conversation's main action. */
+/* The ways out the banner carries when a binding needs one. Links rather than
+   buttons: they sit at the end of a line of prose and must not read as the
+   conversation's main action. */
 .workspace-banner-rebind,
-.workspace-banner-elsewhere,
-.workspace-banner-undo {
+.workspace-banner-elsewhere {
     padding: 0;
     border: 0;
     background: none;
@@ -43,8 +75,7 @@
 }
 
 .workspace-banner-rebind:hover,
-.workspace-banner-elsewhere:hover,
-.workspace-banner-undo:hover {
+.workspace-banner-elsewhere:hover {
     color: var(--text-primary);
 }
 
@@ -53,42 +84,6 @@
    the way out beside it is the point. */
 .conversation-workspace-banner.workspace-banner-stranded {
     color: var(--accent-yellow);
-}
-
-/* The one question a new conversation is asked, in the welcome slot at the foot
-   of its transcript: the space the starting hint has to itself when there is
-   nothing to ask, which is where somebody about to type is already looking. It
-   centres in that space (auto margins against the stretched inner column, see
-   .awaiting-setup above) and carries the hint's own lines beneath it. */
-conversation-setup-panel {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 1.5rem;
-
-    /* Centred in whatever space is left below the seeded items, and padded so a
-       band with none to spare still leaves it clear of them and of the
-       composer. */
-    margin: auto 0;
-    padding: 1.5rem 0;
-}
-
-/* The question and its answers. It carries no frame of its own: the answers
-   below are blocks in the composer's material, and a box drawn round them would
-   only be a second box inside the one the composer already shares this
-   background with. Sized to the text rather than the column: a line of prose
-   across a wide window is harder to read than the same line at a sane measure.
-
-   The proportional face stops here rather than at the panel: this is prose and
-   controls, while the hint below it is the same four lines the empty-background
-   overlay draws in the monospace .app-main hands down, and the two are read as
-   one thing. What inside the card is a path or a typed name asks for the mono
-   face by name. */
-.setup-card {
-    width: 100%;
-    max-width: 30rem;
-    font-family: var(--font-ui);
-    font-size: var(--font-size-md);
 }
 
 .setup-section-title {
@@ -125,9 +120,10 @@ conversation-setup-panel {
     cursor: pointer;
 }
 
-/* Outside the card — the move dialog — a row stays one line: its reader has
-   answered this question before and is scanning a list, not being introduced to
-   it. The head hands its parts straight to the row's own flex line. */
+/* Where the list is not the thing being decided — the reconnect dialog, which
+   is repairing one workspace and lists the others only so the answer can be
+   somewhere else — a row stays one line. The head hands its parts straight to
+   the row's own flex line. */
 .setup-row-head {
     display: contents;
 }
@@ -150,33 +146,35 @@ conversation-setup-panel {
     color: var(--text-secondary);
 }
 
-/* In the card, a choice is a block of the composer's own material: the same
-   fill and the same corner as the box directly below it, so the panel reads as
-   part of the thing about to be typed into rather than as a form printed over
-   it. The block is the wrapper, not the row, because the form the chosen row
-   opens belongs inside the block it was opened from. */
-.setup-card .setup-choice {
+/* Where picking one of these IS the question — the setup panel, the move dialog
+   — a choice is a block of the composer's own material: the same fill and the
+   same corner as the box directly below it, so the panel reads as part of the
+   thing about to be typed into rather than as a form printed over it. The block
+   is the wrapper, not the row, because the form the chosen row opens belongs
+   inside the block it was opened from. Everything under this class is that
+   layout; the plain rows above it are the one-line version. */
+.setup-rows-blocks .setup-choice {
     display: block;
     border-radius: 1.25rem;
     background: var(--bubble-user-bg);
     transition: background 150ms ease, box-shadow 150ms ease;
 }
 
-.setup-card .setup-choice:has(.setup-row:hover) {
+.setup-rows-blocks .setup-choice:has(.setup-row:hover) {
     background: var(--bubble-user-bg-hover);
 }
 
 /* The one that is chosen, said twice: the fill comes up, and a hairline of
    accent runs round the inside of the corner. Inside, because the block has no
    border to recolour and a ring drawn outside it would sit in the gap. */
-.setup-card .setup-choice:has(.setup-row[aria-checked="true"]) {
+.setup-rows-blocks .setup-choice:has(.setup-row[aria-checked="true"]) {
     background: var(--bubble-user-bg-hover);
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-blue) 50%, transparent);
 }
 
 /* The row fills its block: a dot in its own column, and everything picking it
    would mean stacked beside it. */
-.setup-card .setup-row {
+.setup-rows-blocks .setup-row {
     display: grid;
     grid-template-columns: 0.875rem 1fr;
     gap: 0.1875rem 0.75rem;
@@ -188,18 +186,19 @@ conversation-setup-panel {
     background: none;
 }
 
-.setup-card .setup-rows {
+/* Blocks stand apart from each other; lines do not need to. */
+.setup-rows-blocks {
     gap: 0.5rem;
 }
 
 /* The list's own hover and selection fills belong to the block here, which
    draws both for the whole choice including its form. */
-.setup-card .setup-row:hover,
-.setup-card .setup-row[aria-checked="true"] {
+.setup-rows-blocks .setup-row:hover,
+.setup-rows-blocks .setup-row[aria-checked="true"] {
     background: none;
 }
 
-.setup-card .setup-row:focus-visible {
+.setup-rows-blocks .setup-row:focus-visible {
     outline: 1px solid var(--accent-blue);
     outline-offset: -0.125rem;
 }
@@ -207,7 +206,7 @@ conversation-setup-panel {
 /* The dot, drawn rather than borrowed from a form control: a hairline ring, and
    a centre that arrives when the row is the answer. Absent from the adopt row,
    which is a button among the choices and says its own verb instead. */
-.setup-card .setup-row[role="radio"]::before {
+.setup-rows-blocks .setup-row[role="radio"]::before {
     content: "";
     grid-row: 1;
     grid-column: 1;
@@ -221,13 +220,13 @@ conversation-setup-panel {
 }
 
 /* The filled centre, without a second element to draw it. */
-.setup-card .setup-row[aria-checked="true"]::before {
+.setup-rows-blocks .setup-row[aria-checked="true"]::before {
     background: radial-gradient(circle at center,
         var(--accent-blue) 0 0.1875rem, transparent 0.2188rem);
     box-shadow: inset 0 0 0 1px var(--accent-blue);
 }
 
-.setup-card .setup-row-head {
+.setup-rows-blocks .setup-row-head {
     display: flex;
     align-items: baseline;
     gap: 0 0.5rem;
@@ -240,20 +239,20 @@ conversation-setup-panel {
    alone would leave three lines of one size in one colour and make the card a
    paragraph; sized and dimmed apart, a choice can be told from its neighbours
    without being read. */
-.setup-card .setup-row-label {
+.setup-rows-blocks .setup-row-label {
     font-size: 0.9375rem;
     font-weight: 600;
     color: var(--text-primary);
 }
 
-.setup-card .setup-row-meaning,
-.setup-card .setup-row-detail {
+.setup-rows-blocks .setup-row-meaning,
+.setup-rows-blocks .setup-row-detail {
     grid-column: 2;
 }
 
 /* The meaning is prose and wraps; the path under it is an address and does not,
    because a wrapped path is a wall. */
-.setup-card .setup-row-meaning {
+.setup-rows-blocks .setup-row-meaning {
     overflow: visible;
     white-space: normal;
     font-size: 0.8125rem;
@@ -261,31 +260,26 @@ conversation-setup-panel {
     color: var(--text-secondary);
 }
 
-/* A path, in the face every other path in the app is set in. */
-.setup-card .setup-row-detail {
+/* A path, in the face every other path in the app is set in. It is allowed to
+   wrap rather than be cut: in the dialog it is often the only thing telling two
+   copies of one tree apart, and the part that does that is the end. */
+.setup-rows-blocks .setup-row-detail {
     margin-top: 0.0625rem;
     font-family: var(--font-mono);
     font-size: 0.75rem;
     color: var(--text-tertiary);
+    white-space: normal;
+    overflow: visible;
+    overflow-wrap: anywhere;
 }
 
 /* Unless a provider answered, in which case the line is a sentence about how the
    place is doing — "Nothing changed since the copy was made" — and a sentence in
    monospace reads as something a program printed rather than as something the
    app is telling you. */
-.setup-card .setup-row-said {
+.setup-rows-blocks .setup-row-said {
     font-family: inherit;
     font-size: 0.8125rem;
-}
-
-/* The composer's own instructions, below the card and dimmer than it: the card
-   is the thing to answer, these are what to do next. */
-.setup-hint {
-    display: flex;
-    justify-content: center;
-    color: var(--text-tertiary);
-    font-size: var(--font-size-md);
-    text-align: center;
 }
 
 /* A workspace that could not be reached when it was last asked. Dimmed rather
@@ -310,7 +304,7 @@ conversation-setup-panel {
 /* In the card the form is inside the block it was opened from, and starts where
    that block's text starts: the row's own inset, plus the dot's column and the
    gap after it. */
-.setup-card .setup-row-body {
+.setup-rows-blocks .setup-row-body {
     padding: 0 1rem 0.875rem 2.625rem;
 }
 
@@ -327,32 +321,17 @@ conversation-setup-panel {
     margin-top: 0.5rem;
 }
 
-/* The one button in the panel that builds anything, and the one that stops it
-   once it is building. Both wear the corner the blocks around them do. */
-.setup-create,
+/* The button that stops a provision once it is running. It wears the corner the
+   blocks around it do. */
 .setup-cancel {
     padding: 0.375rem 0.875rem;
+    background: color-mix(in srgb, var(--text-primary) 10%, transparent);
     border: 0;
     border-radius: 0.625rem;
     font-family: inherit;
     font-size: 0.8125rem;
-    cursor: pointer;
-}
-
-.setup-create {
-    background: var(--accent-blue);
-    font-weight: 500;
-    color: #fff;
-}
-
-.setup-create:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-}
-
-.setup-cancel {
-    background: color-mix(in srgb, var(--text-primary) 10%, transparent);
     color: var(--text-primary);
+    cursor: pointer;
 }
 
 .setup-cancel:hover {
@@ -375,7 +354,7 @@ conversation-setup-panel {
 }
 
 /* One step down from the name above it, with the meaning it elaborates. */
-.setup-card .setup-recommend {
+.setup-rows-blocks .setup-recommend {
     font-size: 0.8125rem;
     line-height: 1.45;
 }
@@ -516,16 +495,6 @@ conversation-setup-panel {
     color: var(--text-tertiary);
 }
 
-/* The block a provision runs in, wearing what the rows it replaced wore: this
-   is the same choice, in the state after it was made. Inside the card only —
-   outside it, in the move dialog, the progress belongs to the dialog's own body
-   and a second surface drawn inside that one is a box in a box. */
-.setup-card .setup-progress {
-    padding: 0.75rem 1rem;
-    border-radius: 1.25rem;
-    background: var(--bubble-user-bg);
-}
-
 /* The spinner keeps its column and the steps get the rest of the width, so a
    path is laid out against the card rather than against whatever is left beside
    the word before it. */
@@ -569,14 +538,6 @@ conversation-setup-panel {
 .setup-error {
     padding: 0.25rem 0.375rem;
     color: var(--error-color);
-}
-
-/* What a refused send points at, for a moment. The message is still in the box
-   and nothing has gone wrong — so this marks the thing to finish rather than
-   reporting a fault, and fades on its own. */
-.setup-attention {
-    outline: 1px solid var(--accent-color);
-    outline-offset: 0.125rem;
 }
 
 /* Queued-message zone: messages typed while a turn is in flight, rendered after

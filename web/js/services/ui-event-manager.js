@@ -585,9 +585,8 @@ class UIEventManager {
 
     // "AI assistant files" special action, offered once the conversation is
     // bound. Before that it is both redundant and wrong: the assistant files are
-    // already there, built for whichever tree the setup panel has on offer and
-    // rebuilt whenever that answer changes, while this pass would read the
-    // project — and then stand in the way of the real ones, because the
+    // already there, built for the tree the conversation works in, while this
+    // pass would read the project — and then stand in the way of the real ones, because the
     // insert-time dedup matches on path and would reuse what it had added.
     const visible = this._getSession()?.getVisibleConversation?.();
     if (visible?.awaitingSetup !== true) {

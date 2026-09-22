@@ -122,6 +122,7 @@ import { runTests as runRefreshMergeTests } from '../unit-tests/refresh-merge-te
 import { runTests as runWorkerInitDeclinedTests } from '../unit-tests/worker-init-declined-test.js';
 import { runTests as runTabOrderMergeTests } from '../unit-tests/tab-order-merge-test.js';
 import { runTests as runTabDragOrderTests } from '../unit-tests/tab-drag-order-test.js';
+import { runTests as runTabDragAcrossWorkspaceTests } from '../unit-tests/tab-drag-across-workspace-test.js';
 import { runTests as runToolExecutionOrderTests } from '../unit-tests/tool-execution-order-test.js';
 import { runTests as runToolActionRenderTests } from '../unit-tests/tool-action-render-test.js';
 import { runTests as runJugglerSpinnerLiveTests } from '../unit-tests/juggler-spinner-live-test.js';
@@ -171,8 +172,12 @@ import { runTests as runConversationWorkspaceProvisionTests } from '../unit-test
 import { runTests as runConversationWorkspacePanelTests } from '../unit-tests/conversation-workspace-panel-test.js';
 import { runTests as runConversationWorkspaceMoveTests } from '../unit-tests/conversation-workspace-move-test.js';
 import { runTests as runWorkspaceFinishDialogTests } from '../unit-tests/workspace-finish-dialog-test.js';
-import { runTests as runSetupPanelLoopsTests } from '../unit-tests/setup-panel-loops-test.js';
-import { runTests as runSetupFieldFocusTests } from '../unit-tests/setup-field-focus-test.js';
+import { runTests as runWorkspaceGroupsTests } from '../unit-tests/workspace-groups-test.js';
+import { runTests as runWorkspaceBoxesTests } from '../unit-tests/workspace-boxes-test.js';
+import { runTests as runWorkspaceCreateDialogTests } from '../unit-tests/workspace-create-dialog-test.js';
+import { runTests as runWorkspaceBoxDragTests } from '../unit-tests/workspace-box-drag-test.js';
+import { runTests as runWorkspaceSelectionTests } from '../unit-tests/workspace-selection-test.js';
+import { runTests as runWorkspacePanelTests } from '../unit-tests/workspace-panel-test.js';
 import { runTests as runBinUndoToastTests } from '../unit-tests/bin-undo-toast-test.js';
 import { runTests as runBinGhostResurrectionTests } from '../unit-tests/bin-ghost-resurrection-test.js';
 import { runTests as runBinEmptyMenuTests } from '../unit-tests/bin-empty-menu-test.js';
@@ -505,6 +510,7 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:worker-init-declined', run: runWorkerInitDeclinedTests },
   { name: 'unit:tab-order-merge', run: runTabOrderMergeTests },
   { name: 'unit:tab-drag-order', run: runTabDragOrderTests },
+  { name: 'unit:tab-drag-across-workspace', run: runTabDragAcrossWorkspaceTests },
   { name: 'unit:tool-execution-order', run: runToolExecutionOrderTests },
   { name: 'unit:tool-action-render', run: runToolActionRenderTests },
   { name: 'unit:juggler-spinner-live', run: runJugglerSpinnerLiveTests },
@@ -563,10 +569,14 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:conversation-workspace-panel', run: runConversationWorkspacePanelTests, needsExclusiveRun: true },
   { name: 'unit:conversation-workspace-move', run: runConversationWorkspaceMoveTests, needsExclusiveRun: true },
   { name: 'unit:workspace-finish-dialog', run: runWorkspaceFinishDialogTests },
-  { name: 'unit:setup-panel-loops', run: runSetupPanelLoopsTests },
+  { name: 'unit:workspace-create-dialog', run: runWorkspaceCreateDialogTests, needsExclusiveRun: true },
+  { name: 'unit:workspace-groups', run: runWorkspaceGroupsTests },
+  { name: 'unit:workspace-boxes', run: runWorkspaceBoxesTests },
+  { name: 'unit:workspace-box-drag', run: runWorkspaceBoxDragTests },
+  { name: 'unit:workspace-selection', run: runWorkspaceSelectionTests },
+  { name: 'unit:workspace-panel', run: runWorkspacePanelTests },
   // Exclusive: it asserts on document.activeElement, which every lane in the
   // shared origin can move.
-  { name: 'unit:setup-field-focus', run: runSetupFieldFocusTests, needsExclusiveRun: true },
   { name: 'unit:bin-undo-toast', run: runBinUndoToastTests },
   { name: 'unit:bin-ghost-resurrection', run: runBinGhostResurrectionTests },
   { name: 'unit:bin-empty-menu', run: runBinEmptyMenuTests },

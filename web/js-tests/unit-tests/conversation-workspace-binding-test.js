@@ -27,7 +27,7 @@ import {
   isWorkspaceUsable
 } from '../../js/services/workspaces.js';
 import { rebindConversation } from '../../js/services/workspace-rebinding.js';
-import { setupRows } from '../../js/services/conversation-setup.js';
+import { setupRows } from '../../js/services/workspace-places.js';
 import { ensureWorkspaceBanner, removeAllElements } from '../../js/components/conversation-area-rendering.js';
 import { followSession, setGitWorkspace } from '../../js/services/git-workspace.js';
 import gitStatusCache from '../../js/services/git-status-cache.js';
@@ -614,6 +614,21 @@ export async function runTests() {
           `and the tree it actually resolves to, got ${JSON.stringify(banner?.textContent)}`);
         assert(banner === banner?.parentElement?.firstElementChild,
           'at the top of the transcript, above the items it scopes');
+
+        // The line names a place; everything else about that place — what kind
+        // of thing it is, how the tree is doing, the ways of finishing with it —
+        // is the panel's. So the line opens the panel, rather than being the one
+        // mention of a workspace there is no way through.
+        const open = /** @type {any} */ (banner?.querySelector('.workspace-banner-open'));
+        assert(open, 'and the name is a way to the workspace, not merely a note that there is one');
+        open.click();
+        assert(session.selection?.kind === 'workspace' && session.selection?.id === 'ws_shown',
+          `clicking it selects the same workspace the strip's box selects, got ${JSON.stringify(session.selection)}`);
+        session.switchConversation(bound.id);
+
+        const where = /** @type {HTMLElement|null} */ (banner?.querySelector('.workspace-banner-root'));
+        assert(where?.dataset.filePath === '/tmp/shown-tree',
+          'and the root carries the hook the right-click Open / Reveal / Copy menu reads, as every other path on screen does');
 
         // A sub-thread column is a lens on part of the same conversation, so it
         // works in the same tree; saying so again in every thread would be noise.

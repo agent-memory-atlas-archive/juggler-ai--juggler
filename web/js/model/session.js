@@ -31,9 +31,8 @@ import { approvePermittedPendingApprovals } from './conversation-tool-actions.js
 import { ensureUserPresetsLoaded, getDefaultPresetSeed } from '../services/system-prompt-presets.js';
 import { isDefaultFileEditingOn, setFileEditingAllowed } from '../services/file-editing-permission.js';
 import { resolveDefaultStrategyId, BUILTIN_DEFAULT_STRATEGY_ID } from '../services/default-strategy.js';
-import { forgetSetup } from '../services/conversation-setup.js';
 import { isWorkspaceUsable } from '../services/workspaces.js';
-import { workspaceInstructionRoots } from '../services/workspace-provisioning.js';
+import { workspaceInstructionRoots, placeForNewConversation, anchorForNewConversation } from '../services/workspace-provisioning.js';
 import { BUILTIN_DEFAULT_ID } from '../../sdk/lib/system-prompt-registry.js';
 
 
@@ -43,7 +42,7 @@ import { BUILTIN_DEFAULT_ID } from '../../sdk/lib/system-prompt-registry.js';
  * @property {function(): Promise<{active: boolean, conversationIds: string[]}>} getActiveConversations - Conversations actively running a turn (excludes approval-parked)
  * @property {function(object[], string | null, HistoryMessage[]|undefined, Record<string, any>|undefined): Promise<{success: boolean}>} updateSession - Update session state
  * @property {function(Record<string, any>): Promise<{metadata: Record<string, any>}>} patchSessionMetadata - Patch session metadata keys
- * @property {function(string, string=, {lane?: string, duplicateFrom?: string, origin?: string, focus?: boolean, focusFrom?: string}=): Promise<{id: string, name: string, created: string}>} createConversation - Atomically create a new conversation (POST /api/conversations); duplicateFrom clones that conversation's files server-side before announcing; origin is a gesture label logged for create attribution; focus broadcasts a "focus" op asking viewers to switch to the new conversation, attributed to focusFrom
+ * @property {function(string, string=, {lane?: string, duplicateFrom?: string, origin?: string, focus?: boolean, focusFrom?: string, after?: string}=): Promise<{id: string, name: string, created: string}>} createConversation - Atomically create a new conversation (POST /api/conversations); duplicateFrom clones that conversation's files server-side before announcing; origin is a gesture label logged for create attribution; focus broadcasts a "focus" op asking viewers to switch to the new conversation, attributed to focusFrom; after names the conversation it is to follow in the stored order, empty for the head of the bar
  * @property {function(string, string): Promise<{name: string}>} renameConversation - Rename a conversation's on-disk folder
  * @property {function(string, object): Promise<{success: boolean}>} updateConversation - Update single conversation
  * @property {function(string, {permanent?: boolean, reason?: string}=): Promise<void>} deleteConversation - Delete single conversation
@@ -215,12 +214,30 @@ class Session {
     this._unloadedConversationIds = [];
 
     /**
-     * ID of currently visible conversation (persisted to backend)
-     * This tracks which conversation is shown in the UI and is saved to backend.
-     * When session loads, it restores the last selected conversation.
+     * What is on screen, and the only thing that says so.
+     *
+     * The tab strip is one list of things to choose between — conversation tabs
+     * and workspace boxes — and exactly one of them is chosen at a time. That
+     * is one fact, so it is one field: naming a new selection is the whole of
+     * giving up the old one, and no caller has an invariant to maintain between
+     * two of them. Local only, and never written directly: `switchConversation`
+     * and `selectWorkspace` are the ways in.
+     * @type {{kind: 'conversation'|'workspace', id: string}|null}
+     */
+    this.selection = null;
+
+    /**
+     * The conversation that stays loaded, and the one the backend is told to
+     * reopen.
+     *
+     * Deliberately not part of the selection, and **never** consulted to decide
+     * what is showing: while a workspace panel holds the selection this still
+     * names the conversation behind it, which is what a click on its tab comes
+     * back to and what is persisted as `activeConversationId`. Asking this
+     * field what is on screen is the bug this split exists to make impossible.
      * @type {string|null}
      */
-    this.visibleConversationId = null;
+    this.loadedConversationId = null;
 
     /**
      * Most-recently-used conversation ID list (local only, most-recent first).
@@ -685,15 +702,13 @@ class Session {
     const conv = this.conversations.get(id);
     if (!conv) return null;
     this._loadQueue?.cancel(id);
-    // Anything held for a conversation still being set up goes with it — a
-    // running provision is aborted rather than left building a place for a
-    // conversation that no longer exists.
-    forgetSetup(id);
     await workerManager.destroyConversationAndWorker(conv);
     recordTape('session-mut', id, { op: 'delete', from: '_dropActiveConversation' });
     this.conversations.delete(id);
     this._mruList = this._mruList.filter(x => x !== id);
-    if (this.visibleConversationId === id) {
+    // The one being dropped may be the conversation behind a workspace panel
+    // rather than the one on screen, and it needs replacing either way.
+    if (this.loadedConversationId === id) {
       const fallbackId =
         this._mruList.find(x => this.conversations.has(x)) ??
         this.conversations.keys().next().value;
@@ -701,7 +716,9 @@ class Session {
         this.switchConversation(fallbackId);
       } else if (clearVisibleIfNoFallback) {
         recordTape('session-mut', null, { op: 'visible', from: '_dropActive-clearFallback' });
-        this.visibleConversationId = null;
+        // Nothing left to show, and nothing left to come back to.
+        this._setSelection(null);
+        this.loadedConversationId = null;
       }
     }
     return conv;
@@ -757,20 +774,44 @@ class Session {
    * the active map BEFORE it spawns the worker (the first yjs-sync arrives
    * immediately), so the entry lands from outside — but the map is the tab-bar
    * order and every mutation of it is taped, so it lands through here rather
-   * than by writing the Map directly. `atHead` puts the tab at the front of the
-   * bar, which is where a brand-new conversation belongs and where it must be
-   * from its first render, not after the spawn completes.
+   * than by writing the Map directly. `atHead` puts the tab where a brand-new
+   * conversation belongs — the front of the bar, or the front of its workspace's
+   * box when it is bound to one (see {@link placeForNewConversation}) — and it
+   * must be there from its first render, not after the spawn completes.
    * @param {string} id - Conversation id
    * @param {import('./conversation.js').default} conv - The conversation to insert
-   * @param {{atHead?: boolean, from?: string}} [opts] - `from` labels the tape entry
+   * @param {{atHead?: boolean, workspaceId?: string, from?: string}} [opts] - `workspaceId`
+   *   is the tree it will work in, which decides where the front is; `from`
+   *   labels the tape entry
    */
-  adoptConversation(id, conv, { atHead = false, from = 'adoptConversation' } = {}) {
+  adoptConversation(id, conv, { atHead = false, workspaceId = '', from = 'adoptConversation' } = {}) {
     recordTape('session-mut', id, { op: 'set', from });
     if (atHead) {
-      this._setConversationOrder([id], new Map([[id, conv]]));
+      this._placeNewConversation(id, conv, workspaceId);
     } else {
       this.conversations.set(id, conv);
     }
+  }
+
+  /**
+   * Put a brand-new conversation into the tab-bar order.
+   *
+   * Where it goes is {@link placeForNewConversation}'s answer, and the whole of
+   * the arithmetic here is turning that index into the full order the Map is
+   * rebuilt from. Idempotent, because it is run twice for one conversation: once
+   * when the worker manager adopts it, and again when the create that asked for
+   * it returns — the second is what settles the order if anything moved in
+   * between, and it must not shuffle the tab along on its way past.
+   * @param {string} id - Conversation id
+   * @param {import('./conversation.js').default} conv - The conversation being placed
+   * @param {string} [workspaceId] - The tree it will work in, if it is one
+   * @private
+   */
+  _placeNewConversation(id, conv, workspaceId = '') {
+    const index = placeForNewConversation(this, workspaceId, { ignore: id });
+    const ids = [...this.conversations.keys()].filter(existing => existing !== id);
+    ids.splice(index, 0, id);
+    this._setConversationOrder(ids, new Map([[id, conv]]));
   }
 
   /**
@@ -1130,7 +1171,10 @@ class Session {
     this._unloadedConversationIds = [];
     this._conversationNames = {};
     this._mruList = [];
-    this.visibleConversationId = null;
+    // Another project's conversations and workspaces are not this one's, so
+    // nothing is selected and there is nothing to come back to.
+    this._setSelection(null);
+    this.loadedConversationId = null;
   }
 
   /**
@@ -1398,6 +1442,43 @@ class Session {
       }
     }
     return `conv_${result}`;
+  }
+
+  /**
+   * The conversation on screen, or null when something else is.
+   *
+   * Read from the selection rather than stored, so it cannot disagree with it:
+   * while a workspace panel is showing there is no visible conversation, even
+   * though {@link loadedConversationId} still names the one behind it.
+   * @returns {string|null} The id, or null.
+   */
+  get visibleConversationId() {
+    return this.selection?.kind === 'conversation' ? this.selection.id : null;
+  }
+
+  /**
+   * The workspace whose panel is on screen, or null when a conversation is.
+   * @returns {string|null} The id, or null.
+   */
+  get visibleWorkspaceId() {
+    return this.selection?.kind === 'workspace' ? this.selection.id : null;
+  }
+
+  /**
+   * Move the selection, without announcing it.
+   *
+   * The one write to {@link selection}. Choosing a conversation also makes it
+   * the one to come back to; choosing a workspace deliberately leaves that
+   * alone, which is what makes the panel somewhere you are rather than
+   * somewhere you left off.
+   * @param {{kind: 'conversation'|'workspace', id: string}|null} selection - What is now on screen.
+   * @private
+   */
+  _setSelection(selection) {
+    this.selection = selection;
+    if (selection?.kind === 'conversation') {
+      this.loadedConversationId = selection.id;
+    }
   }
 
   /**
@@ -1745,11 +1826,11 @@ class Session {
 
           if (data.activeConversationId && this.conversations.has(data.activeConversationId)) {
             recordTape('session-mut', data.activeConversationId, { op: 'visible', from: '_doLoad-active' });
-            this.visibleConversationId = data.activeConversationId;
+            this._setSelection({ kind: 'conversation', id: data.activeConversationId });
           } else {
             const firstId = this.conversations.keys().next().value;
             recordTape('session-mut', firstId ?? null, { op: 'visible', from: '_doLoad-first' });
-            this.visibleConversationId = firstId ?? null;
+            this._setSelection(firstId ? { kind: 'conversation', id: firstId } : null);
           }
 
           this._loadQueue = new ConversationLoadQueue({
@@ -1758,8 +1839,8 @@ class Session {
             concurrency: 3
           });
 
-          if (this.visibleConversationId) {
-            this._loadQueue.prioritize(this.visibleConversationId);
+          if (this.loadedConversationId) {
+            this._loadQueue.prioritize(this.loadedConversationId);
           }
 
           // Background-load the remaining conversations at low priority so
@@ -1768,7 +1849,7 @@ class Session {
           // conversation was prioritised above so it still loads first;
           // others trickle in at the queue's concurrency limit.
           const backgroundIds = data.conversationOrder.filter(
-            (id) => id !== this.visibleConversationId
+            (id) => id !== this.loadedConversationId
           );
           if (backgroundIds.length) {
             this._loadQueue.enqueueAll(backgroundIds);
@@ -1832,11 +1913,9 @@ class Session {
    * @async
    */
   async _createInitialConversation() {
-    // Born uninitialised like any other blank tab: it is a conversation nobody
-    // has chosen anything for yet, and it must never hold up startup to ask.
-    const id = await this.createConversation('', { activate: true, origin: 'initial-bootstrap', initialise: false });
+    const id = await this.createConversation('', { activate: true, origin: 'initial-bootstrap' });
     recordTape('session-mut', id, { op: 'visible', from: '_createInitialConversation' });
-    this.visibleConversationId = id;
+    this._setSelection({ kind: 'conversation', id });
   }
 
   /**
@@ -1936,7 +2015,7 @@ class Session {
       // by POST /api/conversations and POST /api/session/conversations/reorder.
       await this._apiService.updateSession(
         conversationsJson,
-        this.visibleConversationId ?? null,
+        this.loadedConversationId ?? null,
         this.messageHistory,
         this.metadata
       );
@@ -2023,11 +2102,6 @@ class Session {
    * @param {string} [options.workspaceId] - The workspace the new conversation
    *   works in. A conversation born from another is born bound to the same one:
    *   the work it was spawned to do is about the files in that tree.
-   * @param {boolean} [options.initialise] - Whether to seed the conversation
-   *   now. True (the default) is every path that already knows where the
-   *   conversation will work. The blank tab a user made passes false: it is
-   *   born uninitialised and chooses on its first content, because everything
-   *   the seeding does is relative to a root it has not been told yet.
    * @returns {Promise<string>} New conversation ID
    */
   async createConversation(name, {
@@ -2035,8 +2109,7 @@ class Session {
     origin = 'unspecified',
     focus = false,
     focusFrom = '',
-    workspaceId = '',
-    initialise = true
+    workspaceId = ''
   } = {}) {
     // A create with no caller-supplied name is a blank "Untitled N" the user will
     // want to name (the + button and the /new command both create this way).
@@ -2062,17 +2135,24 @@ class Session {
       // session-changed, and returns the canonical name. By the time this
       // resolves, the name question is permanently answered — no "Untitled"
       // stage, no follow-up rename.
-      response = await this._apiService.createConversation(requestedName, requestedId, { origin, focus, focusFrom });
+      // Where it goes travels with the create. The server keeps the order and
+      // broadcasts it, and refreshFromServer re-slots the map into what it
+      // sent — so a placement the server was not told about is undone by its
+      // own echo a moment later, and lost entirely by the next launch.
+      const after = anchorForNewConversation(this, workspaceId);
+      response = await this._apiService.createConversation(requestedName, requestedId, { origin, focus, focusFrom, after });
       const { id, name: canonicalName } = response;
 
       // WorkerManager returns conversation ONLY when fully ready (worker spawned, Yjs active).
       // The worker spawned for this id will find the existing folder via
       // ensureConvDir on its first save, preserving canonicalName on disk.
-      conversation = await workerManager.createNewConversation(id, canonicalName, this);
+      conversation = await workerManager.createNewConversation(id, canonicalName, this, { workspaceId });
 
-      // Insert at top: rebuild Map so the new conversation is the first entry.
-      recordTape('session-mut', conversation.id, { op: 'set', from: 'createConversation-insertTop' });
-      this._setConversationOrder([conversation.id], new Map([[conversation.id, conversation]]));
+      // Settle the order the adoption already put it in: at the top of the bar,
+      // or at the top of its workspace's box, which is the one place a new
+      // conversation can go without its box travelling the sidebar to meet it.
+      recordTape('session-mut', conversation.id, { op: 'set', from: 'createConversation-place' });
+      this._placeNewConversation(conversation.id, conversation, workspaceId);
     } finally {
       this._pendingCreates.delete(requestedId);
       if (response && response.id !== requestedId) {
@@ -2087,37 +2167,19 @@ class Session {
     }
 
     // Seeded here, at creation, where the conversation is nobody's yet and there
-    // is nothing of the user's to write over. A blank tab the user is still
-    // setting up is open for as long as they take over it, and anything seeded
-    // at the far end of that window lands on top of whatever they did in it.
-    // None of these three has a tree to be wrong about in the meantime: a preset
-    // body, a strategy id, and a permission rule whose implicit allowed root is
-    // resolved per authorisation from the live binding rather than stored in the
-    // rule.
+    // is nothing of the user's to write over.
     await this._seedDefaultSystemPrompt(conversation);
     this._seedDefaultFileEditing(conversation);
     this._seedDefaultStrategy(conversation);
 
-    if (initialise) {
-      await this.initialiseConversation(conversation, { workspaceId });
-    } else {
-      // The tree-dependent seeds, for the tree this conversation would work in
-      // if nobody said otherwise — the project, which is what the setup panel
-      // offers pre-selected. Built now rather than at the first send so that the
-      // conversation shows what it is actually about to send while there is
-      // still time to change it; rebuilt out of another tree if the user picks
-      // one, taken away entirely if they pick a place that has yet to be made
-      // (see `conversation-setup.js`), and confirmed rather than repeated when
-      // the binding finally lands.
-      await this.seedConversationAutoItems(conversation, null, { workspaceId: '' });
-      conversation.seededFor = '';
+    // Bound and seeded now, against the tree it was created for: the project
+    // folder, or the workspace whose box it was started in. A conversation is
+    // never asked this afterwards, so there is no window in which it is open
+    // with no answer and nothing for a later hop to fill in — it shows what its
+    // first turn would carry from the moment it exists.
+    await this.initialiseConversation(conversation, { workspaceId });
 
-      // What has just been seeded is ours rather than the user's — a fresh tab
-      // should no more offer to undo it than it did before.
-      await workerManager.clearUndoStacks(conversation.id);
-    }
-
-    // Ask the UI to open inline rename on the freshly-activated blank tab. Fired
+    // Ask the UI to open inline rename on the freshly-activated tab. Fired
     // last, once the tab is created, active, and settled, so the editor positions
     // correctly. Bar-less contexts (the engine worker, the startup initial-
     // conversation created before the bar subscribes) simply have no listener.
@@ -2172,10 +2234,10 @@ class Session {
       }
 
       // Clear the undo stacks so what we just seeded is not undoable — but only
-      // when the stack is ours to clear. A blank tab initialises at its first
-      // content, by which time the user may have spent the whole of that window
-      // working in it, and wiping their undo history to hide our own items
-      // costs far more than leaving those items undoable.
+      // when the stack is ours to clear. A conversation written before the flag
+      // existed initialises at its next content, by which time its user may have
+      // spent months working in it, and wiping their undo history to hide our
+      // own items costs far more than leaving those items undoable.
       // Must await — if clearUndoStacks races with user operations it wipes
       // their undo groups.
       if (!usersOwnHistory) await workerManager.clearUndoStacks(conversation.id);
@@ -2424,6 +2486,41 @@ class Session {
     order.splice(order.indexOf(beforeId), 0, conversationId);
     this._setConversationOrder(order);
     this._notify('conversation:reordered', { conversationId, beforeId });
+
+    // POST /reorder is the sole writer of conversation order.
+    this._persistOrder('reorder');
+
+    return true;
+  }
+
+  /**
+   * Move several conversations, as one contiguous run, to sit before another.
+   *
+   * A workspace's box is dragged whole, and the order knows nothing about
+   * boxes: what actually moves is the conversations in it, which arrive where
+   * the box was let go, keeping the order they were already in.
+   *
+   * Contiguously, because a box takes its place from its first member. Members
+   * left scattered would draw the box at the first of them while the tabs
+   * between them stayed where they were — so the box would land in one place
+   * and take a stranger's seat on the way.
+   * @param {string[]} conversationIds - The run to move, in the order it keeps.
+   * @param {string} beforeId - Conversation to land in front of, or '' for the end.
+   * @returns {boolean} Whether anything moved.
+   */
+  moveConversationBlock(conversationIds, beforeId) {
+    const moving = conversationIds.filter(id => this.conversations.has(id));
+    // Landing in front of one of its own is landing where it already is.
+    if (!moving.length || moving.includes(beforeId)) {
+      return false;
+    }
+
+    const order = Array.from(this.conversations.keys()).filter(id => !moving.includes(id));
+    const at = beforeId ? order.indexOf(beforeId) : -1;
+    order.splice(at >= 0 ? at : order.length, 0, ...moving);
+    this._setConversationOrder(order);
+
+    this._notify('conversation:reordered', { conversationId: moving[0], beforeId: beforeId || null });
 
     // POST /reorder is the sole writer of conversation order.
     this._persistOrder('reorder');
@@ -2813,7 +2910,7 @@ class Session {
 
     // If visible conversation was deleted, switch to first.
     // Use switchConversation() so the load queue is prioritized.
-    if (this.visibleConversationId && !this.conversations.has(this.visibleConversationId)) {
+    if (this.loadedConversationId && !this.conversations.has(this.loadedConversationId)) {
       const firstId = this.conversations.keys().next().value;
       if (firstId !== undefined) {
         this.switchConversation(firstId);
@@ -2855,15 +2952,28 @@ class Session {
       return false;
     }
 
-    if (this.visibleConversationId === conversationId) {
+    // The strip has one selection, so naming a conversation is the whole of
+    // putting it on screen: whatever held it before stops holding it by the
+    // same write, with nothing to remember to clear.
+    const leavingWorkspace = this.selection?.kind === 'workspace';
+    const alreadyVisible = this.visibleConversationId === conversationId;
+
+    recordTape('session-mut', conversationId, { op: 'visible', from: 'switchConversation' });
+    this._setSelection({ kind: 'conversation', id: conversationId });
+    if (leavingWorkspace) {
+      this._notify('workspace:selected', null);
+    }
+
+    if (alreadyVisible) {
       return true; // Already visible
     }
 
+    // Coming back from a workspace panel is not an already-visible switch even
+    // when it lands on the conversation that was behind it: the panel was what
+    // was on screen, so the tab has to be shown and announced like any other.
+
     // Update MRU list: move conversationId to front
     this._mruList = [conversationId, ...this._mruList.filter(id => id !== conversationId)];
-
-    recordTape('session-mut', conversationId, { op: 'visible', from: 'switchConversation' });
-    this.visibleConversationId = conversationId;
 
     // Bump the user's selection to the front of the load queue so a
     // still-loading or errored conv hydrates before background work.
@@ -2887,6 +2997,30 @@ class Session {
     // Save to persist activeConversationId
     // This is necessary because page unload saves are unreliable (async operations may not complete)
     this.save();
+    return true;
+  }
+
+  /**
+   * Show a workspace instead of a conversation.
+   *
+   * A box in the tab strip is selected the way a tab is, and what it selects is
+   * the workspace itself: the place, rather than anyone working in it. So the
+   * panel it shows is about the tree, and the conversation that was on screen
+   * stays the one to come back to.
+   * @param {string} workspaceId - Which workspace to show.
+   * @returns {boolean} Whether it is now showing.
+   */
+  selectWorkspace(workspaceId) {
+    const workspace = this.getWorkspace(workspaceId);
+    if (!workspace) {
+      return false;
+    }
+    if (this.visibleWorkspaceId === workspaceId) {
+      return true; // Already showing
+    }
+
+    this._setSelection({ kind: 'workspace', id: workspaceId });
+    this._notify('workspace:selected', workspace);
     return true;
   }
 
@@ -2923,7 +3057,7 @@ class Session {
 
     // Which tree to look in is the caller's to say, because a conversation is
     // offered its assistant files before it is bound to anything: the tree on
-    // offer in the setup panel is a workspace this conversation does not work in
+    // offer in a place list is a workspace this conversation does not work in
     // yet, and may never. A bound conversation asks about its own tree by
     // passing nothing.
     //
@@ -3092,7 +3226,7 @@ class Session {
     return {
       projectPath: this.projectPath,
       conversations: Array.from(this.conversations.values()).map(conv => conv.toJSON()),
-      activeConversationId: this.visibleConversationId,
+      activeConversationId: this.loadedConversationId,
       messageHistory: this.messageHistory
     };
   }

@@ -16,12 +16,8 @@
 
 import { waitFor, assert } from '../../../js-tests/utilities/test-helpers.js';
 import { registerWorkspace, unregisterWorkspace, listWorkspaces } from '../../../js/services/workspaces.js';
-import {
-  NEW_ROW_PREFIX,
-  selectSetupRow,
-  setSetupValues,
-  createSelectedWorkspace
-} from '../../../js/services/conversation-setup.js';
+import { provisionWorkspace } from '../../../js/services/workspace-provisioning.js';
+import { rebindConversation } from '../../../js/services/workspace-rebinding.js';
 import { defaultLocation } from '../workspaces/git-worktree-workspace-provider.js';
 import {
   runWorktreeSuite,
@@ -402,8 +398,8 @@ export async function runTests() {
     });
 
     await run('the form fills in, Create builds, and the conversation works in the tree', async () => {
-      // End to end through the panel's own state: what the form reports is what
-      // the conversation is set up with, and the tools of that conversation then
+      // End to end from the form: what it reports is what the provision is
+      // given, and the tools of a conversation moved into the result then
       // resolve in the tree the form named.
       const tag = uniqueTag();
       const repo = `wt-repo-${tag}`;
@@ -428,15 +424,22 @@ export async function runTests() {
         assert(value.values.repo === repo,
           `the form names the repository it was pointed at, got ${JSON.stringify(value.values.repo)}`);
 
-        conversation = await makeConversation(session, 'form-to-tree', { initialise: false });
+        conversation = await makeConversation(session, 'form-to-tree');
         release(conversation);
-        selectSetupRow(conversation, `${NEW_ROW_PREFIX}${PROVIDER_ID}`);
-        setSetupValues(conversation, value);
 
-        const result = await createSelectedWorkspace(conversation);
-        assert(result.ok, `Create built the tree, got ${JSON.stringify(result)}`);
-        assert(conversation.initialised === true && Boolean(conversation.workspaceId),
-          `and the conversation is bound to it, unsent and already seeded, got ${JSON.stringify(conversation.workspaceId)}`);
+        // The place is built first, with no conversation in the question, and
+        // something is moved into it afterwards — the two acts the dialog and
+        // the strip now perform separately.
+        const built = await provisionWorkspace({
+          session, providerId: PROVIDER_ID, values: value.values
+        });
+        session.workspaces = [...(session.workspaces ?? []), built.workspace];
+        assert(built.workspace.state === 'ready',
+          `Create built the tree, got ${JSON.stringify(built.workspace.state)}`);
+
+        await rebindConversation(conversation, built.workspace.id);
+        assert(conversation.workspaceId === built.workspace.id,
+          `and the conversation works in it, got ${JSON.stringify(conversation.workspaceId)}`);
 
         const row = (await listWorkspaces()).find((/** @type {any} */ w) => w.id === conversation.workspaceId);
         assert(row?.root === value.values.location,

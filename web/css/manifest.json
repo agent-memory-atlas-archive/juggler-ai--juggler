@@ -206,7 +206,6 @@
 			"file": "components/project-setup.css",
 			"layer": "components",
 			"owns": [
-				"conversation-setup-panel",
 				"setup-*",
 				"workspace-banner-*"
 			]
@@ -232,7 +231,8 @@
 				"conversation-tab",
 				"conversation-tab-rename",
 				"conversation-tab-rename-*",
-				"info-cards-menu__check"
+				"info-cards-menu__check",
+				"workspace-menu"
 			]
 		},
 		{
@@ -254,6 +254,14 @@
 			"owns": [
 				"no-conversations-overlay",
 				"no-project-overlay"
+			]
+		},
+		{
+			"file": "components/workspace-panel.css",
+			"layer": "components",
+			"owns": [
+				"workspace-panel",
+				"workspace-panel-*"
 			]
 		},
 		{
@@ -346,8 +354,7 @@
 				"new-thread-btn",
 				"permission-controls",
 				"reply-suggestions",
-				"schedule-send-menu",
-				"workspace-menu"
+				"schedule-send-menu"
 			]
 		},
 		{
@@ -450,6 +457,7 @@
 				"find-bar__input",
 				"find-bar__toggle",
 				"slash-*",
+				"workspace-create-*",
 				"workspace-finish-*",
 				"workspace-move-*"
 			]

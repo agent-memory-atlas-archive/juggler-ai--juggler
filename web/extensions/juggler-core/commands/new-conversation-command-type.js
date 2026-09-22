@@ -39,10 +39,9 @@ class NewConversationCommandType extends CommandType {
 
     try {
       // Empty name → session assigns the canonical "Untitled N". activate switches
-      // the new conversation into view immediately. initialise:false because this
-      // is the blank tab: like the "+" button's, it is seeded on first content,
-      // once it is known where it works.
-      await session.createConversation('', { activate: true, origin: 'slash-command', initialise: false });
+      // the new conversation into view immediately. It works in the project
+      // folder, like the "+" button's blank tab.
+      await session.createConversation('', { activate: true, origin: 'slash-command' });
       return { handled: true };
     } catch (error) {
       return {

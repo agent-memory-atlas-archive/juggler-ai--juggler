@@ -198,7 +198,10 @@ export function setupYjsObservers(c) {
     }
 
     // Check all relevant metadata keys
-    const relevantKeys = ['defaultModelConfig', 'currentStrategyId', 'conversationPermissionRules', 'conversationAllowedPaths', 'processingState', 'completedTurns', 'undoState'];
+    // `workspaceId` is here because the tab bar draws where a conversation
+    // works: a rebind moves its tab from one workspace's box to another's, and
+    // nothing else about the conversation changes to announce it.
+    const relevantKeys = ['defaultModelConfig', 'currentStrategyId', 'conversationPermissionRules', 'conversationAllowedPaths', 'processingState', 'completedTurns', 'undoState', 'workspaceId'];
     const changedRelevantKey = Array.from(event.keysChanged).some(key =>
       relevantKeys.includes(key)
     );

@@ -180,9 +180,12 @@ export async function runTests(_ctx) {
     }
   }
 
-  // Test 3: the drop resolves its neighbour from the strip as it stands, not
-  // from the order captured at the press. A tab that joined the strip during
-  // the gesture shifts every index after it.
+  // Test 3: the drop commits the arrangement the strip was showing, and a tab
+  // that joins the strip mid-gesture does not move it. The landing is the tab
+  // it came to rest in front of — an element, which stays the same element
+  // however many tabs arrive above it. Resolved by counting instead, the
+  // newcomer would shift every index after it and the drop would name a
+  // neighbour the user was never shown sitting next to.
   {
     const { bar, tabs, calls, teardown } = mountBar(['a', 'b', 'c']);
     try {
@@ -191,8 +194,8 @@ export async function runTests(_ctx) {
       const cBox = /** @type {HTMLElement} */ (tabs[2]).getBoundingClientRect();
 
       bar._startDrag({ clientX: 100, clientY: aBox.top + aBox.height / 2, pointerId: 1 }, tabs[0]);
-      // Past b's midpoint but short of c's: the drop index is 1, counted over
-      // the strip without the dragged tab.
+      // Past b's midpoint but short of c's, so the tab comes to rest between
+      // them and the strip shows it sitting in front of c.
       movePointerTo((bBox.bottom + cBox.top) / 2);
 
       // A tab joins at the head while the gesture is in flight.
@@ -203,10 +206,11 @@ export async function runTests(_ctx) {
       release();
 
       assert(calls.length === 1, `expected one reorder, got ${JSON.stringify(calls)}`);
-      // Live strip without the dragged tab is [new, b, c], so index 1 is b.
-      // Against the order captured at the press it would have been c.
-      assert(calls[0][0] === 'reorder' && calls[0][1] === 'a' && calls[0][2] === 'b',
-        `the drop named the wrong neighbour: ${JSON.stringify(calls[0])} — index 1 of the live strip is b, not c`);
+      // The strip reads [new, b, a, c] at the drop, so the tab is committed
+      // where it is drawn: in front of c. Counting would have said b, which is
+      // one place further up than anything the strip ever showed.
+      assert(calls[0][0] === 'reorder' && calls[0][1] === 'a' && calls[0][2] === 'c',
+        `the drop named the wrong neighbour: ${JSON.stringify(calls[0])} — the strip is showing a in front of c, and the commit has to say the same`);
       passed++;
     } catch (e) {
       failed++;

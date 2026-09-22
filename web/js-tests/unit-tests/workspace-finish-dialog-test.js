@@ -43,13 +43,20 @@ const COMMIT_OPTION = {
 const DIRTY = { label: 'onboarding', detail: 'branch onboarding · 3 changed', dirty: true };
 
 /**
+ * Stands in for the conversation an ending is carried out for. Only its
+ * presence is read here: an alternative hands the work to it.
+ */
+const SOMEBODY = { id: 'conv_actor', name: 'Auth flow' };
+
+/**
  * The dialog, once it is on screen.
- * @param {any} [status] - What the chip knows about the tree.
+ * @param {any} [status] - What the host knows about the tree.
  * @param {any} [option] - The ending being carried out.
+ * @param {any} [conversation] - Who it is being done for, or null for nobody.
  * @returns {Promise<{answer: Promise<any>, root: HTMLElement}>} The pending answer and the overlay.
  */
-async function open(status = DIRTY, option = COMMIT_OPTION) {
-  const answer = openWorkspaceFinish(option, { status });
+async function open(status = DIRTY, option = COMMIT_OPTION, conversation = SOMEBODY) {
+  const answer = openWorkspaceFinish(option, { status, conversation });
   await waitFor(
     () => !!document.querySelector('.workspace-finish-overlay [role="dialog"]'),
     { description: 'the finish dialog to be presented' }
@@ -196,6 +203,27 @@ export async function runTests() {
       'the ending should still say what it does');
     press(root, '.workspace-finish-cancel');
     await answer;
+  });
+
+  await check('with nobody to hand the work to, the alternative is not offered', async () => {
+    // The same ending, asked for of the workspace itself: a box three
+    // conversations share names none of them, so "Let this conversation write
+    // it" has no conversation to mean. Offering it anyway would be a button
+    // whose outcome is that nothing happens — and the field is the whole
+    // answer without it, which is the shape this dialog was written for.
+    const { answer, root } = await open(DIRTY, COMMIT_OPTION, null);
+
+    assert(!root.querySelector('.workspace-finish-alternative'),
+      'an alternative that hands work to a conversation must not be offered when there is none');
+    assert(!root.textContent?.includes(COMMIT_OPTION.prompt.alternative.hint),
+      'nor its hint, which explains a button that is not there');
+
+    const field = /** @type {HTMLTextAreaElement} */ (root.querySelector('.setup-field-input'));
+    field.value = 'Committed from the box';
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+    press(root, '.workspace-finish-commit');
+    assert((await answer)?.message === 'Committed from the box',
+      'typing a message must still be a way through');
   });
 
   await check('a prompt with no alternative offers no second button', async () => {

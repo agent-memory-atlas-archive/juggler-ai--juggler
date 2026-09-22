@@ -3,46 +3,33 @@
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
 /**
- * A conversation's workspace binding, and the moment it is decided.
+ * A conversation's workspace binding, and the seeds that follow it.
  *
  * A conversation's assistant files are relative to a root: they are whichever
- * tree it works in. A blank one has not been told where that is yet, so it is
- * seeded for the tree it would work in if nobody said otherwise — the project —
- * and reseeded out of another the moment its user names one, or emptied if they
- * name a place that has still to be made. It is showing what its first turn
- * would carry, and stays uninitialised, unbound and free to be told something
- * else until that turn arrives.
+ * tree it works in. That is settled before the conversation exists — the project
+ * folder, or the workspace whose box it was started in — so it is bound and
+ * seeded at birth and shows what its first turn would carry from the moment it
+ * is on screen. What changes the answer afterwards is a move, which rebuilds the
+ * seeds out of the tree it moved into.
  *
- * These cases pin that: what an uninitialised conversation has (the project's
- * seeds, no binding), what picking a row does to them (the whole set rebuilt
- * out of the named tree, and nothing of the user's touched), what initialising
- * does (binds, and confirms rather than repeats — a seed the user deleted stays
- * deleted), and what a conversation born from another inherits.
+ * These cases pin that: what a conversation has the instant it is created, what
+ * a move does to those seeds and what it leaves alone, that seeding confirms
+ * rather than repeats — a seed the user deleted stays deleted — and what a
+ * conversation born from another inherits.
  * @module unit-tests/conversation-workspace-test
  */
 
 import { waitFor, assert } from '../utilities/test-helpers.js';
-import { isFileEditingAllowed, setFileEditingAllowed } from '../../js/services/file-editing-permission.js';
-import { getDefaultStrategyId, setDefaultStrategyId } from '../../js/services/default-strategy.js';
-import { getDefaultPresetId, setDefaultPreset } from '../../js/services/system-prompt-presets.js';
 import { INITIALISED_KEY } from '../../js/model/conversation.js';
 import { fetchJson } from '../../js/services/http.js';
 import { writeFileOp } from '../../js/services/ops-api.js';
 import { createBoundOps } from '../../sdk/ops.js';
-import {
-  PROJECT_ROW_ID,
-  NEW_ROW_PREFIX,
-  selectSetupRow,
-  setSetupValues,
-  createSelectedWorkspace
-} from '../../js/services/conversation-setup.js';
+import { rebindConversation } from '../../js/services/workspace-rebinding.js';
 import {
   runWorkspaceSuite,
   countSeeds,
-  FixtureProvider,
   makeConversation,
-  seededFile,
-  syncUndoState
+  seededFile
 } from '../utilities/conversation-workspace-helpers.js';
 
 /**
@@ -59,17 +46,16 @@ export const needsExclusiveRun = true;
  */
 export async function runTests() {
   return runWorkspaceSuite('conversation-workspace-test', async ({ run, session, projectPath, registeredId, release }) => {
-    await run('a blank conversation is born unbound, holding the seeds the project would give it', async () => {
-      // Born uninitialised and bound to nothing, but not empty. The tree it
-      // would work in if nobody says otherwise is the project — which is what
-      // the setup panel offers pre-selected — so its seeds are built for that
-      // one straight away, where the user can see what the first turn would
-      // carry while there is still time to change it.
+    await run('a conversation is born in the project folder, holding its seeds', async () => {
+      // Bound and seeded before it is on screen. Where it works was settled by
+      // the act that made it — the "+" at the top of the strip means the project
+      // folder — so there is no window in which it is showing one tree's
+      // assistant files while working in another.
       const seeds = countSeeds(session);
       /** @type {any} */
       let conversation = null;
       try {
-        conversation = await makeConversation(session, 'unseeded', { initialise: false });
+        conversation = await makeConversation(session, 'unseeded');
         release(conversation);
         assert(seeds.calls() === 1,
           `its seeds are built once, at creation, got ${seeds.calls()} seeding pass(es)`);
@@ -77,17 +63,20 @@ export async function runTests() {
         seeds.restore();
       }
 
-      assert(conversation.initialised === false,
-        `a deferred conversation reports itself uninitialised, got ${JSON.stringify(conversation.initialised)}`);
+      assert(conversation.initialised === true,
+        `it reports itself initialised, got ${JSON.stringify(conversation.initialised)}`);
       assert(conversation.workspaceId === '',
-        `and bound to nothing, got ${JSON.stringify(conversation.workspaceId)}`);
+        `bound to the project folder, got ${JSON.stringify(conversation.workspaceId)}`);
       assert(conversation.seededFor === '',
-        `while recording which tree those seeds are for, got ${JSON.stringify(conversation.seededFor)}`);
+        `which is also the tree those seeds are for, got ${JSON.stringify(conversation.seededFor)}`);
     });
 
     await run('initialising it against the tree it was seeded for adds nothing back', async () => {
-      const conversation = await makeConversation(session, 'initialised-by-hand', { initialise: false });
+      const conversation = await makeConversation(session, 'initialised-by-hand');
       release(conversation);
+      // What a document written before the flag existed looks like: seeded for
+      // the tree it works in, with nothing recording that it ever was.
+      conversation.setMetadata(INITIALISED_KEY, false);
 
       const seeds = countSeeds(session);
       try {
@@ -101,8 +90,9 @@ export async function runTests() {
     });
 
     await run('initialising it against another tree seeds that one', async () => {
-      const conversation = await makeConversation(session, 'initialised-elsewhere', { initialise: false });
+      const conversation = await makeConversation(session, 'initialised-elsewhere');
       release(conversation);
+      conversation.setMetadata(INITIALISED_KEY, false);
 
       const seeds = countSeeds(session);
       try {
@@ -116,24 +106,14 @@ export async function runTests() {
         `and becomes the tree its seeds are for, got ${JSON.stringify(conversation.seededFor)}`);
     });
 
-    await run('a conversation created the ordinary way is born initialised', async () => {
-      const conversation = await makeConversation(session, 'born-initialised');
-      release(conversation);
-
-      assert(conversation.initialised === true,
-        'the default is unchanged: everything that is not the blank tab is seeded at birth');
-      assert(isFileEditingAllowed(conversation.rootMessageThread) === true,
-        'with the same seeds as before workspaces existed');
-    });
-
     await run('racing triggers initialise it exactly once', async () => {
-      const conversation = await makeConversation(session, 'raced', { initialise: false });
+      const conversation = await makeConversation(session, 'raced');
       release(conversation);
 
       // Put back into the state of a conversation whose seeds have never been
-      // built — which is what an undone setup leaves behind, and what every
-      // conversation written before any of this looks like — so that the racing
-      // triggers have a pass between them to duplicate.
+      // built — what every conversation written before any of this looks like —
+      // so that the racing triggers have a pass between them to duplicate.
+      conversation.setMetadata(INITIALISED_KEY, false);
       conversation.seededFor = null;
 
       const seeds = countSeeds(session);
@@ -154,8 +134,8 @@ export async function runTests() {
       assert(conversation.initialised === true, 'and it ends up initialised');
     });
 
-    await run('sending is a commit: the first message initialises the conversation', async () => {
-      const conversation = await makeConversation(session, 'committed-by-send', { initialise: false });
+    await run('sending into a conversation does not seed over what it is showing', async () => {
+      const conversation = await makeConversation(session, 'committed-by-send');
       release(conversation);
 
       const seeds = countSeeds(session);
@@ -165,7 +145,7 @@ export async function runTests() {
         });
         assert(refused === null, `expected the send to be accepted, got ${JSON.stringify(refused)}`);
         assert(conversation.initialised === true,
-          'a conversation with content in it has made its choice');
+          'a conversation with content in it is initialised, as it was before the send');
         assert(seeds.calls() === 0,
           `and the send does not seed over the items it was already showing, got ${seeds.calls()}`);
       } finally {
@@ -206,110 +186,11 @@ export async function runTests() {
         'and is recorded as initialised, so it is only ever asked this once');
     });
 
-    await run('a permission the user changed in the blank tab survives its first send', async () => {
-      // The window this suite created: a blank tab exists for as long as the
-      // user takes to set it up, and only then does its first content arrive.
-      // Everything seeded at that moment is written over something of theirs,
-      // so only the seeds that genuinely depend on where the conversation works
-      // may wait that long. A permission rule does not: it carries no root at
-      // all — the tree it implicitly allows is resolved per authorisation from
-      // the live binding — so it belongs at creation, where there is nothing
-      // to overwrite.
-      const conversation = await makeConversation(session, 'chose-before-sending', { initialise: false });
-      release(conversation);
-
-      assert(isFileEditingAllowed(conversation.rootMessageThread) === true,
-        'a blank tab starts from the session default like every other conversation');
-
-      setFileEditingAllowed(conversation.rootMessageThread, false);
-      await conversation.ensureInitialised();
-
-      assert(isFileEditingAllowed(conversation.rootMessageThread) === false,
-        'and committing it does not hand back a permission the user turned off');
-    });
-
-    await run('a strategy the user picked in the blank tab survives its first send', async () => {
-      // Non-stock on both sides deliberately: the seed writes nothing when the
-      // session default is the built-in one, so a case run stock would pass
-      // without the fix it is about.
-      const strategyWas = getDefaultStrategyId(session);
-      await setDefaultStrategyId(session, 'yolo');
-      try {
-        const conversation = await makeConversation(session, 'picked-a-strategy', { initialise: false });
-        release(conversation);
-        const mt = conversation.rootMessageThread;
-
-        assert(mt.currentStrategyId === 'yolo',
-          `a blank tab starts on the session's default strategy, got ${JSON.stringify(mt.currentStrategyId)}`);
-
-        mt.setStrategy('read-only');
-        await conversation.ensureInitialised();
-
-        assert(mt.currentStrategyId === 'read-only',
-          `and the strategy the user picked is still the strategy, got ${JSON.stringify(mt.currentStrategyId)}`);
-      } finally {
-        await setDefaultStrategyId(session, strategyWas || '');
-      }
-    });
-
-    await run('a system prompt the user typed in the blank tab survives its first send', async () => {
-      const presetWas = getDefaultPresetId();
-      await setDefaultPreset('minimal');
-      try {
-        const conversation = await makeConversation(session, 'typed-a-prompt', { initialise: false });
-        release(conversation);
-        const mt = conversation.rootMessageThread;
-        /**
-         * @param {any} thread - The thread holding it.
-         * @returns {any} The system-prompt item.
-         */
-        const promptItem = (thread) => thread.contextItems.find((/** @type {any} */ i) => i.type === 'system-prompt');
-
-        const seeded = promptItem(mt);
-        assert(seeded?.data?.selectedPresetId === 'minimal',
-          `a blank tab starts from the session's default preset, got ${JSON.stringify(seeded?.data)}`);
-
-        mt.updateContextItem(seeded.id, {
-          data: { ...seeded.data, text: 'what the user typed instead', isModified: true }
-        });
-        await conversation.ensureInitialised();
-
-        const after = promptItem(mt);
-        assert(after?.data?.text === 'what the user typed instead',
-          `and the prompt they typed is still there afterwards, got ${JSON.stringify(after?.data?.text)}`);
-        assert(after?.data?.isModified === true,
-          'still marked as theirs rather than reset to the preset it no longer is');
-      } finally {
-        await setDefaultPreset(presetWas);
-      }
-    });
-
-    await run('undo history the user made in the blank tab survives its first send', async () => {
-      // The one that needs no unusual configuration and so reaches every user:
-      // the undo clear runs unconditionally. Adding a context item outside a
-      // send is the reachable way to have history here — the pinboard's "add to
-      // context" — and is deliberately not a commit trigger, so the history is
-      // still there when the first send arrives.
-      const conversation = await makeConversation(session, 'has-undo-history', { initialise: false });
-      release(conversation);
-
-      await conversation.rootMessageThread.executeContextItem('file-content', { path: 'README.md' });
-      await syncUndoState(conversation);
-      assert(conversation.canUndo() === true,
-        'precondition: the user did something undoable in the blank tab');
-
-      await conversation.ensureInitialised();
-      await syncUndoState(conversation);
-
-      assert(conversation.canUndo() === true,
-        'committing the conversation does not wipe the undo history behind their work');
-    });
-
-    await run('picking another tree rebuilds the seeds out of it', async () => {
-      // A conversation shows what its first turn would carry from the moment it
-      // exists, which means it is showing one particular tree's assistant files.
-      // Answering the question with a different tree has to replace them, or the
-      // list is describing somewhere the conversation is not going to work.
+    await run('moving to another tree seeds the assistant files it has', async () => {
+      // A conversation shows what its next turn would carry, which means it is
+      // showing one particular tree's assistant files. Moving it has to read the
+      // tree it moved into, or the list is describing somewhere the conversation
+      // is not working.
       const stamp = Math.random().toString(36).slice(2, 8);
       const elsewhere = `seed-swap-${stamp}`;
       const marker = `# instructions only this tree has ${stamp}`;
@@ -324,30 +205,22 @@ export async function runTests() {
       const saved = session.workspaces;
       session.workspaces = [...saved, made.workspace];
       try {
-        const conversation = await makeConversation(session, 'seeds-follow-the-row', { initialise: false });
+        const conversation = await makeConversation(session, 'seeds-follow-the-row');
         release(conversation);
 
         assert(!seededFile(conversation, '.cursorrules'),
-          'precondition: the tree it starts on has no rules file');
+          'precondition: the tree it starts in has no rules file');
 
-        // `seededFor` is written last, so it is the pass having finished rather
-        // than an item having arrived part-way through one.
-        selectSetupRow(conversation, made.workspace.id);
-        await waitFor(() => conversation.seededFor === made.workspace.id,
-          { description: 'the seeds to be rebuilt out of the selected tree' });
+        const moved = await rebindConversation(conversation, made.workspace.id);
+        assert(moved.done, `the move went through, got ${JSON.stringify(moved)}`);
+        assert(conversation.workspaceId === made.workspace.id,
+          `and the conversation works in the tree it moved to, got ${JSON.stringify(conversation.workspaceId)}`);
+
         assert(seededFile(conversation, '.cursorrules'),
           'the assistant file only that tree has is now in the conversation');
         const text = await seededFile(conversation, '.cursorrules').createContextText({});
         assert(text.includes(marker),
           `read from that tree rather than named after it, got ${JSON.stringify(text)}`);
-
-        selectSetupRow(conversation, PROJECT_ROW_ID);
-        await waitFor(() => conversation.seededFor === PROJECT_ROW_ID,
-          { description: 'changing the answer to rebuild them again' });
-        assert(!seededFile(conversation, '.cursorrules'),
-          'and answering with the project again takes it away');
-        assert(conversation.initialised === false,
-          'while none of it has bound the conversation to anything');
       } finally {
         session.workspaces = saved;
         await fetchJson(`/api/session/workspaces/${made.workspace.id}`, { method: 'DELETE', fallback: null });
@@ -355,79 +228,10 @@ export async function runTests() {
       }
     });
 
-    await run('a place that has not been made yet seeds nothing, and seeds itself once it has', async () => {
-      // A row offering to build somewhere names a place that is not there. There
-      // is nothing to read for it, and reading the project instead is worse than
-      // reading nothing: the files are the project's, under paths relative to a
-      // tree that is about to be somewhere else, so the moment the conversation
-      // binds they are pointing into the new tree at whatever happens to be at
-      // that path — or at nothing, which is what the panel then shows. The seeds
-      // wait for the tree, and are read from it.
-      const stamp = Math.random().toString(36).slice(2, 8);
-      const already = `seed-none-${stamp}`;
-      const built = `seed-bind-${stamp}`;
-      const project = createBoundOps(() => ({ workspaceId: '' }));
-      await writeFileOp({ path: `${already}/.cursorrules`, content: `# already there ${stamp}` });
-      // The place the provider is about to make, with an assistant file of its
-      // own waiting in it: the fixture's `mkdir -p` tolerates a directory that
-      // is already there, and the file is how the seeds are shown to have been
-      // read out of THIS tree rather than the one selected before it.
-      await writeFileOp({ path: `${built}/.cursorrules`, content: `# built here ${stamp}` });
-      const made = await fetchJson('/api/session/workspaces', {
-        method: 'POST',
-        body: { root: `${projectPath}/${already}`, label: 'a tree that already exists', state: 'ready' }
-      });
-      const saved = session.workspaces;
-      session.workspaces = [...saved, made.workspace];
-      const newRow = `${NEW_ROW_PREFIX}${FixtureProvider.MANIFEST.id}`;
-      /** @type {any} */
-      let conversation = null;
-      try {
-        conversation = await makeConversation(session, 'seeds-wait-for-a-tree', { initialise: false });
-        release(conversation);
-
-        selectSetupRow(conversation, made.workspace.id);
-        await waitFor(() => conversation.seededFor === made.workspace.id,
-          { description: 'the seeds to be rebuilt out of the tree that is there' });
-        assert(seededFile(conversation, '.cursorrules'),
-          'precondition: a tree that exists is read, and seeds what it has');
-
-        const seeds = countSeeds(session);
-        try {
-          selectSetupRow(conversation, newRow);
-          await waitFor(() => conversation.seededFor === newRow,
-            { description: 'the seeds to be answered for a place that is not there' });
-          assert(seeds.calls() === 0,
-            `nowhere is read for it, got ${seeds.calls()} seeding pass(es)`);
-        } finally {
-          seeds.restore();
-        }
-        assert(!seededFile(conversation, '.cursorrules'),
-          'and the tree selected before it has its files back');
-
-        setSetupValues(conversation, { valid: true, values: { dir: `${projectPath}/${built}` } });
-        const result = await createSelectedWorkspace(conversation);
-        assert(result.ok, `the place is built, got ${JSON.stringify(result)}`);
-
-        const seeded = seededFile(conversation, '.cursorrules');
-        assert(seeded, 'and now that there is a tree, it is read and seeds what it has');
-        const text = await seeded.createContextText({});
-        assert(text.includes(`# built here ${stamp}`),
-          `out of the tree just built rather than the one selected before it, got ${JSON.stringify(text)}`);
-      } finally {
-        session.workspaces = saved;
-        if (conversation?.workspaceId) {
-          await fetchJson(`/api/session/workspaces/${conversation.workspaceId}`, { method: 'DELETE', fallback: null });
-        }
-        await fetchJson(`/api/session/workspaces/${made.workspace.id}`, { method: 'DELETE', fallback: null });
-        await project.copyTree({ to: '.', delete: [already, built] });
-      }
-    });
-
     await run('a rebuild replaces the seeds and nothing else', async () => {
-      // The seeded assistant files are an answer to where the conversation
-      // works. A file the user pinned themselves is not — nor is the prompt they
-      // are editing — so changing the answer may not touch either.
+      // The seeded assistant files belong to where the conversation works. A
+      // file the user pinned themselves does not — nor does the prompt they are
+      // editing — so a move may not touch either.
       const stamp = Math.random().toString(36).slice(2, 8);
       const elsewhere = `seed-keep-${stamp}`;
       const project = createBoundOps(() => ({ workspaceId: '' }));
@@ -439,7 +243,7 @@ export async function runTests() {
       const saved = session.workspaces;
       session.workspaces = [...saved, made.workspace];
       try {
-        const conversation = await makeConversation(session, 'keeps-what-is-theirs', { initialise: false });
+        const conversation = await makeConversation(session, 'keeps-what-is-theirs');
         release(conversation);
         const mt = conversation.rootMessageThread;
 
@@ -448,9 +252,8 @@ export async function runTests() {
         assert(pinned && pinned.data.seeded !== true,
           'precondition: the user pinned a file of their own, which is not a seed');
 
-        selectSetupRow(conversation, made.workspace.id);
-        await waitFor(() => conversation.seededFor === made.workspace.id,
-          { description: 'the seeds to be rebuilt' });
+        const moved = await rebindConversation(conversation, made.workspace.id);
+        assert(moved.done, `the move went through, got ${JSON.stringify(moved)}`);
 
         const after = seededFile(conversation, 'README.md');
         assert(after, 'the file the user pinned is still in the conversation');
@@ -465,10 +268,10 @@ export async function runTests() {
       }
     });
 
-    await run('a seed the user deleted before sending does not come back', async () => {
-      // The point of building the seeds early is that the user can see what the
-      // first turn would carry while there is still time to change it. Seeding
-      // again at the send would take that back.
+    await run('a seed the user deleted does not come back when the seeding runs again', async () => {
+      // Seeding confirms rather than repeats. A conversation shows what its next
+      // turn would carry, and a seed the user has read and thrown away is an
+      // answer they have already given.
       const stamp = Math.random().toString(36).slice(2, 8);
       const elsewhere = `seed-deleted-${stamp}`;
       const project = createBoundOps(() => ({ workspaceId: '' }));
@@ -480,24 +283,28 @@ export async function runTests() {
       const saved = session.workspaces;
       session.workspaces = [...saved, made.workspace];
       try {
-        const conversation = await makeConversation(session, 'deleted-a-seed', { initialise: false });
+        const conversation = await makeConversation(session, 'deleted-a-seed', {
+          workspaceId: made.workspace.id
+        });
         release(conversation);
-
-        selectSetupRow(conversation, made.workspace.id);
-        await waitFor(() => conversation.seededFor === made.workspace.id,
-          { description: 'the seeds of the selected tree' });
+        assert(seededFile(conversation, '.cursorrules'),
+          'precondition: the tree it was born in seeded its instructions');
 
         conversation.rootMessageThread.removeContextItem(seededFile(conversation, '.cursorrules').id);
         assert(!seededFile(conversation, '.cursorrules'), 'precondition: the user threw it away');
 
-        const refused = await conversation.sendMessage('now send it', null, conversation.rootMessageThread, {
-          consumeComposer: false
-        });
-        assert(refused === null, `expected the send to be accepted, got ${JSON.stringify(refused)}`);
+        // The state a document written before the flag reaches its next send
+        // in: no record that it was ever initialised, but still carrying which
+        // tree its seeds were built for. That record is the whole guard — the
+        // pass is skipped for a tree already answered, which is what leaves a
+        // seed the user threw away thrown away.
+        conversation.setMetadata(INITIALISED_KEY, false);
+        await conversation.ensureInitialised();
+
         assert(conversation.workspaceId === made.workspace.id,
-          `the send binds it to the row that was picked, got ${JSON.stringify(conversation.workspaceId)}`);
+          `it still works where it was born, got ${JSON.stringify(conversation.workspaceId)}`);
         assert(!seededFile(conversation, '.cursorrules'),
-          'and does not put back the seed they had already looked at and removed');
+          'and the seed they had already looked at and removed is not put back');
       } finally {
         session.workspaces = saved;
         await fetchJson(`/api/session/workspaces/${made.workspace.id}`, { method: 'DELETE', fallback: null });
@@ -524,14 +331,13 @@ export async function runTests() {
       const saved = session.workspaces;
       session.workspaces = [...saved, made.workspace];
       try {
-        const conversation = await makeConversation(session, 'pinned-one-of-a-pair', { initialise: false });
+        const conversation = await makeConversation(session, 'pinned-one-of-a-pair');
         release(conversation);
 
         await conversation.rootMessageThread.executeContextItem('file-content', { path: 'AGENTS.md' });
 
-        selectSetupRow(conversation, made.workspace.id);
-        await waitFor(() => conversation.seededFor === made.workspace.id,
-          { description: 'the seeds of the tree that keeps both' });
+        const moved = await rebindConversation(conversation, made.workspace.id);
+        assert(moved.done, `the move went through, got ${JSON.stringify(moved)}`);
 
         assert(!seededFile(conversation, 'CLAUDE.md'),
           'the bytes the user already pinned are not seeded again under the other name');
@@ -564,6 +370,50 @@ export async function runTests() {
         `the spawned conversation works in the same tree as the one that spawned it, got ${JSON.stringify(inheritor.workspaceId)}`);
       assert(inheritor.initialised === true,
         'and never waits to be asked — the question was answered by where it came from');
+    });
+
+    await run('a conversation born into a workspace goes to the top of its box, not the top of the bar', async () => {
+      // The tab bar's order is the session's Map order, and a box is drawn at
+      // its first member's place — so a new conversation put at the front of
+      // the bar takes its workspace's box up there with it, past everything
+      // else in the strip. It goes to the front of its box instead, which is
+      // the same index the box already occupies.
+      // A tab of the project's own, made first so that the top of the bar is
+      // demonstrably somewhere else: without one above it, "at the top of its
+      // box" and "at the top of the bar" can be the same index and the case
+      // proves nothing.
+      const anchor = await makeConversation(session, 'above-the-box');
+      release(anchor);
+
+      const before = [...session.conversations.keys()];
+      const boxTop = before.findIndex(id => session.conversations.get(id)?.workspaceId === registeredId);
+
+      const made = await makeConversation(session, 'born-in-a-box', { workspaceId: registeredId });
+      release(made);
+
+      const after = [...session.conversations.keys()];
+      const landed = after.indexOf(made.id);
+      // An empty box is drawn past every conversation there is, so its first
+      // member belongs at the end — again, where the box already is.
+      const wanted = boxTop === -1 ? after.length - 1 : boxTop;
+      assert(landed > 0,
+        `the top of the bar belongs to ${anchor.name}, and a box must not travel the sidebar to meet a conversation, got ${landed} of ${after.length}`);
+      assert(landed === wanted,
+        `it belongs at ${wanted}, the place its box is drawn at, got ${landed} of ${after.length}`);
+      assert(after.slice(0, landed).join(',') === before.slice(0, landed).join(','),
+        `and nothing above it moved to make room, got "${after.join(',')}" from "${before.join(',')}"`);
+    });
+
+    await run('a conversation born into no workspace is still the top tab', async () => {
+      const before = [...session.conversations.keys()];
+      const made = await makeConversation(session, 'born-at-the-top');
+      release(made);
+
+      const after = [...session.conversations.keys()];
+      assert(after[0] === made.id,
+        `the newest tab is the top tab wherever there is no box to be the top of, got "${after.join(',')}"`);
+      assert(after.slice(1).join(',') === before.join(','),
+        `and the strip below it is untouched, got "${after.join(',')}" from "${before.join(',')}"`);
     });
 
     await run('a duplicate carries the binding in the cloned document', async () => {

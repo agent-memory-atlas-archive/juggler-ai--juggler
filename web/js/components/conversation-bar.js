@@ -33,11 +33,14 @@ import { isPinboardView } from '../utils/view-mode.js';
 import keyShortcutManager from '../services/key-shortcut-manager.js';
 import { isAutoNameEnabled, refreshAutoNameSetting } from '../services/auto-name-setting.js';
 import { isTabHighlightEnabled, ATTENTION_PREFS_EVENT } from '../utils/attention-manager.js';
-import { soleWorkspaceEnding, finishWorkspace } from '../services/workspace-provisioning.js';
+import { workspaceGroups, selectedWorkspace } from '../services/workspace-provisioning.js';
+import { openWorkspaceMove, workspaceMovePlaces } from './workspace-move-dialog.js';
+import { openWorkspaceCreate } from './workspace-create-dialog.js';
 import JugglerElement from './juggler-element.js';
-import { showAlert, showChoice, showNotice } from './modal-dialog.js';
+import { showAlert } from './modal-dialog.js';
 import './bin-modal.js';
 import './info-rail.js';
+import './workspace-box-header.js';
 
 // Leading-edge debounce window for new-conversation creation. Guards against
 // accidental double-activation — most commonly a double-click on the "+"
@@ -48,13 +51,20 @@ const NEW_CONVERSATION_DEBOUNCE_MS = 500;
 // Material "delete" (trash can) icon — the per-tab "move to bin" affordance.
 const BIN_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" height="1rem" viewBox="0 -960 960 960" width="1rem" fill="currentColor" aria-hidden="true"><path d="M280-120q-33 0-56.5-23.5T200-200v-520h-40v-80h200v-40h240v40h200v80h-40v520q0 33-23.5 56.5T680-120H280Zm400-600H280v520h400v-520ZM360-280h80v-360h-80v360Zm160 0h80v-360h-80v360ZM280-720v520-520Z"/></svg>`;
 
+// Material "add" icon — the mark on the outline that makes a workspace. It sits
+// in the slot a tab keeps for its drag handle, so the words beside it line up
+// with the tab names below.
+const ADD_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" height="1rem" viewBox="0 -960 960 960" width="1rem" fill="currentColor" aria-hidden="true"><path d="M440-440H200v-80h240v-240h80v240h240v80H520v240h-80v-240Z"/></svg>`;
+
 // Material "undo" icon — the arrow on the bin toast's Undo button, matching the
 // column-footer undo offer.
 const UNDO_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="M280-200v-80h284q63 0 109.5-40T720-420q0-60-46.5-100T564-560H312l104 104-56 56-200-200 200-200 56 56-104 104h252q97 0 166.5 63T800-420q0 94-69.5 157T564-200H280Z"/></svg>`;
 
 // Keys in `_cachedElements` that name the bar's own furniture rather than a
 // conversation tab, so render()'s cleanup pass leaves them alone.
-const CHROME_ELEMENT_KEYS = new Set(['nav', 'tabs-menu', 'add-button', 'bin-button', 'bin-undo', 'info-rail']);
+const CHROME_ELEMENT_KEYS = new Set([
+  'nav', 'tabs-menu', 'add-button', 'new-workspace', 'bin-button', 'bin-undo', 'info-rail'
+]);
 
 // How long the Undo button rests above the Bin. Long enough to catch the click
 // you regret, short enough that it never becomes furniture — the Bin itself is
@@ -143,6 +153,15 @@ class ConversationBar extends JugglerElement {
 
     /** @type {boolean} @private A render arrived while dragging and is owed on release */
     this._renderDeferred = false;
+
+    /**
+     * The box drawn for each workspace, by workspace id. Kept apart from
+     * {@link _cachedElements}, which render()'s cleanup pass reads as "a tab,
+     * unless it is named chrome" — a box is neither, and its lifetime is the
+     * workspace's rather than any conversation's.
+     * @type {Map<string, HTMLElement>} @private
+     */
+    this._workspaceBoxes = new Map();
   }
 
   connectedCallback() {
@@ -228,14 +247,20 @@ class ConversationBar extends JugglerElement {
     //
     // The empty area is mostly the info-rail (flex:1, it grows to fill the space
     // above the Bin), so we can't exclude the rail wholesale — only the things
-    // with their own click behaviour: tabs, the info cards, and any interactive
-    // control (the +, Bin, card buttons/links, the resize handle). A click that
-    // misses all of those — bare rail, gaps, padding — enters tab-list focus.
+    // with their own click behaviour: tabs, workspace boxes, the info cards, and
+    // any interactive control (the +, Bin, card buttons/links, the resize
+    // handle). A click that misses all of those — bare rail, gaps, padding —
+    // enters tab-list focus.
+    //
+    // A box is on that list because it is a thing in the list, not chrome
+    // between things: left off it, selecting a workspace also put the keyboard
+    // in the bar, and the box came up wearing the focus ring that says so —
+    // which no tab does when it is clicked, because clicking a tab leaves.
     this.on(this, 'click', (/** @type {Event} */ e) => {
       const target = /** @type {HTMLElement|null} */ (e.target);
       if (!target) return;
       if (target.closest(
-        '.conversation-tab, .info-card, col-resize-handle, button, a, input, textarea, select',
+        '.conversation-tab, .conversation-box, .info-card, col-resize-handle, button, a, input, textarea, select',
       )) return;
       this._enterTabListFocus();
     });
@@ -297,6 +322,13 @@ class ConversationBar extends JugglerElement {
     // "new conversation" reuses the cap + inline-rename UX; "bin" reuses the
     // running-turn guard + fly-to-bin animation, always targeting the visible tab.
     this.onDocument('juggler:new-conversation', () => { void this._createConversation(); });
+    // The workspace panel offers the same thing for the workspace it is showing.
+    // It asks here rather than doing it, so the debounce and the conversation
+    // cap stay one set of rules however many places carry the button.
+    this.onDocument('juggler:new-conversation-in-workspace', (e) => {
+      const workspaceId = /** @type {CustomEvent} */ (e).detail?.workspaceId;
+      if (workspaceId) void this._createConversation(workspaceId);
+    });
     this.onDocument('juggler:bin-active-conversation', () => {
       const id = this._session?.visibleConversationId;
       if (id) void this._binConversation(id);
@@ -363,7 +395,11 @@ class ConversationBar extends JugglerElement {
     const ids = Array.from(this._session.conversations.keys());
     if (ids.length < 2) return;
 
-    const currentId = this._session.visibleConversationId;
+    // Cycling starts from the conversation behind a workspace panel as readily
+    // as from one on screen: there is no tab to step from while the panel has
+    // the selection, and stepping from the one it was opened over is what the
+    // keystroke is asking for.
+    const currentId = this._session.loadedConversationId;
     const currentIdx = currentId ? ids.indexOf(currentId) : -1;
     const nextIdx = ((currentIdx < 0 ? 0 : currentIdx + step) + ids.length) % ids.length;
     const nextId = ids[nextIdx];
@@ -442,11 +478,16 @@ class ConversationBar extends JugglerElement {
       // straight after them, and requestAnimationFrame may be suspended while a
       // WebView is hidden. conversation:changed streams at the sync rate for the
       // whole duration of a turn, so only that event is coalesced per frame.
+      // The workspace table is in that list because the strip draws it: a
+      // workspace appearing, being finished with, or losing its root adds or
+      // removes a box, and nothing about a conversation has changed to say so.
       if (event.type === 'conversation:created' ||
           event.type === 'conversation:deleted' ||
           event.type === 'conversation:renamed' ||
           event.type === 'conversation:switched' ||
-          event.type === 'conversation:reordered') {
+          event.type === 'conversation:reordered' ||
+          event.type === 'workspace:selected' ||
+          event.type === 'session:workspaces-changed') {
         this.render();
       } else if (event.type === 'conversation:changed') {
         this._scheduleRender();
@@ -743,6 +784,10 @@ class ConversationBar extends JugglerElement {
 
     // Convert Map to array for rendering
     const conversations = Array.from(this._session.conversations.values());
+    // The strip draws what the session says is selected, and asks it once: a
+    // box holding the selection is already why there is no visible
+    // conversation, so there is nothing to reconcile between the two answers.
+    const selectedWorkspaceId = selectedWorkspace(this._session)?.id ?? null;
     const visibleId = this._session.visibleConversationId;
 
     // Get or create add button (only created once) and pin it to the top
@@ -778,6 +823,26 @@ class ConversationBar extends JugglerElement {
       if (addBtn.textContent !== label) addBtn.textContent = label;
     }
 
+    // The way to make a workspace, drawn as an empty one. A box with a dashed
+    // edge and a name in it is the shape of the thing it makes, standing where
+    // that thing will stand, which is the whole of how the idea is introduced:
+    // the strip is two hundred pixels wide and has no room to explain what a
+    // workspace is, so it shows one instead. It is the outline of a container
+    // rather than another "+" beside the first, because what it makes holds
+    // conversations and the button above it makes one.
+    let newWorkspace = /** @type {HTMLElement|null} */ (this._cachedElements.get('new-workspace'));
+    if (!newWorkspace) {
+      newWorkspace = document.createElement('li');
+      newWorkspace.className = 'conversation-box-new';
+      newWorkspace.innerHTML = `
+        <button class="conversation-box-new-button" type="button"
+                title="Make a workspace: a separate place to work"
+                aria-label="New workspace">${ADD_ICON_SVG}<span class="conversation-box-new-label">New workspace</span></button>
+      `;
+      this._cachedElements.set('new-workspace', newWorkspace);
+      newWorkspace.querySelector('button')?.addEventListener('click', () => { void this._createWorkspace(); });
+    }
+
     // Track which conversation IDs are still present
     /** @type {Set<string>} */
     const currentConversationIds = new Set(conversations.map(c => c.id));
@@ -790,25 +855,71 @@ class ConversationBar extends JugglerElement {
       this._lastScrolledTabId = null;
     }
 
-    // Update or create tab elements for each conversation, in Map order.
-    for (const conv of conversations) {
-      this._renderOrUpdateTab(conv, visibleId, tabsMenu);
+    // Where each conversation is drawn. A conversation working in a workspace
+    // goes inside that workspace's box; everything else stays flat in the strip
+    // — the project's conversations, and any whose binding names a place that
+    // cannot be worked in, which the stranded banner explains rather than this.
+    // The grouping is a reading of the Map order above and stores nothing:
+    // `workspaceGroups` places each group at its first member.
+    const groups = workspaceGroups(this._session);
+    for (const group of groups) {
+      const container = group.workspace
+        ? this._renderWorkspaceBox(group.workspace, tabsMenu, selectedWorkspaceId)
+        : tabsMenu;
+      for (const conv of group.conversations) {
+        this._renderOrUpdateTab(conv, visibleId, container);
+      }
     }
 
-    // Reorder tabs to match Map order, but only move tabs that are out of
-    // place — re-inserting a node restarts CSS animations on it (used by the
-    // tab status bar pulse), so we skip moves that don't change position.
+    // Reorder boxes and the tabs within them to match, but only move what is
+    // out of place — re-inserting a node restarts CSS animations on it (used by
+    // the tab status bar pulse), so we skip moves that don't change position.
+    // A tab already in the right box is left alone; only one that has changed
+    // workspace is ever re-parented.
     //
     // A drag never reaches here — render() returns early for the whole of one —
     // so this always reconciles against a strip nobody is holding.
+    // A box with nothing in it has no member to take a place from, so it keeps
+    // the place it already holds: binning the last conversation in a workspace
+    // must not send its box down the sidebar past everything else. It is an
+    // anchor the rest of the pass flows around — stepped over rather than
+    // displaced, by the tabs as well as by the other boxes.
+    /** @type {Set<any>} */
+    const anchored = new Set();
+    for (const group of groups) {
+      if (!group.workspace || group.conversations.length) continue;
+      const box = this._workspaceBoxes.get(group.workspace.id);
+      if (box && box.parentNode === tabsMenu) anchored.add(box);
+    }
+
     let expected = addButton.nextSibling;
-    for (const conv of conversations) {
-      const tab = this._cachedElements.get(conv.id);
-      if (!tab) continue;
-      if (tab !== expected) {
-        tabsMenu.insertBefore(tab, expected);
+    for (const group of groups) {
+      const box = group.workspace ? this._workspaceBoxes.get(group.workspace.id) : null;
+      if (!box) {
+        expected = this._orderTabs(tabsMenu, expected, group.conversations, anchored);
+        continue;
       }
-      expected = tab.nextSibling;
+      // An empty box is the case this whole layout exists for: the workspace
+      // outlived its conversations and is still there to be worked in or
+      // finished with. So it says so, rather than collapsing to a line.
+      const empty = /** @type {HTMLElement|null} */ (box.querySelector('.conversation-box-empty'));
+      if (empty) empty.hidden = group.conversations.length > 0;
+
+      if (anchored.has(box)) {
+        if (box === expected) expected = box.nextSibling;
+        continue;
+      }
+
+      expected = this._skipAnchored(expected, anchored);
+      if (box !== expected) tabsMenu.insertBefore(box, expected);
+
+      const body = /** @type {HTMLElement} */ (box.querySelector('.conversation-box-tabs'));
+      this._orderTabs(body, body.firstChild, group.conversations, anchored);
+
+      // Read after the tabs have moved, not before: a conversation that has
+      // just been drawn into this box was, a moment ago, the node after it in
+      // the strip, and a cursor read early would name a node no longer here.
+      expected = box.nextSibling;
     }
 
     // Remove tabs for deleted conversations
@@ -818,6 +929,22 @@ class ConversationBar extends JugglerElement {
         this._cachedElements.delete(id);
       }
     }
+
+    // And boxes for workspaces that no longer get one — finished with, or gone.
+    // Their conversations, if any, were moved out to the flat strip by the pass
+    // above, so this takes nothing with it that is still being drawn.
+    const boxed = new Set(groups.map(group => group.workspace?.id).filter(Boolean));
+    for (const [id, box] of this._workspaceBoxes) {
+      if (boxed.has(id)) continue;
+      box.remove();
+      this._workspaceBoxes.delete(id);
+    }
+
+    // Last in the strip, under the boxes it is the outline of. Placed after the
+    // reconciliation pass rather than in it: the pass walks a cursor through the
+    // tabs and boxes it knows about, and this belongs to none of those runs — it
+    // simply comes after all of them, however they end up ordered.
+    if (tabsMenu.lastChild !== newWorkspace) tabsMenu.appendChild(newWorkspace);
 
     // The info rail is NOT reconciled from here. It measures itself off its own
     // ResizeObserver, and its height is this column's leftover space (flex: 1 1 0),
@@ -829,13 +956,270 @@ class ConversationBar extends JugglerElement {
   }
 
   /**
+   * The box drawn for one workspace: its header, the list its conversations go
+   * in, and what it says when that list is empty.
+   *
+   * Created once per workspace and then updated in place, like the tabs. The
+   * box is put on the end of the strip and render()'s reconciliation pass moves
+   * it to where the group belongs, so that nothing here has to know the order.
+   * @param {any} workspace - The row being drawn.
+   * @param {HTMLElement} tabsMenu - The strip the box lives in.
+   * @param {string|null} selectedWorkspaceId - Which workspace holds the strip's selection.
+   * @returns {HTMLElement} The list its conversations are drawn into.
+   * @private
+   */
+  _renderWorkspaceBox(workspace, tabsMenu, selectedWorkspaceId) {
+    let box = this._workspaceBoxes.get(workspace.id);
+    if (!box) {
+      box = document.createElement('li');
+      box.className = 'conversation-box';
+      box.dataset.workspaceId = workspace.id;
+      box.setAttribute('role', 'group');
+      // The line that says the box is empty lives in the list the tabs go in,
+      // and is the last thing in it. That is where it reads from, and it is
+      // also what makes an empty box a place a tab can be dropped: a drag lands
+      // in front of something, and until now an empty box had nothing to be in
+      // front of.
+      //
+      // The button is the box's rather than the header's. `<workspace-box-header>`
+      // shows the name and nothing else — a title, a status line and a row of
+      // controls in the width of a tab is what the workspace panel exists to
+      // undo — so the one affordance the box carries sits over its top corner
+      // instead, outside that element.
+      box.innerHTML = `
+        <workspace-box-header class="conversation-box-header"></workspace-box-header>
+        <button class="conversation-box-add" type="button"
+                title="New conversation in this workspace"
+                aria-label="New conversation in this workspace">+</button>
+        <menu class="conversation-box-tabs">
+          <li class="conversation-box-empty" hidden>No conversations</li>
+        </menu>
+      `;
+      this._workspaceBoxes.set(workspace.id, box);
+      tabsMenu.appendChild(box);
+
+      const workspaceId = workspace.id;
+      const dragged = box;
+      dragged.querySelector('.conversation-box-add')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        void this._createConversation(workspaceId);
+      });
+
+      /**
+       * Whether a press here is a press on the box itself.
+       *
+       * The name is always a grip. So is the whole of an empty box: there is
+       * nothing else in it to aim at, and a band of dead space around a short
+       * line of text is a box that looks draggable and is not. A box with tabs
+       * in it keeps them for themselves — a press on a tab selects that
+       * conversation, and dragging one moves it between boxes.
+       * @param {HTMLElement|null} target - What the pointer went down on.
+       * @returns {boolean} True when the box should take it.
+       */
+      const onTheBox = (target) => {
+        if (!target || target.closest('button')) return false;
+        if (target.closest('.conversation-box-header')) return true;
+        return !dragged.querySelector('.conversation-tab');
+      };
+
+      // Selecting a box is selecting a workspace, and it is done the way a tab
+      // is selected: by clicking it. The release that ends a drag also produces
+      // a click, which is not one.
+      dragged.addEventListener('click', (e) => {
+        if (!onTheBox(/** @type {HTMLElement|null} */ (e.target))) return;
+        if (this._dragJustOccurred) return;
+        this._session?.selectWorkspace?.(workspaceId);
+      });
+
+      dragged.addEventListener('pointerdown', (e) => {
+        const event = /** @type {PointerEvent} */ (e);
+        if (event.button !== 0 || event.ctrlKey) return;
+        if (!onTheBox(/** @type {HTMLElement|null} */ (event.target))) return;
+        this._startBoxDrag(event, dragged);
+      });
+    }
+
+    // The header names the place, and marks it when the tree is holding
+    // uncommitted work. Everything else about the workspace is the panel's,
+    // shown when the box is selected — so all this passes is what it is about.
+    const header = /** @type {any} */ (box.querySelector('.conversation-box-header'));
+    header?.setContext({ session: this._session, workspace });
+
+    const label = workspace.label || workspace.root || '';
+    if (box.getAttribute('aria-label') !== label) box.setAttribute('aria-label', label);
+
+    // The same selected state a tab carries, for the same reason and in the
+    // same colours: the strip is one list of things to choose between, and it
+    // was asked once, by render(), which thing that is.
+    const chosen = selectedWorkspaceId === workspace.id;
+    box.classList.toggle('active', chosen);
+    box.setAttribute('aria-current', chosen ? 'true' : 'false');
+
+    return /** @type {HTMLElement} */ (box.querySelector('.conversation-box-tabs'));
+  }
+
+  /**
+   * Put a run of tabs in order inside one container, moving only the ones that
+   * are out of place. See render() for why that matters.
+   * @param {HTMLElement} container - Where this run is drawn.
+   * @param {ChildNode|null} start - The node the run begins at.
+   * @param {any[]} members - The conversations, in the order they are drawn.
+   * @param {Set<any>} anchored - Boxes that keep the place they already have.
+   * @returns {ChildNode|null} The node the next run begins at.
+   * @private
+   */
+  _orderTabs(container, start, members, anchored) {
+    let expected = this._skipAnchored(start, anchored);
+    for (const conv of members) {
+      const tab = this._cachedElements.get(conv.id);
+      if (!tab) continue;
+      if (tab !== expected) container.insertBefore(tab, expected);
+      expected = this._skipAnchored(tab.nextSibling, anchored);
+    }
+    return expected;
+  }
+
+  /**
+   * Which workspace's box something in the strip is drawn inside.
+   * @param {HTMLElement} element - A tab, or anything else in the strip.
+   * @returns {string} The workspace id, or '' for the flat strip — which is the
+   *   project folder, and is spelled the same way a binding to it is.
+   * @private
+   */
+  _workspaceBoxOf(element) {
+    const box = /** @type {HTMLElement|null} */ (element.closest('.conversation-box'));
+    return box?.dataset.workspaceId ?? '';
+  }
+
+  /**
+   * The places a drop can land in one list: its tabs, the whole boxes it holds,
+   * and the line an empty box shows instead of tabs.
+   *
+   * A box is one slot rather than a way through to the tabs inside it, which is
+   * what makes the strip readable at the top level: from outside, a box is a
+   * thing you land above or below, and the only way to land *in* one is to be
+   * inside it.
+   * @param {HTMLElement} container - The list being read.
+   * @param {HTMLElement|null} dragged - The item under the pointer, which is not
+   *   a place it can land.
+   * @returns {HTMLElement[]} The slots, in the order they are drawn.
+   * @private
+   */
+  _dropSlots(container, dragged) {
+    return /** @type {HTMLElement[]} */ (Array.from(container.children)).filter((child) =>
+      child !== dragged
+      && !child.classList.contains('drag-ghost')
+      && (child.classList.contains('conversation-tab')
+        || child.classList.contains('conversation-box')
+        || (child.classList.contains('conversation-box-empty') && !child.hidden)));
+  }
+
+  /**
+   * Where a pointer would drop, read from where the boxes actually are.
+   *
+   * A box is entered, not approached. The strip is a column of lists with a
+   * gutter round each box, so there are pointer positions inside the strip and
+   * inside no list at all — below the last box, above the first — and at every
+   * one of them the nearest tab is a tab drawn inside a box the pointer never
+   * went near. Landing a drop in the list that tab happens to live in turns a
+   * reorder past a box into a proposal to move a conversation's working tree.
+   * So containment decides, and nothing else: a drop is in a box when the
+   * pointer is within that box, and is in the strip the rest of the time.
+   * @param {number} clientX - Pointer x in client coordinates.
+   * @param {number} clientY - Pointer y in client coordinates.
+   * @param {HTMLElement} dragged - What is being dragged.
+   * @returns {{parent: HTMLElement|null, anchor: Element|null}|null} The list to
+   *   drop into and what to land in front of, or null before the strip is drawn.
+   * @private
+   */
+  _dropPlaceAt(clientX, clientY, dragged) {
+    const tabsMenu = /** @type {HTMLElement|null} */ (this._cachedElements.get('tabs-menu'));
+    if (!tabsMenu) return null;
+
+    // The clone a box drag floats under the pointer is a box-shaped thing that
+    // is nowhere, so it is not somewhere to drop into.
+    const box = /** @type {HTMLElement[]} */ (
+      Array.from(this.querySelectorAll('.conversation-box:not(.drag-ghost)')))
+      .find((candidate) => {
+        const rect = candidate.getBoundingClientRect();
+        return clientX >= rect.left && clientX <= rect.right
+          && clientY >= rect.top && clientY <= rect.bottom;
+      });
+
+    const list = box
+      ? /** @type {HTMLElement|null} */ (box.querySelector('.conversation-box-tabs'))
+      : tabsMenu;
+    if (!list) return null;
+
+    for (const slot of this._dropSlots(list, dragged)) {
+      const rect = slot.getBoundingClientRect();
+      if (clientY < rect.top + rect.height / 2) return { parent: list, anchor: slot };
+    }
+    // Past the last tab in a box is the end of that box, which is a place in the
+    // strip and not the end of it: every box ends with its "Nothing here." line,
+    // so name that and the landing stays inside the box it was read from. A null
+    // anchor is the end of the strip, and the strip is the only thing with one —
+    // a box that reported one would be asking for its conversation to be sent to
+    // the bottom of the sidebar, and the box is drawn wherever its conversations
+    // are, so the box would follow it there.
+    const end = box?.querySelector('.conversation-box-empty') ?? null;
+    return { parent: list, anchor: box ? end : null };
+  }
+
+  /**
+   * Which conversation a drop in front of `anchor` lands in front of.
+   *
+   * The flat conversation order is the only thing stored, so a landing has to
+   * name a conversation however it was drawn. An anchor that is a whole box
+   * names the first conversation in it; one that is a box's "Nothing here."
+   * line — the last thing in every box, drawn or not — names whatever comes
+   * after the box, there being nothing past it inside the box to name. Both
+   * fall out of the same walk: the first tab that is the anchor or comes after
+   * it, a box's own tabs counting as coming after the box.
+   * @param {Element|null} anchor - What the drop landed in front of, or null for the end.
+   * @param {HTMLElement} dragged - What is being dropped, which cannot precede itself.
+   * @returns {string} The conversation id to land in front of, or '' for the end.
+   * @private
+   */
+  _beforeIdAt(anchor, dragged) {
+    if (!anchor) return '';
+    const tabs = /** @type {HTMLElement[]} */ (
+      Array.from(this.querySelectorAll('.conversation-tab:not(.drag-ghost)')));
+    for (const tab of tabs) {
+      // A clone floating under the pointer has had its id taken off it, which
+      // is what says it is a picture of a tab rather than one.
+      const id = tab.dataset.conversationId;
+      if (!id || tab === dragged) continue;
+      const after = anchor.compareDocumentPosition(tab) & Node.DOCUMENT_POSITION_FOLLOWING;
+      if (tab === anchor || after) return id;
+    }
+    return '';
+  }
+
+  /**
+   * Walk the cursor past any anchored box sitting at it. See render(): an empty
+   * box is drawn where it already is, so everything else is placed around it
+   * rather than in front of it.
+   * @param {ChildNode|null} node - Where the cursor is.
+   * @param {Set<any>} anchored - Boxes that keep the place they already have.
+   * @returns {ChildNode|null} The first node that is not one of them.
+   * @private
+   */
+  _skipAnchored(node, anchored) {
+    let at = node;
+    while (at && anchored.has(at)) at = at.nextSibling;
+    return at;
+  }
+
+  /**
    * Render or update a tab element for a conversation (diff-based update)
    * @param {import('../model/conversation.js').default} conv - The conversation
    * @param {string|null} visibleId - The currently visible conversation ID
-   * @param {HTMLElement} tabsMenu - The tabs menu container
+   * @param {HTMLElement} container - The list this tab is drawn in: the strip
+   *   itself, or the tabs of the box for the workspace it works in
    * @private
    */
-  _renderOrUpdateTab(conv, visibleId, tabsMenu) {
+  _renderOrUpdateTab(conv, visibleId, container) {
     const name = conv.name || UNTITLED_BASE;
     const isActive = conv.id === visibleId;
 
@@ -863,7 +1247,7 @@ class ConversationBar extends JugglerElement {
       this._attachTabEventListeners(tab, conv.id);
 
       // Add to DOM (render() reorders to the correct position after this).
-      tabsMenu.appendChild(tab);
+      container.appendChild(tab);
     } else {
       // Update existing tab in-place. DO NOT re-append unconditionally:
       // moving a node restarts its CSS animations (status-bar pulse).
@@ -1099,16 +1483,17 @@ class ConversationBar extends JugglerElement {
   }
 
   /**
-   * Move a conversation to the bin (.juggler/bin/). No confirmation for the
-   * conversation itself: binning is reversible from the Bin modal at any time.
-   * Plays a brief fly-into-Bin animation in parallel with the backend call,
-   * honoring prefers-reduced-motion, and offers a few seconds of Undo above the
-   * Bin for the click the user regrets immediately.
+   * Move a conversation to the bin (.juggler/bin/). No confirmation, ever:
+   * binning is reversible from the Bin modal at any time. Plays a brief
+   * fly-into-Bin animation in parallel with the backend call, honoring
+   * prefers-reduced-motion, and offers a few seconds of Undo above the Bin for
+   * the click the user regrets immediately.
    *
-   * The workspace it was working in is asked about separately, and that
-   * question is the one exception to the silence above — for the same reason
-   * the rest of it is silent. The bin can hand a conversation back; it cannot
-   * hand a tree back. See {@link ConversationBar#_askAboutWorkspace}.
+   * Nothing is asked about the workspace it was working in, even when it was
+   * the last thing working there. A workspace outliving its conversations is
+   * the normal case and it is drawn: its box stays in the strip, saying it is
+   * empty and holding every ending its provider offers. There is no last chance
+   * to be the reason for a question, so there is no question.
    * @param {string} conversationId
    * @private
    * @async
@@ -1144,18 +1529,6 @@ class ConversationBar extends JugglerElement {
 
     this._binningIds.add(conversationId);
     try {
-      // Asked before the tab flies, because it can be answered "no": a question
-      // whose cancel arrived after the tab had already gone would be a question
-      // the user could not actually decline.
-      if (!await this._askAboutWorkspace(conversationId)) {
-        return;
-      }
-      // That dialog was open for as long as the user took to read it, so the
-      // two guards above are worth asking again rather than assuming: another
-      // window may have taken the conversation, and a turn may have started.
-      if (!this._session.conversations.has(conversationId) || this._isConversationBusy(conversationId)) {
-        return;
-      }
       this._flyTabToBin(conversationId);
       const binned = await this._session.binConversation(conversationId);
       if (binned) {
@@ -1164,60 +1537,6 @@ class ConversationBar extends JugglerElement {
     } finally {
       this._binningIds.delete(conversationId);
     }
-  }
-
-  /**
-   * Ask what becomes of the workspace this conversation is the last thing
-   * working in, and carry the answer out.
-   *
-   * Only asked when there is something to ask, which is the rare case: a
-   * conversation working in the project, or in a tree somebody else is in too,
-   * goes to the bin as silently as it always has. What is offered is the
-   * provider's own ending in the provider's own words, so that the row a user
-   * reads here is the one they have already read in the workspace chip rather
-   * than a second way of removing a tree with its own vocabulary.
-   *
-   * An ending that could not be carried out stops the bin. The tab going while
-   * the tree it was about quietly survived is the one outcome here that leaves
-   * someone worse off than never being asked — so the reason is said instead,
-   * and binning again is the whole of the retry.
-   * @param {string} conversationId - The conversation about to be binned.
-   * @returns {Promise<boolean>} Whether to go on and bin it.
-   * @private
-   */
-  async _askAboutWorkspace(conversationId) {
-    const conversation = this._session?.conversations?.get(conversationId);
-    const ending = await soleWorkspaceEnding(this._session, conversation);
-    if (!ending) {
-      return true;
-    }
-
-    const keep = 'Keep it';
-    const answer = await showChoice(
-      ending.message,
-      [keep, ending.option.label],
-      'This conversation’s workspace',
-      false,
-      { noneText: 'Cancel' });
-    // Cancel, Escape and the backdrop all answer null, and they all mean the
-    // same thing: this is not what the user meant to start.
-    if (answer === null) {
-      return false;
-    }
-    if (answer === keep) {
-      return true;
-    }
-
-    const result = await finishWorkspace({
-      session: this._session,
-      workspace: ending.workspace,
-      conversation,
-      actionId: ending.option.id
-    });
-    if (result?.message) {
-      showNotice(result.message);
-    }
-    return result?.done === true;
   }
 
   /**
@@ -1381,11 +1700,34 @@ class ConversationBar extends JugglerElement {
   }
 
   /**
-   * Create a new conversation with smart numbering
-   * Finds the smallest unused number for "Untitled N"
+   * Ask what kind of workspace to make, make it, and select the box it lands in.
+   *
+   * No conversation is started in it. That is the point of being able to make
+   * one from here: the place comes first, and what works in it arrives after —
+   * started from the box's own "+", dragged into it, or moved there. The box that
+   * appears says `No conversations` until one does, which is the invitation.
    * @private
    */
-  async _createConversation() {
+  async _createWorkspace() {
+    if (!this._session) return;
+    const outcome = await openWorkspaceCreate(this._session);
+    if (!outcome.created || !outcome.workspaceId) return;
+    // Selected, so that the panel for the thing just made is the thing on
+    // screen. A workspace created and then left unselected is a box that
+    // appeared in the corner of the eye.
+    this._session.selectWorkspace?.(outcome.workspaceId);
+    this.render();
+  }
+
+  /**
+   * Create a new conversation with smart numbering
+   * Finds the smallest unused number for "Untitled N"
+   * @param {string} [workspaceId] - The workspace it is to work in, when it is
+   *   started from that workspace's box. Without one it is a blank tab that has
+   *   yet to be told where it works.
+   * @private
+   */
+  async _createConversation(workspaceId = '') {
     if (!this._session) {
       return;
     }
@@ -1418,10 +1760,13 @@ class ConversationBar extends JugglerElement {
     // is an activated unnamed create, asks the bar to open inline rename (see the
     // 'conversation:rename-requested' branch in setSession). The /new command
     // creates the same way, so both share one "name it now" behaviour.
-    // initialise:false — a blank tab the user made is the one conversation
-    // nobody has told where it works yet. It seeds itself on its first content
-    // (Conversation.ensureInitialised), by which time the answer is known.
-    await this._session.createConversation('', { activate: true, origin: 'plus-button', initialise: false });
+    // Where it works is known before it exists: the workspace whose box it was
+    // started in, or the project folder for the "+" at the top of the strip.
+    await this._session.createConversation('', {
+      activate: true,
+      origin: workspaceId ? 'workspace-box' : 'plus-button',
+      workspaceId
+    });
   }
 
   /**
@@ -1637,11 +1982,23 @@ class ConversationBar extends JugglerElement {
    */
   _startDrag(e, tab) {
     const scrollContainer = /** @type {HTMLElement|null} */ (this.querySelector('.conversation-tabs'));
-    // The floating clone lives on the host yet still carries the tab class, so
-    // it has to be kept out of every list the drag measures.
+    // Every place a tab can land, top to bottom. The floating clone lives on
+    // the host yet still carries the tab class, so it has to be kept out.
+    //
+    // A box with nothing in it is a slot too. Its "No conversations" line sits
+    // exactly where its tabs would, and a drag lands in front of something —
+    // without it, the workspace that outlived its conversations would be the
+    // one box you could not put a conversation back into.
     const listTabs = () => /** @type {HTMLElement[]} */ (
-      Array.from(this.querySelectorAll('.conversation-tab:not(.drag-ghost)'))
+      Array.from(this.querySelectorAll(
+        '.conversation-tab:not(.drag-ghost), .conversation-box-empty:not([hidden])'))
     );
+
+    // Which box this tab was drawn in when it was picked up. Read from the DOM
+    // rather than from its binding: a conversation whose workspace cannot be
+    // worked in is drawn flat, and dragging it about the strip is a reorder
+    // like any other — it is the box it visibly leaves that makes a drop a move.
+    const homeWorkspaceId = this._workspaceBoxOf(tab);
 
     // The strip is claimed from the press, not from the moment the gesture
     // passes its slop threshold. A bump or a remote reorder landing in between
@@ -1655,6 +2012,7 @@ class ConversationBar extends JugglerElement {
       ghostHost: this,
       scrollContainer,
       axis: 'y',
+      dropPlaceAt: (clientX, clientY) => this._dropPlaceAt(clientX, clientY, tab),
       prepareGhost: (clone) => {
         // A copy of a tab is not a tab: render()'s reconciliation and the
         // element cache both key on the conversation id, and a tab caught
@@ -1680,17 +2038,31 @@ class ConversationBar extends JugglerElement {
         this._dragJustOccurred = true;
         setTimeout(() => { this._dragJustOccurred = false; }, 100);
       },
-      onCommit: ({ toIndex }) => {
+      onCommit: ({ anchor }) => {
         const draggedId = tab.dataset.conversationId;
         if (!draggedId || !this._session) return;
-        // Read the strip as it stands at the drop. toIndex counts the tabs
-        // without the dragged one, which is exactly what the gesture measured
-        // against a moment ago — an index into a list captured at pointerdown
-        // names a different neighbour the instant anything joins or leaves.
-        const others = listTabs()
-          .filter((t) => t !== tab)
-          .map((t) => t.dataset.conversationId || '');
-        const beforeId = others[toIndex];
+
+        // A drop in another box is a rebinding, and a rebinding is not
+        // something an eighth of a second of slipped finger may do: it moves
+        // where a conversation's files and commands happen, under an agent that
+        // may be working. So the gesture asks instead, through the dialog that
+        // owns the move — including its question about work left behind in the
+        // tree, which a drag has nowhere to ask. The strip goes back to what the
+        // session says in the meantime: render() is held for the length of a
+        // gesture and draws the tab back in the box it came from as it lets go.
+        const landedIn = this._workspaceBoxOf(tab);
+        const dragged = this._session.conversations.get(draggedId);
+        if (dragged && landedIn !== homeWorkspaceId) {
+          this.render();
+          void openWorkspaceMove(dragged, { selected: landedIn });
+          return;
+        }
+
+        // Read the strip as it stands at the drop, from the thing the tab
+        // actually landed in front of rather than from a count. The same count
+        // means two different places in a strip of nested lists, and which list
+        // this landed in is the whole question a moment ago.
+        const beforeId = this._beforeIdAt(anchor, tab);
         if (beforeId && this._session.conversations.has(beforeId)) {
           this._session.reorderConversation(draggedId, beforeId);
         } else {
@@ -1700,6 +2072,76 @@ class ConversationBar extends JugglerElement {
     });
   }
 
+  /**
+   * Drag a whole workspace box to a new place in the strip.
+   *
+   * A box travels among the tabs and boxes at the top level and never inside
+   * another one: a workspace does not live in a workspace, so the only
+   * containment question a tab drag has to answer does not arise here.
+   *
+   * What is committed is its conversations. The order holds conversations and
+   * nothing else, and the box is drawn at the first of them — so moving the box
+   * is moving that run, together, to where it was let go. A box with nothing in
+   * it has no run to move and so nothing to persist; it stays where it is put
+   * for as long as the strip is on screen, which is the same promise render()
+   * already makes for an empty box whose last conversation was binned.
+   * @param {PointerEvent} e - The pointerdown that started it.
+   * @param {HTMLElement} box - The box being dragged.
+   * @private
+   */
+  _startBoxDrag(e, box) {
+    const tabsMenu = /** @type {HTMLElement|null} */ (this._cachedElements.get('tabs-menu'));
+    if (!tabsMenu) return;
+    const scrollContainer = /** @type {HTMLElement|null} */ (this.querySelector('.conversation-tabs'));
+
+    this._dragging = true;
+
+    startReorderDrag(e, {
+      item: box,
+      items: () => this._dropSlots(tabsMenu, null),
+      ghostHost: this,
+      scrollContainer,
+      axis: 'y',
+      dropPlaceAt: (clientX, clientY) => {
+        for (const slot of this._dropSlots(tabsMenu, box)) {
+          const rect = slot.getBoundingClientRect();
+          if (clientY < rect.top + rect.height / 2) return { parent: tabsMenu, anchor: slot };
+        }
+        return { parent: tabsMenu, anchor: null };
+      },
+      prepareGhost: (clone) => {
+        // A copy of a box is not a box, and the tabs drawn in the copy are not
+        // tabs: everything that reads the strip keys on these identities, and a
+        // picture of the strip answering to them would be read as part of it.
+        clone.removeAttribute('data-workspace-id');
+        for (const tab of Array.from(clone.querySelectorAll('.conversation-tab'))) {
+          tab.removeAttribute('data-conversation-id');
+        }
+      },
+      onDragStart: () => { this._dragging = true; },
+      onDragEnd: ({ dragged }) => {
+        this._dragging = false;
+        if (this._renderDeferred) {
+          this._renderDeferred = false;
+          this.render();
+        }
+        if (!dragged) return;
+        // The release that ends a drag also produces a click, which would
+        // otherwise select whatever the box landed on.
+        this._dragJustOccurred = true;
+        setTimeout(() => { this._dragJustOccurred = false; }, 100);
+      },
+      onCommit: ({ anchor }) => {
+        if (!this._session) return;
+        const members = /** @type {HTMLElement[]} */ (
+          Array.from(box.querySelectorAll('.conversation-tab:not(.drag-ghost)')))
+          .map((tab) => tab.dataset.conversationId || '')
+          .filter(Boolean);
+        if (!members.length) return;
+        this._session.moveConversationBlock(members, this._beforeIdAt(anchor, box));
+      },
+    });
+  }
 
   /**
    * Auto-fit sidebar width to the widest tab (deterministic — measures every
@@ -1747,7 +2189,18 @@ class ConversationBar extends JugglerElement {
       host.appendChild(clone);
       const cloneWidth = clone.getBoundingClientRect().width;
       host.removeChild(clone);
-      if (cloneWidth > maxTabWidth) maxTabWidth = cloneWidth;
+      // A tab inside a workspace box is inset by the box's own chrome, which
+      // the clone — measured at the top level — does not carry. Measured off
+      // the box rather than assumed, so a change to the CSS cannot leave this
+      // fitting to a width the tabs no longer have. The header is deliberately
+      // not measured: it truncates, and a long branch name must not be able to
+      // widen the whole sidebar.
+      const body = tab.parentElement;
+      const box = body?.closest('.conversation-box');
+      const inset = box && body
+        ? box.getBoundingClientRect().width - body.getBoundingClientRect().width
+        : 0;
+      if (cloneWidth + inset > maxTabWidth) maxTabWidth = cloneWidth + inset;
     }
 
     tabsMenu.removeChild(host);
@@ -1795,6 +2248,20 @@ registerContextMenuProvider({
       { label: 'Rename', onClick: () => bar._enterRenameMode(convId) },
       { label: 'Duplicate', onClick: () => { void bar._duplicateConversation(convId); } },
     ];
+    // Where this one conversation works is the one workspace act that names a
+    // single conversation, so it is the one that cannot live on a box header:
+    // "move" on a box of three tabs says nothing about which of them moves. It
+    // is offered here whether or not this tab is in a box — a conversation in
+    // the project folder is drawn flat, and "actually, give this one a worktree"
+    // has to have the same home either way. Omitted only when there is nowhere
+    // it could go, which is a dialog with nothing in it.
+    const conv = bar._session?.conversations.get(convId);
+    if (conv && workspaceMovePlaces(conv).length) {
+      items.push({
+        label: 'Use a different workspace…',
+        onClick: () => { void openWorkspaceMove(conv); }
+      });
+    }
     // Omit "Move to Bin" mid-loop — same intent as the CSS that hides the
     // per-tab bin button while running. _binConversation enforces this too;
     // dropping the entry keeps the menu honest rather than offering a no-op.

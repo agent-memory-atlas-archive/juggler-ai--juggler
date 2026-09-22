@@ -137,6 +137,16 @@
     /* Tab "awaiting your input" pulse. */
     --tab-awaiting: #705c1c;
 
+    /* A workspace's box in the tab strip — a tray with tabs lying in it.
+       Its own pair rather than a borrowed rung of the background ramp, because
+       the ramp cannot do what this needs in dark mode: --bg-secondary sits five
+       points off --bg-primary, and the tabs inside a box are --bg-primary, so a
+       box drawn from the ramp is a near-invisible rectangle full of shapes the
+       colour of the page behind it. The fill has to clear the page it sits on
+       AND the tabs it holds, and only a value chosen for that job does both. */
+    --workspace-box-bg: #202935;
+    --workspace-box-border: #404b5a;
+
     /* ANSI foreground palette (dark) — used by utils/ansi.js to colour bash
        output text in the properties panel. Tuned to read well on --bg-primary.
        Backgrounds use the theme-independent --ansi-bg-* palette (see :root). */
@@ -482,6 +492,12 @@
 
     /* Tab "awaiting your input" pulse. */
     --tab-awaiting: #ffe16f;
+
+    /* A workspace's box (see the dark block). Light needs far less of it: a
+       white tray on the grey strip already reads as a surface, so only the
+       edge is firmed up, enough to tell two adjacent boxes apart. */
+    --workspace-box-bg: #fff;
+    --workspace-box-border: #c2ccd6;
 
     /* ANSI foreground palette (light) — tuned to read well on the light
        --bg-primary. Mirrors GitHub's light ANSI colours. Backgrounds use the

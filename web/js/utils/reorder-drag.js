@@ -12,8 +12,15 @@
  * invisible placeholder and a clone floats free under the pointer; the
  * remaining items animate into the arrangement the drop would produce, so the
  * strip shows the result rather than a marker predicting it. Release commits
- * once, with the indices, and the caller does the editing — a strip is not the
- * place that owns the order.
+ * once, with where the item landed, and the caller does the editing — a strip
+ * is not the place that owns the order.
+ *
+ * Where a drop lands is read from the items themselves, which is enough for a
+ * strip that is one list of them. A strip that is several — the conversation
+ * bar draws a list per workspace, boxed, with a gutter round each — has
+ * positions inside no list at all, and the nearest item cannot say which list
+ * they belong to. That strip passes `dropPlaceAt` and answers from its own
+ * geometry instead.
  *
  * The siblings move by FLIP: the placeholder is put where it would land, every
  * item is measured before and after, and each is transformed back to where it
@@ -46,17 +53,18 @@ const SCROLL_OVERFLOW_MIN_PX = 4;
 /**
  * @typedef {object} ReorderDragOptions
  * @property {HTMLElement} item - The element being dragged.
- * @property {() => HTMLElement[]} items - The reorderable items, in strip order. Called live, and must exclude the floating clone.
+ * @property {() => HTMLElement[]} items - The reorderable items, in strip order. Called live, and must exclude the floating clone. They need not share a parent: a strip built from nested lists is read as one sequence, and the item lands in the list its new neighbour is in.
  * @property {HTMLElement} [captureTarget] - Which element takes the pointer. Must be the one carrying the click handler. Defaults to the item.
  * @property {HTMLElement} [strip] - The element holding the items, marked while a drag is live so a stylesheet can gate its transitions. Defaults to the item's parent.
  * @property {HTMLElement} [ghostHost] - Where the clone is parked. Defaults to the item's parent; give a host outside any clipping scroll box.
  * @property {HTMLElement|null} [scrollContainer] - The strip's scroll box, for edge auto-scrolling. Omit for a strip that does not scroll.
  * @property {'x'|'y'|'xy'} [axis] - Which way the clone follows the pointer, and which distance arms the threshold. Default `'y'`.
  * @property {boolean} [wrap] - Whether the strip wraps onto more than one row, which decides how a drop position is read. Default `false`.
+ * @property {(clientX: number, clientY: number) => {parent: HTMLElement|null, anchor: Element|null}|null} [dropPlaceAt] - Where a pointer here would drop, for a strip the items alone do not describe: nested lists the pointer is inside or outside of, or slots that are not items. Returning null falls back to reading the items along the axis, which is also what happens when this is not given.
  * @property {number} [thresholdPx] - How far to move before this is a drag.
  * @property {{ghost?: string, source?: string, dragging?: string}} [classes] - Class for the clone, for the placeholder left behind, and for the strip while a drag is live.
  * @property {(clone: HTMLElement) => void} [prepareGhost] - Scrub the clone before it is shown — identity attributes, transient state.
- * @property {(detail: {item: HTMLElement, fromIndex: number, toIndex: number}) => void} [onCommit] - The drop landed somewhere new. `toIndex` indexes the strip WITHOUT the dragged item.
+ * @property {(detail: {item: HTMLElement, fromIndex: number, toIndex: number, parent: HTMLElement|null, anchor: Element|null}) => void} [onCommit] - The drop landed somewhere new. `toIndex` indexes the strip WITHOUT the dragged item; a strip of nested lists should read `anchor` instead, which names what the item landed in front of — null for the end of `parent`.
  * @property {() => void} [onDragStart] - The threshold was passed.
  * @property {(detail: {dragged: boolean, moved: boolean}) => void} [onDragEnd] - The gesture is over: whether it ever became a drag, and whether it committed.
  */
@@ -86,6 +94,7 @@ export function startReorderDrag(event, options) {
     scrollContainer = null,
     axis = 'y',
     wrap = false,
+    dropPlaceAt,
     thresholdPx = DEFAULT_THRESHOLD_PX,
     classes = {},
     prepareGhost,
@@ -101,8 +110,32 @@ export function startReorderDrag(event, options) {
   const startOrder = items();
   const fromIndex = startOrder.indexOf(item);
 
-  /** Where the placeholder currently sits, as an index into the strip without it. */
+  /**
+   * @typedef {object} DropPlace
+   * @property {HTMLElement|null} parent - The list the item would land in.
+   * @property {Element|null} anchor - What it would land in front of, or null for the end of that list.
+   */
+
+  /** Where the drop last read, as an index into the strip without the item. Reported to the caller. */
   let dropIndex = fromIndex < 0 ? 0 : fromIndex;
+
+  /**
+   * Where the placeholder actually is. An index is not enough to say: a strip
+   * of nested lists puts the same index in two different lists — the slot in
+   * front of an empty list's last line and the slot at the end of the list
+   * before it are one position apart in the reading order and no positions
+   * apart in the count — and the whole point of the drag is which list the
+   * item ends up in.
+   * @type {DropPlace}
+   */
+  let placed = { parent: item.parentElement, anchor: item.nextElementSibling };
+
+  /**
+   * Where it began, so that a drop back into its own slot is not a move.
+   * @type {DropPlace}
+   */
+  const home = placed;
+
   let active = false;
   let finished = false;
   /** @type {HTMLElement|null} */
@@ -209,21 +242,59 @@ export function startReorderDrag(event, options) {
   };
 
   /**
+   * Where an index puts the item: which list, and in front of what.
+   *
+   * The list is taken from the item being landed in front of, so that a strip
+   * built from more than one list still moves the item into the list it is
+   * landing in — inserting before a node that is not a child of the current
+   * parent throws, which would strand the gesture mid-move.
+   *
+   * Reading the list off the anchor like this can only ever be right for a
+   * strip whose lists tile the space they are read in. Where they do not — a
+   * nested list drawn as a box with a margin round it, so that there are
+   * pointer positions inside the strip and outside every list — the nearest
+   * item is a bad witness: past the end of the strip the nearest item is the
+   * last one, and if the last one lives in a box then a drop in the gutter
+   * below that box reads as a drop inside it. Such a strip passes
+   * `dropPlaceAt` and answers the question from its own geometry.
+   * @param {number} index - The target index, without the dragged item.
+   * @returns {DropPlace} The list and the node to land in front of.
+   */
+  const placeAt = (index) => {
+    const others = items().filter((el) => el !== item);
+    const anchor = others[index] || null;
+    return {
+      parent: anchor?.parentElement || others[others.length - 1]?.parentElement || item.parentElement,
+      anchor
+    };
+  };
+
+  /**
+   * Which position in the strip the item has ended up in, for a caller that
+   * counts rather than one that reads the anchor. An anchor that is not an item
+   * at all — a whole nested list a drop landed in front of — has no index to
+   * be, and counts as the end.
+   * @param {DropPlace} place - Where the item is going.
+   * @returns {number} The index into the strip without the dragged item.
+   */
+  const indexOfPlace = (place) => {
+    if (!place.anchor) return items().filter((el) => el !== item).length;
+    const at = items().filter((el) => el !== item).indexOf(/** @type {HTMLElement} */ (place.anchor));
+    return at >= 0 ? at : items().filter((el) => el !== item).length;
+  };
+
+  /**
    * Show the arrangement the drop would produce: put the placeholder where it
    * would land, then FLIP everything from where it was to where it now is.
-   * @param {number} index - The target index, without the dragged item.
+   * @param {DropPlace} place - Where the item is going.
    */
-  const shiftTo = (index) => {
+  const shiftTo = (place) => {
     const before = items();
     /** @type {Map<HTMLElement, DOMRect>} */
     const first = new Map();
     for (const el of before) first.set(el, el.getBoundingClientRect());
 
-    const others = before.filter((el) => el !== item);
-    const anchor = others[index] || null;
-    // Already there: inserting before the node it already precedes moves
-    // nothing, and doing it every frame churns the DOM for no reason.
-    if (anchor !== item.nextElementSibling) item.parentElement?.insertBefore(item, anchor);
+    place.parent?.insertBefore(item, place.anchor);
 
     for (const el of before) {
       const start = first.get(el);
@@ -251,10 +322,18 @@ export function startReorderDrag(event, options) {
    * @param {number} clientY - Pointer y in client coordinates.
    */
   const recompute = (clientX, clientY) => {
-    const index = indexAt(clientX, clientY);
-    if (index === dropIndex) return;
+    const asked = dropPlaceAt?.(clientX, clientY) ?? null;
+    const index = asked ? indexOfPlace(asked) : indexAt(clientX, clientY);
+    const place = asked ?? placeAt(index);
+    // Already there: inserting before the node it already precedes moves
+    // nothing, and doing it every frame churns the DOM for no reason.
+    if (place.parent === placed.parent && place.anchor === placed.anchor) {
+      dropIndex = index;
+      return;
+    }
     dropIndex = index;
-    shiftTo(index);
+    placed = place;
+    shiftTo(place);
   };
 
   /** Scroll the strip while the pointer rests near one of its edges. */
@@ -389,7 +468,11 @@ export function startReorderDrag(event, options) {
     document.removeEventListener('pointerup', onUp);
     document.removeEventListener('pointercancel', onCancel);
 
-    const moved = active && commit && dropIndex !== fromIndex && fromIndex >= 0;
+    // Whether the item is somewhere else, asked of where it actually sits: the
+    // same index can be two places in a strip of nested lists, and a drop into
+    // another list at the same index is the most consequential move there is.
+    const moved = active && commit && fromIndex >= 0
+      && (placed.parent !== home.parent || placed.anchor !== home.anchor);
     // The strip may be showing an arrangement nobody asked for, and it has to go
     // back before anything measures it — but only when the item is genuinely
     // somewhere else. insertBefore is a remove and an insert even when the node
@@ -413,7 +496,7 @@ export function startReorderDrag(event, options) {
 
     if (moved) {
       try {
-        onCommit?.({ item, fromIndex, toIndex: dropIndex });
+        onCommit?.({ item, fromIndex, toIndex: dropIndex, parent: placed.parent, anchor: placed.anchor });
       } catch (err) {
         console.error('[ReorderDrag] Commit handler failed:', err);
       }

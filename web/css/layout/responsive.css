@@ -180,7 +180,9 @@
     column-container conversation-area,
     column-container conversation-area[style*="width"],
     column-container properties-panel,
-    column-container properties-panel[style*="width"]:not(:last-child) {
+    column-container properties-panel[style*="width"]:not(:last-child),
+    column-container workspace-panel,
+    column-container workspace-panel[style*="width"] {
         flex: 0 0 100%;
         min-width: 0;
         scroll-snap-align: start;

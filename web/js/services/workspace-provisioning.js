@@ -22,7 +22,7 @@
 import { createBoundOps } from '../../sdk/ops.js';
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
 import workspaceProviderRegistry from '../registries/workspace-provider-registry.js';
-import { registerWorkspace, patchWorkspace, unregisterWorkspace } from './workspaces.js';
+import { registerWorkspace, patchWorkspace, unregisterWorkspace, isWorkspaceUsable } from './workspaces.js';
 import { rebindConversation } from './workspace-rebinding.js';
 
 /**
@@ -40,7 +40,6 @@ import { rebindConversation } from './workspace-rebinding.js';
 /**
  * @typedef {object} ProvisionOutcome
  * @property {import('../model/session.js').Workspace} workspace - The ready row
- * @property {object[]} seedItems - Items to seed the conversation with
  * @property {() => Promise<string>} undo - Unwind it again, answering what it could not take back; see {@link provisionWorkspace}
  */
 
@@ -58,9 +57,10 @@ export const PROVIDER_UNAVAILABLE = 'Provider unavailable';
 /**
  * How a workspace is doing, asked of its provider when there is one.
  *
- * Without one it answers from the row, flagged, rather than throwing or
- * returning nothing: a caller rendering a list of workspaces must be able to
- * render this one too.
+ * Without one it answers flagged rather than throwing or returning nothing: a
+ * caller rendering a list of workspaces must be able to render this one too.
+ * Naming it is not at stake either way — every surface takes the name off the
+ * row — so what is missing here is a description and a state, never a title.
  * @param {any} session - The session the workspace belongs to.
  * @param {import('../model/session.js').Workspace} workspace - The row to report on.
  * @param {AbortSignal} [signal] - Cancels a speculative probe when the view closes.
@@ -69,10 +69,7 @@ export const PROVIDER_UNAVAILABLE = 'Provider unavailable';
  */
 export async function workspaceStatus(session, workspace, signal) {
   const provider = workspaceProviderRegistry.createProvider(workspace.providerId ?? '', session);
-  const fallback = {
-    label: workspace.label || workspace.root,
-    available: workspace.available !== false
-  };
+  const fallback = { available: workspace.available !== false };
   if (!provider) {
     // Also a problem rather than a detail: with nobody to ask, there is nothing
     // to say about the place itself, and the row keeps its own description.
@@ -91,11 +88,11 @@ export async function workspaceStatus(session, workspace, signal) {
     });
   } catch (error) {
     // A provider that throws while merely reporting must not take the row's
-    // name off the screen with it — and must not take its description either.
-    // The reason goes in `problem`, which is the field for it: "nothing in this
-    // tree" and "nobody could say" are different answers, and a surface that
-    // printed the second where it prints the first would be describing our
-    // failure to somebody choosing where to work.
+    // description off the screen with it. The reason goes in `problem`, which
+    // is the field for it: "nothing in this tree" and "nobody could say" are
+    // different answers, and a surface that printed the second where it prints
+    // the first would be describing our failure to somebody choosing where to
+    // work.
     return { ...fallback, problem: extractErrorMessage(error), statusFailed: true };
   }
 }
@@ -171,6 +168,205 @@ export function workspaceKind(session, workspace) {
 }
 
 /**
+ * What that kind of place is for, in the words of whatever made it.
+ *
+ * A name is what the user picked the thing by, which makes it the right name
+ * and a poor explanation: "Scratch Copy" over a directory path tells someone who
+ * has already learnt the vocabulary what they are looking at, and tells everyone
+ * else nothing. The sentence under it is the provider's own description — the
+ * one it offered when the workspace was chosen — so the answer to "what is this
+ * thing I have just clicked" is the same answer they were given when they made
+ * it.
+ * @param {any} session - The session the workspace belongs to.
+ * @param {any} workspace - The row to describe.
+ * @returns {string} The provider's description, or '' when it has none or is not loaded.
+ */
+export function workspaceKindNote(session, workspace) {
+  const provider = workspaceProviderRegistry.createProvider(workspace?.providerId ?? '', session);
+  return provider?.getManifest?.()?.description ?? '';
+}
+
+/**
+ * The workspace whose panel is showing, if one is.
+ *
+ * Selection is held as an id and read back as a row, so it can go stale without
+ * anyone having to tidy it: a workspace finished with while its own panel was
+ * open leaves an id naming nothing, and this answers null for it. The strip
+ * draws a box only for a workspace that can be worked in, and a selection has
+ * to mean the box that is drawn — so the same test decides both, and a
+ * workspace that closes under its panel simply stops being selected.
+ * @param {any} session - The session holding the selection and the table.
+ * @returns {any} The row, or null when nothing usable is selected.
+ */
+export function selectedWorkspace(session) {
+  const selection = session?.selection;
+  if (selection?.kind !== 'workspace') return null;
+  const workspace = session?.getWorkspace?.(selection.id) ?? null;
+  return workspace && isWorkspaceUsable(workspace) ? workspace : null;
+}
+
+/**
+ * One workspace and the conversations working in it. A `null` workspace is a
+ * run of conversations the tab bar draws flat, outside any box — and there can
+ * be several, since a box has tabs above it and tabs below it.
+ * @typedef {object} WorkspaceGroup
+ * @property {import('../model/session.js').Workspace|null} workspace - The row they work in, or null for a run of unboxed conversations
+ * @property {any[]} conversations - Its conversations, in tab-bar order
+ */
+
+/**
+ * A session's conversations, grouped by the workspace they work in.
+ *
+ * Grouping is derived and never stored. Map insertion order is the tab-bar
+ * order — see `Session#_setConversationOrder` — and it stays the only persisted
+ * one; this is a reading of it.
+ *
+ * A box's place is the place of its first member, and an unboxed conversation's
+ * place is its own. Every conversation is therefore placed by the same rule,
+ * which is what lets boxes and loose tabs interleave: the tabs above a box stay
+ * above it, the tabs below stay below, and starting a conversation at the top of
+ * the bar moves a box down by that one conversation instead of sending it past
+ * every loose tab there is. Grouping the unboxed ones together as a single run
+ * would make the bar a block of boxes and a block of tabs, and which block came
+ * first would flip on whichever was started last.
+ *
+ * A flat order holding two conversations of one workspace either side of a third
+ * is grouped anyway: contiguity is a property of the layout, not a precondition
+ * for it, and the next reorder writes the flat order back into agreement.
+ *
+ * Only a usable workspace gets a box. A conversation bound to one that is
+ * closed, still being built, or gone is drawn flat with the project's own
+ * conversations — its binding is the stranded banner's to explain, and a box
+ * drawn for a place nobody can work in would be offering it.
+ *
+ * A usable workspace with nothing bound to it still gets its box, empty. That
+ * is the point of drawing workspaces at all: a tree outlives the conversations
+ * that were started in it, and while it has no conversation it has no other way
+ * of being seen or acted on. Having no member, it has no place to take from one
+ * either, so it is ordered after everything that has one, in the table's order.
+ * That is where an empty box is *first* drawn; a renderer holding one on screen
+ * already leaves it where it is, because a workspace must not travel the sidebar
+ * on account of a conversation being binned.
+ * @param {any} session - The session holding the conversations and the table.
+ * @returns {WorkspaceGroup[]} Every usable workspace, and the runs of unboxed
+ *   conversations between them, in the order they are drawn.
+ */
+export function workspaceGroups(session) {
+  const conversations = [...(session?.conversations?.values?.() ?? [])];
+  const usable = [...(session?.workspaces ?? [])].filter(workspace => isWorkspaceUsable(workspace));
+
+  /**
+   * Every entry to be placed: one per box, one per unboxed conversation. A box
+   * starts out placed past the last conversation there is, which is where it
+   * stays if nothing is ever bound to it.
+   * @type {{workspace: any, conversations: any[], place: number}[]}
+   */
+  const boxes = usable.map(workspace =>
+    ({ workspace, conversations: /** @type {any[]} */ ([]), place: conversations.length }));
+  /** @type {Map<string, {workspace: any, conversations: any[], place: number}>} */
+  const byId = new Map(boxes.map(box => [box.workspace.id, box]));
+
+  /** @type {{workspace: any, conversations: any[], place: number}[]} */
+  const entries = [];
+  conversations.forEach((conversation, index) => {
+    const box = byId.get(conversation.workspaceId || '');
+    if (!box) {
+      entries.push({ workspace: null, conversations: [conversation], place: index });
+      return;
+    }
+    if (!box.conversations.length) box.place = index;
+    box.conversations.push(conversation);
+  });
+  entries.push(...boxes);
+
+  // No two entries can want the same place — an index belongs to exactly one
+  // conversation, which is either in a box or not — so the only ties are the
+  // empty boxes, all of which want the place past the end. The sort being
+  // stable, they hold the order they were built in, which is the table's.
+  entries.sort((a, b) => a.place - b.place);
+
+  // Unboxed conversations are placed one at a time and drawn in runs: the bar
+  // lays a group of them flat, and two runs with nothing between them are one
+  // run. The conversations of a box are its own and are never merged into.
+  /** @type {WorkspaceGroup[]} */
+  const groups = [];
+  for (const { workspace, conversations: members } of entries) {
+    const last = groups[groups.length - 1];
+    if (!workspace && last && !last.workspace) {
+      last.conversations.push(...members);
+      continue;
+    }
+    groups.push({ workspace, conversations: members });
+  }
+  return groups;
+}
+
+/**
+ * Where a conversation about to be created belongs in the flat order.
+ *
+ * The other half of {@link workspaceGroups}' rule, and it exists because that
+ * rule has a consequence nobody wants: a box is placed by its first member, so
+ * a conversation born into a workspace and put at the top of the bar takes its
+ * box up there with it. A workspace is a place, not an event — it has no
+ * business travelling the sidebar because work has started in it, any more than
+ * it does because work has finished in it.
+ *
+ * So a new conversation goes to the top of its *box* rather than the top of the
+ * bar: in at the index its box's first member already holds, which is the index
+ * the box is drawn at, leaving the box exactly where it is. An empty box is
+ * drawn past every conversation there is, so its first member goes to the end,
+ * for the same reason and with the same result.
+ *
+ * A workspace nobody can work in has no box to go to the top of — its
+ * conversations are drawn flat — so a conversation born into one goes where
+ * every other unboxed conversation goes, which is the top.
+ * @param {any} session - The session holding the conversations and the table.
+ * @param {string} [workspaceId] - The workspace it will work in, if it is one.
+ * @param {{ignore?: string}} [options] - `ignore` leaves a conversation out of the
+ *   reckoning: the one being placed is in the map already on the path that
+ *   adopts it before its worker has spawned, and it cannot be its own anchor.
+ * @returns {number} The index to insert at.
+ */
+export function placeForNewConversation(session, workspaceId, { ignore = '' } = {}) {
+  if (!workspaceId) return 0;
+  const workspace = session?.getWorkspace?.(workspaceId)
+    ?? [...(session?.workspaces ?? [])].find(row => row.id === workspaceId);
+  if (!workspace || !isWorkspaceUsable(workspace)) return 0;
+
+  const conversations = [...(session?.conversations?.values?.() ?? [])]
+    .filter(conv => conv.id !== ignore);
+  const first = conversations.findIndex(conv => (conv.workspaceId || '') === workspaceId);
+  return first === -1 ? conversations.length : first;
+}
+
+/**
+ * The conversation a new one is to be created after, for the server to store.
+ *
+ * {@link placeForNewConversation}'s answer, said in the one term the server can
+ * act on. Placing the tab locally settles nothing on its own: the server keeps
+ * the conversation order, broadcasts it on every create, and `refreshFromServer`
+ * re-slots the map into what it sent — so an order the server decided for itself
+ * is the one that survives the create, and the one the next launch reads back.
+ * Told nothing, it puts a new conversation at the head of the bar, which carries
+ * the box it belongs to up there with it.
+ *
+ * An index would not survive the trip: the server's order counts conversations
+ * this client has never loaded, and the client's counts none of them. A
+ * neighbour does survive it, and degrades the right way — an anchor the server
+ * cannot place leaves it doing exactly what it did before it was ever told
+ * where anything goes.
+ * @param {any} session - The session holding the conversations and the table.
+ * @param {string} [workspaceId] - The workspace it will work in, if it is one.
+ * @returns {string} The id to insert after, or '' for the head of the bar.
+ */
+export function anchorForNewConversation(session, workspaceId) {
+  const index = placeForNewConversation(session, workspaceId);
+  if (index <= 0) return '';
+  const ids = [...(session?.conversations?.keys?.() ?? [])];
+  return ids[index - 1] ?? '';
+}
+
+/**
  * What to put in front of someone before a workspace is finished with.
  *
  * Nobody owns a workspace — any bound conversation may end it — so this warning
@@ -225,7 +421,14 @@ export function workspaceFinishWarning(session, workspace, options = {}) {
 
   const parts = [];
   if (peers.length) {
-    parts.push(`Also worked in by ${peers.join(', ')}.`);
+    // "Also" needs somebody to be also to. Asked by a conversation, that is the
+    // reader; asked of the workspace itself — from its own box, where nobody is
+    // finishing with it on their own behalf — there is no self to leave out, and
+    // the sentence names everyone working here instead of implying the reader is
+    // one of them.
+    parts.push(conversation
+      ? `Also worked in by ${peers.join(', ')}.`
+      : `Worked in by ${peers.join(', ')}.`);
   }
   if (action?.danger && status?.dirty) {
     parts.push('It holds uncommitted work, which goes with it.');
@@ -242,64 +445,41 @@ export function workspaceFinishWarning(session, workspace, options = {}) {
 }
 
 /**
- * The ending worth offering when the last conversation working somewhere is
- * about to go away, or nothing when there is nothing to offer.
+ * Which conversation an ending is being carried out for, when it was asked for
+ * of the workspace itself rather than by one of them.
  *
- * A conversation and its workspace are not the same thing and are not disposed
- * of together: nobody owns a workspace, so binning the conversation that made
- * one leaves the tree exactly where it was, which is right when a colleague is
- * in it and merely untidy when nobody is. Untidy is the case this answers. The
- * offer is the provider's own destructive ending, not a second way of removing
- * a tree written here — there is one of those already, and a user who has read
- * "Delete this workspace" in the chip should read the same words here.
+ * A provider is handed this as `ctx.conversation`, and what it is for is the
+ * ending that hands work back to the agent: git-worktree's commit offers "Let
+ * this conversation write it", which sends a message to whoever is named here.
+ * Asked from a box there may be three candidates or none, so the rule has to be
+ * one a user can predict without being told it:
  *
- * Peers are read from the live conversations, and the live conversations are
- * all there are. A binned conversation is gone; that the bin can hand it back
- * later is not a claim on a tree in the meantime, and treating it as one would
- * make an offer stop appearing for reasons nothing on screen explains.
+ * > the conversation you are looking at, if it works here; otherwise the only
+ * > one working here, if there is only one; otherwise nobody.
  *
- * The common answer is `null` and it is reached without awaiting anything: a
- * conversation working in the project has no workspace to ask about, and the
- * bin it is heading for must stay as immediate as it has always been.
- * @param {any} session - The session the conversation belongs to.
- * @param {any} conversation - The conversation about to go.
- * @param {AbortSignal} [signal] - Cancels the status probe.
- * @returns {Promise<{workspace: any, option: any, message: string}|null>} The
- *   row, the ending to offer for it, and what to say — or nothing to ask.
+ * Nobody is a legitimate answer, not a failure — the field is optional in the
+ * contract (see `sdk/workspace-provider.js`) and every provider degrades to
+ * doing the thing itself. What it must never do is pick one of three arbitrarily
+ * and send that conversation a message its user did not ask for.
+ * @param {any} session - The session the workspace belongs to.
+ * @param {any} workspace - The row being finished with.
+ * @returns {any} The conversation to carry it out for, or null.
  */
-export async function soleWorkspaceEnding(session, conversation, signal) {
-  const workspaceId = conversation?.workspaceId || '';
-  if (!workspaceId) return null;
+export function workspaceFinishActor(session, workspace) {
+  const id = workspace?.id ?? '';
+  if (!id) return null;
 
-  // A row already tombstoned has been finished with; there is nothing left to
-  // offer, and offering it would be asking twice for the same thing.
-  const workspace = session?.getWorkspace?.(workspaceId);
-  if (!workspace || workspace.state === 'closed') return null;
+  // The conversation behind the panel, not the one on screen: finishing with a
+  // workspace is nearly always done from its own panel, and by then there is no
+  // visible conversation to be the actor.
+  const current = session?.conversations?.get?.(session?.loadedConversationId ?? '');
+  if (current && (current.workspaceId || '') === id) return current;
 
-  // Nothing is offered on a provider's behalf when the provider is not there to
-  // carry it out, and a provider that removes nothing has no ending to borrow.
-  const { options, unavailableReason } = workspaceFinishOptions(session, workspace);
-  if (unavailableReason) return null;
-  const option = options.find(candidate => candidate.danger && !candidate.keepsWorkspace);
-  if (!option) return null;
-
-  // Asked before the status probe rather than after it: a workspace somebody
-  // else is working in is not being left behind, and there is no reason to go
-  // and run git in a tree to find that out.
-  if (workspaceFinishWarning(session, workspace, { conversation }).peers.length) return null;
-
-  const status = await workspaceStatus(session, workspace, signal);
-  const { warning } = workspaceFinishWarning(session, workspace, { conversation, action: option, status });
-  return {
-    workspace,
-    option,
-    // The provider's own description of what it is about to destroy, under one
-    // sentence saying why it is being asked at all. Its closing line — this
-    // conversation goes back to the project folder — is true here too: the
-    // ending runs, and the rebind with it, before anything is binned.
-    message: ['Nothing else is working in this workspace.', option.description, warning]
-      .filter(Boolean).join(' ')
-  };
+  const bound = [];
+  for (const conversation of session?.conversations?.values?.() ?? []) {
+    if ((conversation.workspaceId || '') === id) bound.push(conversation);
+  }
+  return bound.length === 1 ? bound[0] : null;
 }
 
 /**
@@ -346,26 +526,47 @@ export async function finishWorkspace(request) {
 
   if (!result?.done) return { done: false, message: result?.message };
 
-  // The conversation that finished with it goes back to the project, before the
-  // row is tombstoned so that it never sees its own workspace close under it.
-  // Left bound, it would point at a workspace that no longer exists while its
-  // composer still looked ready — nothing refuses the send, and the turn dies in
-  // the server with "workspace X was closed". Peers are a different case and
-  // keep their banner: they did not ask for this, and being told is the point.
-  const moved = conversation && (conversation.workspaceId || '') === workspace.id
-    ? await rebindConversation(conversation, '')
-    : { done: true, message: '' };
+  // Everyone who was working here goes back to the project, before the row is
+  // tombstoned so that nobody watches their own workspace close under them.
+  // Left bound, a conversation points at a workspace that no longer exists
+  // while its composer still looks ready — nothing refuses the send, and the
+  // turn dies in the server with "workspace X was closed".
+  //
+  // All of them, not just whoever pressed the button: the tree is gone for
+  // everyone working in it, and which of them asked is not a difference the
+  // tree has. It is not always even a question with an answer — an ending taken
+  // on the workspace's own box, where several conversations share it, is
+  // pressed by nobody in particular (see {@link workspaceFinishActor}).
+  /** @type {string[]} */
+  const stuck = [];
+  let sent = 0;
+  for (const bound of [...(session?.conversations?.values?.() ?? [])]) {
+    if ((bound.workspaceId || '') !== workspace.id) continue;
+    const moved = await rebindConversation(bound, '');
+    if (moved.done) sent++;
+    else stuck.push(`${bound.name || bound.id}: ${moved.message}`);
+  }
+  // Said by the host because it is the host that does it, and because how many
+  // there were is not something a provider is in a position to know. The
+  // provider's own message says what became of the tree, which is its half.
+  const rehomed = sent === 0
+    ? ''
+    : `${sent === 1 ? 'Its conversation is' : `Its ${sent} conversations are`} back in the project folder.`;
 
   const closed = await patchWorkspace(workspace.id, {
     state: 'closed',
+    // Who closed it, for the banner a conversation that was not here to be
+    // moved — binned, or in a window that had not loaded it — will meet when it
+    // comes back. Empty when it was the box that was acted on rather than a
+    // conversation, which `strandedLead` reads as the sentence without a name.
     meta: { closedBy: conversation?.name || conversation?.id || '' }
   });
   // A move that could not be made is said rather than swallowed: the workspace
-  // is finished with either way, and the difference is whether this conversation
+  // is finished with either way, and the difference is whether a conversation
   // still has somewhere to work.
   return {
     done: true,
-    message: [result.message, moved.done ? '' : moved.message].filter(Boolean).join(' '),
+    message: [result.message, rehomed, ...stuck].filter(Boolean).join(' '),
     workspace: closed
   };
 }
@@ -577,7 +778,6 @@ export async function provisionWorkspace(request) {
 
     return {
       workspace,
-      seedItems: result?.seedItems ?? [],
       undo: async () => {
         const failures = await unwindAll();
         await unregisterWorkspace(workspace.id);

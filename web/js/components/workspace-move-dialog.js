@@ -5,10 +5,12 @@
 /**
  * Where a conversation that has already started should work instead.
  *
- * The question the setup panel asks a new conversation, asked again of one that
- * is under way. It is a dialog rather than a block in the transcript because by
- * then the transcript belongs to the work: a conversation half way through a
- * task is not a conversation with a question at the top of it.
+ * A move, not the question of where to make a workspace. That one is asked by
+ * the dialog the tab strip opens, about nothing in particular; this one is about
+ * a conversation that is working somewhere, and what it needs said is where that is, what is still in
+ * there, and what leaving would cost. It is a dialog rather than a block in the
+ * transcript because by then the transcript belongs to the work: a conversation
+ * half way through a task is not a conversation with a question at the top of it.
  *
  * It shares the panel's list of places and the panel's rendering of a provider's
  * form — same rows, same look, learned once — and shares none of its state. The
@@ -33,7 +35,7 @@ import {
   probeSetupStatuses,
   probeSetupAdoptions,
   adoptSetupRow
-} from '../services/conversation-setup.js';
+} from '../services/workspace-places.js';
 import { provisionWorkspace, provisionLeftBehind, recordProgress } from '../services/workspace-provisioning.js';
 import {
   rebindConversation,
@@ -51,11 +53,33 @@ import {
 } from './workspace-setup-form.js';
 
 /**
+ * The places this conversation could move to: every place there is, less the
+ * one it is already in. A row for where you are is not a
+ * choice.
+ *
+ * Exported because whoever offers the move has to know whether there is one:
+ * a menu row leading to a dialog with nothing in it is worse than no row.
+ * @param {any} conversation - The conversation that would move.
+ * @returns {any[]} The rows.
+ */
+export function workspaceMovePlaces(conversation) {
+  const currentId = conversation?.workspaceId || '';
+  return setupRows(conversation?.session).filter((row) =>
+    !((row.kind === 'project' || row.kind === 'workspace') && row.id === currentId));
+}
+
+/**
  * Ask where this conversation should work, and move it there.
  * @param {any} conversation - The conversation to move.
+ * @param {object} [options] - How it opens.
+ * @param {string} [options.selected] - A place already chosen: a workspace id,
+ *   or `''` for the project folder. For a caller that is asking about a place
+ *   the user has already pointed at — a tab dropped in another workspace's box
+ *   — so the dialog is a confirmation rather than the same question again.
+ *   Ignored when it names nowhere this conversation could go.
  * @returns {Promise<{moved: boolean, workspaceId?: string}>} Where it went, if it went.
  */
-export function openWorkspaceMove(conversation) {
+export function openWorkspaceMove(conversation, { selected } = {}) {
   const session = conversation?.session;
   const currentId = conversation?.workspaceId || '';
 
@@ -79,7 +103,7 @@ export function openWorkspaceMove(conversation) {
     // moment later has no further interest in the answers.
     const probes = new AbortController();
 
-    /** @type {string|null} Which place is chosen; null until one is. */
+    /** @type {string|null} Which place is chosen; null until one is, or until the caller says. */
     let selection = null;
     /** @type {string} Why the last attempt did not happen. */
     let error = '';
@@ -101,12 +125,16 @@ export function openWorkspaceMove(conversation) {
     let conflicts = [];
 
     /**
-     * The places this conversation could move to: everywhere the panel offers,
-     * less the one it is already in. A row for where you are is not a choice.
+     * The places this conversation could move to. See {@link workspaceMovePlaces}.
      * @returns {any[]} The rows.
      */
-    const places = () => setupRows(session).filter((row) =>
-      !((row.kind === 'project' || row.kind === 'workspace') && row.id === currentId));
+    const places = () => workspaceMovePlaces(conversation);
+
+    // A caller that already has an answer starts on it. Checked against the
+    // rows rather than taken on trust: a place that is not offered here cannot
+    // be selected here, and a selection naming nothing would arm the button
+    // over a row nobody can see.
+    if (selected !== undefined && places().some((row) => row.id === selected)) selection = selected;
 
     /**
      * The provider a "New…" selection names, or '' for a place that exists.
@@ -257,24 +285,28 @@ export function openWorkspaceMove(conversation) {
       if (modal.closed) return;
       root.replaceChildren();
 
-      const backdrop = document.createElement('div');
+      // The chrome every other dialog in the app wears: the shared scrim, and a
+      // panel whose surface, corner and shadow come from the one popup-surface
+      // rule. A modal that paints its own card is a modal that drifts from the
+      // rest of them one token at a time.
+      const backdrop = document.createElement('modal-backdrop');
       backdrop.className = 'workspace-move-backdrop';
       root.appendChild(backdrop);
 
-      const dialog = document.createElement('div');
+      const dialog = document.createElement('modal-panel');
       dialog.className = 'workspace-move-dialog';
       dialog.setAttribute('role', 'dialog');
       dialog.setAttribute('aria-modal', 'true');
-      dialog.setAttribute('aria-label', 'Choose a workspace for this conversation');
+      dialog.setAttribute('aria-label', 'Move this conversation');
       root.appendChild(dialog);
 
       const header = document.createElement('div');
       header.className = 'workspace-move-header';
       const title = document.createElement('h2');
       title.className = 'workspace-move-title';
-      // The same question the setup panel asks, because it is the same question
-      // over the same list — only the conversation is older.
-      title.textContent = 'Choose a workspace for this conversation';
+      // What pressing on will do. This conversation is somewhere already, and
+      // everything below is about leaving it.
+      title.textContent = 'Move this conversation';
       header.appendChild(title);
       const close = setupButton('close-button workspace-move-close', '', () => modal.close(undefined));
       close.setAttribute('aria-label', 'Close');
@@ -285,37 +317,47 @@ export function openWorkspaceMove(conversation) {
       header.appendChild(close);
       dialog.appendChild(header);
 
+      // Everything between the header and the buttons, in one scrolling column,
+      // so a long list of places runs under the title and above the footer
+      // rather than carrying them off the screen with it.
+      const body = document.createElement('div');
+      body.className = 'workspace-move-body';
+      dialog.appendChild(body);
+
       // Where it works now is a standing fact, so it is stated rather than
-      // offered: it is not among the rows below.
+      // offered: it is not among the rows below. It is set as the rows are —
+      // name, then address beneath it — because it is the thing they are all
+      // alternatives to, and a reader comparing it with them should not have to
+      // translate between two ways of writing down a place.
       const current = currentId ? session?.getWorkspace?.(currentId) : null;
       const now = document.createElement('div');
       now.className = 'workspace-move-now';
-      const lead = document.createElement('span');
+      const lead = document.createElement('div');
       lead.className = 'workspace-move-now-lead';
-      lead.textContent = 'Now using';
+      lead.textContent = 'Working in';
       now.appendChild(lead);
-      const named = document.createElement('span');
+      const named = document.createElement('div');
       named.className = 'workspace-move-now-label';
       named.textContent = current ? (current.label || current.root) : 'The project folder';
       now.appendChild(named);
       // The address, whole and on its own line. It is the one part of this that
       // a reader may want out of the dialog rather than in it — into a terminal,
-      // or open in a file manager beside it — so it is offered as a path and not
-      // as the tail of a sentence. Pinning is not among the offers: this is a
-      // modal, and a pin put on the board behind one is a thing that happened out
-      // of sight.
+      // or open in a file manager beside it — so it is offered as a path, with
+      // the two things you can do with one, and not as the tail of a sentence.
+      // Pinning is not among them: this is a modal, and a pin put on the board
+      // behind one is a thing that happened out of sight.
       const where = document.createElement('div');
       where.className = 'workspace-move-now-path-row';
       const tree = current?.root || session?.projectPath || '';
       const box = document.createElement('div');
-      box.className = 'workspace-move-now-path properties-panel-filepath-box';
+      box.className = 'workspace-move-now-path';
       box.textContent = tree;
       if (tree) box.dataset.filePath = tree;
       where.appendChild(box);
       const onPath = createFileActions(tree, { directory: true });
       if (onPath) where.appendChild(onPath);
       now.appendChild(where);
-      dialog.appendChild(now);
+      body.appendChild(now);
 
       // What the tree being left still holds, and the one decision to make about
       // it. The offer is only made where the work can be listed file by file; a
@@ -347,7 +389,7 @@ export function openWorkspaceMove(conversation) {
           choice.appendChild(says);
           work.appendChild(choice);
         }
-        dialog.appendChild(work);
+        body.appendChild(work);
       }
 
       // While something is being built there is nothing to choose: the choice
@@ -355,14 +397,20 @@ export function openWorkspaceMove(conversation) {
       // the way out of it. One Cancel, inside the progress, so there are never
       // two of them meaning different things.
       if (building) {
-        dialog.appendChild(buildProvisionProgress(progress, () => stop?.abort()));
+        body.appendChild(buildProvisionProgress(progress, () => stop?.abort()));
         return;
       }
 
+      // The heading and the list it names are one section, so that the space
+      // between them stays smaller than the space around them.
+      const section = document.createElement('div');
+      section.className = 'workspace-move-places';
+      body.appendChild(section);
+
       const heading = document.createElement('div');
       heading.className = 'setup-section-title';
-      heading.textContent = 'Workspaces';
-      dialog.appendChild(heading);
+      heading.textContent = 'Move it to';
+      section.appendChild(heading);
 
       const rows = buildPlaceRows({
         rows: places(),
@@ -397,14 +445,18 @@ export function openWorkspaceMove(conversation) {
           });
           // The same wrapper the panel gives a form, which is both how it is
           // styled and how `renderIfIdle` knows there is one open to protect.
-          const body = document.createElement('div');
-          body.className = 'setup-row-body';
-          body.appendChild(fields.element);
-          return body;
-        }
+          const expanded = document.createElement('div');
+          expanded.className = 'setup-row-body';
+          expanded.appendChild(fields.element);
+          return expanded;
+        },
+        // Blocks rather than lines: this is the whole question the dialog exists
+        // to ask, and a place is chosen by reading what it means
+        // and where it is, neither of which fits on the end of a line.
+        asBlocks: true
       });
       rows.addEventListener('keydown', (event) => handlePlaceRowKey(event, root));
-      dialog.appendChild(rows);
+      section.appendChild(rows);
 
       if (error) {
         const failure = document.createElement('div');
@@ -417,18 +469,18 @@ export function openWorkspaceMove(conversation) {
           failure.appendChild(setupButton('btn-danger workspace-move-overwrite',
             'Copy over them', () => { void commit(true); }));
         }
-        dialog.appendChild(failure);
+        body.appendChild(failure);
       }
 
       const actions = document.createElement('div');
-      actions.className = 'setup-actions';
+      actions.className = 'workspace-move-footer';
       actions.appendChild(setupButton('btn-secondary workspace-move-cancel', 'Cancel',
         () => modal.close(undefined)));
       // The button says what pressing it will do, which for a place that does
       // not exist yet is two things.
       const making = selectedProviderId() !== '';
       const move = setupButton('btn-primary workspace-move-commit',
-        building ? 'Creating…' : making ? 'Create and use it' : 'Use this workspace',
+        building ? 'Creating…' : making ? 'Create and move' : 'Move',
         () => { void commit(); });
       move.disabled = building || selection === null || (making && !valid);
       actions.appendChild(move);
@@ -436,7 +488,10 @@ export function openWorkspaceMove(conversation) {
     };
 
     render();
-    /** @type {HTMLElement|null} */ (root.querySelector('.setup-row'))?.focus();
+    // The row the keyboard starts on is the chosen one where there is one, so
+    // that a dialog opened on an answer opens with that answer under the hands.
+    const first = root.querySelector('.setup-row[aria-checked="true"]') || root.querySelector('.setup-row');
+    /** @type {HTMLElement|null} */ (first)?.focus();
 
     /**
      * Redraw for something that arrived on its own, unless a form is open.

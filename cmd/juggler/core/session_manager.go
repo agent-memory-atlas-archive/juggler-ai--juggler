@@ -383,21 +383,45 @@ func (m *SessionManager) Update(mutate func(*Session) error) error {
 // worker subsequently spawned for the id resolves the folder by id via
 // ensureConvDir.
 func (m *SessionManager) CreateConversation(name string, requestedID ...string) (string, string, error) {
-	type result struct {
-		id   string
-		name string
-	}
 	idHint := ""
 	if len(requestedID) > 0 {
 		idHint = requestedID[0]
 	}
+	return m.CreateConversationAt(name, idHint, "")
+}
+
+// CreateConversationAt is CreateConversation with a say in where the new id
+// lands in ConversationOrder: directly after afterID, or at the head when that
+// is empty or names a conversation this session does not have.
+//
+// The order is the server's, and it is what a viewer's tab list is re-slotted
+// into on the broadcast this create produces — so where a conversation goes is
+// settled here or not at all, however carefully the viewer placed the tab. The
+// head is right for a conversation of the project's and wrong for one made
+// inside a workspace box, which is drawn at its first conversation: sending
+// that conversation to the head carries the whole box up there with it.
+//
+// An unknown anchor is not an error. A viewer can name a conversation this
+// session has since binned, or one from a session it has left, and a create is
+// too important to refuse over where it was hoping to sit.
+func (m *SessionManager) CreateConversationAt(name, requestedID, afterID string) (string, string, error) {
+	type result struct {
+		id   string
+		name string
+	}
 	r, err := runWrite(m, func(s *sessionState) (result, error) {
-		id, finalName, _, err := s.store.CreateConversationFolder(name, idHint)
+		id, finalName, _, err := s.store.CreateConversationFolder(name, requestedID)
 		if err != nil {
 			return result{}, err
 		}
 		if !slices.Contains(s.session.ConversationOrder, id) {
-			s.session.ConversationOrder = append([]string{id}, s.session.ConversationOrder...)
+			at := 0
+			if afterID != "" {
+				if i := slices.Index(s.session.ConversationOrder, afterID); i >= 0 {
+					at = i + 1
+				}
+			}
+			s.session.ConversationOrder = slices.Insert(s.session.ConversationOrder, at, id)
 		}
 		if err := s.store.Save(s.session); err != nil {
 			return result{}, err

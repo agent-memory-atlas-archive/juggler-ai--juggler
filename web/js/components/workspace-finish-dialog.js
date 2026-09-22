@@ -48,6 +48,11 @@ function text(value) {
  * @property {any} [status] - The workspace's status as the chip last read it:
  *   `detail` is the line under the label, `dirty` whether it holds work
  * @property {string} [warning] - What the host wants said before this is done
+ * @property {any} [conversation] - The conversation the ending is being carried
+ *   out for, where there is one. An alternative hands the work to it — "Let this
+ *   conversation write it" — so there is no such button when there is nobody to
+ *   hand it to: asked of a workspace three conversations share, the ending names
+ *   none of them (see `workspaceFinishActor`)
  */
 
 /**
@@ -153,7 +158,10 @@ export function openWorkspaceFinish(option, context = {}) {
     actions.appendChild(setupButton('btn-secondary workspace-finish-cancel', 'Cancel',
       () => modal.close(undefined)));
 
-    if (prompt.alternative?.label) {
+    // The alternative is the conversation's to carry out, so it is offered only
+    // when there is one. Without it the field is the whole of the answer, which
+    // is the shape this dialog was written for.
+    if (prompt.alternative?.label && context.conversation) {
       actions.appendChild(setupButton('btn-secondary workspace-finish-alternative',
         text(prompt.alternative.label), () => modal.close({ message: '' })));
     }
@@ -168,7 +176,7 @@ export function openWorkspaceFinish(option, context = {}) {
     actions.appendChild(commit);
     dialog.appendChild(actions);
 
-    if (prompt.alternative?.hint) {
+    if (prompt.alternative?.hint && context.conversation) {
       const aside = document.createElement('div');
       aside.className = 'workspace-finish-alternative-note';
       aside.textContent = text(prompt.alternative.hint);

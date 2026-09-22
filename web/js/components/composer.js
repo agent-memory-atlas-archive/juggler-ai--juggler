@@ -3,7 +3,6 @@
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
 import './permission-controls.js';
-import './workspace-chip.js';
 
 
 import { DRAFT_SAVE_DEBOUNCE_MS } from '../utils/constants.js';
@@ -1624,11 +1623,6 @@ class Composer extends HTMLElement {
     if (modelSelector && 'setConversation' in modelSelector) {
       /** @type {any} */ (modelSelector).setConversation(this._conversation);
     }
-    const workspaceChip = this.querySelector('workspace-chip');
-    if (workspaceChip && 'setConversation' in workspaceChip) {
-      /** @type {any} */ (workspaceChip).setConversation(this._conversation);
-    }
-
   }
 
   /**
@@ -2605,7 +2599,6 @@ class Composer extends HTMLElement {
                 <input type="file" class="attach-file-input" accept="image/*" multiple hidden />
                 <input-controls>
                     <input-controls-config>
-                        <workspace-chip></workspace-chip>
                         <strategy-selector></strategy-selector>
                         <permission-controls></permission-controls>
                         <model-selector id="conversation-model-selector"></model-selector>

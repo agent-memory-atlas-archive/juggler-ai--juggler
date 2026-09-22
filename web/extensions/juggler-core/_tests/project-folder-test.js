@@ -361,7 +361,7 @@ export async function runTests() {
           `the row is ready as soon as the provider returns, got ${JSON.stringify(outcome.workspace.state)}`);
         assert(outcome.workspace.root === `${projectPath}${separator}${folder}`,
           `rooted at the folder itself, got ${JSON.stringify(outcome.workspace.root)}`);
-        assert(outcome.workspace.label === `${folder} (folder)`,
+        assert(outcome.workspace.label === folder,
           `and labelled as the project sees it, got ${JSON.stringify(outcome.workspace.label)}`);
 
         conversation = await makeConversation(session, `in-${folder}`, { workspaceId: outcome.workspace.id });
@@ -402,8 +402,13 @@ export async function runTests() {
         const reported = await workspaceStatus(session, outcome.workspace);
         assert(reported.kind.startsWith('Folder of '),
           `the chip says what kind of place this is, got ${JSON.stringify(reported.kind)}`);
-        assert(reported.label === folder,
-          `named by where it is in the project, got ${JSON.stringify(reported)}`);
+        // And does not name it. The row does that, from the moment any surface
+        // draws; a name arriving with the status would land after the first
+        // draw and change the title under whoever was reading it.
+        assert(reported.label === undefined,
+          `leaving the naming to the row, got ${JSON.stringify(reported)}`);
+        assert(outcome.workspace.label === folder,
+          `which is named by where it is in the project, got ${JSON.stringify(outcome.workspace.label)}`);
         // And stops there. A folder has no branch, no drift and no work of its
         // own to report, so a status line could only spell its path a second
         // time under the path every surface already shows beside it.

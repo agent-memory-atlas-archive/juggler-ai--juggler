@@ -74,7 +74,7 @@ export function isWorkspaceUsable(workspace) {
  *
  * A viewer has the table already, so this is for the two callers that want what
  * the server holds right now rather than what this window was last told: the
- * reconcile pass, and the setup panel as it opens.
+ * reconcile pass, and a place list as it opens.
  *
  * It is also the only thing that re-checks whether each root is still there.
  * That makes the call worth making for its effect alone — the answer arrives

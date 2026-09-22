@@ -146,7 +146,7 @@ class ProjectFolderWorkspaceProvider extends WorkspaceProvider {
     }
 
     // Absolute, because the operations here are rooted at whatever workspace the
-    // form was opened from — the project in the setup panel, but the
+    // form was opened from — the project in the create dialog, but the
     // conversation's own tree in the move dialog — while the folder is always
     // the project's. An operation is the one thing that may be handed an
     // absolute path: it validates it, where a shell would have to spell it.
@@ -259,7 +259,7 @@ class ProjectFolderWorkspaceProvider extends WorkspaceProvider {
     if (!found?.exists) throw new Error(`Couldn't use ${dir}: there is no such folder.`);
     if (!found.isDirectory) throw new Error(`Couldn't use ${dir}: that is a file, not a folder.`);
 
-    return { workspace: { root: dir, label: `${rel} (folder)`, meta: { folder: rel } } };
+    return { workspace: { root: dir, label: rel, meta: { folder: rel } } };
   }
 
   /**
@@ -277,14 +277,12 @@ class ProjectFolderWorkspaceProvider extends WorkspaceProvider {
    */
   async status(workspace, ctx) {
     void ctx;
-    const meta = workspace?.meta ?? {};
-    const rel = String(meta?.folder ?? '') || baseName(workspace.root);
     const project = String(this.session?.projectPath ?? '');
     const kind = project ? `Folder of ${baseName(project)}` : 'Folder of the project';
     if (workspace.available === false) {
-      return { label: rel, kind, detail: 'The folder is missing.', available: false };
+      return { kind, detail: 'The folder is missing.', available: false };
     }
-    return { label: rel, kind, available: true };
+    return { kind, available: true };
   }
 
   /**

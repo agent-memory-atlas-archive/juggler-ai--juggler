@@ -511,10 +511,12 @@
     display: none;
 }
 
-/* Where a conversation that has already started should work instead. The setup
-   panel's question asked again, in a dialog rather than at the top of the
-   transcript: by then the transcript belongs to the work. The rows inside it
-   are the panel's own classes, deliberately — the same list of places should
+/* Where a conversation that has already started should work instead: a move,
+   stated as one. Built from the house modal parts — the shared scrim on
+   modal-backdrop, the shared card on modal-panel — so it is the same object as
+   the bin, the about box and the settings panel rather than a second kind of
+   dialog. Only the measure and the rhythm are set here. The rows inside it are
+   the setup panel's own classes, deliberately: the same list of places should
    look the same wherever it is offered. */
 .workspace-move-overlay {
     position: fixed;
@@ -526,76 +528,122 @@
     padding: 1.5rem;
 }
 
-.workspace-move-backdrop {
-    position: absolute;
-    inset: 0;
-    background: var(--modal-scrim);
-}
-
+/* Wider than a message-and-two-buttons dialog, because what is in it is a list
+   of places to compare: each one a name, a sentence about what choosing it
+   means, and an address. Cut to the narrower measure they all end in ellipses,
+   which is the same as not printing them. */
 .workspace-move-dialog {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    width: min(32rem, 100%);
-    max-height: 90vh;
-    padding: 0.9rem 1.1rem 1.1rem;
-    overflow-y: auto;
-    background: var(--bg-raised, #1c2128);
-    border: 1px solid var(--border-floating, var(--border-color));
-    border-radius: 0.6rem;
-    box-shadow: var(--popup-shadow);
-    font-size: 0.75rem;
+    width: min(36rem, 100%);
+    max-height: 85vh;
 }
 
+/* The modal-dialog rhythm, in a dialog that is not one: hairline under the
+   header, hairline over the buttons, and the body scrolling between them so a
+   long list never carries the title or the buttons off the screen. */
 .workspace-move-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
+    flex-shrink: 0;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 0.0625rem solid var(--border-divider);
 }
 
 .workspace-move-title {
     margin: 0;
-    font-size: 1.05rem;
+    font-size: 1.125rem;
+    color: var(--text-primary);
 }
 
 /* Pulled into the padding so the button's box hangs off the corner while its
    icon stays optically aligned with the title. */
 .workspace-move-close {
-    margin: -0.4rem -0.3rem;
+    margin: -0.5rem -0.5rem -0.5rem 0;
+}
+
+.workspace-move-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    min-height: 0;
+    padding: 1.25rem 1.5rem;
+    overflow-y: auto;
+}
+
+/* A heading and the list it names, held together: the gap above the pair is the
+   body's and belongs between sections, while the gap inside it is this one's and
+   is smaller, so the label reads as attached to the rows rather than floating
+   between them and the block above. */
+.workspace-move-places {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.workspace-move-places .setup-section-title {
+    margin: 0;
+}
+
+.workspace-move-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    flex-shrink: 0;
+    padding: 1rem 1.5rem;
+    border-top: 0.0625rem solid var(--border-divider);
 }
 
 /* Where it works now: stated rather than offered, and so not one of the rows
-   below it. */
+   below it — but set as they are, name over address, because it is the thing
+   every one of them is an alternative to. */
 .workspace-move-now {
     display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 0 0.5rem;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px dashed var(--border-divider, rgb(255 255 255 / 12%));
-    color: var(--text-secondary);
+    flex-direction: column;
+    gap: 0.125rem;
+}
+
+.workspace-move-now-lead {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-tertiary);
 }
 
 .workspace-move-now-label {
-    color: var(--text-primary);
+    font-size: 0.9375rem;
     font-weight: 600;
+    color: var(--text-primary);
 }
 
-/* The address takes the next line to itself and is shown whole. It is the part
-   of this a reader may want out of the dialog — into a terminal, or open beside
-   it — and a path cut to fit is a path that cannot be used for either. */
+/* The address takes a line to itself and is shown whole, with the two things
+   worth doing to a path beside it. It is the part of this a reader may want out
+   of the dialog — into a terminal, or open beside it — and a path cut to fit is
+   a path that cannot be used for either. No box is drawn round it: a framed
+   line with two buttons on the end of it is how this app draws a field, and
+   there is nothing here to type into. */
 .workspace-move-now-path-row {
     display: flex;
-    flex: 1 0 100%;
     align-items: flex-start;
     gap: 0.375rem;
-    margin-top: 0.375rem;
+    margin-top: 0.125rem;
 }
 
+.workspace-move-now-path {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    line-height: 1.5;
+    color: var(--text-tertiary);
+    overflow-wrap: anywhere;
+    user-select: text;
+}
+
+/* Lifted half the difference between a 1.5rem button and a 1.125rem line, so
+   the icons centre on the path's first line rather than on the block of them. */
 .workspace-move-now .properties-panel-filepath-actions {
-    margin-top: 0.0625rem;
+    margin-top: -0.1875rem;
 }
 
 /* What the tree being left still holds, and whether to bring it. It sits under
@@ -617,6 +665,128 @@
     align-items: center;
     gap: 0.5rem;
     cursor: pointer;
+}
+
+/* Making a workspace. The same scrim and the same card as the move dialog —
+   they are two questions about the same kind of thing and must not look like
+   two applications — and the same header, lead and footer rhythm. What differs
+   is inside: this one is read across rather than down, because the choice and
+   what the choice needs are on screen together. */
+.workspace-create-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-modal, 1000);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+}
+
+/* Wider than the move dialog, and for the opposite reason: not a long list to
+   compare, but two columns that have to sit side by side without either being
+   cut to a column of single words. */
+.workspace-create-dialog {
+    width: min(46rem, 100%);
+    max-height: 85vh;
+}
+
+.workspace-create-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    flex-shrink: 0;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 0.0625rem solid var(--border-divider);
+}
+
+.workspace-create-title {
+    margin: 0;
+    font-size: 1.125rem;
+    color: var(--text-primary);
+}
+
+.workspace-create-close {
+    margin: -0.5rem -0.5rem -0.5rem 0;
+}
+
+/* The one sentence saying what is being made. Above the split rather than
+   inside either half, because it is true of both of them. */
+.workspace-create-lead {
+    flex-shrink: 0;
+    margin: 0;
+    padding: 1rem 1.5rem 0;
+    color: var(--text-secondary);
+}
+
+/* The split. The rail is given a fixed share and the detail the rest: a rail
+   that grew with the longest provider name would move the form every time an
+   extension was installed. */
+.workspace-create-body {
+    display: grid;
+    grid-template-columns: minmax(0, 14rem) minmax(0, 1fr);
+    gap: 1.5rem;
+    min-height: 0;
+    padding: 1.25rem 1.5rem;
+    overflow-y: auto;
+}
+
+.workspace-create-rail {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    min-width: 0;
+}
+
+.workspace-create-rail .setup-section-title {
+    margin: 0;
+}
+
+.workspace-create-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    min-width: 0;
+}
+
+.workspace-create-detail-head {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.workspace-create-detail-title {
+    margin: 0;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.workspace-create-detail-meaning {
+    margin: 0;
+    color: var(--text-secondary);
+}
+
+.workspace-create-empty {
+    margin: 0;
+    color: var(--text-tertiary);
+}
+
+.workspace-create-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    flex-shrink: 0;
+    padding: 1rem 1.5rem;
+    border-top: 0.0625rem solid var(--border-divider);
+}
+
+/* Under the measure the two columns need, they stack: the kinds, then the one
+   that is chosen. The order is already right in the markup. */
+@media (width <= 40rem) {
+    .workspace-create-body {
+        grid-template-columns: minmax(0, 1fr);
+    }
 }
 
 /* Commands manager. */

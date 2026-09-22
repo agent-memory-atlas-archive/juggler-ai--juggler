@@ -69,7 +69,7 @@ function guardSwitchSideEffects(session, sessionData = { metadata: {}, messageHi
     session.messageHistory = saved.messageHistory;
     session.platform = saved.platform;
     session.home = saved.home;
-    session.visibleConversationId = saved.visible;
+    session._setSelection(saved.visible ? { kind: 'conversation', id: saved.visible } : null);
     session._conversationNames = saved.names;
     session._unloadedConversationIds = saved.unloaded;
     session._mruList = saved.mru;

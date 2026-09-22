@@ -495,6 +495,12 @@ class JugglerApp {
       noConversations.setSession(session);
     }
 
+    // The panel a selected workspace box shows in place of a conversation.
+    const workspacePanel = /** @type {any} */ (document.querySelector('workspace-panel'));
+    if (workspacePanel && typeof workspacePanel.setSession === 'function') {
+      workspacePanel.setSession(session);
+    }
+
     // Wire the pinboard shell to the session: it resolves the active context its
     // pins render against, and fetches the project's board once there is one.
     const pinboard = /** @type {any} */ (document.querySelector('pinboard-shell'));

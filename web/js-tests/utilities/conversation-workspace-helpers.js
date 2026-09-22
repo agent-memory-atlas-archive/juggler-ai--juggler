@@ -25,6 +25,8 @@ import workerManager from '../../js/services/worker-manager.js';
 import contextItemRegistry from '../../js/registries/context-item-registry.js';
 import { createBoundOps } from '../../sdk/ops.js';
 import { registerWorkspace, patchWorkspace, listWorkspaces } from '../../js/services/workspaces.js';
+import { provisionWorkspace } from '../../js/services/workspace-provisioning.js';
+import { rebindConversation } from '../../js/services/workspace-rebinding.js';
 import WorkspaceProvider from '../../sdk/workspace-provider.js';
 import workspaceProviderRegistry from '../../js/registries/workspace-provider-registry.js';
 import { ensureWorkspaceBanner } from '../../js/components/conversation-area-rendering.js';
@@ -380,7 +382,7 @@ export class FixtureProvider extends WorkspaceProvider {
         id: 'done',
         label: 'Done with it',
         danger: true,
-        description: 'Removes the directory. This conversation goes back to the project folder.'
+        description: 'Removes the directory.'
       },
       {
         id: 'note',
@@ -396,7 +398,7 @@ export class FixtureProvider extends WorkspaceProvider {
       {
         id: 'leave',
         label: 'Leave it be',
-        description: 'Nothing changes on disk. This conversation goes back to the project folder.'
+        description: 'Nothing changes on disk.'
       },
       ...(FixtureProvider.discardDescription
         ? [{
@@ -469,6 +471,40 @@ export class FixtureProvider extends WorkspaceProvider {
     await ctx.ops.shell({ command: `rm -rf "${here}"` }, ctx.signal);
     return { removed: true, message: `removed ${dir}` };
   }
+}
+
+/**
+ * Build a workspace the way the create dialog does: no conversation in the
+ * question, and the row put on this window's table by hand because the
+ * broadcast that would bring it has not arrived yet.
+ * @param {any} session - The session it belongs to.
+ * @param {string} providerId - Whose form would have been filled in.
+ * @param {any} values - What that form would have said.
+ * @param {object} [options] - Anything else `provisionWorkspace` takes.
+ * @returns {Promise<any>} The provision outcome: the row, and its undo.
+ */
+export async function buildWorkspace(session, providerId, values, options = {}) {
+  const outcome = await provisionWorkspace({ session, providerId, values, ...options });
+  if (session && !session.workspaces?.some?.((/** @type {any} */ row) => row.id === outcome.workspace.id)) {
+    session.workspaces = [...(session.workspaces ?? []), outcome.workspace];
+  }
+  return outcome;
+}
+
+/**
+ * Build a workspace and move a conversation into it — the two acts the setup
+ * panel used to perform as one, now done the way the app does them: the place
+ * is made first and something is moved into it afterwards.
+ * @param {any} session - The session it belongs to.
+ * @param {any} conversation - The conversation to bind.
+ * @param {string} providerId - Whose form would have been filled in.
+ * @param {any} values - What that form would have said.
+ * @returns {Promise<any>} The workspace it built and bound to.
+ */
+export async function buildWorkspaceFor(session, conversation, providerId, values) {
+  const outcome = await buildWorkspace(session, providerId, values);
+  await rebindConversation(conversation, outcome.workspace.id);
+  return outcome.workspace;
 }
 
 /**

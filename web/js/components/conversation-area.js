@@ -32,7 +32,6 @@ import {
   runningToolsInTree,
 } from '../model/thread-navigation.js';
 import { WORKSPACE_ID_KEY, INITIALISED_KEY } from '../model/conversation.js';
-import { subscribeSetup } from '../services/conversation-setup.js';
 import { itemGoal } from '../model/thread-alias.js';
 import { liveMessageForThread } from '../utils/thread-display.js';
 import { appendDeleteControls } from '../utils/panel-delete-controls.js';
@@ -219,8 +218,6 @@ class ConversationArea extends HTMLElement {
     this._memberToGroup = new Map();
     /** @type {(() => void)|null} @private - Unsubscribe from the session feed the workspace banner rides, held alongside the Yjs observers and torn down with them */
     this._unsubscribeSession = null;
-    /** @type {(() => void)|null} @private - Unsubscribe from the setup-state feed the panel rides, torn down with the rest */
-    this._unsubscribeSetup = null;
   }
 
   /**
@@ -244,10 +241,6 @@ class ConversationArea extends HTMLElement {
     if (this._unsubscribeSession) {
       this._unsubscribeSession();
       this._unsubscribeSession = null;
-    }
-    if (this._unsubscribeSetup) {
-      this._unsubscribeSetup();
-      this._unsubscribeSetup = null;
     }
     selection.teardownSelectionVisibilityWatcher(this);
     if (this._replySuggestionsCtl) this._replySuggestionsCtl.detach();
@@ -283,14 +276,6 @@ class ConversationArea extends HTMLElement {
         conversation.session?.subscribe((/** @type {any} */ event) => {
           if (event?.type === 'session:workspaces-changed') this._refreshConversationTop();
         }) || null);
-
-      // The third input: what the setup panel has been told so far. It is
-      // deliberately not in the document — a selection costs nothing and a
-      // provision does not survive the tab — so it reaches the transcript
-      // through the state module rather than through Yjs.
-      this._unsubscribeSetup = subscribeSetup((/** @type {string} */ conversationId) => {
-        if (!conversationId || conversationId === this._conversation?.id) this._refreshConversationTop();
-      });
 
       this._getReplySuggestionsController().attach(conversation);
 
@@ -615,13 +600,12 @@ class ConversationArea extends HTMLElement {
   }
 
   /**
-   * Re-render the block at the top of the transcript alone — the setup panel or
-   * the workspace banner, whichever this conversation is owed.
+   * Re-render the block at the top of the transcript alone — the workspace
+   * banner this conversation is owed.
    *
-   * Its inputs all change without an item changing: the binding and the
-   * `initialised` flag are written once, the workspace table is replaced by a
-   * broadcast, and the panel's own state is not in the document at all. None of
-   * them would reach the transcript on the item path. Cheap enough to call on
+   * Its inputs all change without an item changing: the binding is written once
+   * and the workspace table is replaced by a broadcast. Neither would reach the
+   * transcript on the item path. Cheap enough to call on
    * every edge: both helpers rewrite nothing when the answer has not moved.
    * @private
    */
@@ -1797,12 +1781,6 @@ class ConversationArea extends HTMLElement {
    * Only the root column qualifies: a thread column is opened from work that has
    * already happened, so its reader is past needing this.
    *
-   * A conversation still being asked where it works is the other silence: its
-   * setup card sits in this very slot and carries the same four lines inside it
-   * (see ConversationSetupPanel), so the overlay would be a second copy laid
-   * over the first. ensureConversationChrome settles the card's presence earlier
-   * in the same render pass, so there is no frame showing neither.
-   *
    * This owns one bit only: whether the hint applies at all. Where it sits and
    * whether it fits are _positionEmptyHint's.
    * @param {Array<any>} items - The column's items, before display grouping.
@@ -1821,9 +1799,8 @@ class ConversationArea extends HTMLElement {
         }
       }
     }
-    const spokenFor = hasHistory || this.querySelector('conversation-setup-panel') !== null;
-    hint.classList.toggle('hidden', spokenFor);
-    if (spokenFor) {
+    hint.classList.toggle('hidden', hasHistory);
+    if (hasHistory) {
       // Retired: drop the band measurements too, so a later re-show starts from
       // the element's layout, not a band staler than the DOM.
       hint.classList.remove('no-room');

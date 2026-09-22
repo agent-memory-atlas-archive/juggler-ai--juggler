@@ -301,7 +301,7 @@ class ScratchCopyWorkspaceProvider extends WorkspaceProvider {
     return {
       workspace: {
         root: places.work,
-        label: `${places.name} (copy)`,
+        label: places.name,
         meta
       }
     };
@@ -322,24 +322,22 @@ class ScratchCopyWorkspaceProvider extends WorkspaceProvider {
    */
   async status(workspace, ctx) {
     const meta = workspace?.meta ?? {};
-    const named = slug(String(meta?.name ?? '')) || workspace.label || baseName(workspace.root);
     // What it is, before how it is doing. A copy is only meaningful as a copy OF
     // something, and the tree it came from is the thing a reader is deciding
     // about when they decide to apply it.
     const baseDir = String(meta?.baseDir ?? '');
     const kind = baseDir ? `Copy of ${baseName(baseDir)}` : 'Copy of the project';
     if (workspace.available === false) {
-      return { label: named, kind, detail: 'The copy is missing.', available: false };
+      return { kind, detail: 'The copy is missing.', available: false };
     }
     if (!baseDir) {
-      return { label: named, kind, detail: 'There is no record of what this is a copy of.', available: true };
+      return { kind, detail: 'There is no record of what this is a copy of.', available: true };
     }
 
     const changes = await this._changes(workspace, ctx);
     const count = (changes?.paths ?? []).length + (changes?.removed ?? []).length;
 
     return {
-      label: named,
       kind,
       // Said against the thing it is measured against. A bare count is a number
       // whose question the reader has to guess at, and the guesses — changed
@@ -433,24 +431,24 @@ class ScratchCopyWorkspaceProvider extends WorkspaceProvider {
       {
         id: 'apply',
         label: 'Apply the changes',
-        description: `Copies what changed here back into ${tree}, then removes the copy. Anything ${tree} has changed since is refused by name, and nothing is applied. This conversation goes back to the project folder.`
+        description: `Copies what changed here back into ${tree}, then removes the copy. Anything ${tree} has changed since is refused by name, and nothing is applied.`
       },
       {
         id: 'keep',
         label: 'Stop using this workspace',
-        description: 'Nothing is deleted: the files stay exactly where they are, and you can pick the copy up again whenever you like. This conversation goes back to the project folder.'
+        description: 'Nothing is deleted: the files stay exactly where they are, and you can pick the copy up again whenever you like.'
       },
       {
         id: 'apply-anyway',
         label: 'Apply, overwriting',
         danger: true,
-        description: `Copies the changes back even over files ${tree} has changed since. What is in ${tree} is lost. This conversation goes back to the project folder.`
+        description: `Copies the changes back even over files ${tree} has changed since. What is in ${tree} is lost.`
       },
       {
         id: 'discard',
         label: 'Delete this workspace',
         danger: true,
-        description: 'Removes the copy and everything done in it. This conversation goes back to the project folder.'
+        description: 'Removes the copy and everything done in it.'
       }
     ];
   }
@@ -654,7 +652,7 @@ class ScratchCopyWorkspaceProvider extends WorkspaceProvider {
         detail: `${places.dir} — a copy with no conversation`,
         workspace: {
           root: places.work,
-          label: `${named} (copy)`,
+          label: named,
           meta: {
             name: named,
             baseDir: projectPath,

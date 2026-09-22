@@ -626,8 +626,13 @@ column-container {
     margin-bottom: 6px;
 }
 
-/* Conversation-area columns: fixed default width, resizable */
-column-container conversation-area {
+/* The columns that stand where a conversation stands: the conversation itself,
+   and the workspace panel shown instead of one when a box in the tab strip
+   holds the selection. One rule, because they are one width — the panel opens
+   exactly where and as wide as the conversation it replaces, and both are
+   resized together by the same `juggler-column-width` preference. */
+column-container conversation-area,
+column-container workspace-panel {
     flex: 0 0 30rem;
     min-width: 12.5rem;
     min-height: 0;
@@ -635,7 +640,8 @@ column-container conversation-area {
 }
 
 /* When an explicit width is set via resize handle, respect it */
-column-container conversation-area[style*="width"] {
+column-container conversation-area[style*="width"],
+column-container workspace-panel[style*="width"] {
     flex: 0 0 auto;
 }
 
@@ -666,6 +672,10 @@ column-container properties-panel {
 column-container properties-panel[style*="width"]:not(:last-child) {
     flex: 0 0 auto;
     min-width: 12.5rem;
+}
+
+column-container workspace-panel {
+    display: flex;
 }
 
 /* Column resize handle */

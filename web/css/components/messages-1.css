@@ -51,17 +51,6 @@
     margin-bottom: auto;
 }
 
-/* While a new conversation is being asked where it works, the column fills the
-   scroller instead of absorbing the free space below itself, so the setup card
-   at its foot can take that space as auto margins and centre in it — the place
-   the starting hint occupies on a conversation with nothing to ask. Only ever
-   set on a conversation with no history, so there is no scroll position for the
-   changed sizing to disturb. */
-.conversation-message-list-inner.awaiting-setup {
-    flex: 1 0 auto;
-    margin-bottom: 0;
-}
-
 /* A file dragged anywhere over the column washes the transcript, while the
    composer below takes the drop ring (see components.css): the wash says the
    whole panel will accept the drop, the ring says where the file lands. */

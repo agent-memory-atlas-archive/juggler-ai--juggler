@@ -8,14 +8,13 @@
  * A provider renders its fields and answers for them; everything around those
  * fields is the host's — the container, the context they are rendered with, the
  * reporting of every edit, and the line of progress a provision writes while it
- * runs. Two places ask a provider to build something: the setup panel at the top
- * of a new conversation, and the move dialog an existing one opens. This is the
- * one copy of what they share, because two of it is how two views of one flow
- * start looking like two applications.
+ * runs. Two dialogs ask a provider to build something: the one that makes a
+ * workspace, and the one that moves a conversation into a place that does not
+ * exist yet. This is the one copy of what they share, because two of it is how
+ * two views of one flow start looking like two applications.
  *
- * It holds no state. Each caller keeps its own — the panel in
- * {@link module:services/conversation-setup}, the dialog in itself — and passes
- * the values in and takes the edits out.
+ * It holds no state. Each caller keeps its own, and passes the values in and
+ * takes the edits out.
  * @module components/workspace-setup-form
  */
 
@@ -154,7 +153,7 @@ function buildRecommendations(provider) {
  * probed for, the adopt row that is an offer rather than a choice, and the body
  * the selected "New…" row expands into.
  * @param {object} request - What to draw.
- * @param {import('../services/conversation-setup.js').SetupRow[]} request.rows - The places, in order.
+ * @param {import('../services/workspace-places.js').SetupRow[]} request.rows - The places, in order.
  * @param {string|null} request.selection - The selected row's id, or null for none.
  * @param {string} request.label - What the group is called, for a screen reader.
  * @param {(rowId: string) => any} [request.statusFor] - What a row was last probed to say.
@@ -164,15 +163,21 @@ function buildRecommendations(provider) {
  *   it is not plain adoption: putting a lost workspace back is the same row and
  *   a different act, and the row is what says which.
  * @param {(row: any) => HTMLElement|null} [request.expandSelected] - The selected row's body.
+ * @param {boolean} [request.asBlocks] - Draw each place as a block rather than
+ *   as a line. Blocks are for the views where picking one of these is the whole
+ *   question — the create dialog's rail is the exception — and give the name, what
+ *   choosing it means and the address a line each. A view that lists places to
+ *   one side of the question it is really asking leaves this off and gets a
+ *   line apiece.
  * @returns {HTMLElement} The group.
  */
 export function buildPlaceRows(request) {
   const {
-    rows, selection, label, statusFor, onSelect, onAdopt, expandSelected, adoptVerb
+    rows, selection, label, statusFor, onSelect, onAdopt, expandSelected, adoptVerb, asBlocks
   } = request;
 
   const group = document.createElement('div');
-  group.className = 'setup-rows';
+  group.className = asBlocks ? 'setup-rows setup-rows-blocks' : 'setup-rows';
   group.setAttribute('role', 'radiogroup');
   group.setAttribute('aria-label', label);
 

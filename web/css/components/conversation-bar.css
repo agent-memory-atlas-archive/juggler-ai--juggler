@@ -53,6 +53,238 @@ conversation-bar .conversation-tabs {
     scrollbar-color: var(--overlay-light-10) transparent;
 }
 
+/* A workspace's box: the conversations working in one tree, drawn inside it.
+   The project's own conversations are deliberately not boxed — they are the
+   majority, and a frame around all of them would serve the few that are
+   elsewhere. So a box is what marks work as happening somewhere other than the
+   obvious place, and it stays on screen with nothing in it: the tree outlives
+   the conversations started in it, and this is the only thing that shows it. */
+conversation-bar .conversation-box {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    gap: 0.375rem;
+    width: 100%;
+    padding: 0.375rem;
+    background: var(--workspace-box-bg);
+    border: 0.0625rem solid var(--workspace-box-border);
+    border-radius: 0.9rem;
+}
+
+/* The header is the workspace's own row: what the place is called and how it is
+   doing. Everything in it is true of the tree rather than of any one
+   conversation in it.
+
+   The right-hand padding is the room the box's own "+" sits in, so a long name
+   ellipsises before it reaches the button rather than running underneath it. */
+conversation-bar .conversation-box-header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-width: 0;
+    padding: 0.2rem 1.6rem 0.2rem 0.35rem;
+    cursor: pointer;
+}
+
+/* Adding a conversation to this workspace. The same green and the same answer
+   to the pointer as the "+" at the top of the strip, because it is the same
+   act — but round and small, because that one is the strip's one wide control
+   and this is a mark in the corner of a box. Laid over the top corner rather
+   than placed in the header, which holds the name alone. */
+conversation-bar .conversation-box-add {
+    position: absolute;
+    top: 0.3125rem;
+    right: 0.3125rem;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    padding: 0;
+    background: transparent;
+    border: 0.0625rem solid transparent;
+    border-radius: 50%;
+    color: var(--accent-green);
+    font-size: 1rem;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+    transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+conversation-bar .conversation-box-add:hover {
+    background: var(--bg-raised);
+    border-color: var(--border-color);
+    color: var(--accent-green-bright);
+}
+
+/* The box answers the pointer, all of it at once. Nothing inside it takes a
+   surface of its own: a lit, rounded panel around the title is a tab shape,
+   and there are real tabs directly below it to be confused with.
+
+   A lift of its own fill rather than a rung of the background ramp: the box no
+   longer sits on that ramp, and --bg-raised is now darker than the box in dark
+   mode, so borrowing it would make the hover read as a press. */
+conversation-bar .conversation-box:not(.active):hover {
+    background: color-mix(in srgb, var(--text-primary) 7%, var(--workspace-box-bg));
+}
+
+/* A box is chosen the way a tab is chosen, in the same colours, because the
+   strip is one list of things to choose between. What is chosen is the box, so
+   the box is what changes colour. Mixed against --bg-raised for the same reason
+   the tab is — bare --accent-blue under white text is about 2.7:1.
+
+   It colours its own text and nothing else's. The tabs inside a box are still
+   tabs, drawn and lit by their own rules against their own backgrounds, and an
+   inherited colour from the frame around them reaches straight through to their
+   labels. */
+conversation-bar .conversation-box.active {
+    background: color-mix(in srgb, var(--accent-blue) 70%, var(--bg-raised));
+    border-color: color-mix(in srgb, var(--accent-blue) 70%, var(--bg-raised));
+}
+
+conversation-bar .conversation-box.active .conversation-box-label {
+    color: #fff;
+}
+
+conversation-bar.tab-list-focused:focus-within .conversation-box.active {
+    outline: 0.125rem solid var(--accent-blue);
+    outline-offset: 0.125rem;
+    box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--accent-blue) 30%, transparent);
+}
+
+conversation-bar .conversation-box-title {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    min-width: 0;
+}
+
+/* The tray's title, and drawn like one: the name of the place is the most
+   important thing in the box, not the quietest. Read at a glance against the
+   tabs below it, which are longer, lighter and more numerous. */
+conversation-bar .conversation-box-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    font-size: 0.8125rem;
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-primary);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+/* Uncommitted work: the one piece of state worth a mark rather than a word,
+   because it is what makes a destructive ending cost something. */
+conversation-bar .conversation-box-header.is-dirty .conversation-box-label::after {
+    content: "";
+    display: inline-block;
+    width: 0.375rem;
+    height: 0.375rem;
+    margin-left: 0.3rem;
+    background: var(--accent-yellow);
+    border-radius: 50%;
+    vertical-align: middle;
+}
+
+conversation-bar .conversation-box-tabs {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.375rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+/* A tab lying in a tray keeps its own fill — it is the same tab it would be
+   anywhere else in the strip — but takes the tray's edge colour, because its
+   own is tuned to read against the page and the tray is not the page. Without
+   this the cards blur into the thing holding them, which is the failure the
+   tray was drawn to fix. Not the selected one: that has a blue edge of its own
+   and needs no help being found. */
+conversation-bar .conversation-box .conversation-tab:not(.active) {
+    border-color: var(--workspace-box-border);
+}
+
+/* The last row of the list, shown only while there is nothing above it. */
+conversation-bar .conversation-box-empty {
+    padding: 0.125rem 0.4rem 0.25rem;
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+}
+
+/* A box with nothing in it is a grip all over. There is nothing inside it to
+   aim at, so the whole card answers the pointer the way its name does —
+   otherwise the band around one short line of text looks draggable and is not.
+   A box with tabs in it leaves the cursor to them: they are what a press there
+   is about. */
+conversation-bar .conversation-box:not(:has(.conversation-tab)),
+conversation-bar .conversation-box:not(:has(.conversation-tab)) .conversation-box-empty {
+    cursor: pointer;
+}
+
+/* Still the quietest thing in the box, but quiet against the selected surface
+   rather than against the one it is no longer sitting on. */
+conversation-bar .conversation-box.active .conversation-box-empty {
+    color: color-mix(in srgb, #fff 70%, transparent);
+}
+
+/* The way to make a workspace, drawn as the outline of one. Same width, same
+   corner and the same border colour as a real box, with the fill left out and
+   the edge dashed: it is the shape of the thing, stated as not yet being one.
+   Height comes from the single line inside it, so it costs one box header's
+   worth of the strip and not an empty rectangle's. */
+conversation-bar .conversation-box-new {
+    display: flex;
+    flex-shrink: 0;
+    width: 100%;
+    margin-top: 0.125rem;
+}
+
+conversation-bar .conversation-box-new-button {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 0.2rem;
+    min-width: 0;
+    padding: 0.4rem;
+    font-size: 0.8125rem;
+    color: var(--text-tertiary);
+    background: none;
+    border: 0.0625rem dashed var(--workspace-box-border);
+    border-radius: 0.9rem;
+    cursor: pointer;
+}
+
+/* The mark goes in the width a tab keeps for its drag handle, with the tab's
+   own gap after it, so the words start exactly where every tab name below
+   starts. Left of that line the strip is margin; right of it, it is labels —
+   and an outline whose text began somewhere else read as a caption under the
+   list rather than the last row of it. */
+conversation-bar .conversation-box-new-button svg {
+    flex-shrink: 0;
+    width: 1rem;
+    height: 1rem;
+}
+
+conversation-bar .conversation-box-new-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* On hover it fills in: the outline becoming a box is the same answer the real
+   boxes give the pointer, and says what pressing it is going to produce. */
+conversation-bar .conversation-box-new-button:hover {
+    color: var(--text-primary);
+    background: var(--workspace-box-bg);
+    border-style: solid;
+}
+
 conversation-bar .conversation-tab,
 conversation-bar .conversation-add-item {
     display: flex;
@@ -191,13 +423,19 @@ conversation-bar.tab-list-focused:focus-within .conversation-tab.active {
 }
 
 /* Drag-and-drop states.
-   The dragged tab is represented by a floating clone (.drag-ghost) positioned
+   The dragged thing is represented by a floating clone (.drag-ghost) positioned
    `fixed` on the host, so it escapes the tab list's overflow:auto clip and can
    travel the full height of the sidebar rather than being cut off at the short
-   list's edge. The real tab stays in place as an invisible placeholder
+   list's edge. The real one stays in place as an invisible placeholder
    (.drag-source) that the siblings shift around. z-index sits at --z-dropdown:
-   above sidebar chrome, below modals (you can't reorder tabs with one open). */
-conversation-bar .conversation-tab.drag-ghost {
+   above sidebar chrome, below modals (you can't reorder tabs with one open).
+
+   Written against the classes rather than against .conversation-tab, because a
+   whole workspace box is dragged by the same gesture through the same utility:
+   scoping the detachment to tabs left a box drag cloning a box that stayed
+   where it was and never came off the page. Only the dragged element carries
+   these classes, so the tabs drawn inside a box's clone are unaffected. */
+conversation-bar .drag-ghost {
     position: fixed;
     margin: 0;
     z-index: var(--z-dropdown);
@@ -214,7 +452,7 @@ conversation-bar .conversation-tab.drag-ghost .tab-drag-handle {
     opacity: 1;
 }
 
-conversation-bar .conversation-tab.drag-source {
+conversation-bar .drag-source {
     visibility: hidden;
 }
 
@@ -248,7 +486,8 @@ conversation-bar .tab-drag-handle {
     }
 }
 
-conversation-bar .conversation-tabs.is-dragging .conversation-tab:not(.drag-source) {
+conversation-bar .conversation-tabs.is-dragging .conversation-tab:not(.drag-source),
+conversation-bar .conversation-tabs.is-dragging .conversation-box:not(.drag-source) {
     transition: transform 150ms ease;
 }
 
