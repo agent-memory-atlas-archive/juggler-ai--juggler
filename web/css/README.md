@@ -29,7 +29,7 @@ Every sheet declares its layer, and the layer order is declared once in the
 HTML:
 
 ```css
-@layer tokens, base, layout, patterns, components, utilities;
+@layer tokens, base, layout, patterns, components, vendor, utilities;
 ```
 
 | Layer | Holds |
@@ -39,6 +39,7 @@ HTML:
 | `layout` | The app shell — header, columns, conversation area, the responsive rules that move them. |
 | `patterns` | Idioms shared by several unrelated components: menus, modals, buttons, badges, icons. |
 | `components` | One file per feature group. The bulk of the CSS. |
+| `vendor` | Third-party themes. Above `components` because a syntax theme has to beat the generic `pre`/`code` styling a feature group applies to the block around it. |
 | `utilities` | Single-purpose `u-*` helpers. Last, so they win. |
 
 Layers mean **source order between files no longer decides who wins**, which is
@@ -48,6 +49,12 @@ Two consequences worth knowing:
 - An override that crosses layers is explicit — a `layout` rule cannot be
   quietly beaten by a `components` rule, whatever the specificity. If you find
   yourself wanting that, the rule is in the wrong layer.
+- **A component cannot out-order a utility.** `utilities` is the last layer, so
+  a component rule that means to override a `u-` class it carries has to
+  out-*rank* it: qualify the selector with the co-class or an ancestor, and say
+  in a comment that it is there to beat the utility. `composer-box
+  .more-actions-btn.input-ctrl-btn` is one — a filled circular control that
+  borrows the press scale from `.input-ctrl-btn` but not its ghost chrome.
 - **Unlayered CSS beats every layer.** Extension stylesheets are unlayered, so
   an extension can override host styling without `!important`. That is the
   supported mechanism; do not use `!important` to achieve it.
@@ -154,5 +161,7 @@ amber yellow lime green emerald teal cyan sky brown stone zinc crimson`).
 | dead selectors | A class in the CSS that appears in no JS, HTML or extension, and matches no `dynamicClasses` pattern. |
 | token parity | A colour token defined for one theme only without the fallback idiom; a `var()` that resolves to nothing. |
 | link parity | `index.html` and `headless-test.html` disagreeing on the sheet list. |
+| layer order | A sheet whose declared layer is not its directory, or one listed out of layer order. |
+| asset url | A relative `url()` that resolves to no file. |
 
 Run it on what you changed with `make lint-files FILES="web/css/…"`.

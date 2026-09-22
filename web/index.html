@@ -175,55 +175,62 @@
     </script>
 
     <!-- Styles. The sheet list and its order are web/css/manifest.json;
-         lint-css-arch checks this list against it. -->
-    <!-- Element defaults -->
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/base/reset.css">
-
+         lint-css-arch checks this list against it. The order is the layer
+         order — tokens, base, layout, patterns, components, vendor, utilities —
+         so that precedence between sheets reads the same before and after each
+         sheet declares its @layer. base/fonts.css is linked further up, ahead
+         of the theme paint, and holds nothing but @font-face. -->
     <!-- Tokens -->
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/tokens/theme-dark.css">
 
-    <!-- The shell, and the components it frames -->
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/layout/app-shell.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/messages-1.css">
+    <!-- Element defaults -->
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/base/reset.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/base/elements.css">
+
+    <!-- The shell -->
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/layout/app-shell.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/layout/responsive.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/layout/window-chrome.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/layout/app-header.css">
+
+    <!-- Shared patterns -->
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/markdown.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/overlay-chrome.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/icons.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/spinner.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/modal-dialog.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/tooltip.css">
+
+    <!-- The feature groups -->
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/messages-1.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/messages-2.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/project-setup.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/messages-3.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/markdown.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/layout/window-chrome.css">
-
-    <!-- Utilities -->
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/utilities/utilities.css">
-
-    <!-- Shared patterns, and the feature groups -->
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/overlay-chrome.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/conversation-bar.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/layout/app-header.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/strategy-bar.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/onboarding.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/icons.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/properties-panel.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/model-picker.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/spinner.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/diff-viewer.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/composer.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/approvals-1.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/modal-dialog.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/settings-1.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/about-modal.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/settings-2.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/approvals-2.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/overlays-and-updates.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/tooltip.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/settings-3.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/pinboard.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/context-items.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/plugin-catalog.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/skills-marketplace.css">
 
-    <!-- Vendor -->
+    <!-- Vendor. A syntax theme has to beat the generic pre/code styling the
+         feature groups apply, so it sits above components. -->
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/vendor/prism-theme.css">
+
+    <!-- Utilities, last, so they win -->
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/utilities/utilities.css">
 
     <!-- Marked.js for markdown rendering (vendored) -->
     <script src="/v{{.StaticVersion}}/js/vendor/marked.min.js"></script>

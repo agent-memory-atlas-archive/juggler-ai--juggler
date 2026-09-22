@@ -2,12 +2,13 @@
 /**
  * lint-css-arch — checks the CSS architecture contract in web/css/README.md.
  *
- * Five checks, all driven by web/css/manifest.json:
+ * Six checks, all driven by web/css/manifest.json:
  *
  *   ownership     a selector lives in the file that owns its root
  *   dead-selector a class in the CSS is referenced by no JS, HTML or extension
  *   token-parity  every var() resolves; theme colour tokens exist in both themes
  *   link-parity   index.html and headless-test.html link the manifest's sheets
+ *   layer-order   a sheet's directory is its layer, and the list is in layer order
  *   asset-url     every relative url() resolves to a file that exists
  *
  * Known violations live in web/css/.lint-css-allowlist, one per line, as
@@ -381,6 +382,58 @@ function checkLinkParity(manifest) {
 }
 
 /**
+ * layer-order: a sheet's directory is its layer, and the sheets are listed in
+ * layer order.
+ *
+ * This is what lets each sheet be wrapped in its own `@layer` without moving
+ * anything: while link order is layer order, precedence between two sheets
+ * reads the same whether the browser is deciding it by source order or by
+ * layer. Let the list interleave and that stops being true silently — the
+ * layers keep working, but they no longer agree with the file everyone reads.
+ *
+ * A sheet with no style rules is exempt, because the cascade never arbitrates
+ * it: base/fonts.css is linked ahead of everything, holding only @font-face,
+ * so the fonts start fetching before the render-blocking theme paint.
+ */
+function checkLayerOrder(manifest, sheets, sources) {
+	const failures = [];
+	const rank = new Map(manifest.layers.map((l, i) => [l, i]));
+	let highest = -1;
+	let highestFile = null;
+
+	for (const sheet of sheets) {
+		const dir = sheet.file.split('/')[0];
+		if (sheet.layer !== dir) {
+			failures.push({
+				item: `${sheet.file}:layer`,
+				message: `${sheet.file} declares the ${sheet.layer} layer but sits in ${dir}/ — a sheet's directory is its layer`,
+			});
+			continue;
+		}
+		if (!rank.has(sheet.layer)) {
+			failures.push({
+				item: `${sheet.file}:layer`,
+				message: `${sheet.file} declares the ${sheet.layer} layer, which manifest.json does not list`,
+			});
+			continue;
+		}
+		if (!parseRules(sources.get(sheet.file) || '').length) continue;
+
+		const at = rank.get(sheet.layer);
+		if (at < highest) {
+			failures.push({
+				item: `${sheet.file}:order`,
+				message: `${sheet.file} is in the ${sheet.layer} layer but is listed after ${highestFile} in ${manifest.layers[highest]} — sheets go in layer order`,
+			});
+			continue;
+		}
+		highest = at;
+		highestFile = sheet.file;
+	}
+	return failures;
+}
+
+/**
  * asset-url: every relative url() resolves to a file that exists.
  *
  * A browser resolves a url() against the stylesheet's own URL, not the
@@ -434,6 +487,7 @@ function main() {
 		'dead-selector': checkDeadSelectors(manifest, sheets, sources),
 		'token-parity': checkTokenParity(manifest, sheets, sources),
 		'link-parity': checkLinkParity(manifest),
+		'layer-order': checkLayerOrder(manifest, sheets, sources),
 		'asset-url': checkAssetUrls(sheets, sources),
 	};
 

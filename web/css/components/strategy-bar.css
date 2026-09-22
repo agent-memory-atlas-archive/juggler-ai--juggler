@@ -96,7 +96,11 @@ strategy-selector[hidden] {
     color: var(--text-primary);
 }
 
-.strategy-info-button {
+/* The button carries .u-btn-ghost for its chrome but wants a dimmer resting
+   icon than the ghost colour. Scoped to .strategy-item so it outranks the
+   utility: utilities are the last layer, so an unscoped rule here could not
+   win whatever the source order. */
+.strategy-item .strategy-info-button {
     position: absolute;
     top: 0.625rem;
     right: 0.75rem;

@@ -747,8 +747,13 @@ composer-box .schedule-send-btn .schedule-send-countdown {
    actions sheet. Shaped and sized to match the send button so the two read as a
    peer pair (a neutral "more" beside the accent "send"); the ellipsis glyph
    reads as "more options". Hidden on desktop; the coarse-pointer block below
-   reveals it. */
-composer-box .more-actions-btn {
+   reveals it.
+
+   Qualified with .input-ctrl-btn, the co-class it carries for the shared press
+   scale, so it outranks that utility's ghost chrome. Utilities are the last
+   layer: at equal specificity the pill would win and the circle would lose its
+   fill and gain a hairline border. */
+composer-box .more-actions-btn.input-ctrl-btn {
     display: none;
     justify-content: center;
     width: 2rem;
@@ -899,9 +904,10 @@ composer-box .context-cache-warning-btn .icon-warning {
        a sticky :hover/:focus that would otherwise paint the ghost pill's wash and
        hairline border over the circular control. Pin hover/focus to the resting
        fill so it stays a clean solid circle; :active still dips via the shared
-       .input-ctrl-btn press scale. */
-    composer-box .more-actions-btn:hover:not(:disabled),
-    composer-box .more-actions-btn:focus:not(:disabled) {
+       .input-ctrl-btn press scale. Qualified with .input-ctrl-btn to outrank
+       that utility's own hover rule, which is in the last layer. */
+    composer-box .more-actions-btn.input-ctrl-btn:hover:not(:disabled),
+    composer-box .more-actions-btn.input-ctrl-btn:focus:not(:disabled) {
         background: var(--overlay-light-30);
         border-color: transparent;
         color: var(--text-primary);

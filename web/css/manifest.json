@@ -1,26 +1,21 @@
 {
 	"$comment": "The authoritative sheet list and ownership map. Read by scripts/lint-css-arch and by the <link> lists in web/index.html and web/js-tests/headless-test.html, which must match it in content and order. The contract is README.md.",
+	"$layers": "The cascade layers, in precedence order, lowest first. vendor sits above components because a syntax theme has to beat the generic pre/code styling the feature groups apply; utilities stay last, so they win.",
 	"layers": [
 		"tokens",
 		"base",
 		"layout",
 		"patterns",
 		"components",
+		"vendor",
 		"utilities"
 	],
-	"$sheets": "Every stylesheet, in <link> order, with the layer it declares and the selector roots it owns. A root is the bare name of a selector's subject, as scripts/lint-css-arch computes it: the leading element, class or id with its punctuation dropped, skipping :root/html/body when the selector descends past them. A `*` in a pattern is a glob. Numbered sheets (messages-1, settings-2) are runs of one group the old files had scattered; defragmenting them merges each set into one.",
+	"$sheets": "Every stylesheet, in <link> order, which is layer order — a sheet's directory is its layer, and the groups appear in the order above. The one exception is base/fonts.css, linked ahead of the theme paint for the fetch and holding nothing but @font-face, which the cascade never arbitrates. Each entry carries the layer it declares and the selector roots it owns. A root is the bare name of a selector's subject, as scripts/lint-css-arch computes it: the leading element, class or id with its punctuation dropped, skipping :root/html/body when the selector descends past them. A `*` in a pattern is a glob. Numbered sheets (messages-1, settings-2) are runs of one group the old files had scattered; defragmenting them merges each set into one.",
 	"sheets": [
 		{
 			"file": "base/fonts.css",
 			"layer": "base",
 			"owns": []
-		},
-		{
-			"file": "base/reset.css",
-			"layer": "base",
-			"owns": [
-				"select"
-			]
 		},
 		{
 			"file": "tokens/theme-dark.css",
@@ -30,6 +25,28 @@
 				"body",
 				"ci-text-block",
 				"strong"
+			]
+		},
+		{
+			"file": "base/reset.css",
+			"layer": "base",
+			"owns": [
+				"select"
+			]
+		},
+		{
+			"file": "base/elements.css",
+			"layer": "base",
+			"owns": [
+				"a",
+				"button",
+				"input",
+				"text-blue",
+				"text-green",
+				"text-red",
+				"text-secondary",
+				"text-yellow",
+				"textarea"
 			]
 		},
 		{
@@ -72,6 +89,79 @@
 			]
 		},
 		{
+			"file": "layout/responsive.css",
+			"layer": "layout",
+			"owns": [
+				"app-main",
+				"popup-*",
+				"pulse",
+				"sidebar-backdrop"
+			]
+		},
+		{
+			"file": "layout/window-chrome.css",
+			"layer": "layout",
+			"owns": [
+				"window-*"
+			]
+		},
+		{
+			"file": "layout/app-header.css",
+			"layer": "layout",
+			"owns": [
+				"app-header"
+			]
+		},
+		{
+			"file": "patterns/markdown.css",
+			"layer": "patterns",
+			"owns": [
+				"code-block-wrap",
+				"code-copy-button",
+				"markdown",
+				"markdown-html-scope"
+			]
+		},
+		{
+			"file": "patterns/overlay-chrome.css",
+			"layer": "patterns",
+			"owns": [
+				"code-block",
+				"image-lightbox",
+				"modal-backdrop",
+				"token-display"
+			]
+		},
+		{
+			"file": "patterns/icons.css",
+			"layer": "patterns",
+			"owns": [
+				"icon-*",
+				"tick-*"
+			]
+		},
+		{
+			"file": "patterns/spinner.css",
+			"layer": "patterns",
+			"owns": [
+				"juggler-spinner"
+			]
+		},
+		{
+			"file": "patterns/modal-dialog.css",
+			"layer": "patterns",
+			"owns": [
+				"modal-dialog"
+			]
+		},
+		{
+			"file": "patterns/tooltip.css",
+			"layer": "patterns",
+			"owns": [
+				"app-tooltip"
+			]
+		},
+		{
 			"file": "components/messages-1.css",
 			"layer": "components",
 			"owns": [
@@ -85,31 +175,6 @@
 				"llm-iteration-counter",
 				"llm-next-steps",
 				"scroll-*"
-			]
-		},
-		{
-			"file": "base/elements.css",
-			"layer": "base",
-			"owns": [
-				"a",
-				"button",
-				"input",
-				"text-blue",
-				"text-green",
-				"text-red",
-				"text-secondary",
-				"text-yellow",
-				"textarea"
-			]
-		},
-		{
-			"file": "layout/responsive.css",
-			"layer": "layout",
-			"owns": [
-				"app-main",
-				"popup-*",
-				"pulse",
-				"sidebar-backdrop"
 			]
 		},
 		{
@@ -158,49 +223,6 @@
 			]
 		},
 		{
-			"file": "patterns/markdown.css",
-			"layer": "patterns",
-			"owns": [
-				"code-block-wrap",
-				"code-copy-button",
-				"markdown",
-				"markdown-html-scope"
-			]
-		},
-		{
-			"file": "layout/window-chrome.css",
-			"layer": "layout",
-			"owns": [
-				"window-*"
-			]
-		},
-		{
-			"file": "utilities/utilities.css",
-			"layer": "utilities",
-			"owns": [
-				"close-button",
-				"hidden",
-				"u-badge",
-				"u-badge-*",
-				"u-btn-*",
-				"u-card",
-				"u-empty-*",
-				"u-icon-*",
-				"u-interactive-row",
-				"u-scrollbar-thin"
-			]
-		},
-		{
-			"file": "patterns/overlay-chrome.css",
-			"layer": "patterns",
-			"owns": [
-				"code-block",
-				"image-lightbox",
-				"modal-backdrop",
-				"token-display"
-			]
-		},
-		{
 			"file": "components/conversation-bar.css",
 			"layer": "components",
 			"owns": [
@@ -214,13 +236,6 @@
 			]
 		},
 		{
-			"file": "layout/app-header.css",
-			"layer": "layout",
-			"owns": [
-				"app-header"
-			]
-		},
-		{
 			"file": "components/strategy-bar.css",
 			"layer": "components",
 			"owns": [
@@ -228,6 +243,7 @@
 				"context-item-context-menu",
 				"strategy-dropdown",
 				"strategy-info-button",
+				"strategy-item",
 				"strategy-item-*",
 				"strategy-selector"
 			]
@@ -238,14 +254,6 @@
 			"owns": [
 				"no-conversations-overlay",
 				"no-project-overlay"
-			]
-		},
-		{
-			"file": "patterns/icons.css",
-			"layer": "patterns",
-			"owns": [
-				"icon-*",
-				"tick-*"
 			]
 		},
 		{
@@ -317,13 +325,6 @@
 			]
 		},
 		{
-			"file": "patterns/spinner.css",
-			"layer": "patterns",
-			"owns": [
-				"juggler-spinner"
-			]
-		},
-		{
 			"file": "components/diff-viewer.css",
 			"layer": "components",
 			"owns": [
@@ -354,13 +355,6 @@
 			"layer": "components",
 			"owns": [
 				"permissions-popup"
-			]
-		},
-		{
-			"file": "patterns/modal-dialog.css",
-			"layer": "patterns",
-			"owns": [
-				"modal-dialog"
 			]
 		},
 		{
@@ -442,13 +436,6 @@
 				"transaction-band-*",
 				"update-button",
 				"update-notice"
-			]
-		},
-		{
-			"file": "patterns/tooltip.css",
-			"layer": "patterns",
-			"owns": [
-				"app-tooltip"
 			]
 		},
 		{
@@ -605,12 +592,28 @@
 		},
 		{
 			"file": "vendor/prism-theme.css",
-			"layer": "base",
+			"layer": "vendor",
 			"owns": [
 				"bash-*",
 				"code",
 				"pre",
 				"token"
+			]
+		},
+		{
+			"file": "utilities/utilities.css",
+			"layer": "utilities",
+			"owns": [
+				"close-button",
+				"hidden",
+				"u-badge",
+				"u-badge-*",
+				"u-btn-*",
+				"u-card",
+				"u-empty-*",
+				"u-icon-*",
+				"u-interactive-row",
+				"u-scrollbar-thin"
 			]
 		}
 	],
