@@ -19,17 +19,26 @@ import (
 // routes it to. The same model id served by two providers genuinely differs —
 // measured across OpenRouter's backends for one model, context ranged from 1M
 // to 1.05M and the output cap from 16K to 943K, a 58x spread under one name.
-// So anything the endpoint publishes about its own models wins outright, and
-// these entries answer only for a listing that could not be fetched.
+// So anything the endpoint publishes about its own models wins outright — but
+// this endpoint publishes nothing: its listing carries id, object, created and
+// owned_by, and no limits. These entries therefore answer for every model it
+// serves, not merely for a listing that could not be fetched, and an id missing
+// from them is sized by DefaultContextWindow rather than corrected at runtime.
+//
+// A figure here needs a vendor's published number behind it. Where the vendor
+// is undisclosed or silent the id is deliberately absent, because the default
+// under-estimates while a guess that overshoots is rejected mid-request.
 var ModelContextWindows = map[string]int{
 	"big-pickle":             200000,
 	"claude-fable-5":         1000000,
+	"claude-fable-5-1":       1000000,
 	"claude-haiku-4-5":       200000,
-	"claude-opus-4-1":        200000,
 	"claude-opus-4-5":        200000,
 	"claude-opus-4-6":        1000000,
 	"claude-opus-4-7":        1000000,
 	"claude-opus-4-8":        1000000,
+	"claude-opus-5":          1000000,
+	"claude-opus-5-5":        1000000,
 	"claude-sonnet-4":        1000000,
 	"claude-sonnet-4-5":      1000000,
 	"claude-sonnet-4-6":      1000000,
@@ -37,9 +46,12 @@ var ModelContextWindows = map[string]int{
 	"deepseek-v4-flash":      1000000,
 	"deepseek-v4-flash-free": 200000,
 	"deepseek-v4-pro":        1000000,
+	"deepseek-v4.1-flash":    1000000,
 	"glm-5":                  204800,
 	"glm-5.1":                204800,
 	"glm-5.2":                1000000,
+	"glm-5.3":                1000000,
+	"glm-5.3-flash":          1000000,
 	"gpt-5":                  400000,
 	"gpt-5-codex":            400000,
 	"gpt-5-nano":             400000,
@@ -66,19 +78,33 @@ var ModelContextWindows = map[string]int{
 	"gemini-3-flash":         1048576,
 	"gemini-3.1-pro":         1048576,
 	"gemini-3.5-flash":       1048576,
+	"gemini-3.5-flash-lite":  1048576,
+	"gemini-3.6-flash":       1048576,
+	"gemini-3.7-flash":       1048576,
+	"gemini-3.8-flash":       1048576,
 	"grok-4.5":               500000,
+	"grok-4.6":               500000,
 	"grok-build-0.1":         256000,
 	"kimi-k2.5":              262144,
 	"kimi-k2.6":              262144,
 	"kimi-k2.7-code":         262144,
-	"mimo-v2.5-free":         200000,
-	"minimax-m2.5":           204800,
-	"minimax-m2.7":           204800,
-	"minimax-m3":             512000,
-	"nemotron-3-ultra-free":  1000000,
-	"north-mini-code-free":   256000,
-	"qwen3.5-plus":           262144,
-	"qwen3.6-plus":           262144,
+	// K3's window is shared between prompt and completion rather than being a
+	// separate input ceiling, so the whole conversation is spent against it.
+	"kimi-k3":        1048576,
+	"mimo-v2.5-free": 200000,
+	// Xiaomi documents a 1M window, but this gateway's free tier is served at
+	// its own smaller limit — the same shrink deepseek-v4-flash-free carries.
+	"mimo-v2.6-flash-free":  200000,
+	"minimax-m2.5":          204800,
+	"minimax-m2.7":          204800,
+	"minimax-m3":            512000,
+	"nemotron-3-ultra-free": 1000000,
+	"qwen3.5-plus":          262144,
+	"qwen3.6-plus":          262144,
+	// The window is a million, but the documented input ceiling with thinking
+	// on — which is how this gateway serves it — is lower, and it is the input
+	// ceiling that an admission check has to respect.
+	"qwen3.8-flash": 983616,
 }
 
 const DefaultContextWindow = 200000
@@ -93,7 +119,6 @@ var ModelMaxOutputTokens = map[string]int{
 	"deepseek-v4-pro":       384000,
 	"minimax-m3":            128000,
 	"nemotron-3-ultra-free": 128000,
-	"north-mini-code-free":  64000,
 }
 
 var (

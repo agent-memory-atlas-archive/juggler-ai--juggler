@@ -23,6 +23,7 @@ of changes; this project follows semantic versioning.
 - A file no viewer can show now reports its kind, size and modification time instead of nothing
 - GPT-6 Sol and Luna are now sized at their real million-token window, and offer every reasoning level
 - The ChatGPT plan now lists GPT-6 Sol and Luna, and drops the GPT-5.4 pair the backend retired
+- Newer OpenCode Zen models now use their real context window instead of a 200k assumption
 
 ## [0.6.4] - 2026-09-14
 
