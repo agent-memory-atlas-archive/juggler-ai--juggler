@@ -65,6 +65,8 @@ func TestCurrentCatalogIsDeclared(t *testing.T) {
 		output int
 	}{
 		{"gpt-6-astra", 1050000, 128000},
+		{"gpt-6-sol", 1050000, 128000},
+		{"gpt-6-luna", 1050000, 128000},
 		{"gpt-5.6-sol", 1050000, 128000},
 		{"gpt-5.6-terra", 1050000, 128000},
 		{"gpt-5.6-luna", 1050000, 128000},

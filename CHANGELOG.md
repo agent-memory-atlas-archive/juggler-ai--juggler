@@ -21,6 +21,8 @@ of changes; this project follows semantic versioning.
 - A conversation no longer compacts repeatedly, or summarizes history it had room for, after one mismeasured turn
 - Binning your last conversation now leaves a panel saying how to start another, not a blank window
 - A file no viewer can show now reports its kind, size and modification time instead of nothing
+- GPT-6 Sol and Luna are now sized at their real million-token window, and offer every reasoning level
+- The ChatGPT plan now lists GPT-6 Sol and Luna, and drops the GPT-5.4 pair the backend retired
 
 ## [0.6.4] - 2026-09-14
 

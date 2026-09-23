@@ -75,6 +75,15 @@ func OpenAIThinkingSpec(modelID string) ThinkingSpec {
 		return EffortSpec("low", "low", "medium", "high", "xhigh", "max")
 	}
 
+	// GPT-6 Sol and Luna: Astra's range plus the explicit "none" it refuses.
+	// The ChatGPT-plan catalog advertises a further "ultra" tier for Sol, which
+	// is deliberately not offered here: this spec answers for the Platform API,
+	// where "ultra" is undocumented and would risk a 400. The plan provider
+	// takes its levels from the live catalog, so it gets that tier there.
+	if strings.HasPrefix(m, "gpt-6-sol") || strings.HasPrefix(m, "gpt-6-luna") {
+		return EffortSpec("medium", "none", "low", "medium", "high", "xhigh", "max")
+	}
+
 	// Codex reasoning models (gpt-5.x-codex, codex-max, bare "codex" slugs).
 	// They accept low/medium/high; codex-max style models add an "xhigh" tier.
 	// No "off"/"none" — codex reasons on every turn.

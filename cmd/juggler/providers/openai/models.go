@@ -22,6 +22,8 @@ import (
 var ModelContextWindows = map[string]int{
 	// GPT-6 Series (1.05M total: 922K input + 128K output)
 	"gpt-6-astra": 1050000,
+	"gpt-6-sol":   1050000,
+	"gpt-6-luna":  1050000,
 
 	// GPT-5.6 Series (1.05M total: 922K input + 128K output). The bare
 	// "gpt-5.6" is an alias that routes to Sol.
@@ -107,6 +109,8 @@ var ModelContextWindows = map[string]int{
 var ModelMaxOutputTokens = map[string]int{
 	// The whole modern line shares a 128000 output ceiling.
 	"gpt-6-astra":   128000,
+	"gpt-6-sol":     128000,
+	"gpt-6-luna":    128000,
 	"gpt-5.6":       128000,
 	"gpt-5.6-sol":   128000,
 	"gpt-5.6-terra": 128000,

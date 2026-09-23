@@ -56,12 +56,12 @@ type knownModel struct {
 //     it stays selectable long after the backend stops accepting it.
 var knownModels = []knownModel{
 	{Slug: "gpt-6-astra", ContextWindow: catalogContextWindow, MinClientVersion: "0.153.0"},
-	{Slug: "gpt-5.6-sol", ContextWindow: catalogContextWindow},
-	{Slug: "gpt-5.6-terra", ContextWindow: catalogContextWindow},
-	{Slug: "gpt-5.6-luna", ContextWindow: catalogContextWindow},
-	{Slug: "gpt-5.5", ContextWindow: catalogContextWindow},
-	{Slug: "gpt-5.4", ContextWindow: catalogContextWindow},
-	{Slug: "gpt-5.4-mini", ContextWindow: catalogContextWindow},
+	{Slug: "gpt-6-sol", ContextWindow: catalogContextWindow, MinClientVersion: "0.155.0"},
+	{Slug: "gpt-6-luna", ContextWindow: catalogContextWindow, MinClientVersion: "0.155.0"},
+	{Slug: "gpt-5.6-sol", ContextWindow: catalogContextWindow, MinClientVersion: "0.144.0"},
+	{Slug: "gpt-5.6-terra", ContextWindow: catalogContextWindow, MinClientVersion: "0.144.0"},
+	{Slug: "gpt-5.6-luna", ContextWindow: catalogContextWindow, MinClientVersion: "0.144.0"},
+	{Slug: "gpt-5.5", ContextWindow: catalogContextWindow, MinClientVersion: "0.124.0"},
 }
 
 // ModelContextWindows is knownModels in the shape the provider descriptor and

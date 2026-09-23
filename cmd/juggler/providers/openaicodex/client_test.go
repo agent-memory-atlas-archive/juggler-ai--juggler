@@ -218,7 +218,7 @@ func TestListModelsParsesCodexCatalog(t *testing.T) {
 	for _, model := range models[2:] {
 		fallbackIDs[model.ID] = !model.FromAPI
 	}
-	for _, id := range []string{"gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.4", "gpt-5.4-mini"} {
+	for _, id := range []string{"gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"} {
 		if !fallbackIDs[id] {
 			t.Fatalf("missing static fallback %s in %+v", id, models)
 		}
@@ -379,6 +379,26 @@ func TestKnownModelsDriveEverything(t *testing.T) {
 	}
 	if _, ok := ModelContextWindows["gpt-6-astra"]; !ok {
 		t.Error("gpt-6-astra is missing from the ChatGPT-plan model list")
+	}
+}
+
+// TestPlanCatalogMatchesTheLiveList pins knownModels against what the ChatGPT
+// backend actually serves. Both directions are silent failures: a slug the
+// catalog has retired stays selectable and 400s on use, and a slug missing from
+// here is absent from the picker for anyone signed out — while a slug whose
+// minimal_client_version is above codexClientVersion is withheld from the live
+// response entirely, with nothing in the reply to say a row was dropped.
+func TestPlanCatalogMatchesTheLiveList(t *testing.T) {
+	for _, slug := range []string{"gpt-6-sol", "gpt-6-luna"} {
+		if _, ok := ModelContextWindows[slug]; !ok {
+			t.Errorf("%s is not listed, so the ChatGPT plan's current model is unselectable", slug)
+		}
+	}
+	// Retired from Codex-with-ChatGPT-sign-in on 2026-08-31.
+	for _, slug := range []string{"gpt-5.4", "gpt-5.4-mini"} {
+		if _, ok := ModelContextWindows[slug]; ok {
+			t.Errorf("%s is still listed, but the backend no longer accepts it", slug)
+		}
 	}
 }
 

@@ -22,9 +22,12 @@ const (
 	// codexClientVersion is the Codex client version announced to /models. The
 	// catalog gates rows on it: each model declares a minimal_client_version and
 	// is simply omitted from the response for anything older, with no error to
-	// notice — the model just never appears. gpt-6-astra requires 0.153.0, so
-	// this must not be moved backwards past the oldest slug we list.
-	codexClientVersion = "0.153.4"
+	// notice — the model just never appears. gpt-6-sol and gpt-6-luna require
+	// 0.155.0, so this must not be moved backwards past the newest slug we list.
+	//
+	// It has to be a real published Codex release, not merely a large number:
+	// the backend matches it against versions it knows.
+	codexClientVersion = "0.156.1"
 )
 
 // Register adds the OpenAI Codex-plan provider to the global registry. It
@@ -39,10 +42,14 @@ func Register() {
 		BaseURL:         baseURL,
 		ContextWindows:  ModelContextWindows,
 		DisplayProvider: "OpenAI Codex",
-		// The only mini in the plan catalog, and the reason to name one at all:
-		// this provider is second in defaultProviderPreference, so a fresh
-		// install that signs in to Codex and nothing else lands here.
-		CheapModel:         "gpt-5.4-mini",
+		// The reason to name one at all: this provider is second in
+		// defaultProviderPreference, so a fresh install that signs in to Codex
+		// and nothing else lands here. The plan catalog has no mini, so this is
+		// the cheapest full model in it — and deliberately not the cheaper
+		// gpt-6-luna, because nothing asks the user before spending this model:
+		// GPT-6 access is off by default for Enterprise accounts, and a cheap
+		// model the account cannot call fails work the user never chose it for.
+		CheapModel:         "gpt-5.6-luna",
 		ListModelsOverride: listModels,
 		UsageStatsOverride: usageStats,
 		ThinkingSpecFn:     codexThinkingSpec,

@@ -47,6 +47,18 @@ func TestOpenAIThinkingSpec(t *testing.T) {
 			wantLevels:  []string{"low", "medium", "high", "xhigh", "max"},
 			wantDefault: "low",
 		},
+		{
+			// GPT-6 Sol and Luna: Astra's two tiers above "high", plus the
+			// explicit "none" Astra does not take.
+			model:       "gpt-6-sol",
+			wantLevels:  []string{"none", "low", "medium", "high", "xhigh", "max"},
+			wantDefault: "medium",
+		},
+		{
+			model:       "gpt-6-luna",
+			wantLevels:  []string{"none", "low", "medium", "high", "xhigh", "max"},
+			wantDefault: "medium",
+		},
 		{model: "gpt-4o", noControl: true},
 		{model: "gpt-3.5-turbo", noControl: true},
 		{model: "o1-mini", noControl: true}, // no reasoning_effort
