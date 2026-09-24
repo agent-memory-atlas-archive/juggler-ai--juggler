@@ -5,25 +5,20 @@ of changes; this project follows semantic versioning.
 
 ## [Unreleased]
 
-- A conversation can now work in a git worktree of its own or a throwaway copy of the project, and move between them
-- Or in one folder of the project: commands run there, while the rest of the project stays readable
-- A worktree of a submodule now asks whether you want the submodule alone or the project around it
-- The sidebar groups conversations by the workspace they work in, with its state and what to do with it
+- New feature: **workspaces**: Types of workspace include git worktrees, throwaway scratch copies, or subfolders. More types of workspace will be added, such as ssh servers, etc.
+- The ChatGPT plan now lists GPT-6 Sol and Luna, and drops the GPT-5.4 pair the backend retired
+- GPT-6 Sol and Luna are now sized at their real million-token window, and offer every reasoning level
+- LocalAI is now a provider of its own, reading each model's real context window from the server
 - A refused or timed-out bash command now tells the agent why, not just "exit code 1"
 - `dd` reading a file is no longer refused; writing to a raw disk device still is
 - A plan or todo panel now offers a pin button, putting the live list on the pinboard
-- LocalAI is now a provider of its own, reading each model's real context window from the server
 - An OpenAI-compatible endpoint that publishes model capabilities is no longer assumed to be 128k
 - An OpenRouter model now takes its context window from the endpoint that serves it, not the router's maximum
-- That stops some models reserving most of their window for output, compacting every turn and then being rejected
+- Newer OpenCode Zen models now use their real context window instead of a 200k assumption
 - A context-limit error now says whether its input figure was measured or only estimated
 - Attaching a file partway through a conversation no longer rebuilds the whole prompt cache
 - A conversation no longer compacts repeatedly, or summarizes history it had room for, after one mismeasured turn
-- Binning your last conversation now leaves a panel saying how to start another, not a blank window
 - A file no viewer can show now reports its kind, size and modification time instead of nothing
-- GPT-6 Sol and Luna are now sized at their real million-token window, and offer every reasoning level
-- The ChatGPT plan now lists GPT-6 Sol and Luna, and drops the GPT-5.4 pair the backend retired
-- Newer OpenCode Zen models now use their real context window instead of a 200k assumption
 
 ## [0.6.4] - 2026-09-14
 
