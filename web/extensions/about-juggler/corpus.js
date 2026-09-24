@@ -53,8 +53,8 @@ Distinguishing ideas:
 - **Everything important is visible.** Tool calls, approvals, thread structure,
   item properties, and raw context are laid out in Finder-style Miller columns.
 - **It is plugins all the way down.** Context items (tools), slash commands, LLM
-  loop strategies, and their UIs are JavaScript extensions you can inspect, fork,
-  or replace.
+  loop strategies, workspaces, and their UIs are JavaScript extensions you can
+  inspect, fork, or replace.
 - **It runs locally, remotely, or both at once.** The same session, with the same
   UI, is reachable from the native desktop app and/or a browser; multiple clients
   can attach to one session simultaneously.
@@ -73,27 +73,26 @@ Distinguishing ideas:
 - **Strategies** — pluggable LLM-loop policies that steer the model by gating
   which tools are available and injecting guidance, without changing the cached
   system prompt.
-- **Pinboard** — a tabbed workspace behind the right edge of the window, opened
-  with the edge tab or its shortcut. Each tab is a "pin" supplied by an
-  extension. The built-in ones keep a live file within reach (a properties panel
-  showing a file offers to pin it), follow the current plan, the current todo
-  list and the project's memory, review the git working tree, and list the
-  background tasks it has running. Plan and Todo show the list belonging to the
-  thread you are reading, falling back to the nearest parent thread that has one
-  and saying so when they do; both are read-only, since those lists change
-  through their tools. Git is where changes are reviewed: every repository under
-  the project with its branch, how far it has drifted from its upstream, and
-  every changed file, each one's whole diff against HEAD, comments written onto
-  the lines they are about, and one action that sends them all to the
-  conversation as an ordinary message. It is git that is read, so a change made
-  by a shell command, a formatter or by hand is there like any other; clicking
-  the Git status card in the sidebar opens it. Background tasks is a live
-  inventory rather than a history: a command or Monitor appears while it runs
-  and is gone once it ends,
-  each row offering a Stop and a way back to the action that started it, where
-  its output and exit code are. Pins belong to the project session, so every viewer
-  of the project sees the same board. A pin is only a view: unlike a context
-  item, pinning a file shows it to you and not to the model.
+- **Workspaces** — the place a conversation's tools actually run in: the project
+  folder itself, or somewhere made for the purpose, such as a git worktree or a
+  throwaway copy. Several conversations can work in one workspace. See below.
+- **Pinboard** — a tabbed panel behind the right edge of the window, opened with
+  the edge tab or its shortcut. Each tab is a "pin" supplied by an extension. The
+  built-in ones keep a live file within reach, follow the current plan, todo list
+  and project memory, review the git working tree, and list running background
+  tasks. Plan and Todo show the list belonging to the thread you are reading,
+  falling back to the nearest parent that has one; both are read-only, since those
+  lists change through their tools. Git is where changes are reviewed: every
+  repository under the project with its branch, its drift from upstream, and every
+  changed file with its whole diff against HEAD, comments written onto the lines
+  they are about, and one action that sends them all to the conversation as a
+  message. It is git that is read, so a change made by a shell command, a
+  formatter or by hand is there like any other. Background tasks is a live
+  inventory rather than a history: a command appears while it runs and is gone
+  once it ends, each row offering a Stop and a way back to the action that started
+  it. Pins belong to the project session, so every viewer sees the same board. A
+  pin is only a view: unlike a context item, pinning a file shows it to you and
+  not to the model.
 
 ## Tools the agent can use
 
@@ -113,6 +112,13 @@ core provides:
 - **WebSearch** — web search returning titles, URLs, and descriptions.
 - **create_thread** — run a self-contained sub-task in an isolated sub-conversation
   whose intermediate steps stay out of the parent context.
+- **new_conversation** — open a new, independent conversation seeded with a first
+  message. Unlike create_thread it is a peer, not a sub-task: it works in its own
+  tab and never reports back.
+- **Explore** — investigate the codebase in a read-only sub-agent, which reads as
+  many files as it needs and returns only what it found.
+- **Research** — answer a question from the web in a sub-agent, which reads as
+  many pages as it needs and returns only the answer.
 - **Monitor** — stream lines from a long-running command as events.
 - **TaskOutput / TaskStop (KillShell)** — read new output from, or stop, a
   background task.
@@ -121,13 +127,21 @@ core provides:
 - **plan** — propose an approval-gated implementation plan for user review, then
   track its execution step by step.
 - **memory** — record or remove durable, cross-session project facts.
+- **skill** — load an Agent Skill: a specialised instruction set for a kind of
+  task (see below).
+- **pin_to_pinboard** — attach something to the Pinboard and bring it into view.
 - **AskUserQuestion** — ask the user a structured multiple-choice question.
 - **define_command** — save a reusable prompt as a custom "/name" slash command;
   the user approves the full definition before it is created.
 
+The About Juggler extension adds two more: **AboutJuggler** (this manual) and
+**ReadJugglerSource** (the app's own SDK and example-extension source).
+
 ## Strategies
 
 - **Default** — standard general-purpose coding-assistant behaviour.
+- **Auto-approve** — like Default, but a cheap model auto-approves the routine
+  prompts it is sure are safe, so you are only asked about the risky ones.
 - **Read-only** — any action that could change files is automatically refused;
   useful for safe exploration and review.
 - **YOLO** — auto-approves every tool call. Fast but unguarded; use at your own
@@ -145,6 +159,7 @@ built-in commands are:
 - **/duplicate** — clone the current conversation into a new one.
 - **/clear** — clear the conversation's messages.
 - **/compact** — compact the whole conversation into a summary thread.
+- **/handoff** — summarise this conversation into a new one to continue work.
 - **/thread** — create a new sub-conversation thread.
 - **/commands** — open the manager for creating and editing custom commands.
 
@@ -173,6 +188,63 @@ project command shadows a user command of the same name, but neither can overrid
 a built-in. For commands that need real code, write an extension instead. See
 docs/custom-commands.md.
 
+## Agent Skills
+
+A skill is a folder of instructions for a kind of task, following the open Agent
+Skills standard (agentskills.io): a SKILL.md of YAML frontmatter plus markdown,
+optionally alongside scripts/, references/ and assets/. Juggler lists every
+skill's name and description cheaply, and the model loads one body on demand with
+the skill tool — so a skill costs nothing until a task matches it.
+
+They are discovered in four places, two scopes each with a native path and a
+cross-agent alias, so a skill written for another agent still loads:
+
+- "<project>/.juggler/skills/<name>/SKILL.md"
+- "<project>/.agents/skills/<name>/SKILL.md"
+- "<config>/skills/<name>/SKILL.md" (that is "~/.juggler/skills/" by default)
+- "~/.agents/skills/<name>/SKILL.md"
+
+Files inside a skill are read through the ordinary read and bash tools under
+normal approval, so a skill adds no new execution or file-access path.
+
+## Workspaces
+
+A workspace is where a conversation's tools run — where bash executes, and what
+read, write and edit are relative to. Every project already has one: itself. The
+others are made by workspace providers, and the built-in ones are:
+
+- **Git Worktree** — another branch of the repository, checked out in a tree of
+  its own. Best for work on a branch that should not disturb the tree you are
+  looking at; not worth it for a quick edit to the branch you are already on. The
+  files are separate, but ports, databases and anything else on the machine are
+  not, and a fresh tree has no build output, so the first build is a full one.
+- **Scratch Copy** — a copy of the tree to try something risky in and throw away,
+  in a project with or without git. Anything .gitignore leaves out is left out of
+  the copy. Applying a change back copies whole files, and refuses the ones the
+  project has changed since.
+- **Project Folder** — conversations work in a subfolder instead of the project
+  root. Best for one package, service or subrepo of a large monorepo: commands run
+  in the folder while the rest of the project stays readable. Nothing is created
+  and nothing is removed.
+
+Several conversations can work in the same workspace, and none of them owns it —
+a workspace outliving the conversations that used it is normal. In the tab strip,
+the conversations working in a workspace are drawn in a box named after it, with
+a dot when the tree holds uncommitted work. Selecting the box (as you would a
+tab) opens a panel showing what the place is, where it is on disk, how it is
+doing, and the ways of finishing with it. Each box has a "+" that starts a new
+conversation already working there.
+
+Moving a single conversation is a tab action, not a box action, since a box of
+three conversations names none of them: use "Use a different workspace…" on the
+tab's context menu, or drag the tab to another box, which opens the same dialog
+rather than moving it silently.
+
+Finishing a workspace is the provider's business and the options are its own — a
+worktree offers to commit or to discard, and discarding deletes the tree and the
+branch. The conversations working there return to the project folder. Extensions
+can add providers of their own; see "Writing an extension".
+
 ## Keyboard shortcuts
 
 Shortcuts are customisable. The following are the current bindings, shown for
@@ -182,10 +254,27 @@ this platform:
 
 ## Model providers
 
-Juggler talks to models through pluggable providers; the built-in set includes
-Anthropic, the Claude Code CLI, OpenAI, OpenAI Codex, Google Gemini, DeepSeek,
-OpenRouter, Z.AI, and Ollama (for local models). Pick and configure your default
-model in the app; API keys are stored locally (see below).
+Juggler talks to models through pluggable providers. The built-in set is:
+
+- **Anthropic (API)** and **Anthropic (Claude Code CLI)**
+- **OpenAI ChatGPT** and **OpenAI Codex (ChatGPT plan)**
+- **Google Gemini**
+- **GitHub Copilot**
+- **Mistral AI**
+- **Moonshot Kimi**
+- **DeepSeek**
+- **Z.AI GLM**
+- **OpenRouter**
+- **OpenCode Zen**
+- **ACP Agents** (external agents speaking the Agent Client Protocol)
+- **Ollama (local)**, **llama.cpp (local)** and **LocalAI (local)**
+
+Beyond those you can define **custom endpoints**: any number of named gateways,
+tenants, regions or local servers, each with its own base URL, credentials,
+headers and model list, and each appearing in the picker as its own provider.
+
+Pick and configure your default model in the app; API keys are stored locally
+(see below).
 
 ## Configuration and data locations
 
@@ -193,29 +282,34 @@ Per-user state lives in the "~/.juggler" directory:
 
 - **credentials.json** — API keys, owner-only permissions.
 - **default-model.json** — your chosen default model.
+- **custom-providers.json** — your named custom endpoints.
 - **workspace.json** — the desktop app's open-window set and last-used theme.
 - **extensions/** — installed user extensions.
 - **commands/** — your custom slash commands (see custom-commands.md).
+- **skills/** — your Agent Skills, available in every project.
 - **cache/** — regenerable cache (recent projects, learned model context sizes);
   safe to delete at any time.
 
 Everything directly under "~/.juggler" is durable and worth copying to a new
 machine; everything under "~/.juggler/cache/" is regenerable. Logs do not live
 here — they go to the platform's standard log directory to keep the config folder
-small and copyable.
+small and copyable. "JUGGLER_CONFIG_DIR" moves the config directory and
+"JUGGLER_LOG_DIR" the log directory.
 
-Per-project state lives in a ".juggler" folder inside the project, including
-"MEMORY.md" — the durable, user-visible project memory the memory tool writes to
-(gitignored by default) — and "commands/", holding project-scoped custom slash
-commands that are shared through the project's git repository.
+Per-project state lives in a ".juggler" folder inside the project: "MEMORY.md" —
+the durable, user-visible project memory the memory tool writes to (gitignored by
+default) — plus "commands/" and "skills/" (both shared through the project's git
+repository), the session and config files, and the lockfile. That location is
+fixed: there is no setting that moves it. A checkout that must not be written to
+has to exclude the folder instead.
 
 ## Extensions
 
 Juggler's capabilities are delivered as extensions. Built-in ones include Juggler
-Core (the standard tools, strategies, and commands) and Juggler MCP (tools from
-configured MCP servers). "About Juggler" — the extension providing this manual —
-is itself one such extension: it is on by default and can be turned off in the
-Extensions view, which removes this tool entirely.
+Core (the standard tools, strategies, commands and workspace providers) and
+Juggler MCP (tools from configured MCP servers). "About Juggler" — the extension
+providing this manual — is itself one such extension: it is on by default and can
+be turned off in the Extensions view, which removes this tool entirely.
 
 User extensions can be installed under "~/.juggler/extensions/". Extensions are
 managed in the Extensions view, where each extension and each capability has an
@@ -241,16 +335,17 @@ Fastest start: the Juggler binary has an "ext" subcommand.
 
 Anatomy: an extension is a folder with a "juggler.extension.json" manifest at its
 root plus capability files whose names carry a type suffix, which is how the
-manifest globs find them. There are six capability types:
+manifest globs find them. The capability types are:
 
 - "context-items/*-context-item.js" — tools the model can call ("juggler/context-item")
 - "strategies/*-strategy-type.js" — agentic-loop policies ("juggler/strategy-type")
 - "commands/*-command-type.js" — slash commands ("juggler/command-type")
 - "cards/*-card.js" — sidebar info tiles ("juggler/info-card-type")
-- "pins/*-pin.js" — tabs on the Pinboard, the workspace behind the right edge
-  ("juggler/pinboard-item-type")
+- "pins/*-pin.js" — tabs on the Pinboard ("juggler/pinboard-item-type")
 - "viewers/*-file-viewer.js" — how a file type is displayed and extracted for the
   model ("juggler/file-viewer")
+- "workspaces/*-workspace-provider.js" — places a conversation can work in, such
+  as a worktree or a copy ("juggler/workspace-provider")
 
 Each capability is a class that "export default"s, extends its SDK base class,
 and declares a static MANIFEST. An extension may also contribute a single
@@ -313,8 +408,10 @@ sdk/strategy-type.js, and sdk/command-type.js (each opens with a quickstart and 
 full method reference), plus the working examples under
 extensions/juggler-core/context-items/ (for example read-file-context-item.js for
 validation and status UI, or write-file-context-item.js for an approval gate).
-The same files are also served by the running app at /sdk/... and /extensions/...
-if you would rather open them in a browser tab.
+For a workspace provider, sdk/workspace-provider.js and
+extensions/juggler-core/workspaces/git-worktree-workspace-provider.js cover every
+hook. The same files are also served by the running app at /sdk/... and
+/extensions/... if you would rather open them in a browser tab.
 
 Two documents in the repo go further than this quickstart can (they are not in
 the app, so they need a checkout or GitHub): docs/extension_tutorial.md builds a
@@ -357,9 +454,10 @@ extend the app), read the source rather than guessing:
   web/sdk/context-item.js (tools/context items), web/sdk/strategy-type.js
   (strategies), web/sdk/command-type.js (slash commands),
   web/sdk/info-card-type.js (sidebar cards), web/sdk/pinboard-item-type.js
-  (Pinboard tabs), and web/sdk/file-viewer.js (file
-  display and extraction). The built-in extensions under web/extensions/
-  (juggler-core and juggler-mcp) are larger working examples.
+  (Pinboard tabs), web/sdk/file-viewer.js (file display and extraction), and
+  web/sdk/workspace-provider.js (places a conversation can work in). The built-in
+  extensions under web/extensions/ (juggler-core and juggler-mcp) are larger
+  working examples.
   The docs and examples/ live on GitHub, but those SDK base classes and the
   web/extensions/ examples are also readable inside this app via the
   ReadJugglerSource tool (paths under sdk/ or extensions/) — so you can consult
@@ -369,7 +467,11 @@ extend the app), read the source rather than guessing:
 - **Custom slash commands** — docs/custom-commands.md (the no-code command
   format: placeholders, run modes, and scopes).
 - **Project memory** — docs/memory.md (how .juggler/MEMORY.md is read and written).
+- **Context window** — docs/context-window.md (how context is measured, budgeted
+  and compacted).
+- **MCP servers** — docs/mcp.md (configuring MCP and how its tools appear).
 - **Logs and reporting issues** — docs/logging.md.
+- **Running without a desktop** — docs/headless-linux.md.
 - **Building and distribution** — docs/distribution.md; the top-level README.md
   covers cloning (with submodules) and building from source.
 - **Contributing and licensing** — CONTRIBUTING.md, and LICENSING.md for the
