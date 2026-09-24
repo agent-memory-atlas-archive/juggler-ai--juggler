@@ -233,9 +233,15 @@ func TestWorkspaces_AnUnplacedRowStaysUnplaced(t *testing.T) {
 		t.Fatalf("CreateConversationFolder: %v", err)
 	}
 
-	// A row as an older version wrote it: no place recorded at all.
+	// A row as an older version wrote it: no place recorded at all. The root is
+	// quoted by the encoder rather than pasted in, since a Windows temp path is
+	// full of backslashes and would not survive as a raw JSON string body.
+	root, err := json.Marshal(dir)
+	if err != nil {
+		t.Fatalf("marshal root: %v", err)
+	}
 	var ws Workspace
-	if err := json.Unmarshal([]byte(`{"id":"ws_old","kind":"local","root":"`+dir+`","state":"ready"}`), &ws); err != nil {
+	if err := json.Unmarshal([]byte(`{"id":"ws_old","kind":"local","root":`+string(root)+`,"state":"ready"}`), &ws); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if ws.Place != "" {

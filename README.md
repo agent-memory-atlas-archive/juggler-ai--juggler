@@ -6,7 +6,9 @@ Juggler is a visual workbench for AI coding agents. Launch the desktop app and w
 
 Conversations are persistent trees rather than scrolling transcripts. Tool calls open into proper views, and every model transaction can be inspected to show what the model received and returned.
 
-Use Claude Code, OpenAI Codex, GitHub Copilot, Gemini, Ollama and other providers through one interface. Juggler is open source, free to download, and needs no account of its own: bring a subscription you already pay for or your own API keys.
+Juggler is vendor-neutral. Claude Code, OpenAI Codex, GitHub Copilot, Gemini, Ollama and other providers sit behind one interface, with no house model and no resold tokens: bring a subscription you already pay for or your own API keys. It is open source, free to download, and needs no account of its own.
+
+Nothing sits between you and your provider. Prompts, code and keys go from your machine straight to whichever provider you chose — Juggler does not proxy that traffic, read it, or keep a copy anywhere but your own disk.
 
 **[Download Juggler](https://github.com/juggler-ai/juggler/releases)** for macOS, Windows or Linux · [Visit the website](https://juggler.studio) · [Join the Discord](https://discord.gg/HyqZwKvSMd)
 
@@ -25,6 +27,8 @@ Juggler is for developers who want the context, model calls and tool execution v
 - **Operate on context.** Fold selected history into a thread, move or copy items between branches, edit the prompt identity and undo structural changes. Context is part of the workspace, not plumbing hidden behind the chat box.
 - **Branch without polluting the main conversation.** Create nested threads for tangents, delegated research or competing approaches. A child thread does its work in isolation and returns the result to its parent.
 - **Resume the session, not merely the chat log.** Conversations live on disk. Quit, reconnect or come back tomorrow and the document is still there, including approvals waiting for you.
+- **Stay vendor-neutral.** Every provider is a plug-in: hosted APIs, agent CLIs you already have installed, or a local model through Ollama. Juggler sells no tokens and no credits, so it has no stake in which you pick — change provider or model mid-conversation and the session, context and tooling are unchanged.
+- **Keep your code to yourself.** Model traffic goes direct from your machine to the provider you chose. Juggler puts no server in that path, inspects nothing that passes through it, and indexes no part of your repository into a cloud. Conversations and API keys stay on your own disk. The source is public, so none of that has to be taken on trust.
 
 Juggler is built by [Julian Storer](https://github.com/julianstorer), the developer behind [JUCE](https://juce.com), [Tracktion](https://www.tracktion.com) and [Cmajor](https://cmajor.dev).
 
