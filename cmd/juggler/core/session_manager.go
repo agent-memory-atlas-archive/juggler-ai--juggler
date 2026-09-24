@@ -387,24 +387,70 @@ func (m *SessionManager) CreateConversation(name string, requestedID ...string) 
 	if len(requestedID) > 0 {
 		idHint = requestedID[0]
 	}
-	return m.CreateConversationAt(name, idHint, "")
+	return m.CreateConversationAt(name, idHint, ConversationPlacement{Where: PlaceHead})
+}
+
+// The three places a new conversation can be asked for. They are spelled out
+// rather than inferred from whether an anchor was given, because "the end of
+// the bar" and "behind this particular conversation" are different requests
+// that a single id cannot tell apart: a client naming its own last tab means
+// the first, unless it means the second, and the server holds conversations the
+// client has never seen either way.
+const (
+	PlaceHead  = "head"
+	PlaceAfter = "after"
+	PlaceEnd   = "end"
+)
+
+// ConversationPlacement says where a new conversation goes in ConversationOrder.
+type ConversationPlacement struct {
+	Where string // PlaceHead, PlaceAfter or PlaceEnd; anything else reads as PlaceHead
+	After string // The conversation to sit behind, for PlaceAfter
+}
+
+// PlacementFor reads a placement off the wire, accepting a request that carries
+// only an anchor: no `where` at all means the head when nothing is named, and
+// behind the named conversation otherwise.
+func PlacementFor(where, after string) ConversationPlacement {
+	if where == "" {
+		if after == "" {
+			return ConversationPlacement{Where: PlaceHead}
+		}
+		return ConversationPlacement{Where: PlaceAfter, After: after}
+	}
+	return ConversationPlacement{Where: where, After: after}
+}
+
+// indexIn resolves a placement against the order it is going into.
+//
+// An unknown anchor is not an error and does not move the request somewhere
+// else: a viewer can name a conversation this session has since binned, or one
+// from a session it has left, and a create is far too important to refuse — or
+// to relocate — over where it was hoping to sit. It lands at the head, which is
+// where a create with nothing to say about position goes.
+func (p ConversationPlacement) indexIn(order []string) int {
+	switch p.Where {
+	case PlaceEnd:
+		return len(order)
+	case PlaceAfter:
+		if i := slices.Index(order, p.After); i >= 0 {
+			return i + 1
+		}
+		return 0
+	default:
+		return 0
+	}
 }
 
 // CreateConversationAt is CreateConversation with a say in where the new id
-// lands in ConversationOrder: directly after afterID, or at the head when that
-// is empty or names a conversation this session does not have.
+// lands in ConversationOrder.
 //
 // The order is the server's, and it is what a viewer's tab list is re-slotted
 // into on the broadcast this create produces — so where a conversation goes is
 // settled here or not at all, however carefully the viewer placed the tab. The
 // head is right for a conversation of the project's and wrong for one made
-// inside a workspace box, which is drawn at its first conversation: sending
-// that conversation to the head carries the whole box up there with it.
-//
-// An unknown anchor is not an error. A viewer can name a conversation this
-// session has since binned, or one from a session it has left, and a create is
-// too important to refuse over where it was hoping to sit.
-func (m *SessionManager) CreateConversationAt(name, requestedID, afterID string) (string, string, error) {
+// inside a workspace box, which belongs beside the rest of that box.
+func (m *SessionManager) CreateConversationAt(name, requestedID string, place ConversationPlacement) (string, string, error) {
 	type result struct {
 		id   string
 		name string
@@ -415,12 +461,7 @@ func (m *SessionManager) CreateConversationAt(name, requestedID, afterID string)
 			return result{}, err
 		}
 		if !slices.Contains(s.session.ConversationOrder, id) {
-			at := 0
-			if afterID != "" {
-				if i := slices.Index(s.session.ConversationOrder, afterID); i >= 0 {
-					at = i + 1
-				}
-			}
+			at := place.indexIn(s.session.ConversationOrder)
 			s.session.ConversationOrder = slices.Insert(s.session.ConversationOrder, at, id)
 		}
 		if err := s.store.Save(s.session); err != nil {
@@ -1241,10 +1282,39 @@ func (m *SessionManager) PatchMetadata(patch map[string]any) (map[string]any, er
 	return changed, nil
 }
 
+// reanchorBoxesAt moves every box placed behind convID onto that conversation's
+// predecessor in the order, so a workspace keeps the place it is drawn in when
+// the conversation it happens to sit behind goes away. A box behind the first
+// conversation inherits the head of the bar, named as such — the box really is
+// at the top, which is a different statement from having no place at all.
+//
+// It reads the predecessor from ConversationOrder, so it must run while convID
+// is still in it.
+func reanchorBoxesAt(s *Session, convID string) {
+	predecessor := PlaceHead
+	for i, id := range s.ConversationOrder {
+		if id != convID {
+			continue
+		}
+		if i > 0 {
+			predecessor = s.ConversationOrder[i-1]
+		}
+		break
+	}
+	for i := range s.Workspaces {
+		if s.Workspaces[i].Place == convID {
+			s.Workspaces[i].Place = predecessor
+		}
+	}
+}
+
 // removeConvIDFromSession drops convID from ConversationOrder, Conversations,
 // and clears ActiveConversationID if it pointed at convID. Shared by delete
 // and bin flows.
 func removeConvIDFromSession(s *Session, convID string) {
+	// Before it leaves the order, while it still has a neighbour to hand on to.
+	reanchorBoxesAt(s, convID)
+
 	newOrder := make([]string, 0, len(s.ConversationOrder))
 	for _, id := range s.ConversationOrder {
 		if id != convID {

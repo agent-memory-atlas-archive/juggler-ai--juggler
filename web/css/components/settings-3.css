@@ -684,10 +684,35 @@
 
 /* Wider than the move dialog, and for the opposite reason: not a long list to
    compare, but two columns that have to sit side by side without either being
-   cut to a column of single words. */
+   cut to a column of single words.
+
+   A size of its own rather than one taken from whatever is inside it. Every
+   provider's form is a different length, and a note appearing under a field is
+   another, so a dialog sized to its contents changed size while being read and
+   again while being typed into — moving the buttons out from under the pointer
+   aimed at them. Given a height, the halves scroll and nothing moves. */
 .workspace-create-dialog {
     width: min(46rem, 100%);
-    max-height: 85vh;
+    height: min(30rem, 85vh);
+
+    /* Chrome, by the policy in layout/app-shell.css: this is a question, not a
+       document. A title, a column of names to pick between, a form's labels and
+       two buttons — every drag across them is a mis-aimed click, and the blue
+       it left behind was noise. The carve-outs are below. */
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+/* What somebody might actually copy out of it: what they typed, the reason a
+   build did not happen, and a path — where the thing would be built, and where
+   a step is happening while it is. */
+.workspace-create-dialog input,
+.workspace-create-dialog textarea,
+.workspace-create-dialog .setup-error,
+.workspace-create-dialog .setup-field-note,
+.workspace-create-dialog .setup-progress-detail {
+    -webkit-user-select: text;
+    user-select: text;
 }
 
 .workspace-create-header {
@@ -725,21 +750,60 @@
 .workspace-create-body {
     display: grid;
     grid-template-columns: minmax(0, 14rem) minmax(0, 1fr);
-    gap: 1.5rem;
+    gap: 1.25rem;
+    flex: 1 1 auto;
     min-height: 0;
     padding: 1.25rem 1.5rem;
-    overflow-y: auto;
+
+    /* The two halves scroll; the split does not. Scrolling the body scrolled
+       the kinds away with the form, which is the one thing in this dialog that
+       has to stay where it is. */
+    overflow: hidden;
 }
 
+/* While something is being built there are no halves — one block, in the room
+   the two columns had. It starts at the top-left, where text starts: centred in
+   a half-empty box, four lines of progress read as a placeholder waiting for the
+   real contents, and a line too long for the box hung off the left edge of it. */
+.workspace-create-body.workspace-create-building {
+    display: block;
+}
+
+/* The steps at the top and the way out at the bottom, so Cancel stands where the
+   footer's buttons stood rather than halfway up the dialog under the last line
+   that happened to be written. */
+.workspace-create-building .setup-progress {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.workspace-create-building .setup-actions {
+    margin-top: auto;
+}
+
+/* A sidebar and a pane, drawn as the settings panel draws them: a rule down the
+   edge of the list, so the two halves read as master and detail rather than as
+   two lists that happen to be side by side. */
 .workspace-create-rail {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.25rem;
     min-width: 0;
+    min-height: 0;
+    padding-right: 1.25rem;
+    border-right: 0.0625rem solid var(--border-divider);
+    overflow-y: auto;
 }
 
-.workspace-create-rail .setup-section-title {
-    margin: 0;
+/* Bands of rows are parted by a line rather than by a caption: the kinds are a
+   list of names and say what they are by being one, and a tree already on the
+   disk says so in its own row, which carries what to do with it and where it
+   is. A heading over either would be the same thing said twice, once badly. */
+.workspace-create-rail .setup-rows + .setup-rows {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 0.0625rem solid var(--border-divider);
 }
 
 .workspace-create-detail {
@@ -747,6 +811,8 @@
     flex-direction: column;
     gap: 0.75rem;
     min-width: 0;
+    min-height: 0;
+    overflow-y: auto;
 }
 
 .workspace-create-detail-head {
@@ -786,6 +852,13 @@
 @media (width <= 40rem) {
     .workspace-create-body {
         grid-template-columns: minmax(0, 1fr);
+    }
+
+    /* Stacked, the rule belongs under the kinds rather than beside them. */
+    .workspace-create-rail {
+        padding: 0 0 1rem;
+        border-right: 0;
+        border-bottom: 0.0625rem solid var(--border-divider);
     }
 }
 

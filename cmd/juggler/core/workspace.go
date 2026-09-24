@@ -34,11 +34,34 @@ import (
 // verbatim. It is also the only thing a half-finished provision leaves behind
 // that survives the process that started it, so a provider writes into it
 // before each irreversible step rather than after.
+//
+// Place is where the workspace's box sits in the tab bar. A workspace is a
+// place rather than an event, so its box holds a position of its own: one taken
+// from whichever conversation happened to be in it would move whenever work
+// started or finished there, and an empty box would have nothing to take a
+// position from at all.
+//
+// It has three values, and the distinction between the first two is the whole
+// point of the field:
+//
+//   - "" — no place recorded. A row written before boxes kept one, or one whose
+//     place stopped meaning anything (see reconcileWorkspaceAnchors). The box is
+//     drawn by the older reading of the bar: at its first conversation, or past
+//     everything when it has none.
+//   - PlaceHead — the head of the bar, asked for and stored.
+//   - a conversation id — immediately behind that conversation.
+//
+// "Nowhere recorded" must never read as "the top", or every box climbs to the
+// top of the sidebar the first time anything about it is unknown. A neighbour
+// rather than an index is what lets a real place survive conversations being
+// created and binned elsewhere in the bar; removeConvIDFromSession re-anchors it
+// when the neighbour itself goes.
 type Workspace struct {
 	ID              string         `json:"id"`                        // Server-assigned, stable for the workspace's life
 	Kind            string         `json:"kind"`                      // Selects the ops backend; "local" today
 	Root            string         `json:"root"`                      // Absolute path, in terms the kind understands
 	Label           string         `json:"label,omitempty"`           // What the UI calls it, e.g. "feat/tunnels"
+	Place           string         `json:"place,omitempty"`           // Where its box sits: "" for unrecorded, PlaceHead, or the conversation it sits behind
 	ProviderID      string         `json:"providerId,omitempty"`      // Extension owning its lifecycle; empty for one nobody manages
 	BaseWorkspaceID string         `json:"baseWorkspaceId,omitempty"` // The workspace it was provisioned from; empty means the default
 	State           string         `json:"state"`                     // provisioning | ready | closed
@@ -182,6 +205,13 @@ func (w Workspace) Validate() error {
 	}
 	if len([]rune(w.Label)) > MaxWorkspaceLabelLen {
 		return fmt.Errorf("workspace label is too long (%d chars, max %d)", len([]rune(w.Label)), MaxWorkspaceLabelLen)
+	}
+	// Shape only. A place naming a conversation this session does not have is
+	// repaired on the next load rather than refused here: the id is a position
+	// in the bar, and a stale one is a box drawn in the wrong place, never a
+	// reason to reject the edit that carried it.
+	if w.Place != "" && w.Place != PlaceHead && !IsValidConvID(w.Place) {
+		return fmt.Errorf("invalid workspace place: %q", w.Place)
 	}
 	switch w.State {
 	case WorkspaceStateProvisioning, WorkspaceStateReady, WorkspaceStateClosed:

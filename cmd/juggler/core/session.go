@@ -1434,7 +1434,12 @@ func (fs *FileSessionStore) Load() (*Session, error) {
 	// drop ids that no longer have a folder, append orphan folders that
 	// aren't yet in the order. Persist if anything changed, or if the manifest
 	// was rebuilt from scratch (so session.json is re-created on disk).
-	if fs.reconcileConversationOrder(&session) || workspacesChanged || rebuilt {
+	// Both passes run, and in this order: the anchors are checked against the
+	// order the reconcile leaves behind, and a `||` between the calls would
+	// short-circuit the second one away the moment the first had work to do.
+	orderChanged := fs.reconcileConversationOrder(&session)
+	anchorsChanged := reconcileWorkspaceAnchors(&session)
+	if orderChanged || anchorsChanged || workspacesChanged || rebuilt {
 		if err := fs.Save(&session); err != nil {
 			jlog.Error("[session] failed to persist reconciled order: %v", err)
 		}
@@ -1485,6 +1490,37 @@ func (fs *FileSessionStore) reconcileConversationOrder(session *Session) bool {
 	if len(orphans) > 0 {
 		sort.Strings(orphans)
 		session.ConversationOrder = append(session.ConversationOrder, orphans...)
+		changed = true
+	}
+	return changed
+}
+
+// reconcileWorkspaceAnchors puts right any box whose place names a conversation
+// the order does not have. Returns true if anything changed.
+//
+// A session can be edited between runs — a conversation folder deleted by hand,
+// a manifest restored from a backup — and the place is the one workspace field
+// that points at something outside its own row. Such a box goes back to having
+// no recorded place, which is the truth: the conversation it sat behind is not
+// there to hand its place on (that is reanchorBoxesAt's job, and it only runs
+// while the conversation is still in the order), so nothing here knows where the
+// box was. It is then drawn by the older reading of the bar rather than being
+// sent to either end of it.
+func reconcileWorkspaceAnchors(session *Session) bool {
+	if len(session.Workspaces) == 0 {
+		return false
+	}
+	inOrder := make(map[string]bool, len(session.ConversationOrder))
+	for _, id := range session.ConversationOrder {
+		inOrder[id] = true
+	}
+	changed := false
+	for i := range session.Workspaces {
+		place := session.Workspaces[i].Place
+		if place == "" || place == PlaceHead || inOrder[place] {
+			continue
+		}
+		session.Workspaces[i].Place = ""
 		changed = true
 	}
 	return changed

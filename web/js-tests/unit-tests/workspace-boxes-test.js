@@ -21,7 +21,7 @@ import workspaceProviderRegistry from '../../js/registries/workspace-provider-re
 import {
   workspaceFinishActor,
   placeForNewConversation,
-  anchorForNewConversation
+  placementForNewConversation
 } from '../../js/services/workspace-provisioning.js';
 import Conversation from '../../js/model/conversation.js';
 import '../../js/components/conversation-bar.js';
@@ -160,17 +160,18 @@ function placeAt(session, index, conversation) {
 
 /**
  * The conversation order the server stores for a create, as
- * `SessionManager.CreateConversationAt` builds it: the new id immediately after
- * the anchor it was given, or at the head when there is no anchor or the server
- * has never heard of it.
+ * `SessionManager.CreateConversationAt` builds it: at the head, at the end, or
+ * immediately behind the anchor it was given — and at the head when that anchor
+ * is one the server has never heard of.
  * @param {string[]} existing - The ids already in the order.
  * @param {string} id - The id being created.
- * @param {string} after - The id it is to follow, '' for the head.
+ * @param {{where: string, after: string}} placement - Where the create asked to go.
  * @returns {string[]} The stored order.
  */
-function serverOrderForCreate(existing, id, after) {
+function serverOrderForCreate(existing, id, placement) {
   const order = [...existing];
-  const at = after ? order.indexOf(after) : -1;
+  if (placement.where === 'end') return [...order, id];
+  const at = placement.where === 'after' ? order.indexOf(placement.after) : -1;
   if (at === -1) return [id, ...order];
   order.splice(at + 1, 0, id);
   return order;
@@ -267,6 +268,13 @@ export async function runTests() {
     });
 
     await check('the box stays when the last conversation in it goes', () => {
+      // A box's place is its row's, and the server keeps that row naming a
+      // conversation that is still there — a workspace whose anchor is binned
+      // inherits that conversation's neighbour (see `reanchorBoxesAt`). So
+      // binning the last conversation in one changes what is inside the box,
+      // and not where the box is.
+      const row = bar._session.workspaces.find((/** @type {any} */ ws) => ws.id === 'ws_a');
+      row.place = 'head';
       bar._session.conversations.delete('c1');
       bar._session.conversations.delete('c2');
       bar.render();
@@ -472,15 +480,28 @@ export async function runTests() {
       assert(button.textContent === 'New workspace',
         `it says what it makes, in the word the boxes above it are named by, got ${JSON.stringify(button.textContent)}`);
 
-      // A mark and a label, in the two slots a tab uses for its handle and its
-      // name — which is what lines the words up with the tabs above. The mark
-      // is drawn, not spelled: a "+" in the text would be read out as one.
-      const mark = button.querySelector('svg');
+      // A mark and a label, read as one phrase. The mark is drawn, not spelled:
+      // a "+" in the text would be read out as one.
+      const mark = /** @type {SVGElement} */ (button.querySelector('svg'));
       assert(mark?.getAttribute('aria-hidden') === 'true',
         'the mark is decoration beside the words, not part of what the button is called');
       const boxLabel = button.querySelector('.conversation-box-new-label');
       assert(button.firstElementChild === mark && boxLabel?.textContent === 'New workspace',
-        'it leads with the mark and follows with the label, so the label sits in the tab-name column');
+        'it leads with the mark and follows with the label');
+
+      // And the phrase starts where a tab's name starts. The mark belongs to the
+      // words, not to the handle column beside them: standing in the gutter it
+      // lined the words up one step in from every other row and read as a
+      // caption under the list rather than the last row of it. Measured from
+      // each row's own left edge, so a tab lying in a box is still comparable.
+      const tab = /** @type {HTMLElement} */ (bar.querySelector('.conversation-tab'));
+      const tabName = /** @type {HTMLElement} */ (tab.querySelector('.conversation-tab-name'));
+      const indent = (/** @type {Element} */ row, /** @type {Element} */ text) =>
+        text.getBoundingClientRect().left - row.getBoundingClientRect().left;
+      const named = indent(tab, tabName);
+      const makes = indent(button, mark);
+      assert(Math.abs(named - makes) < 0.5,
+        `the mark starts where a tab name starts, got ${makes}px against ${named}px`);
 
       // It is not one of the things the strip is a list of: a drag looks for
       // tabs and boxes, and an outline is neither.
@@ -641,17 +662,16 @@ export async function runTests() {
     });
 
     await check('the first conversation in an empty box does not drag the box up the strip', () => {
-      // The same transaction against the other shape, and the one that costs
-      // the most when it goes wrong: an empty box is placed past every
-      // conversation there is, so a first member read as absent puts the box
-      // below the very tab that was just created in it.
+      // The same transaction against the other shape: a row with no place of
+      // its own, drawn past everything for want of a member to fall back to.
+      // Its first conversation belongs there too.
       bar._session = stubSession(
         [workspace('ws_c', 'scratch-3')],
         [['c1', ''], ['c2', '']]
       );
       bar.render();
       assert(strip(bar) === 'c1 c2 ws_c{}',
-        `an empty box is drawn after the conversations, having no member to take a place from, got "${strip(bar)}"`);
+        `an empty box with nothing to fall back to is drawn after the conversations, got "${strip(bar)}"`);
 
       const created = createdConversation('c4', 'ws_c');
       placeAt(bar._session, placeForNewConversation(bar._session, 'ws_c'), created);
@@ -675,20 +695,24 @@ export async function runTests() {
       bar.render();
 
       const created = createdConversation('c4', 'ws_b');
-      const after = anchorForNewConversation(bar._session, 'ws_b');
-      assert(after === 'c1',
-        `the new conversation is to follow the tab above its box, got ${JSON.stringify(after)}`);
+      const { where, after } = placementForNewConversation(bar._session, 'ws_b');
+      assert(where === 'after' && after === 'c1',
+        `the new conversation is to follow the tab above its box, got ${JSON.stringify({ where, after })}`);
 
       placeAt(bar._session, placeForNewConversation(bar._session, 'ws_b'), created);
       const existing = [...bar._session.conversations.keys()].filter(id => id !== created.id);
-      reslotToServerOrder(bar._session, serverOrderForCreate(existing, created.id, after));
+      reslotToServerOrder(bar._session, serverOrderForCreate(existing, created.id, { where, after }));
       bar.render();
 
       assert(strip(bar) === 'c1 ws_b{c4,c2} c3',
         `the strip the server's own order draws is the one the create drew, got "${strip(bar)}"`);
     });
 
-    await check('the server is told where an empty box is, too', () => {
+    await check('a box drawn past everything says the end, rather than naming a tab', () => {
+      // A row with no place of its own falls back to being drawn past every
+      // conversation there is. "The end" is then what the create has to say:
+      // naming the last tab this window holds is a different request, and one
+      // the server answers against an order that may run further.
       bar._session = stubSession(
         [workspace('ws_c', 'scratch-3')],
         [['c1', ''], ['c2', '']]
@@ -696,17 +720,45 @@ export async function runTests() {
       bar.render();
 
       const created = createdConversation('c4', 'ws_c');
-      const after = anchorForNewConversation(bar._session, 'ws_c');
-      assert(after === 'c2',
-        `an empty box is drawn last, so its first conversation follows the last tab there is, got ${JSON.stringify(after)}`);
+      const placement = placementForNewConversation(bar._session, 'ws_c');
+      assert(placement.where === 'end' && placement.after === '',
+        `the end of the bar is said as itself and needs no id, got ${JSON.stringify(placement)}`);
 
       placeAt(bar._session, placeForNewConversation(bar._session, 'ws_c'), created);
-      const existing = [...bar._session.conversations.keys()].filter(id => id !== created.id);
-      reslotToServerOrder(bar._session, serverOrderForCreate(existing, created.id, after));
+      reslotToServerOrder(bar._session, serverOrderForCreate(['c1', 'c2', 'c9'], created.id, placement));
       bar.render();
 
       assert(strip(bar) === 'c1 c2 ws_c{c4}',
-        `and the box stays at the end rather than being carried to the top, got "${strip(bar)}"`);
+        `so it lands past the conversation this window never loaded, not in front of it, got "${strip(bar)}"`);
+    });
+
+    await check('a box keeps its place when the server knows more tabs than this window', () => {
+      // The client's tab list is not the server's: the order counts
+      // conversations this window has never loaded, and a load can fail. A box
+      // drawn in the middle of the strip has to still be there after the
+      // create, and the only thing that survives the round trip is the
+      // neighbour its own row names.
+      bar._session = stubSession(
+        [workspace('ws_c', 'scratch-3', { place: 'c1' })],
+        [['c1', ''], ['c2', '']]
+      );
+      bar.render();
+      assert(strip(bar) === 'c1 ws_c{} c2',
+        `an empty box sits where its row says, which is behind c1, got "${strip(bar)}"`);
+
+      const created = createdConversation('c4', 'ws_c');
+      const placement = placementForNewConversation(bar._session, 'ws_c');
+      assert(placement.where === 'after' && placement.after === 'c1',
+        `its first conversation follows the conversation the box is anchored to, got ${JSON.stringify(placement)}`);
+
+      placeAt(bar._session, placeForNewConversation(bar._session, 'ws_c'), created);
+      // The server's order carries a conversation this window does not hold —
+      // the case that "follow whichever tab I have last" gets wrong.
+      reslotToServerOrder(bar._session, serverOrderForCreate(['c1', 'c2', 'c9'], created.id, placement));
+      bar.render();
+
+      assert(strip(bar) === 'c1 ws_c{c4} c2',
+        `and it is still behind c1 once the server's own order comes back, got "${strip(bar)}"`);
     });
 
     await check('a conversation that belongs at the head still goes to the head', () => {
@@ -721,11 +773,11 @@ export async function runTests() {
       );
       bar.render();
 
-      assert(anchorForNewConversation(bar._session, '') === '',
+      assert(placementForNewConversation(bar._session, '').where === 'head',
         'a conversation with no workspace goes to the head of the bar, as it always has');
-      assert(anchorForNewConversation(bar._session, 'ws_d') === '',
+      assert(placementForNewConversation(bar._session, 'ws_d').where === 'head',
         'and so does one born into the box that is already there');
-      assert(anchorForNewConversation(bar._session, 'ws_gone') === '',
+      assert(placementForNewConversation(bar._session, 'ws_gone').where === 'head',
         'a workspace nobody can work in has no box to go to the top of, so its conversations go where the rest do');
     });
   } finally {

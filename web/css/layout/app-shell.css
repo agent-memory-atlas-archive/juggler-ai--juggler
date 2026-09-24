@@ -84,7 +84,10 @@ app-container {
        menu hints drift back into being selectable.
      - A descendant's own rule always beats an ancestor's regardless of order,
        so the carve-outs below (and component-level ones such as
-       `settings-panel .settings-content`) hold no matter where they sit.
+       `settings-panel .settings-content`, or `.workspace-create-dialog` in
+       components/settings-3.css) hold no matter where they sit. A surface whose
+       class belongs to a component sheet is declared there, not here: ownership
+       is what the architecture lint checks, and this block owns no component.
    ============================================================================ */
 
 /* The highlight itself, so every platform draws the same one. An unstyled

@@ -5,11 +5,10 @@
 /**
  * Dragging a whole workspace box to a new place in the strip.
  *
- * The order holds conversations and nothing else, and a box is drawn at the
- * first of its own — so moving a box is moving that run of conversations,
- * together, to wherever it was let go. The assertions here are about what the
- * drop is allowed to write: the run arrives whole, keeps the order it had, and
- * takes none of its neighbours with it.
+ * A box keeps a place of its own — the conversation it sits behind, stored on
+ * its workspace row — so moving one writes that field and moves no
+ * conversation. The assertions here are about what the drop is allowed to
+ * write: the place it landed at, and nothing else at all.
  *
  * A box travels among the tabs and boxes of the strip and never into another
  * box. A workspace does not live in a workspace, so the containment question a
@@ -63,19 +62,15 @@ function mountBar(workspaces, bindings) {
      */
     getWorkspace(id) { return workspaces.find((row) => row.id === id) || null; },
     /**
-     * @param {string[]} ids - The run being moved.
-     * @param {string} beforeId - What it lands in front of, or '' for the end.
+     * @param {string} workspaceId - Whose box moved.
+     * @param {string} place - 'head', or the conversation it now sits behind.
      * @returns {boolean} Whether anything moved.
      */
-    moveConversationBlock(ids, beforeId) {
-      calls.push(['block', ids.join(','), beforeId]);
-      const moving = ids.filter((id) => session.conversations.has(id));
-      if (!moving.length || moving.includes(beforeId)) return false;
-      const keys = [...session.conversations.keys()].filter((id) => !moving.includes(id));
-      const at = beforeId ? keys.indexOf(beforeId) : -1;
-      keys.splice(at >= 0 ? at : keys.length, 0, ...moving);
-      const next = new Map(keys.map((id) => [id, session.conversations.get(id)]));
-      session.conversations = next;
+    moveWorkspaceBox(workspaceId, place) {
+      const row = workspaces.find((ws) => ws.id === workspaceId);
+      if (!row || !place || row.place === place) return false;
+      calls.push(['box', workspaceId, place]);
+      row.place = place;
       return true;
     },
     /**
@@ -224,7 +219,7 @@ export async function runTests() {
     }
   });
 
-  check('a box dragged above a tab takes its conversations with it', () => {
+  check('a box dragged above every tab comes to sit at the head of the bar', () => {
     const { bar, calls, order, teardown } = mountBar(
       [workspace('ws_a')],
       [['c1', ''], ['c2', 'ws_a'], ['c3', 'ws_a']]
@@ -234,16 +229,16 @@ export async function runTests() {
       const first = tabFor(bar, 'c1').getBoundingClientRect();
       dragBoxToY(bar, boxFor(bar, 'ws_a'), first.top + 1);
 
-      assert(JSON.stringify(calls) === JSON.stringify([['block', 'c2,c3', 'c1']]),
-        `the box commits its conversations as one run, landing in front of the tab it was dropped above: ${JSON.stringify(calls)}`);
-      assert(order() === 'c2,c3,c1',
-        `they arrive together and keep the order they had, and the tab they passed stays put, got ${order()}`);
+      assert(JSON.stringify(calls) === JSON.stringify([['box', 'ws_a', 'head']]),
+        `dropped in front of everything, the box has nothing left to sit behind: ${JSON.stringify(calls)}`);
+      assert(order() === 'c1,c2,c3',
+        `and no conversation has moved — a box travels on its own, got ${order()}`);
     } finally {
       teardown();
     }
   });
 
-  check('a box dragged past the end of the strip goes to the end of the order', () => {
+  check('a box dragged past the end of the strip sits behind the last tab', () => {
     const { bar, calls, order, teardown } = mountBar(
       [workspace('ws_a')],
       [['c2', 'ws_a'], ['c3', 'ws_a'], ['c1', '']]
@@ -252,10 +247,10 @@ export async function runTests() {
       const box = boxFor(bar, 'ws_a');
       dragBoxToY(bar, box, tabFor(bar, 'c1').getBoundingClientRect().bottom + 60);
 
-      assert(JSON.stringify(calls) === JSON.stringify([['block', 'c2,c3', '']]),
-        `past everything there is to land in front of, there is nothing to name: ${JSON.stringify(calls)}`);
-      assert(order() === 'c1,c2,c3',
-        `so the run goes to the end, still whole and still in order, got ${order()}`);
+      assert(JSON.stringify(calls) === JSON.stringify([['box', 'ws_a', 'c1']]),
+        `the end of the bar is behind the last conversation that is not its own: ${JSON.stringify(calls)}`);
+      assert(order() === 'c2,c3,c1',
+        `and again nothing else moved, got ${order()}`);
     } finally {
       teardown();
     }
@@ -278,8 +273,8 @@ export async function runTests() {
     }
   });
 
-  check('an empty box has no conversations to commit', () => {
-    const { bar, calls, teardown } = mountBar(
+  check('an empty box commits its place like any other', () => {
+    const { bar, calls, order, teardown } = mountBar(
       [workspace('ws_empty')],
       [['c1', '']]
     );
@@ -287,8 +282,10 @@ export async function runTests() {
       const box = boxFor(bar, 'ws_empty');
       dragBoxToY(bar, box, tabFor(bar, 'c1').getBoundingClientRect().top + 1);
 
-      assert(calls.length === 0,
-        `a workspace nobody is working in owns no place in the conversation order, so there is nothing to write: ${JSON.stringify(calls)}`);
+      assert(JSON.stringify(calls) === JSON.stringify([['box', 'ws_empty', 'head']]),
+        `a box's place is its own, so one with nothing in it is moved and kept like any other: ${JSON.stringify(calls)}`);
+      assert(order() === 'c1',
+        `and the conversation it was dragged past stays where it is, got ${order()}`);
     } finally {
       teardown();
     }

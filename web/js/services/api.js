@@ -265,7 +265,7 @@ class APIService {
    * returned name.
    * @param {string} name - Requested display name (server may append " (copy N)" on collision)
    * @param {string} [id] - Optional preallocated conversation id
-   * @param {{lane?: string, reason?: string, duplicateFrom?: string, origin?: string, focus?: boolean, focusFrom?: string, after?: string}} [options] - lane
+   * @param {{lane?: string, reason?: string, duplicateFrom?: string, origin?: string, focus?: boolean, focusFrom?: string, place?: string, after?: string}} [options] - lane
    *   identifies the creating test lane for the test-mode ownership ledger;
    *   reason tags the create with the current test's name so a suite-end leak
    *   dump names the culprit test; duplicateFrom makes the server clone that
@@ -276,10 +276,9 @@ class APIService {
    *   a "focus" op after "created" asking viewers to switch to the new
    *   conversation (used by the headless engine, which can't move viewer focus);
    *   focusFrom names the conversation that asked, so each viewer can decide
-   *   whether to follow; after names the conversation the new one is to sit
-   *   immediately behind in the stored order (empty for the head of the bar),
-   *   which is how a conversation created in a workspace box keeps that box
-   *   where it is.
+   *   whether to follow; place is 'head', 'after' or 'end' and after names the
+   *   conversation to sit behind for 'after', which is how a conversation
+   *   created in a workspace box lands beside the rest of that box.
    * @returns {Promise<{id: string, name: string, created: string}>} Conversation id, canonical name actually written to disk, and ISO 8601 creation timestamp.
    */
   async createConversation(name, id, options = {}) {
@@ -306,9 +305,10 @@ class APIService {
         // focusFrom rides along so viewers can apply their own follow policy.
         ...(options.focus ? { focus: true } : {}),
         ...(options.focusFrom ? { focusFrom: options.focusFrom } : {}),
-        // after names the conversation this one is to follow in the stored
-        // order. Omitted means the head of the bar, which is where a create
-        // has always gone and where a project conversation still belongs.
+        // place and after say where this one goes in the stored order: 'head',
+        // 'end', or 'after' the conversation named alongside it. Omitting both
+        // means the head of the bar, where a project conversation belongs.
+        ...(options.place ? { place: options.place } : {}),
         ...(options.after ? { after: options.after } : {})
       }
     });

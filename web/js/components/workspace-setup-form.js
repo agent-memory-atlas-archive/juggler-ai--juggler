@@ -169,16 +169,27 @@ function buildRecommendations(provider) {
  *   choosing it means and the address a line each. A view that lists places to
  *   one side of the question it is really asking leaves this off and gets a
  *   line apiece.
+ * @param {boolean} [request.asRail] - Draw the group as a column of names down
+ *   the side of the view, in the shape the settings panel's sidebar has. For the
+ *   view that answers the choice in a pane beside the list rather than under the
+ *   row: a rail is narrow, so a row is a name and everything about the chosen one
+ *   is the pane's to say.
+ * @param {string} [request.role] - What the group is. Places are a choice, so it
+ *   is a `radiogroup` by default; a band holding nothing but offers is a `group`,
+ *   because a radio group in which nothing can be checked is a lie told to a
+ *   screen reader.
  * @returns {HTMLElement} The group.
  */
 export function buildPlaceRows(request) {
   const {
-    rows, selection, label, statusFor, onSelect, onAdopt, expandSelected, adoptVerb, asBlocks
+    rows, selection, label, statusFor, onSelect, onAdopt, expandSelected, adoptVerb, asBlocks, asRail,
+    role = 'radiogroup'
   } = request;
 
   const group = document.createElement('div');
-  group.className = asBlocks ? 'setup-rows setup-rows-blocks' : 'setup-rows';
-  group.setAttribute('role', 'radiogroup');
+  group.className = ['setup-rows', asBlocks && 'setup-rows-blocks', asRail && 'setup-rows-rail']
+    .filter(Boolean).join(' ');
+  group.setAttribute('role', role);
   group.setAttribute('aria-label', label);
 
   for (const row of rows) {

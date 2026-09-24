@@ -215,38 +215,67 @@ export function selectedWorkspace(session) {
  */
 
 /**
+ * Where one box is drawn, as an index into the flat conversation order.
+ *
+ * The stored place is `'head'`, or the conversation the box sits behind. A
+ * neighbour rather than a number, so it survives conversations being created and
+ * binned elsewhere in the bar, and the server re-anchors it when that neighbour
+ * itself goes (see `reanchorBoxesAt`).
+ *
+ * Empty is not a position. It is a row with no place recorded — one written
+ * before boxes kept one, or one whose place stopped meaning anything — and it
+ * falls back to the older reading of the bar, as does a place naming a
+ * conversation this client does not hold (the server lists conversations a
+ * viewer has not loaded, and a load can fail). The fallback is the box's first
+ * member, and past everything when it has none.
+ *
+ * Reading an empty field as the head of the bar is the one thing this must not
+ * do: every box would climb to the top of the sidebar the first time anything
+ * about it was unknown.
+ * @param {{workspace: any, conversations: any[]}} box - The box and the members it has been given.
+ * @param {any[]} conversations - The flat order, for the length.
+ * @param {Map<string, number>} indexOf - Each conversation's place in that order.
+ * @returns {number} The index it is drawn at.
+ */
+function boxPlace(box, conversations, indexOf) {
+  const place = box.workspace?.place;
+  if (place === 'head') return 0;
+  if (place && indexOf.has(place)) return /** @type {number} */ (indexOf.get(place)) + 1;
+  if (box.conversations.length) return /** @type {number} */ (indexOf.get(box.conversations[0].id));
+  return conversations.length;
+}
+
+/**
  * A session's conversations, grouped by the workspace they work in.
  *
- * Grouping is derived and never stored. Map insertion order is the tab-bar
- * order — see `Session#_setConversationOrder` — and it stays the only persisted
- * one; this is a reading of it.
+ * There are two kinds of thing in the tab bar and each keeps its own place. A
+ * conversation's is the flat order — Map insertion order, see
+ * `Session#_setConversationOrder`. A box's is its workspace's `after` field, the
+ * conversation it sits behind. Neither is derived from the other, which is the
+ * whole point: a box placed by whichever conversation happened to be in it moved
+ * whenever work started or finished there, and an empty box had nothing to be
+ * placed by at all. A workspace is a place, not an event.
  *
- * A box's place is the place of its first member, and an unboxed conversation's
- * place is its own. Every conversation is therefore placed by the same rule,
- * which is what lets boxes and loose tabs interleave: the tabs above a box stay
- * above it, the tabs below stay below, and starting a conversation at the top of
- * the bar moves a box down by that one conversation instead of sending it past
- * every loose tab there is. Grouping the unboxed ones together as a single run
- * would make the bar a block of boxes and a block of tabs, and which block came
- * first would flip on whichever was started last.
+ * So the tabs above a box stay above it and the tabs below stay below, and
+ * starting or binning a conversation moves nothing but that conversation.
+ * Grouping the unboxed ones together as a single run would make the bar a block
+ * of boxes and a block of tabs, and which block came first would flip on
+ * whichever was started last.
  *
  * A flat order holding two conversations of one workspace either side of a third
  * is grouped anyway: contiguity is a property of the layout, not a precondition
- * for it, and the next reorder writes the flat order back into agreement.
+ * for it, and a box is drawn where its row says regardless of where its members
+ * sit.
  *
  * Only a usable workspace gets a box. A conversation bound to one that is
  * closed, still being built, or gone is drawn flat with the project's own
  * conversations — its binding is the stranded banner's to explain, and a box
  * drawn for a place nobody can work in would be offering it.
  *
- * A usable workspace with nothing bound to it still gets its box, empty. That
- * is the point of drawing workspaces at all: a tree outlives the conversations
- * that were started in it, and while it has no conversation it has no other way
- * of being seen or acted on. Having no member, it has no place to take from one
- * either, so it is ordered after everything that has one, in the table's order.
- * That is where an empty box is *first* drawn; a renderer holding one on screen
- * already leaves it where it is, because a workspace must not travel the sidebar
- * on account of a conversation being binned.
+ * A usable workspace with nothing bound to it still gets its box, empty, and
+ * holds the place its row names. That is the point of drawing workspaces at all:
+ * a tree outlives the conversations that were started in it, and while it has no
+ * conversation it has no other way of being seen or acted on.
  * @param {any} session - The session holding the conversations and the table.
  * @returns {WorkspaceGroup[]} Every usable workspace, and the runs of unboxed
  *   conversations between them, in the order they are drawn.
@@ -255,35 +284,42 @@ export function workspaceGroups(session) {
   const conversations = [...(session?.conversations?.values?.() ?? [])];
   const usable = [...(session?.workspaces ?? [])].filter(workspace => isWorkspaceUsable(workspace));
 
+  // Where each conversation sits in the flat order.
+  /** @type {Map<string, number>} */
+  const indexOf = new Map(conversations.map((conversation, index) => [conversation.id, index]));
+
   /**
-   * Every entry to be placed: one per box, one per unboxed conversation. A box
-   * starts out placed past the last conversation there is, which is where it
-   * stays if nothing is ever bound to it.
-   * @type {{workspace: any, conversations: any[], place: number}[]}
+   * Every entry to be placed: one per box, one per unboxed conversation.
+   * `rank` breaks a tie between a box and the conversation it sits in front of,
+   * which the two agree on: a box anchored to the conversation at index 2 wants
+   * place 3, and so does the conversation at index 3.
+   * @type {{workspace: any, conversations: any[], place: number, rank: number}[]}
    */
   const boxes = usable.map(workspace =>
-    ({ workspace, conversations: /** @type {any[]} */ ([]), place: conversations.length }));
-  /** @type {Map<string, {workspace: any, conversations: any[], place: number}>} */
+    ({ workspace, conversations: /** @type {any[]} */ ([]), place: 0, rank: 0 }));
+  /** @type {Map<string, {workspace: any, conversations: any[], place: number, rank: number}>} */
   const byId = new Map(boxes.map(box => [box.workspace.id, box]));
 
-  /** @type {{workspace: any, conversations: any[], place: number}[]} */
+  /** @type {{workspace: any, conversations: any[], place: number, rank: number}[]} */
   const entries = [];
   conversations.forEach((conversation, index) => {
     const box = byId.get(conversation.workspaceId || '');
     if (!box) {
-      entries.push({ workspace: null, conversations: [conversation], place: index });
+      entries.push({ workspace: null, conversations: [conversation], place: index, rank: 1 });
       return;
     }
-    if (!box.conversations.length) box.place = index;
     box.conversations.push(conversation);
   });
+
+  // Placed once every box knows its members, so that the fallback below has
+  // something to fall back to.
+  for (const box of boxes) box.place = boxPlace(box, conversations, indexOf);
   entries.push(...boxes);
 
-  // No two entries can want the same place — an index belongs to exactly one
-  // conversation, which is either in a box or not — so the only ties are the
-  // empty boxes, all of which want the place past the end. The sort being
-  // stable, they hold the order they were built in, which is the table's.
-  entries.sort((a, b) => a.place - b.place);
+  // The only remaining ties are boxes sharing an anchor. The sort being stable,
+  // and the boxes having been built in the table's order, that is the order
+  // they keep.
+  entries.sort((a, b) => a.place - b.place || a.rank - b.rank);
 
   // Unboxed conversations are placed one at a time and drawn in runs: the bar
   // lays a group of them flat, and two runs with nothing between them are one
@@ -304,18 +340,15 @@ export function workspaceGroups(session) {
 /**
  * Where a conversation about to be created belongs in the flat order.
  *
- * The other half of {@link workspaceGroups}' rule, and it exists because that
- * rule has a consequence nobody wants: a box is placed by its first member, so
- * a conversation born into a workspace and put at the top of the bar takes its
- * box up there with it. A workspace is a place, not an event — it has no
- * business travelling the sidebar because work has started in it, any more than
- * it does because work has finished in it.
+ * A new conversation goes to the top of its *box*: in at the index its box's
+ * first member already holds, so that it is the first tab in the box. Nothing
+ * about this moves the box, which holds the place its own row names (see
+ * {@link boxPlace}) whatever its members do.
  *
- * So a new conversation goes to the top of its *box* rather than the top of the
- * bar: in at the index its box's first member already holds, which is the index
- * the box is drawn at, leaving the box exactly where it is. An empty box is
- * drawn past every conversation there is, so its first member goes to the end,
- * for the same reason and with the same result.
+ * A box with nothing in it yet has no member to go in above, so its first
+ * conversation goes where the box itself is drawn — which puts the tab under
+ * the header it belongs to rather than at whichever end of the bar the flat
+ * order happens to start or finish.
  *
  * A workspace nobody can work in has no box to go to the top of — its
  * conversations are drawn flat — so a conversation born into one goes where
@@ -336,34 +369,58 @@ export function placeForNewConversation(session, workspaceId, { ignore = '' } = 
   const conversations = [...(session?.conversations?.values?.() ?? [])]
     .filter(conv => conv.id !== ignore);
   const first = conversations.findIndex(conv => (conv.workspaceId || '') === workspaceId);
-  return first === -1 ? conversations.length : first;
+  if (first !== -1) return first;
+
+  const indexOf = new Map(conversations.map((conversation, index) => [conversation.id, index]));
+  return boxPlace({ workspace, conversations: [] }, conversations, indexOf);
 }
 
 /**
  * The conversation a new one is to be created after, for the server to store.
  *
- * {@link placeForNewConversation}'s answer, said in the one term the server can
- * act on. Placing the tab locally settles nothing on its own: the server keeps
- * the conversation order, broadcasts it on every create, and `refreshFromServer`
+ * {@link placeForNewConversation}'s answer, said in terms the server can act on.
+ * Placing the tab locally settles nothing on its own: the server keeps the
+ * conversation order, broadcasts it on every create, and `refreshFromServer`
  * re-slots the map into what it sent — so an order the server decided for itself
  * is the one that survives the create, and the one the next launch reads back.
- * Told nothing, it puts a new conversation at the head of the bar, which carries
- * the box it belongs to up there with it.
  *
  * An index would not survive the trip: the server's order counts conversations
- * this client has never loaded, and the client's counts none of them. A
- * neighbour does survive it, and degrades the right way — an anchor the server
- * cannot place leaves it doing exactly what it did before it was ever told
- * where anything goes.
+ * this client has never loaded, and the client's counts none of them. So each
+ * answer is named rather than counted. `head` and `end` are the two ends of the
+ * bar, which need no id and mean the same thing to both sides. `after` names a
+ * real neighbour — the tab above the box's first member, or the conversation the
+ * box's own row is anchored to — which is an adjacency both sides agree on.
+ *
+ * The distinction matters most for a box with nothing in it. Saying "behind
+ * whichever tab I happen to hold last" is not saying "the end": the server's
+ * order runs past this client's, so the two answers are different positions, and
+ * which one you get would depend on what this window had loaded.
  * @param {any} session - The session holding the conversations and the table.
  * @param {string} [workspaceId] - The workspace it will work in, if it is one.
- * @returns {string} The id to insert after, or '' for the head of the bar.
+ * @returns {{where: string, after: string}} `where` is 'head', 'after' or 'end';
+ *   `after` names the conversation to sit behind, and is '' for the other two.
  */
-export function anchorForNewConversation(session, workspaceId) {
-  const index = placeForNewConversation(session, workspaceId);
-  if (index <= 0) return '';
-  const ids = [...(session?.conversations?.keys?.() ?? [])];
-  return ids[index - 1] ?? '';
+export function placementForNewConversation(session, workspaceId) {
+  const head = { where: 'head', after: '' };
+  if (!workspaceId) return head;
+  const workspace = session?.getWorkspace?.(workspaceId)
+    ?? [...(session?.workspaces ?? [])].find(row => row.id === workspaceId);
+  if (!workspace || !isWorkspaceUsable(workspace)) return head;
+
+  // Into a box that has conversations in it: above the first of them, which is
+  // to say behind whatever that one sits behind.
+  const conversations = [...(session?.conversations?.values?.() ?? [])];
+  const first = conversations.findIndex(conv => (conv.workspaceId || '') === workspaceId);
+  if (first === 0) return head;
+  if (first > 0) return { where: 'after', after: conversations[first - 1].id };
+
+  // Into an empty box: where the box itself is. A row that records a place says
+  // it outright; one that does not is drawn past everything, and that is where
+  // its first conversation goes too.
+  const place = workspace.place;
+  if (place === 'head') return head;
+  if (place && conversations.some(conv => conv.id === place)) return { where: 'after', after: place };
+  return { where: 'end', after: '' };
 }
 
 /**

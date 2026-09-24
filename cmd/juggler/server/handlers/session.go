@@ -621,20 +621,25 @@ func (api *SessionAPI) HandleCreateConversation(w http.ResponseWriter, r *http.R
 		// watching a different tab, or mid-message in the requesting one, keeps
 		// its place. Empty means unattributed — viewers follow unconditionally.
 		FocusFrom string `json:"focusFrom"`
-		// After names the conversation this one is to sit immediately behind in
+		// Place and After say where the new conversation goes in
 		// ConversationOrder. The order is the server's and is broadcast on every
 		// create, so this is the only way a viewer's placement outlives its own
 		// create: a conversation started in a workspace box belongs beside the
-		// rest of that box, and the head of the bar — where a create goes when
-		// told nothing — would drag the box there with it. Empty, or an id this
-		// session does not hold, means the head.
+		// rest of that box, not at the head of the bar where a create goes when
+		// told nothing.
+		//
+		// Place is "head", "after" or "end"; After names the conversation to sit
+		// behind, for "after". A request carrying only After is read the way it
+		// reads: behind that conversation, or at the head when it is empty.
+		Place string `json:"place"`
 		After string `json:"after"`
 	}](w, r)
 	if !ok {
 		return
 	}
 
-	id, finalName, err := api.manager().CreateConversationAt(req.Name, req.ID, req.After)
+	id, finalName, err := api.manager().CreateConversationAt(
+		req.Name, req.ID, core.PlacementFor(req.Place, req.After))
 	if err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, core.ErrInvalidConvID) {

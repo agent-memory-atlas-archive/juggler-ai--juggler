@@ -859,8 +859,8 @@ class ConversationBar extends JugglerElement {
     // goes inside that workspace's box; everything else stays flat in the strip
     // — the project's conversations, and any whose binding names a place that
     // cannot be worked in, which the stranded banner explains rather than this.
-    // The grouping is a reading of the Map order above and stores nothing:
-    // `workspaceGroups` places each group at its first member.
+    // A conversation's place is the Map order above; a box's is its own row's
+    // `after` field. `workspaceGroups` reads the two together.
     const groups = workspaceGroups(this._session);
     for (const group of groups) {
       const container = group.workspace
@@ -879,24 +879,11 @@ class ConversationBar extends JugglerElement {
     //
     // A drag never reaches here — render() returns early for the whole of one —
     // so this always reconciles against a strip nobody is holding.
-    // A box with nothing in it has no member to take a place from, so it keeps
-    // the place it already holds: binning the last conversation in a workspace
-    // must not send its box down the sidebar past everything else. It is an
-    // anchor the rest of the pass flows around — stepped over rather than
-    // displaced, by the tabs as well as by the other boxes.
-    /** @type {Set<any>} */
-    const anchored = new Set();
-    for (const group of groups) {
-      if (!group.workspace || group.conversations.length) continue;
-      const box = this._workspaceBoxes.get(group.workspace.id);
-      if (box && box.parentNode === tabsMenu) anchored.add(box);
-    }
-
     let expected = addButton.nextSibling;
     for (const group of groups) {
       const box = group.workspace ? this._workspaceBoxes.get(group.workspace.id) : null;
       if (!box) {
-        expected = this._orderTabs(tabsMenu, expected, group.conversations, anchored);
+        expected = this._orderTabs(tabsMenu, expected, group.conversations);
         continue;
       }
       // An empty box is the case this whole layout exists for: the workspace
@@ -905,16 +892,10 @@ class ConversationBar extends JugglerElement {
       const empty = /** @type {HTMLElement|null} */ (box.querySelector('.conversation-box-empty'));
       if (empty) empty.hidden = group.conversations.length > 0;
 
-      if (anchored.has(box)) {
-        if (box === expected) expected = box.nextSibling;
-        continue;
-      }
-
-      expected = this._skipAnchored(expected, anchored);
       if (box !== expected) tabsMenu.insertBefore(box, expected);
 
       const body = /** @type {HTMLElement} */ (box.querySelector('.conversation-box-tabs'));
-      this._orderTabs(body, body.firstChild, group.conversations, anchored);
+      this._orderTabs(body, body.firstChild, group.conversations);
 
       // Read after the tabs have moved, not before: a conversation that has
       // just been drawn into this box was, a moment ago, the node after it in
@@ -1064,17 +1045,16 @@ class ConversationBar extends JugglerElement {
    * @param {HTMLElement} container - Where this run is drawn.
    * @param {ChildNode|null} start - The node the run begins at.
    * @param {any[]} members - The conversations, in the order they are drawn.
-   * @param {Set<any>} anchored - Boxes that keep the place they already have.
    * @returns {ChildNode|null} The node the next run begins at.
    * @private
    */
-  _orderTabs(container, start, members, anchored) {
-    let expected = this._skipAnchored(start, anchored);
+  _orderTabs(container, start, members) {
+    let expected = start;
     for (const conv of members) {
       const tab = this._cachedElements.get(conv.id);
       if (!tab) continue;
       if (tab !== expected) container.insertBefore(tab, expected);
-      expected = this._skipAnchored(tab.nextSibling, anchored);
+      expected = tab.nextSibling;
     }
     return expected;
   }
@@ -1167,10 +1147,36 @@ class ConversationBar extends JugglerElement {
   }
 
   /**
+   * The conversation a box dropped in front of `beforeId` comes to sit behind.
+   *
+   * A drop says what it landed in front of; a box's place is stored as what it
+   * sits behind. One is read off the flat order from the other. Landing in front
+   * of everything is the head of the bar, which is stored as 'head' and never as
+   * an absence — an empty place means no place recorded, which is a different
+   * thing and would send the box somewhere nobody dropped it.
+   *
+   * The box's own members are stepped over. A box cannot be placed relative to
+   * a conversation drawn inside it: that would be a box anchored to itself, and
+   * the answer would change every time it gained or lost a member.
+   * @param {string} beforeId - What the drop landed in front of, '' for the end.
+   * @param {string} workspaceId - The workspace being moved.
+   * @returns {string} The place to store: 'head', or the conversation it sits behind.
+   * @private
+   */
+  _placeForBox(beforeId, workspaceId) {
+    const ids = [...(this._session?.conversations?.values?.() ?? [])]
+      .filter((conv) => (conv.workspaceId || '') !== workspaceId)
+      .map((conv) => conv.id);
+    const at = beforeId ? ids.indexOf(beforeId) : ids.length;
+    return at <= 0 ? 'head' : (ids[at - 1] ?? 'head');
+  }
+
+  /**
    * Which conversation a drop in front of `anchor` lands in front of.
    *
-   * The flat conversation order is the only thing stored, so a landing has to
-   * name a conversation however it was drawn. An anchor that is a whole box
+   * A landing is stored as a conversation either way — a tab's own place in the
+   * flat order, a box's place on its row — so it has to name one however it was
+   * drawn. An anchor that is a whole box
    * names the first conversation in it; one that is a box's "Nothing here."
    * line — the last thing in every box, drawn or not — names whatever comes
    * after the box, there being nothing past it inside the box to name. Both
@@ -1194,21 +1200,6 @@ class ConversationBar extends JugglerElement {
       if (tab === anchor || after) return id;
     }
     return '';
-  }
-
-  /**
-   * Walk the cursor past any anchored box sitting at it. See render(): an empty
-   * box is drawn where it already is, so everything else is placed around it
-   * rather than in front of it.
-   * @param {ChildNode|null} node - Where the cursor is.
-   * @param {Set<any>} anchored - Boxes that keep the place they already have.
-   * @returns {ChildNode|null} The first node that is not one of them.
-   * @private
-   */
-  _skipAnchored(node, anchored) {
-    let at = node;
-    while (at && anchored.has(at)) at = at.nextSibling;
-    return at;
   }
 
   /**
@@ -2079,12 +2070,12 @@ class ConversationBar extends JugglerElement {
    * another one: a workspace does not live in a workspace, so the only
    * containment question a tab drag has to answer does not arise here.
    *
-   * What is committed is its conversations. The order holds conversations and
-   * nothing else, and the box is drawn at the first of them — so moving the box
-   * is moving that run, together, to where it was let go. A box with nothing in
-   * it has no run to move and so nothing to persist; it stays where it is put
-   * for as long as the strip is on screen, which is the same promise render()
-   * already makes for an empty box whose last conversation was binned.
+   * What is committed is the box's own place — the conversation it now sits
+   * behind — written to its workspace row and to nothing else. Its members stay
+   * exactly where they are in the conversation order, because where they are in
+   * that order has no bearing on where the box is drawn. A box with nothing in
+   * it commits the same field as any other: having no members to speak for it
+   * is no longer having nothing to say.
    * @param {PointerEvent} e - The pointerdown that started it.
    * @param {HTMLElement} box - The box being dragged.
    * @private
@@ -2132,13 +2123,12 @@ class ConversationBar extends JugglerElement {
         setTimeout(() => { this._dragJustOccurred = false; }, 100);
       },
       onCommit: ({ anchor }) => {
-        if (!this._session) return;
-        const members = /** @type {HTMLElement[]} */ (
-          Array.from(box.querySelectorAll('.conversation-tab:not(.drag-ghost)')))
-          .map((tab) => tab.dataset.conversationId || '')
-          .filter(Boolean);
-        if (!members.length) return;
-        this._session.moveConversationBlock(members, this._beforeIdAt(anchor, box));
+        const workspaceId = box.dataset.workspaceId || '';
+        if (!this._session || !workspaceId) return;
+        this._session.moveWorkspaceBox(
+          workspaceId,
+          this._placeForBox(this._beforeIdAt(anchor, box), workspaceId)
+        );
       },
     });
   }

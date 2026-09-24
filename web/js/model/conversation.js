@@ -1057,12 +1057,10 @@ class Conversation {
    * answers with the workspace it was created for. The write happens once the
    * worker has spawned, and a conversation is in the session's map — and so in
    * the tab bar, which groups the strip by this very answer — several renders
-   * before that. Without the fallback those renders draw a new tab outside the
-   * box it was started in, and the box itself a member short: for the first
-   * conversation in one, a box read as empty is drawn past every conversation
-   * there is. The tab then jumps into the box and the box to meet it, so
-   * placing a conversation and binding it have to be one transaction, and the
-   * doc write is the slower half of it.
+   * before that. Without the fallback those renders draw a new tab flat in the
+   * strip and its box a member short, and the tab then jumps into the box a
+   * moment later. So placing a conversation and binding it have to be one
+   * transaction, and the doc write is the slower half of it.
    * @returns {string} The bound workspace id, or '' for the project.
    */
   get workspaceId() {

@@ -221,7 +221,7 @@ export async function runTests() {
 
       const provider = workspaceProviderRegistry.createProvider(PROVIDER_ID, session);
       assert(provider !== undefined, 'the provider is not in the registry under its own id');
-      assert(provider.getSetupLabel() === 'A folder of this project',
+      assert(provider.getSetupLabel() === 'A subfolder of this project',
         `the "New…" row would read ${JSON.stringify(provider.getSetupLabel())}`);
       assert(provider.finishOptions({}).length === 0,
         'a folder has no endings: nothing was made, so nothing can be disposed of');
@@ -232,7 +232,7 @@ export async function runTests() {
       // difference between this field and the one in the project picker. A
       // menu of absolute paths here would mean the element was asking the other
       // endpoint, and the first sign of it would be a user browsing their home
-      // directory in a form headed "a folder of this project".
+      // directory in a form headed "a subfolder of this project".
       const tag = uniqueTag();
       const folder = `pf-${tag}`;
       await ops.writeFile({ path: `${folder}/inner/marker.txt`, content: `only-here-${tag}` });

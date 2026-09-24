@@ -6,6 +6,11 @@
 
 /* Conversation Bar Component — vertical sidebar of tabs */
 conversation-bar {
+    /* The column every tab keeps to the left of its name for the grab handle.
+       Named because two rules have to agree on it: the handle that stands in it,
+       and the row below the list whose text is set to start where names do. */
+    --tab-handle-width: 1rem;
+
     position: relative;
     display: flex;
     flex-direction: column;
@@ -245,25 +250,45 @@ conversation-bar .conversation-box-new {
 }
 
 conversation-bar .conversation-box-new-button {
+    position: relative;
     display: flex;
     flex: 1;
     align-items: center;
     gap: 0.2rem;
     min-width: 0;
-    padding: 0.4rem;
+
+    /* The mark and the words are one phrase, and the phrase starts where a tab's
+       name starts: the tab's own inset, then the handle column and the gap after
+       it. Left of that line the strip is margin, and a mark parked out there
+       left the words one step further in than every row above them — which read
+       as a caption under the list rather than as the last row of it. */
+    padding: 0.4rem 0.4rem 0.4rem calc(0.4rem + var(--tab-handle-width) + 0.2rem);
     font-size: 0.8125rem;
     color: var(--text-tertiary);
     background: none;
-    border: 0.0625rem dashed var(--workspace-box-border);
+
+    /* Transparent while the outline is dashed, so the dashes and the solid edge
+       hover draws sit on exactly the same line. */
+    border: 0.0625rem solid transparent;
     border-radius: 0.9rem;
     cursor: pointer;
 }
 
-/* The mark goes in the width a tab keeps for its drag handle, with the tab's
-   own gap after it, so the words start exactly where every tab name below
-   starts. Left of that line the strip is margin; right of it, it is labels —
-   and an outline whose text began somewhere else read as a caption under the
-   list rather than the last row of it. */
+/* A dashed border's dashes are sized from its width, and one pixel of it puts
+   them close enough together to read as a thin solid edge. The outline is a
+   stroked rectangle masking the border colour instead, where the gap is set on
+   its own terms: wide enough that the edge reads as the outline of a box and
+   not as a box. */
+conversation-bar .conversation-box-new-button::before {
+    content: '';
+    position: absolute;
+    inset: -0.0625rem;
+    pointer-events: none;
+    background: var(--workspace-box-border);
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect width='100%25' height='100%25' rx='14' ry='14' fill='none' stroke='black' stroke-width='2' stroke-dasharray='2 6'/%3E%3C/svg%3E") center/100% 100% no-repeat;
+}
+
+/* Sized to the words it leads, and never squeezed by them. */
 conversation-bar .conversation-box-new-button svg {
     flex-shrink: 0;
     width: 1rem;
@@ -282,7 +307,11 @@ conversation-bar .conversation-box-new-label {
 conversation-bar .conversation-box-new-button:hover {
     color: var(--text-primary);
     background: var(--workspace-box-bg);
-    border-style: solid;
+    border-color: var(--workspace-box-border);
+}
+
+conversation-bar .conversation-box-new-button:hover::before {
+    display: none;
 }
 
 conversation-bar .conversation-tab,
@@ -460,7 +489,7 @@ conversation-bar .tab-drag-handle {
     touch-action: none;
     cursor: grab;
     flex-shrink: 0;
-    width: 1rem;
+    width: var(--tab-handle-width);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -480,8 +509,11 @@ conversation-bar .tab-drag-handle {
 /* Coarse pointers (touch) have no hover to reveal the handle and need a
    larger target to grab reliably. */
 @media (pointer: coarse) {
+    conversation-bar {
+        --tab-handle-width: 2.75rem;
+    }
+
     conversation-bar .tab-drag-handle {
-        width: 2.75rem;
         font-size: 1.25rem;
     }
 }

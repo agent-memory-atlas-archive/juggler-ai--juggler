@@ -18,7 +18,7 @@
 import { assert, waitFor } from '../utilities/test-helpers.js';
 import { createBoundOps } from '../../sdk/ops.js';
 import { unregisterWorkspace } from '../../js/services/workspaces.js';
-import { setupRows, probeSetupAdoptions } from '../../js/services/workspace-places.js';
+import { setupRows, probeSetupAdoptions, adoptSetupRow } from '../../js/services/workspace-places.js';
 import {
   openWorkspaceCreate,
   workspaceCreatePlaces
@@ -33,7 +33,9 @@ import {
 /**
  * A second kind, so that the rail has something to walk between. It builds
  * nothing: every case that reaches a provision uses the fixture, and this one
- * exists to be a row.
+ * exists to be a row — and to be a taller form than the one beside it, because
+ * a dialog sized to its contents is one that changes size on the way between
+ * two kinds, and nothing is proved about that by two forms of one field.
  */
 class SecondKindProvider extends WorkspaceProvider {
   static MANIFEST = {
@@ -50,6 +52,16 @@ class SecondKindProvider extends WorkspaceProvider {
     field.id = 'second-kind-dir';
     container.appendChild(field);
     this._field = field;
+
+    // The rest are furniture, at the length of a real provider's form: the one
+    // that makes a worktree asks for a repository, a base, a branch and a
+    // location, and says something about each.
+    for (let extra = 0; extra < 6; extra++) {
+      const line = document.createElement('div');
+      line.className = 'setup-field';
+      line.textContent = 'Another thing this kind wants to know';
+      container.appendChild(line);
+    }
   }
 
   /** @returns {any} What the form says, and whether Create may be pressed. */
@@ -84,6 +96,26 @@ function typeDirectory(dir) {
   if (!field) throw new Error('the fixture provider\'s form is not on screen');
   field.value = dir;
   field.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+/**
+ * What a row's fill actually looks like: its own background, laid over the
+ * surface it sits on.
+ *
+ * Computed style reports what was declared, so white at 10% opacity reads as a
+ * colour even when the panel beneath it is white — which is precisely the state
+ * a reader sees nothing in. Anything asking whether a fill can be SEEN has to
+ * do the compositing itself.
+ * @param {HTMLElement} element - The row.
+ * @param {HTMLElement} surface - What it is drawn on.
+ * @returns {number[]} Red, green and blue, as the screen gets them.
+ */
+function overSurface(element, surface) {
+  const channels = (/** @type {string} */ value) => (value.match(/[\d.]+/g) ?? []).map(Number);
+  const top = channels(getComputedStyle(element).backgroundColor);
+  const under = channels(getComputedStyle(surface).backgroundColor);
+  const alpha = top[3] ?? 1;
+  return [0, 1, 2].map((i) => (top[i] ?? 0) * alpha + (under[i] ?? 0) * (1 - alpha));
 }
 
 /**
@@ -231,6 +263,286 @@ export async function runTests() {
       } finally {
         press('.workspace-create-cancel');
         await settled;
+      }
+    });
+
+    await run('the rail marks what is chosen, in both themes', async () => {
+      // The rail is the settings panel's sidebar in a dialog, and a sidebar that
+      // cannot show which row you are on is a list of dead words. It was drawn
+      // in white at 10% opacity, which is invisible against a light panel: the
+      // rows answered clicks and looked identical while doing it. The colours
+      // are taste and are not pinned here; that the chosen row is a different
+      // colour from its neighbour, in both themes, is not.
+      const settled = openWorkspaceCreate(session);
+      const root = document.documentElement;
+      const was = root.dataset.theme;
+      try {
+        await waitFor(() => rowsOnScreen().length > 1, 2000);
+        rowsOnScreen()[1].click();
+
+        const rows = rowsOnScreen();
+        const chosen = rows.find((row) => row.getAttribute('aria-checked') === 'true');
+        const other = rows.find((row) => row.getAttribute('aria-checked') === 'false');
+        assert(chosen && other, 'a rail of kinds, one of them chosen');
+
+        const panel = /** @type {HTMLElement} */ (document.querySelector('.workspace-create-dialog'));
+        for (const theme of ['dark', 'light']) {
+          root.dataset.theme = theme;
+          const lit = overSurface(/** @type {HTMLElement} */ (chosen), panel);
+          const plain = overSurface(/** @type {HTMLElement} */ (other), panel);
+          const apart = Math.max(...lit.map((channel, i) => Math.abs(channel - plain[i])));
+          assert(apart >= 8,
+            `in ${theme}, the chosen kind has to look different from the ones beside it, `
+            + `got ${apart.toFixed(1)}/255 between ${lit.map(Math.round)} and ${plain.map(Math.round)}`);
+        }
+      } finally {
+        if (was === undefined) delete root.dataset.theme; else root.dataset.theme = was;
+        press('.workspace-create-cancel');
+        await settled;
+      }
+    });
+
+    await run('the dialog is the same size whichever kind is chosen', async () => {
+      // Every provider's form is a different height, and a note appearing under
+      // a field is another. Sized to its contents, the dialog resized on the way
+      // between two kinds, and the rail — a column in a grid, stretched to
+      // whichever half is taller — grew and shrank with the form beside it,
+      // moving the rows out from under the pointer that was picking between
+      // them. So the dialog is given a size and each half scrolls inside it.
+      const settled = openWorkspaceCreate(session);
+      try {
+        await waitFor(() => rowsOnScreen().length > 1, 2000);
+        const measure = () => {
+          const dialog = /** @type {HTMLElement} */ (document.querySelector('.workspace-create-dialog'));
+          const rail = /** @type {HTMLElement} */ (document.querySelector('.workspace-create-rail'));
+          return { dialog: dialog.getBoundingClientRect().height, rail: rail.getBoundingClientRect().height };
+        };
+        const before = measure();
+        rowsOnScreen()[1].click();
+        const after = measure();
+
+        // This browser's window is 450px tall, which is shorter than the dialog
+        // wants to be, so here it is always at its cap and these two can only
+        // fail in a window with room to spare — which is the window the resizing
+        // was reported in. What pins the fix in THIS viewport is the pair below.
+        assert(Math.abs(before.dialog - after.dialog) < 0.5,
+          `the same dialog, whichever kind is chosen, got ${before.dialog}px then ${after.dialog}px`);
+        assert(Math.abs(before.rail - after.rail) < 0.5,
+          `and the same rail, so the row under the pointer stays under it, got ${before.rail}px then ${after.rail}px`);
+
+        // The halves scroll, not the split. A body that scrolled took the rail
+        // with it: a long form pushed the kinds off the top of a dialog whose
+        // whole point is choosing between them.
+        const body = /** @type {HTMLElement} */ (document.querySelector('.workspace-create-body'));
+        const detail = /** @type {HTMLElement} */ (document.querySelector('.workspace-create-detail'));
+        assert(body.scrollHeight <= body.clientHeight + 0.5,
+          `the split itself never scrolls, got ${body.scrollHeight}px of content in ${body.clientHeight}px`);
+        assert(detail.scrollHeight > detail.clientHeight,
+          `and a form longer than the room is the pane's to scroll, got ${detail.scrollHeight}px in ${detail.clientHeight}px`);
+      } finally {
+        press('.workspace-create-cancel');
+        await settled;
+      }
+    });
+
+    await run('the rail names the kinds, and leaves the describing to the pane', async () => {
+      // Master and detail: the rail is a column of names and the pane beside it
+      // says what the chosen one means, in full. Printing the meaning in both
+      // spends the rail's fourteen rems on a sentence it can only show the first
+      // four words of — which is what a kind whose name had wrapped to three
+      // lines was sitting under.
+      const settled = openWorkspaceCreate(session);
+      try {
+        await waitFor(() => document.querySelector('.workspace-create-detail') !== null, 2000);
+        const chosen = workspaceCreatePlaces(session).find((row) => row.kind === 'new');
+        assert(chosen?.meaning, 'the fixture says what one of its places is');
+
+        for (const row of rowsOnScreen().filter((row) => row.dataset.rowKind === 'new')) {
+          assert(!row.querySelector('.setup-row-meaning'),
+            `a kind in the rail is a name, got ${JSON.stringify(row.textContent)}`);
+        }
+        const detail = /** @type {HTMLElement} */ (document.querySelector('.workspace-create-detail'));
+        assert(detail.querySelector('.workspace-create-detail-meaning')?.textContent === chosen?.meaning,
+          `and the pane is where it is said, whole, got ${JSON.stringify(detail.querySelector('.workspace-create-detail-meaning')?.textContent)}`);
+      } finally {
+        press('.workspace-create-cancel');
+        await settled;
+      }
+    });
+
+    await run('a drag in the dialog selects nothing it could not want', async () => {
+      // Chrome, by the policy in app-shell.css: the whole dialog is a surface to
+      // aim clicks at — a title, a column of names, a form's labels and two
+      // buttons — and a drag across it is a mis-aimed click. What is carved back
+      // out is what somebody might actually copy: what they typed, and a path.
+      const settled = openWorkspaceCreate(session);
+      try {
+        await waitFor(() => document.querySelector('.workspace-create-overlay #fixture-dir') !== null, 2000);
+        const selects = (/** @type {string} */ selector) => {
+          const element = /** @type {HTMLElement} */ (document.querySelector(`.workspace-create-overlay ${selector}`));
+          if (!element) throw new Error(`no ${selector} on screen`);
+          const style = /** @type {any} */ (getComputedStyle(element));
+          return style.userSelect ?? style.webkitUserSelect;
+        };
+
+        for (const chrome of ['.workspace-create-title', '.workspace-create-lead', '.setup-row',
+          '.workspace-create-detail-meaning', '.workspace-create-commit']) {
+          assert(selects(chrome) === 'none',
+            `${chrome} is something to click, not to read off the screen, got ${selects(chrome)}`);
+        }
+        assert(selects('#fixture-dir') === 'text',
+          `but what was typed into the form stays selectable, got ${selects('#fixture-dir')}`);
+      } finally {
+        press('.workspace-create-cancel');
+        await settled;
+      }
+    });
+
+    await run('a tree found on disk is offered under its own heading', async () => {
+      // "Build it as" is a promise about every row under it, and a tree that is
+      // already there is not something to build: it is an offer to pick it up,
+      // taken on one click. So the rail breaks in two, and each half says what
+      // its rows are.
+      const name = `create-dialog-found-${Math.random().toString(36).slice(2, 8)}`;
+      const dir = `${projectPath}/${name}`;
+      /** @type {string} */
+      let adoptedId = '';
+      try {
+        FixtureProvider.report = {
+          orphanedWorkspaces: [],
+          orphanedArtifacts: [{
+            id: name,
+            label: 'a tree nobody registered',
+            detail: dir,
+            workspace: { kind: 'local', root: dir, label: 'a tree nobody registered' }
+          }],
+          confirmed: []
+        };
+        await probeSetupAdoptions(session);
+
+        const settled = openWorkspaceCreate(session);
+        try {
+          await waitFor(() => document.querySelector('.workspace-create-overlay .setup-row-adopt') !== null, 2000);
+          const found = /** @type {HTMLElement} */ (
+            document.querySelector('.workspace-create-overlay .setup-row-adopt'));
+          const build = /** @type {HTMLElement} */ (
+            document.querySelector('.workspace-create-overlay .setup-row-new'));
+
+          const groupOf = (/** @type {HTMLElement} */ row) => row.closest('.setup-rows');
+          assert(groupOf(found) && groupOf(found) !== groupOf(build),
+            'the found tree is not in the list of ways to build one');
+
+          // Parted by a rule rather than by a caption. A column of three names
+          // needs no heading to say it is a column of three names, and the one
+          // over it said the same thing twice as badly.
+          const rail = /** @type {HTMLElement} */ (document.querySelector('.workspace-create-rail'));
+          assert(!rail.querySelector('.setup-section-title'),
+            `nothing in the rail is a heading, got ${JSON.stringify(rail.textContent)}`);
+          const second = /** @type {HTMLElement} */ (groupOf(found));
+          assert(parseFloat(getComputedStyle(second).borderTopWidth) > 0,
+            'the two bands are told apart by a line drawn between them');
+
+          // Still one keyboard sequence: the arrows walk the whole rail, not
+          // each half of it.
+          const rows = rowsOnScreen();
+          rows[0].focus();
+          for (let step = 0; step < rows.length - 1; step++) {
+            /** @type {HTMLElement} */ (document.activeElement)
+              .dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+          }
+          assert(document.activeElement === rowsOnScreen()[rows.length - 1],
+            'and the arrows cross from one half into the other');
+        } finally {
+          press('.workspace-create-cancel');
+          await settled;
+        }
+      } finally {
+        // The offer is cached for the life of the page, and taking it up is the
+        // only thing that drops it. Registered and unregistered, so no later
+        // dialog in this run is offered a tree that was never there.
+        FixtureProvider.report = null;
+        const offered = workspaceCreatePlaces(session).find((row) => row.kind === 'adopt');
+        if (offered) {
+          adoptedId = (await adoptSetupRow(session, offered.id).catch(() => null))?.id ?? '';
+        }
+        if (adoptedId) await unregisterWorkspace(adoptedId).catch(() => {});
+        session.workspaces = (session.workspaces ?? []).filter((/** @type {any} */ row) => row.root !== dir);
+      }
+    });
+
+    await run('while it builds, the steps read from the top-left and nothing is cut', async () => {
+      // The build is the one thing in this dialog that takes minutes, and for
+      // all of them these few lines are the whole of what is on screen. A block
+      // centred in a half-empty box reads as a placeholder; text starts at the
+      // top-left because that is where text starts.
+      const name = `creating-${'long-enough-to-wrap-'.repeat(4)}dir`;
+      const dir = `${projectPath}/${name}`;
+      const settled = openWorkspaceCreate(session);
+      try {
+        await waitFor(() => document.querySelector('.workspace-create-overlay #fixture-dir') !== null, 2000);
+        typeDirectory(dir);
+        const stall = /** @type {HTMLInputElement} */ (
+          document.querySelector('.workspace-create-overlay #fixture-stall'));
+        stall.value = '1500';
+        stall.dispatchEvent(new Event('input', { bubbles: true }));
+        press('.workspace-create-commit');
+
+        // Two steps in: the first is taken, the second is the one being waited
+        // on, which is the state the lines below are about.
+        await waitFor(() => document.querySelectorAll('.workspace-create-overlay .setup-progress-step').length > 1,
+          { description: 'the provider to get as far as its second step' });
+
+        const body = /** @type {HTMLElement} */ (document.querySelector('.workspace-create-body'));
+        const steps = /** @type {HTMLElement} */ (document.querySelector('.setup-progress-running'));
+        const room = body.getBoundingClientRect();
+        const style = getComputedStyle(body);
+        const at = steps.getBoundingClientRect();
+        assert(Math.abs(at.left - (room.left + parseFloat(style.paddingLeft))) < 1,
+          `the steps start at the left of the box, got ${at.left}px against ${room.left + parseFloat(style.paddingLeft)}px`);
+        assert(Math.abs(at.top - (room.top + parseFloat(style.paddingTop))) < 1,
+          `and at the top of it, got ${at.top}px against ${room.top + parseFloat(style.paddingTop)}px`);
+
+        // A path is the one line here somebody reads character by character, and
+        // there is a dialog's width to read it in.
+        const said = /** @type {HTMLElement} */ (document.querySelector('.setup-progress-detail'));
+        assert(getComputedStyle(said).whiteSpace !== 'nowrap',
+          'a path with room to wrap is wrapped rather than cut');
+        assert(said.scrollWidth <= said.clientWidth + 0.5,
+          `and none of it is off the end, got ${said.scrollWidth}px of line in ${said.clientWidth}px`);
+
+        // One way out, meaning one thing. Two Cancels — the progress's own and
+        // the footer's, which dismisses the whole dialog — are two answers to a
+        // question nobody asked twice.
+        const cancels = Array.from(document.querySelectorAll('.workspace-create-overlay button'))
+          .filter((button) => button.textContent?.trim() === 'Cancel');
+        assert(cancels.length === 1,
+          `there is one way to stop it, got ${cancels.length}`);
+
+        // Which of the lines is the one being waited on, said in the colour.
+        const written = Array.from(document.querySelectorAll('.setup-progress-step'));
+        assert(written.length > 1, `more than one step by now, got ${written.length}`);
+        const waiting = getComputedStyle(/** @type {HTMLElement} */ (written[written.length - 1])).color;
+        const done = getComputedStyle(/** @type {HTMLElement} */ (written[0])).color;
+        assert(waiting !== done,
+          `the step being waited on is not the colour of the ones already taken, got ${waiting} for both`);
+
+        // Stopping a build is not answering the question: the form comes back
+        // with what was typed into it. The wait is generous because the abort
+        // has a `sleep` to interrupt and a directory to take back out.
+        /** @type {HTMLButtonElement} */ (cancels[0]).click();
+        await waitFor(() => document.querySelector('.workspace-create-overlay #fixture-dir') !== null,
+          { timeoutMs: 15000, description: 'the form to come back, since cancelling a build did not cancel the question' });
+      } finally {
+        // Through the backdrop, which dismisses the dialog in either state and
+        // stops a build on the way out. A `press('.workspace-create-cancel')`
+        // here throws whenever the case failed mid-build — replacing the real
+        // error with a missing button, and leaving the dialog up for the next
+        // case to trip over.
+        const backdrop = /** @type {HTMLElement|null} */ (
+          document.querySelector('.workspace-create-overlay .workspace-create-backdrop'));
+        backdrop?.click();
+        await settled;
+        await projectOps.shell({ command: `rm -rf ${name}` }).catch(() => {});
       }
     });
 

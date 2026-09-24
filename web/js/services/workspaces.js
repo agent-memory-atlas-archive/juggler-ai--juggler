@@ -66,6 +66,7 @@ export function isWorkspaceUsable(workspace) {
  * @property {string} [label] - What the UI calls it.
  * @property {string} [root] - Where it is, once that is known.
  * @property {string} [state] - 'provisioning' | 'ready' | 'closed'.
+ * @property {string} [place] - Where its box sits in the tab bar: 'head', or the conversation it sits behind.
  * @property {Record<string, any>} [meta] - Keys to merge into the provider's own record.
  */
 

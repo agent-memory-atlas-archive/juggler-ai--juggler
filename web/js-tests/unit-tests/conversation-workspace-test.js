@@ -25,6 +25,7 @@ import { fetchJson } from '../../js/services/http.js';
 import { writeFileOp } from '../../js/services/ops-api.js';
 import { createBoundOps } from '../../sdk/ops.js';
 import { rebindConversation } from '../../js/services/workspace-rebinding.js';
+import { placeForNewConversation } from '../../js/services/workspace-provisioning.js';
 import {
   runWorkspaceSuite,
   countSeeds,
@@ -373,11 +374,9 @@ export async function runTests() {
     });
 
     await run('a conversation born into a workspace goes to the top of its box, not the top of the bar', async () => {
-      // The tab bar's order is the session's Map order, and a box is drawn at
-      // its first member's place — so a new conversation put at the front of
-      // the bar takes its workspace's box up there with it, past everything
-      // else in the strip. It goes to the front of its box instead, which is
-      // the same index the box already occupies.
+      // A conversation born into a workspace goes to the front of its box, not
+      // the front of the bar: its box is a place, and the tab belongs under the
+      // header it was started from.
       // A tab of the project's own, made first so that the top of the bar is
       // demonstrably somewhere else: without one above it, "at the top of its
       // box" and "at the top of the bar" can be the same index and the case
@@ -386,18 +385,18 @@ export async function runTests() {
       release(anchor);
 
       const before = [...session.conversations.keys()];
-      const boxTop = before.findIndex(id => session.conversations.get(id)?.workspaceId === registeredId);
+      // Asked before the create, while the box is still as the bar is drawing
+      // it: the top of the box when it has members, and the place its own row
+      // names when it has none.
+      const wanted = placeForNewConversation(session, registeredId);
 
       const made = await makeConversation(session, 'born-in-a-box', { workspaceId: registeredId });
       release(made);
 
       const after = [...session.conversations.keys()];
       const landed = after.indexOf(made.id);
-      // An empty box is drawn past every conversation there is, so its first
-      // member belongs at the end — again, where the box already is.
-      const wanted = boxTop === -1 ? after.length - 1 : boxTop;
       assert(landed > 0,
-        `the top of the bar belongs to ${anchor.name}, and a box must not travel the sidebar to meet a conversation, got ${landed} of ${after.length}`);
+        `the top of the bar belongs to ${anchor.name}, and a conversation born into a box belongs in the box, got ${landed} of ${after.length}`);
       assert(landed === wanted,
         `it belongs at ${wanted}, the place its box is drawn at, got ${landed} of ${after.length}`);
       assert(after.slice(0, landed).join(',') === before.slice(0, landed).join(','),

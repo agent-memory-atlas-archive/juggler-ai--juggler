@@ -80,11 +80,10 @@ func newPlacementFixture(t *testing.T) (*SessionAPI, *core.SessionManager, []str
 // the answer that survives, and the one the next launch reads back.
 //
 // Prepending is right for a conversation of the project's, which belongs at the
-// head of the bar, and wrong for one created inside a workspace box: the box is
-// drawn where its first conversation sits, so sending that conversation to the
-// head takes the whole box up there with it. The create therefore carries the
-// conversation it is to follow, and the order is settled in one transaction
-// rather than by the viewer arguing with the broadcast afterwards.
+// head of the bar, and wrong for one created inside a workspace box, which
+// belongs beside the rest of that box. The create therefore carries where it is
+// to go, and the order is settled in one transaction rather than by the viewer
+// arguing with the broadcast afterwards.
 func TestHandleCreateConversation_PlacesAfterAnchor(t *testing.T) {
 	api, mgr, ids := newPlacementFixture(t)
 	a, b, c := ids[0], ids[1], ids[2]
@@ -97,18 +96,56 @@ func TestHandleCreateConversation_PlacesAfterAnchor(t *testing.T) {
 	}
 }
 
-// TestHandleCreateConversation_AnchorAtEnd covers the empty box, which is drawn
-// past every conversation there is: its first member follows the last tab in the
-// list, and must land at the end rather than being wrapped back to the front.
+// TestHandleCreateConversation_AnchorAtEnd covers an anchor that happens to be
+// the last conversation in the order: it lands at the end, rather than being
+// wrapped back to the front.
 func TestHandleCreateConversation_AnchorAtEnd(t *testing.T) {
 	api, mgr, ids := newPlacementFixture(t)
 	a, b, c := ids[0], ids[1], ids[2]
 
-	id := createConvVia(t, api, `{"name":"First in an empty box","after":"`+a+`"}`)
+	id := createConvVia(t, api, `{"name":"Behind the last one","after":"`+a+`"}`)
 
 	want := []string{c, b, a, id}
 	if got := mgr.GetSession().ConversationOrder; !slices.Equal(got, want) {
 		t.Fatalf("order = %v, want %v — following the last conversation means the end of the order", got, want)
+	}
+}
+
+// TestHandleCreateConversation_EndIsNotTheClientsLastTab is the distinction the
+// placement exists for. A viewer holds a subset of the order — conversations it
+// has never loaded, and ones whose load failed, are the server's and not its —
+// so "the end of the bar" cannot be said by naming the last tab the viewer has.
+// Said as itself, it lands at the end of the order the server actually holds.
+func TestHandleCreateConversation_EndIsNotTheClientsLastTab(t *testing.T) {
+	api, mgr, ids := newPlacementFixture(t)
+	a, b, c := ids[0], ids[1], ids[2]
+
+	// A window that has only reached B: naming it as an anchor is not the end.
+	if id := createConvVia(t, api, `{"name":"Guessing","after":"`+b+`"}`); true {
+		want := []string{c, b, id, a}
+		if got := mgr.GetSession().ConversationOrder; !slices.Equal(got, want) {
+			t.Fatalf("order = %v, want %v — an anchor is an adjacency, not an end", got, want)
+		}
+	}
+
+	id := createConvVia(t, api, `{"name":"Saying so","place":"end"}`)
+	if got := mgr.GetSession().ConversationOrder; got[len(got)-1] != id {
+		t.Fatalf("order = %v, want %s last — an explicit end is the end of the server's order", got, id)
+	}
+}
+
+// TestHandleCreateConversation_PlaceHeadIsExplicit pins that the head can be
+// asked for by name and not only by saying nothing.
+func TestHandleCreateConversation_PlaceHeadIsExplicit(t *testing.T) {
+	api, mgr, ids := newPlacementFixture(t)
+	a, b, c := ids[0], ids[1], ids[2]
+
+	// The anchor is ignored: `place` is what was asked for.
+	id := createConvVia(t, api, `{"name":"Up top","place":"head","after":"`+b+`"}`)
+
+	want := []string{id, c, b, a}
+	if got := mgr.GetSession().ConversationOrder; !slices.Equal(got, want) {
+		t.Fatalf("order = %v, want %v — a create that names the head goes to the head", got, want)
 	}
 }
 

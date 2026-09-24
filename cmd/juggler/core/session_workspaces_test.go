@@ -119,6 +119,156 @@ func TestWorkspaces_SurviveSaveAndLoad(t *testing.T) {
 	}
 }
 
+// A box's place survives a trip through session.json alongside the row it
+// belongs to. An anchor naming a conversation the session still has is a live
+// position, and the load-time reconcile leaves it alone.
+func TestWorkspaces_PlaceSurvivesSaveAndLoad(t *testing.T) {
+	store, dir := newStoreForTest(t)
+
+	convID, _, _, err := store.CreateConversationFolder("Anchor", "conv_anchor1")
+	if err != nil {
+		t.Fatalf("CreateConversationFolder: %v", err)
+	}
+
+	sess := NewSession()
+	sess.ConversationOrder = []string{convID}
+	ws := workspaceForTest(t, "ws_1", dir)
+	ws.Place = convID
+	sess.Workspaces = []Workspace{ws}
+	if err := store.Save(sess); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	fresh, err := NewFileSessionStore(dir)
+	if err != nil {
+		t.Fatalf("NewFileSessionStore: %v", err)
+	}
+	loaded, err := fresh.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if len(loaded.Workspaces) != 1 || loaded.Workspaces[0].Place != convID {
+		t.Fatalf("Workspaces = %+v, want the box still anchored to %s", loaded.Workspaces, convID)
+	}
+}
+
+// A box keeps its place when the conversation it sits behind is binned: it
+// inherits that conversation's predecessor rather than being left pointing at
+// something the order no longer has.
+func TestRemoveConv_ReanchorsBoxesOntoThePredecessor(t *testing.T) {
+	sess := NewSession()
+	sess.ConversationOrder = []string{"conv_a", "conv_b", "conv_c"}
+	sess.Workspaces = []Workspace{
+		workspaceForTest(t, "ws_mid", t.TempDir()),
+		workspaceForTest(t, "ws_head", t.TempDir()),
+		workspaceForTest(t, "ws_other", t.TempDir()),
+	}
+	sess.Workspaces[0].Place = "conv_b"
+	sess.Workspaces[1].Place = "conv_a"
+	sess.Workspaces[2].Place = "conv_c"
+
+	removeConvIDFromSession(sess, "conv_b")
+	if got := sess.Workspaces[0].Place; got != "conv_a" {
+		t.Fatalf("place = %q, want conv_a — a box inherits its neighbour's place", got)
+	}
+
+	// A box behind the first conversation has no predecessor to inherit, so it
+	// takes the head of the bar — named as the head, never as an empty field,
+	// which means no place at all. The box re-anchored a moment ago follows its
+	// new neighbour down to the same place.
+	removeConvIDFromSession(sess, "conv_a")
+	if got := sess.Workspaces[1].Place; got != PlaceHead {
+		t.Fatalf("place = %q, want %q", got, PlaceHead)
+	}
+	if got := sess.Workspaces[0].Place; got != PlaceHead {
+		t.Fatalf("place = %q, want the re-anchored box to follow its new neighbour", got)
+	}
+	if got := sess.Workspaces[2].Place; got != "conv_c" {
+		t.Fatalf("place = %q, want a box anchored elsewhere left alone", got)
+	}
+}
+
+// A manifest edited between runs can name a conversation that is not there. The
+// box goes back to having no recorded place — which is the truth, and is drawn
+// by its first member — rather than being sent to either end of the bar.
+func TestWorkspaces_LoadClearsADanglingAnchor(t *testing.T) {
+	store, dir := newStoreForTest(t)
+
+	sess := NewSession()
+	ws := workspaceForTest(t, "ws_1", dir)
+	ws.Place = "conv_longgone"
+	sess.Workspaces = []Workspace{ws}
+	if err := store.Save(sess); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	fresh, err := NewFileSessionStore(dir)
+	if err != nil {
+		t.Fatalf("NewFileSessionStore: %v", err)
+	}
+	loaded, err := fresh.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if len(loaded.Workspaces) != 1 || loaded.Workspaces[0].Place != "" {
+		t.Fatalf("Workspaces = %+v, want a dangling place cleared, not reinterpreted", loaded.Workspaces)
+	}
+}
+
+// An empty place is the absence of one, and nothing may quietly turn it into a
+// position.
+//
+// Every workspace row written before boxes kept a place has no `place` key, and
+// unmarshals to the zero value. If that read as the head of the bar, every one
+// of them would climb to the top of the sidebar — and so would any box whose
+// place the server had to give up on. The value has to survive a load meaning
+// exactly what it meant on disk: nothing.
+func TestWorkspaces_AnUnplacedRowStaysUnplaced(t *testing.T) {
+	store, dir := newStoreForTest(t)
+
+	convID, _, _, err := store.CreateConversationFolder("A", "conv_only1")
+	if err != nil {
+		t.Fatalf("CreateConversationFolder: %v", err)
+	}
+
+	// A row as an older version wrote it: no place recorded at all.
+	var ws Workspace
+	if err := json.Unmarshal([]byte(`{"id":"ws_old","kind":"local","root":"`+dir+`","state":"ready"}`), &ws); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if ws.Place != "" {
+		t.Fatalf("place = %q, want a row with no place key to have no place", ws.Place)
+	}
+
+	sess := NewSession()
+	sess.ConversationOrder = []string{convID}
+	sess.Workspaces = []Workspace{ws}
+	if err := store.Save(sess); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	fresh, err := NewFileSessionStore(dir)
+	if err != nil {
+		t.Fatalf("NewFileSessionStore: %v", err)
+	}
+	loaded, err := fresh.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := loaded.Workspaces[0].Place; got != "" {
+		t.Fatalf("place = %q, want it still unrecorded after a load", got)
+	}
+
+	// And binning the last conversation leaves it unrecorded rather than
+	// inventing one: the box was never placed, so there is nothing to inherit.
+	removeConvIDFromSession(loaded, convID)
+	if got := loaded.Workspaces[0].Place; got != "" {
+		t.Fatalf("place = %q, want an unplaced box left unplaced by a bin", got)
+	}
+}
+
 // Clone must deep-copy the table. A snapshot handed out by GetSession is
 // mutated freely by its caller; if the meta map were shared, a provider
 // checkpointing into a snapshot would be writing into the actor's live state.
@@ -172,6 +322,7 @@ func TestWorkspace_Validate(t *testing.T) {
 		{"bad state", func(w *Workspace) { w.State = "half-built" }, "state"},
 		{"bad id", func(w *Workspace) { w.ID = "../escape" }, "id"},
 		{"long label", func(w *Workspace) { w.Label = strings.Repeat("A", MaxWorkspaceLabelLen+1) }, "label"},
+		{"bad place", func(w *Workspace) { w.Place = "../escape" }, "place"},
 		{"huge meta", func(w *Workspace) {
 			w.Meta = map[string]any{"blob": strings.Repeat("x", MaxWorkspaceMetaBytes+1)}
 		}, "meta"},
@@ -318,6 +469,97 @@ func TestUpdateWorkspace_ReadyFlipAndMetaMerge(t *testing.T) {
 	}
 	if _, present := updated.Meta["hookStarted"]; present {
 		t.Fatalf("meta = %v, want hookStarted deleted", updated.Meta)
+	}
+}
+
+// A new workspace's box is drawn at the end of the bar, and the row says so
+// rather than leaving it to be worked out: nothing is bound to a workspace when
+// it is registered, so there is no conversation to take a place from.
+func TestRegisterWorkspace_SeedsTheBoxAtTheEndOfTheBar(t *testing.T) {
+	m, dir := managerForWorkspaceTest(t)
+
+	// In a session with no conversations, the end of the bar is its head.
+	first, err := m.RegisterWorkspace(Workspace{Root: dir, State: WorkspaceStateReady})
+	if err != nil {
+		t.Fatalf("RegisterWorkspace: %v", err)
+	}
+	if first.Place != PlaceHead {
+		t.Fatalf("place = %q, want %q — a bar with no conversations ends where it starts", first.Place, PlaceHead)
+	}
+
+	// A create prepends, so the last id in the order is the first one made.
+	a, _, err := m.CreateConversation("A")
+	if err != nil {
+		t.Fatalf("CreateConversation: %v", err)
+	}
+	b, _, err := m.CreateConversation("B")
+	if err != nil {
+		t.Fatalf("CreateConversation: %v", err)
+	}
+
+	second, err := m.RegisterWorkspace(Workspace{Root: dir, State: WorkspaceStateReady})
+	if err != nil {
+		t.Fatalf("RegisterWorkspace: %v", err)
+	}
+	if second.Place != a {
+		t.Fatalf("place = %q, want %q — the last conversation in the order", second.Place, a)
+	}
+
+	// A registration that names its own place keeps it.
+	third, err := m.RegisterWorkspace(Workspace{Root: dir, State: WorkspaceStateReady, Place: b})
+	if err != nil {
+		t.Fatalf("RegisterWorkspace: %v", err)
+	}
+	if third.Place != b {
+		t.Fatalf("place = %q, want the place the registration asked for (%q)", third.Place, b)
+	}
+}
+
+// Where a box sits is the user's to set, and a patch is how a box drag says so.
+func TestUpdateWorkspace_PlaceIsPatchable(t *testing.T) {
+	m, dir := managerForWorkspaceTest(t)
+
+	ws, err := m.RegisterWorkspace(Workspace{Root: dir, State: WorkspaceStateReady})
+	if err != nil {
+		t.Fatalf("RegisterWorkspace: %v", err)
+	}
+
+	anchor := "conv_abc123"
+	updated, err := m.UpdateWorkspace(ws.ID, WorkspacePatch{Place: &anchor})
+	if err != nil {
+		t.Fatalf("UpdateWorkspace: %v", err)
+	}
+	if updated.Place != anchor {
+		t.Fatalf("place = %q, want %q", updated.Place, anchor)
+	}
+
+	// The head of the bar is a position like any other and is named as one. An
+	// empty field is the absence of a place, and must never be read as the top.
+	head := PlaceHead
+	updated, err = m.UpdateWorkspace(ws.ID, WorkspacePatch{Place: &head})
+	if err != nil {
+		t.Fatalf("UpdateWorkspace (to the head): %v", err)
+	}
+	if updated.Place != PlaceHead {
+		t.Fatalf("place = %q, want %q", updated.Place, PlaceHead)
+	}
+
+	// A patch that never mentions it leaves it alone, as with every other field.
+	if _, err := m.UpdateWorkspace(ws.ID, WorkspacePatch{Place: &anchor}); err != nil {
+		t.Fatalf("UpdateWorkspace: %v", err)
+	}
+	label := "feat/x"
+	updated, err = m.UpdateWorkspace(ws.ID, WorkspacePatch{Label: &label})
+	if err != nil {
+		t.Fatalf("UpdateWorkspace (label only): %v", err)
+	}
+	if updated.Place != anchor {
+		t.Fatalf("place = %q, want %q left alone by a patch about the label", updated.Place, anchor)
+	}
+
+	malformed := "../escape"
+	if _, err := m.UpdateWorkspace(ws.ID, WorkspacePatch{Place: &malformed}); err == nil {
+		t.Fatalf("a malformed anchor was accepted")
 	}
 }
 

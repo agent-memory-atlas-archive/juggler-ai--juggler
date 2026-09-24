@@ -31,8 +31,8 @@ import { approvePermittedPendingApprovals } from './conversation-tool-actions.js
 import { ensureUserPresetsLoaded, getDefaultPresetSeed } from '../services/system-prompt-presets.js';
 import { isDefaultFileEditingOn, setFileEditingAllowed } from '../services/file-editing-permission.js';
 import { resolveDefaultStrategyId, BUILTIN_DEFAULT_STRATEGY_ID } from '../services/default-strategy.js';
-import { isWorkspaceUsable } from '../services/workspaces.js';
-import { workspaceInstructionRoots, placeForNewConversation, anchorForNewConversation } from '../services/workspace-provisioning.js';
+import { isWorkspaceUsable, patchWorkspace } from '../services/workspaces.js';
+import { workspaceInstructionRoots, placeForNewConversation, placementForNewConversation } from '../services/workspace-provisioning.js';
 import { BUILTIN_DEFAULT_ID } from '../../sdk/lib/system-prompt-registry.js';
 
 
@@ -42,7 +42,7 @@ import { BUILTIN_DEFAULT_ID } from '../../sdk/lib/system-prompt-registry.js';
  * @property {function(): Promise<{active: boolean, conversationIds: string[]}>} getActiveConversations - Conversations actively running a turn (excludes approval-parked)
  * @property {function(object[], string | null, HistoryMessage[]|undefined, Record<string, any>|undefined): Promise<{success: boolean}>} updateSession - Update session state
  * @property {function(Record<string, any>): Promise<{metadata: Record<string, any>}>} patchSessionMetadata - Patch session metadata keys
- * @property {function(string, string=, {lane?: string, duplicateFrom?: string, origin?: string, focus?: boolean, focusFrom?: string, after?: string}=): Promise<{id: string, name: string, created: string}>} createConversation - Atomically create a new conversation (POST /api/conversations); duplicateFrom clones that conversation's files server-side before announcing; origin is a gesture label logged for create attribution; focus broadcasts a "focus" op asking viewers to switch to the new conversation, attributed to focusFrom; after names the conversation it is to follow in the stored order, empty for the head of the bar
+ * @property {function(string, string=, {lane?: string, duplicateFrom?: string, origin?: string, focus?: boolean, focusFrom?: string, place?: string, after?: string}=): Promise<{id: string, name: string, created: string}>} createConversation - Atomically create a new conversation (POST /api/conversations); duplicateFrom clones that conversation's files server-side before announcing; origin is a gesture label logged for create attribution; focus broadcasts a "focus" op asking viewers to switch to the new conversation, attributed to focusFrom; place is 'head', 'after' or 'end' and after names the conversation to sit behind for 'after'
  * @property {function(string, string): Promise<{name: string}>} renameConversation - Rename a conversation's on-disk folder
  * @property {function(string, object): Promise<{success: boolean}>} updateConversation - Update single conversation
  * @property {function(string, {permanent?: boolean, reason?: string}=): Promise<void>} deleteConversation - Delete single conversation
@@ -84,6 +84,7 @@ import { BUILTIN_DEFAULT_ID } from '../../sdk/lib/system-prompt-registry.js';
  * @property {string} kind - Selects the ops backend; 'local' today
  * @property {string} root - Absolute path, in terms the kind understands
  * @property {string} [label] - What the UI calls it, e.g. "feat/tunnels"
+ * @property {string} [place] - Where its box sits in the tab bar: 'head', or the conversation it sits behind. Empty or absent is a row with no place recorded, drawn by its first member instead
  * @property {string} [providerId] - Extension owning its lifecycle; empty for one nobody manages
  * @property {string} [baseWorkspaceId] - The workspace it was provisioned from; empty means the default
  * @property {string} state - 'provisioning' | 'ready' | 'closed'
@@ -2139,8 +2140,8 @@ class Session {
       // broadcasts it, and refreshFromServer re-slots the map into what it
       // sent — so a placement the server was not told about is undone by its
       // own echo a moment later, and lost entirely by the next launch.
-      const after = anchorForNewConversation(this, workspaceId);
-      response = await this._apiService.createConversation(requestedName, requestedId, { origin, focus, focusFrom, after });
+      const { where: place, after } = placementForNewConversation(this, workspaceId);
+      response = await this._apiService.createConversation(requestedName, requestedId, { origin, focus, focusFrom, place, after });
       const { id, name: canonicalName } = response;
 
       // WorkerManager returns conversation ONLY when fully ready (worker spawned, Yjs active).
@@ -2149,8 +2150,7 @@ class Session {
       conversation = await workerManager.createNewConversation(id, canonicalName, this, { workspaceId });
 
       // Settle the order the adoption already put it in: at the top of the bar,
-      // or at the top of its workspace's box, which is the one place a new
-      // conversation can go without its box travelling the sidebar to meet it.
+      // or at the top of its workspace's box.
       recordTape('session-mut', conversation.id, { op: 'set', from: 'createConversation-place' });
       this._placeNewConversation(conversation.id, conversation, workspaceId);
     } finally {
@@ -2494,36 +2494,64 @@ class Session {
   }
 
   /**
-   * Move several conversations, as one contiguous run, to sit before another.
+   * Put the conversations that turned up mid-refresh back into the order.
    *
-   * A workspace's box is dragged whole, and the order knows nothing about
-   * boxes: what actually moves is the conversations in it, which arrive where
-   * the box was let go, keeping the order they were already in.
+   * Two paths can insert while `refreshFromServer` is awaiting its loads — a
+   * create and a restore — and the order it was rebuilding knows nothing about
+   * either. Each arrival goes where it would have gone had it arrived at any
+   * other moment: {@link placeForNewConversation}'s answer, which is the head of
+   * the bar for a conversation of the project's and its own box for one bound to
+   * a workspace. A refresh is a coincidence of timing, and must not be the thing
+   * that decides where a tab lives.
    *
-   * Contiguously, because a box takes its place from its first member. Members
-   * left scattered would draw the box at the first of them while the tabs
-   * between them stayed where they were — so the box would land in one place
-   * and take a stranger's seat on the way.
-   * @param {string[]} conversationIds - The run to move, in the order it keeps.
-   * @param {string} beforeId - Conversation to land in front of, or '' for the end.
+   * Arrivals are folded in last-first so that several claiming one place end up
+   * in the order they arrived.
+   * @param {Map<string, any>} settled - The order the server sent, as rebuilt.
+   * @param {[string, any][]} arrivals - What turned up while that was being built.
+   * @returns {Map<string, any>} The two together.
+   * @private
+   */
+  _foldArrivals(settled, arrivals) {
+    if (arrivals.length === 0) return settled;
+
+    const order = [...settled];
+    for (const entry of [...arrivals].reverse()) {
+      const view = { conversations: new Map(order), workspaces: this.workspaces };
+      order.splice(placeForNewConversation(view, entry[1]?.workspaceId || ''), 0, entry);
+    }
+    return new Map(order);
+  }
+
+  /**
+   * Move a workspace's box to a new place in the tab bar.
+   *
+   * A box's place is its own — the conversation it sits behind, stored on the
+   * workspace row — so moving one writes that field and touches no
+   * conversation. Its members are drawn inside it wherever the flat order has
+   * them, and are no more disturbed by the box moving than they are by the box
+   * being drawn.
+   *
+   * The row is updated here so the strip redraws at once, and patched on the
+   * server, which broadcasts the table to every other window.
+   * @param {string} workspaceId - The workspace whose box moved.
+   * @param {string} place - 'head', or the conversation it now sits behind. Never
+   *   empty: a drag always knows where it landed, and empty means the opposite —
+   *   a box with no place recorded at all.
    * @returns {boolean} Whether anything moved.
    */
-  moveConversationBlock(conversationIds, beforeId) {
-    const moving = conversationIds.filter(id => this.conversations.has(id));
-    // Landing in front of one of its own is landing where it already is.
-    if (!moving.length || moving.includes(beforeId)) {
+  moveWorkspaceBox(workspaceId, place) {
+    const workspace = this.getWorkspace(workspaceId);
+    if (!workspace || !place || workspace.place === place) {
       return false;
     }
 
-    const order = Array.from(this.conversations.keys()).filter(id => !moving.includes(id));
-    const at = beforeId ? order.indexOf(beforeId) : -1;
-    order.splice(at >= 0 ? at : order.length, 0, ...moving);
-    this._setConversationOrder(order);
+    this.workspaces = this.workspaces.map(row =>
+      (row.id === workspaceId ? { ...row, place } : row));
+    this._notify('session:workspaces-changed', this.workspaces);
 
-    this._notify('conversation:reordered', { conversationId: moving[0], beforeId: beforeId || null });
-
-    // POST /reorder is the sole writer of conversation order.
-    this._persistOrder('reorder');
+    patchWorkspace(workspaceId, { place }).catch((error) => {
+      console.error("[Session] Couldn't store where the workspace box was moved to:", error);
+    });
 
     return true;
   }
@@ -2892,15 +2920,11 @@ class Session {
       await workerManager.destroyConversationAndWorker(conv);
     }
 
-    // Fold in whatever arrived while the loads above were awaiting. Both paths
-    // that can insert during a refresh — a create and a restore — claim the head
-    // of the bar, so that is where they go back, in the order they arrived.
+    // Fold in whatever arrived while the loads above were awaiting.
     const arrivals = Array.from(this.conversations)
       .filter(([id]) => !reordered.has(id) && !knownAtEntry.has(id));
 
-    this._replaceConversations(arrivals.length > 0
-      ? new Map([...arrivals, ...reordered])
-      : reordered);
+    this._replaceConversations(this._foldArrivals(reordered, arrivals));
 
     // Announce each newly-loaded conv so subscribers (notably the
     // conversation-bar) build the inner <conversation-tab> host element.

@@ -19,14 +19,17 @@ import (
 var baseURL = "https://chatgpt.com/backend-api/codex"
 
 const (
-	// codexClientVersion is the Codex client version announced to /models. The
-	// catalog gates rows on it: each model declares a minimal_client_version and
-	// is simply omitted from the response for anything older, with no error to
-	// notice — the model just never appears. gpt-6-sol and gpt-6-luna require
+	// codexClientVersion is the Codex client version announced to /models, and
+	// the only thing it affects: it rides that one query and no turn request.
+	// The catalog gates rows on it: each model declares a minimal_client_version
+	// and is simply omitted from the response for anything older, with no error
+	// to notice — the model just never appears. gpt-6-sol and gpt-6-luna require
 	// 0.155.0, so this must not be moved backwards past the newest slug we list.
 	//
-	// It has to be a real published Codex release, not merely a large number:
-	// the backend matches it against versions it knows.
+	// The gate is a numeric comparison and nothing more: the backend serves an
+	// unreleased future version quite happily, and a version it has never heard
+	// of returns the same rows as the newest one it has. We pin a real published
+	// release anyway, so that a claim we make about ourselves stays true.
 	codexClientVersion = "0.156.1"
 )
 

@@ -63,8 +63,8 @@ class ProjectFolderWorkspaceProvider extends WorkspaceProvider {
     id: 'project-folder',
     name: 'Project Folder',
     version: '1.0.0',
-    description: 'A folder of this project, as the place a conversation works',
-    setupLabel: 'A folder of this project',
+    description: 'Conversations here work in a subfolder instead of the project root',
+    setupLabel: 'A subfolder of this project',
     recommendations: {
       bestFor: 'one package, service or subrepo of a large project',
       avoidFor: 'anything that needs the project left untouched — a copy does that',

@@ -31,6 +31,7 @@ type WorkspacePatch struct {
 	Label *string        `json:"label,omitempty"`
 	Root  *string        `json:"root,omitempty"`
 	State *string        `json:"state,omitempty"`
+	Place *string        `json:"place,omitempty"`
 	Meta  map[string]any `json:"meta,omitempty"`
 }
 
@@ -160,6 +161,17 @@ func (m *SessionManager) RegisterWorkspace(ws Workspace) (Workspace, error) {
 		if ws.ID == "" {
 			ws.ID = GenerateWorkspaceID()
 		}
+		// Where its box is drawn, for a registration that did not say: behind the
+		// last conversation there is, which is the end of the bar. A workspace is
+		// registered before anything is bound to it, so there is no member to be
+		// drawn at and it would otherwise have no place at all. With no
+		// conversations to sit behind, the end of the bar is its head.
+		if ws.Place == "" {
+			ws.Place = PlaceHead
+			if n := len(s.session.ConversationOrder); n > 0 {
+				ws.Place = s.session.ConversationOrder[n-1]
+			}
+		}
 		if err := ws.Validate(); err != nil {
 			return Workspace{}, err
 		}
@@ -221,6 +233,11 @@ func (m *SessionManager) UpdateWorkspace(id string, patch WorkspacePatch) (Works
 		}
 		if patch.State != nil {
 			ws.State = *patch.State
+		}
+		// Where its box is drawn, which is the one field a viewer writes on
+		// nobody's behalf but the user's: it is what a box drag commits.
+		if patch.Place != nil {
+			ws.Place = *patch.Place
 		}
 		if len(patch.Meta) > 0 {
 			if ws.Meta == nil {

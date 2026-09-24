@@ -295,12 +295,18 @@ export function openWorkspaceCreate(session) {
       // the way out of it. One Cancel, inside the progress, so there are never
       // two of them meaning different things.
       if (building) {
+        // And nothing to split the body into either, so it stops being two
+        // columns: the progress stood in the rail's fourteen rems with the
+        // other half of the dialog empty beside it.
+        body.classList.add('workspace-create-building');
+        // No footer: its Cancel dismisses the whole dialog and the progress's
+        // own stops the build and leaves the form to be corrected. Two buttons
+        // reading Cancel, a few inches apart, doing different things.
         body.appendChild(buildProvisionProgress(progress, () => stop?.abort()));
-        dialog.appendChild(buildFooter());
         return;
       }
 
-      // The kinds, down one side. Lines rather than blocks: the block form is
+      // The kinds, down one side. A rail rather than blocks: the block form is
       // for a view where reading the rows is the whole question, and here the
       // question is answered in the pane beside them, which says everything a
       // block would have and has room for the form as well.
@@ -308,26 +314,61 @@ export function openWorkspaceCreate(session) {
       rail.className = 'workspace-create-rail';
       body.appendChild(rail);
 
-      const railHeading = document.createElement('div');
-      railHeading.className = 'setup-section-title';
-      railHeading.textContent = 'Build it as';
-      rail.appendChild(railHeading);
+      /**
+       * One band of the rail: rows that are the same kind of thing.
+       *
+       * Unheaded. A column of three names reads as a column of three names
+       * without a caption saying so, and the bands are told apart by the line
+       * drawn between them and by what the rows themselves say. `label` is the
+       * same information for a screen reader, which cannot see either.
+       * @param {object} request - The band.
+       * @param {string} request.label - What these rows are, for a screen reader.
+       * @param {any[]} request.rows - The rows.
+       * @param {string} [request.role] - What the group is, where it is not a choice.
+       */
+      const band = ({ label, rows, role }) => {
+        if (!rows.length) return;
+        const group = buildPlaceRows({
+          rows,
+          selection,
+          label,
+          ...(role ? { role } : {}),
+          asRail: true,
+          onSelect: (row) => {
+            selection = row.id;
+            values = {};
+            valid = false;
+            error = '';
+            render();
+          },
+          onAdopt: (row) => { void adopt(row); }
+        });
+        // The arrows walk the whole rail rather than each band of it: the root
+        // is what they are given, and it outlives the redraw a selection causes.
+        group.addEventListener('keydown', (event) => handlePlaceRowKey(event, root));
+        rail.appendChild(group);
+      };
 
-      const rows = buildPlaceRows({
-        rows: places(),
-        selection,
+      const offered = places();
+
+      // The kinds, stripped of what they mean. The pane beside the rail says
+      // that in full and says it about the one the reader has chosen; printed
+      // in the rail as well it is a sentence shown as its first four words,
+      // under a name that had to wrap to three lines to make room for it.
+      band({
         label: 'What kind of workspace to make',
-        onSelect: (row) => {
-          selection = row.id;
-          values = {};
-          valid = false;
-          error = '';
-          render();
-        },
-        onAdopt: (row) => { void adopt(row); }
+        rows: offered.filter((row) => row.kind === 'new').map((row) => ({ ...row, meaning: undefined }))
       });
-      rows.addEventListener('keydown', (event) => handlePlaceRowKey(event, root));
-      rail.appendChild(rows);
+
+      // And what is already there, which is not a way to build anything: a tree
+      // that exists is taken up on one click rather than chosen and then
+      // created. Nothing in this band can be the selection, so it is a group of
+      // offers rather than a second set of radios with nothing checked in it.
+      band({
+        label: 'Trees found with no workspace',
+        role: 'group',
+        rows: offered.filter((row) => row.kind === 'adopt')
+      });
 
       // What the chosen kind is, and what it needs, down the other.
       const detail = document.createElement('div');
@@ -376,7 +417,8 @@ export function openWorkspaceCreate(session) {
     };
 
     /**
-     * Cancel, and the one button that does the thing.
+     * Cancel, and the one button that does the thing. Drawn only while there is
+     * a question on screen: a build carries its own way out, inside the progress.
      * @returns {HTMLElement} The footer.
      */
     const buildFooter = () => {
@@ -384,10 +426,9 @@ export function openWorkspaceCreate(session) {
       actions.className = 'workspace-create-footer';
       actions.appendChild(setupButton('btn-secondary workspace-create-cancel', 'Cancel',
         () => modal.close(undefined)));
-      const make = setupButton('btn-primary workspace-create-commit',
-        building ? 'Creating…' : 'Create',
+      const make = setupButton('btn-primary workspace-create-commit', 'Create',
         () => { void create(); });
-      make.disabled = building || !selectedProviderId() || !valid;
+      make.disabled = !selectedProviderId() || !valid;
       actions.appendChild(make);
       return actions;
     };

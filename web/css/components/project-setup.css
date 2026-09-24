@@ -128,12 +128,16 @@
     display: contents;
 }
 
+/* Both fills are mixed from the text colour rather than from white: white over
+   a dark panel lifts it and white over a light one is white, so a light theme
+   had rows that answered the pointer and rows that were chosen looking exactly
+   like the rows that were neither. */
 .setup-row:hover {
-    background: rgb(255 255 255 / 6%);
+    background: color-mix(in srgb, var(--text-primary) 6%, transparent);
 }
 
 .setup-row[aria-checked="true"] {
-    background: rgb(255 255 255 / 10%);
+    background: color-mix(in srgb, var(--text-primary) 10%, transparent);
 }
 
 .setup-row-meaning,
@@ -280,6 +284,67 @@
 .setup-rows-blocks .setup-row-said {
     font-family: inherit;
     font-size: 0.8125rem;
+}
+
+/* Where the list runs down the side of the thing it is deciding — the create
+   dialog, whose other half is the chosen kind's own form — it is the settings
+   panel's sidebar, because that is the column of things-to-pick-between this app
+   already has and a second shape for it is a second application. Full-width
+   rows, names wrapping rather than clipped, and the chosen one lit by its fill
+   and named in the accent. */
+.setup-rows-rail .setup-row {
+    display: block;
+    width: 100%;
+    padding: 0.5625rem 0.75rem;
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    white-space: normal;
+    transition: background 150ms ease, color 150ms ease;
+}
+
+.setup-rows-rail .setup-row:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.setup-rows-rail .setup-row[aria-checked="true"] {
+    background: var(--bg-tertiary);
+    color: var(--accent-blue);
+}
+
+/* The arrows select as they move, so the fill above is the keyboard's mark for
+   every row but one: an offer is only focused, never checked, and without this
+   it is walked onto invisibly. */
+.setup-rows-rail .setup-row:focus-visible {
+    outline: 1px solid var(--accent-blue);
+    outline-offset: -0.125rem;
+}
+
+/* The name, and the verb of the one row that does something rather than being
+   chosen, out at the end of the line it leads. */
+.setup-rows-rail .setup-row-head {
+    display: flex;
+    align-items: baseline;
+    gap: 0 0.5rem;
+}
+
+/* Anything past the name goes under it. A rail is fourteen rems wide, and a
+   second thing set on the name's own line leaves neither of them readable. */
+.setup-rows-rail .setup-row-meaning {
+    display: block;
+    margin-top: 0.125rem;
+    font-size: 0.75rem;
+    white-space: normal;
+    overflow: visible;
+}
+
+.setup-rows-rail .setup-row-detail {
+    display: block;
+    margin-top: 0.125rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
 }
 
 /* A workspace that could not be reached when it was last asked. Dimmed rather
@@ -526,12 +591,21 @@
     color: var(--text-secondary);
 }
 
+/* The last line is the step being waited on; the ones above it have happened.
+   Said in the colour, so the list stays a list rather than growing a word per
+   line saying which of the two each one is. */
+.setup-progress-step:last-child {
+    color: var(--text-primary);
+}
+
+/* Where a step is happening, which is a path. Wrapped rather than cut: the box
+   it is written in is a dialog wide, the part of a path that says which tree it
+   is is the end, and a line that has been truncated from a view with room to
+   spare is a line that was thrown away for nothing. */
 .setup-progress-detail {
-    overflow: hidden;
     font-family: var(--font-mono);
     font-size: 0.75rem;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
     color: var(--text-tertiary);
 }
 
