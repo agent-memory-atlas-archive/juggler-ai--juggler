@@ -5,6 +5,8 @@ of changes; this project follows semantic versioning.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-24
+
 - New feature: **workspaces**: Types of workspace include git worktrees, throwaway scratch copies, or subfolders. More types of workspace will be added, such as ssh servers, etc.
 - The ChatGPT plan now lists GPT-6 Sol and Luna, and drops the GPT-5.4 pair the backend retired
 - GPT-6 Sol and Luna are now sized at their real million-token window, and offer every reasoning level
