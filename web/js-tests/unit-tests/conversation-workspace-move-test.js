@@ -6,10 +6,9 @@
  * The box header, the workspace panel, the move dialog, and reconcile.
  *
  * The surfaces a workspace is seen and steered through, and the sweep that puts
- * the table back together. A move is the act with the most to lose,
- * so it is asked about work it would leave behind, refused audibly when the
- * service says no, and able to build somewhere new and move into it in one act
- * — or be called off leaving nothing behind and nobody moved.
+ * the table back together. A move is the act with the most to lose, so it is
+ * confirmed before it happens — both trees named and addressed — refused
+ * audibly when the service says no, and undone by nothing when it is declined.
  * @module unit-tests/conversation-workspace-move-test
  */
 
@@ -24,7 +23,6 @@ import {
 } from '../../js/services/workspace-provisioning.js';
 import { reconcileWorkspaces } from '../../js/services/workspace-reconcile.js';
 import {
-  NEW_ROW_PREFIX,
   setupRows,
   probeSetupAdoptions,
   adoptSetupRow
@@ -337,12 +335,13 @@ export async function runTests() {
       }
     });
 
-    await run('the dialog moves a conversation, and its instructions move with it', async () => {
+    await run('the dialog confirms a move, and the instructions move with it', async () => {
       // The box header reports and finishes; this is where one conversation
-      // changes its mind about where it belongs. The
-      // move itself is `rebindConversation`'s — what the dialog adds is the
-      // choice, which is why the assertion below is about the instructions the
-      // model reads and not only about the id in the metadata.
+      // that has been dragged somewhere else is asked whether that is really
+      // what was meant. The move itself is `rebindConversation`'s — what the
+      // dialog adds is the pause before it, which is why the assertion below is
+      // about the instructions the model reads and not only about the id in the
+      // metadata.
       const stamp = Math.random().toString(36).slice(2, 8);
       const from = `dialog-from-${stamp}`;
       const to = `dialog-to-${stamp}`;
@@ -374,30 +373,35 @@ export async function runTests() {
         await waitFor(() => typeof seededFile(moved, 'AGENTS.md')?.data.content === 'string',
           { description: 'the snapshot to reach the document' });
 
-        const settled = openWorkspaceMove(moved);
+        const settled = openWorkspaceMove(moved, madeTo.id);
         const dialog = /** @type {any} */ (document.querySelector('.workspace-move-overlay'));
         assert(dialog, 'opening it puts a dialog on screen');
-        // Where it works now is a standing fact, and an address is only a fact
-        // when it is whole: the dialog states the tree being left in full and
-        // offers the two things anybody wants from a path on screen.
-        const stated = dialog.querySelector('.workspace-move-now-path');
-        assert(stated?.textContent === `${projectPath}/${from}`,
-          `the tree being left is stated in full, got ${JSON.stringify(stated?.textContent)}`);
+        // Both ends of the move, and an address is only a fact when it is
+        // whole: what is being confirmed is which two trees these are, so each
+        // is stated in full rather than named and left to be guessed at.
+        const leaving = dialog.querySelector('.workspace-move-from .workspace-move-now-path');
+        assert(leaving?.textContent === `${projectPath}/${from}`,
+          `the tree being left is stated in full, got ${JSON.stringify(leaving?.textContent)}`);
+        const arriving = dialog.querySelector('.workspace-move-to .workspace-move-now-path');
+        assert(arriving?.textContent === `${projectPath}/${to}`,
+          `and so is the one being moved into, got ${JSON.stringify(arriving?.textContent)}`);
+        assert(/where it started/.test(String(dialog.querySelector('.workspace-move-from')?.textContent ?? ''))
+          && /where it moved to/.test(String(dialog.querySelector('.workspace-move-to')?.textContent ?? '')),
+        `each named as well as addressed, got ${JSON.stringify(dialog.textContent)}`);
         assert(dialog.querySelector('.workspace-move-now [aria-label="Copy path to clipboard"]')
           && dialog.querySelector('.workspace-move-now reveal-button'),
         'and can be copied or shown on disk without leaving the dialog');
-        assert(!dialog.querySelector(`.setup-row[data-row-id="${madeFrom.id}"]`),
-          'the tree it already works in is not one of the places it could move to');
-        const row = /** @type {any} */ (dialog.querySelector(`.setup-row[data-row-id="${madeTo.id}"]`));
-        assert(row, `while every other ready workspace is, got ${JSON.stringify(dialog.textContent)}`);
-        assert(/** @type {HTMLButtonElement} */ (dialog.querySelector('.workspace-move-commit')).disabled,
-          'and with nothing chosen there is nothing to press');
+        // Where it is going was settled by the drag that opened this. Offering
+        // anywhere else would be asking a question already answered.
+        assert(!dialog.querySelector('.setup-row'),
+          `nowhere else is offered, got ${JSON.stringify(dialog.textContent)}`);
+        assert(!(/** @type {HTMLButtonElement} */ (dialog.querySelector('.workspace-move-commit')).disabled),
+          'and the one thing it can do is ready to be pressed');
 
-        row.click();
         /** @type {any} */ (dialog.querySelector('.workspace-move-commit')).click();
         const outcome = await settled;
         assert(outcome.moved === true && moved.workspaceId === madeTo.id,
-          `choosing one and pressing it moves the conversation, got ${JSON.stringify(outcome)}`);
+          `pressing it moves the conversation, got ${JSON.stringify(outcome)}`);
         assert(!document.querySelector('.workspace-move-overlay'),
           'and the dialog closes behind it');
 
@@ -406,6 +410,17 @@ export async function runTests() {
         const after = await seededFile(moved, 'AGENTS.md').createContextText({});
         assert(after.includes(toMarker),
           `a conversation moved through the dialog reads the instructions of the tree it is in, got ${JSON.stringify(after)}`);
+
+        // The other answer. A confirmation that moved things anyway would be
+        // worse than no confirmation, because it would be trusted.
+        const staying = await makeConversation(session, 'asked-and-declined',
+          { workspaceId: madeFrom.id });
+        release(staying);
+        const declined = openWorkspaceMove(staying, madeTo.id);
+        /** @type {any} */ (document.querySelector('.workspace-move-cancel')).click();
+        const refused = await declined;
+        assert(refused.moved === false && staying.workspaceId === madeFrom.id,
+          `cancelling leaves it where it was, got ${JSON.stringify(refused)}`);
       } finally {
         /** @type {any} */ (window).showModal = realModal;
         // An assertion that fails between opening the dialog and pressing it
@@ -417,122 +432,6 @@ export async function runTests() {
         await unregisterWorkspace(madeFrom.id).catch(() => {});
         await unregisterWorkspace(madeTo.id).catch(() => {});
         await project.copyTree({ to: '.', delete: [from, to] });
-      }
-    });
-
-    await run('a move out of a tree holding work offers to bring it, and never half brings it', async () => {
-      // The offer is on screen before the button is pressed, rather than in a
-      // dialog stacked over this one: what it decides is what the press will do,
-      // so it has to be readable at the moment of pressing. Nothing is brought
-      // unless it is asked for — copying files into somebody's tree is a write,
-      // and an unasked write is as wrong as the loss it would be preventing.
-      const stamp = Math.random().toString(36).slice(2, 8);
-      const fromDir = `offer-from-${stamp}`;
-      const toDir = `offer-to-${stamp}`;
-      const project = createBoundOps(() => ({ workspaceId: '' }));
-      for (const dir of [fromDir, toDir]) {
-        await writeFileOp({ path: `${dir}/shared.txt`, content: 'the commit both trees start from\n' });
-        const git = `git -C ${dir} -c user.name=Juggler -c user.email=tests@juggler.invalid -c commit.gpgsign=false`;
-        await project.shell({ command: `git -C ${dir} init -q` });
-        await project.shell({ command: `${git} add -A` });
-        await project.shell({ command: `${git} commit -q -m baseline` });
-      }
-      await writeFileOp({ path: `${fromDir}/note.txt`, content: 'look at this file I created\n' });
-
-      const madeFrom = await registerWorkspace({
-        root: `${projectPath}/${fromDir}`, label: 'a tree with work in it', state: 'ready'
-      });
-      const madeTo = await registerWorkspace({
-        root: `${projectPath}/${toDir}`, label: 'somewhere else', state: 'ready'
-      });
-      const saved = session.workspaces;
-      session.workspaces = [...saved, madeFrom, madeTo];
-      const destination = createBoundOps(() => ({ workspaceId: madeTo.id }));
-      // Nothing here should ask anything in a modal of its own. Stubbed so that
-      // an accidental one is an assertion rather than a suite hung to its cap.
-      /** @type {any[]} */
-      const asked = [];
-      const realModal = /** @type {any} */ (window).showModal;
-      /** @type {any} */ (window).showModal = async (/** @type {any} */ request) => {
-        asked.push(request);
-        return true;
-      };
-      try {
-        const left = await makeConversation(session, 'moving-and-leaving-it', { workspaceId: madeFrom.id });
-        release(left);
-        const first = openWorkspaceMove(left);
-        const dialog = /** @type {any} */ (document.querySelector('.workspace-move-overlay'));
-        await waitFor(() => dialog.querySelector('.workspace-move-carry'),
-          { description: 'the dialog to find out what the tree it is leaving holds' });
-        assert(/uncommitted work in 1 file/.test(String(dialog.querySelector('.workspace-move-work-lead')?.textContent ?? '')),
-          `it says what is there and how much of it, got ${JSON.stringify(dialog.querySelector('.workspace-move-work-lead')?.textContent)}`);
-        assert(/** @type {HTMLInputElement} */ (dialog.querySelector('.workspace-move-carry-box')).checked === false,
-          'and offers to bring it without having decided to');
-
-        /** @type {any} */ (dialog.querySelector(`.setup-row[data-row-id="${madeTo.id}"]`)).click();
-        /** @type {any} */ (dialog.querySelector('.workspace-move-commit')).click();
-        const leftBehind = await first;
-        assert(leftBehind.moved === true && left.workspaceId === madeTo.id,
-          `a move nobody ticked moves the conversation, got ${JSON.stringify(leftBehind)}`);
-        assert((await destination.stat({ path: 'note.txt' })).exists === false,
-          'and leaves the work where it was made');
-
-        // The same move, ticked. The tick is made before the choice of where, so
-        // that surviving the redraw a choice causes is part of what is asserted.
-        const bringing = await makeConversation(session, 'moving-and-bringing-it', { workspaceId: madeFrom.id });
-        release(bringing);
-        const second = openWorkspaceMove(bringing);
-        const again = /** @type {any} */ (document.querySelector('.workspace-move-overlay'));
-        await waitFor(() => again.querySelector('.workspace-move-carry-box'),
-          { description: 'the offer to appear again' });
-        /** @type {any} */ (again.querySelector('.workspace-move-carry-box')).click();
-        /** @type {any} */ (again.querySelector(`.setup-row[data-row-id="${madeTo.id}"]`)).click();
-        assert(/** @type {HTMLInputElement} */ (again.querySelector('.workspace-move-carry-box')).checked === true,
-          'choosing where to go does not quietly untick bringing the work');
-        /** @type {any} */ (again.querySelector('.workspace-move-commit')).click();
-        const brought = await second;
-        assert(brought.moved === true, `it moves, got ${JSON.stringify(brought)}`);
-        const arrived = await destination.readFile({ path: 'note.txt' });
-        assert(String(arrived?.content ?? '').includes('look at this file I created'),
-          `and the file is there to be looked at, got ${JSON.stringify(arrived?.content)}`);
-
-        // Now the two trees disagree about a file. The refusal is shown where
-        // the choice was made, and the way past it is a second, deliberate press.
-        await writeFileOp({ path: `${toDir}/shared.txt`, content: 'the destination went its own way\n' });
-        await writeFileOp({ path: `${fromDir}/shared.txt`, content: 'the source went its own way\n' });
-        const contested = await makeConversation(session, 'moving-into-an-argument', { workspaceId: madeFrom.id });
-        release(contested);
-        const third = openWorkspaceMove(contested);
-        const last = /** @type {any} */ (document.querySelector('.workspace-move-overlay'));
-        await waitFor(() => last.querySelector('.workspace-move-carry-box'),
-          { description: 'the offer to appear a third time' });
-        /** @type {any} */ (last.querySelector('.workspace-move-carry-box')).click();
-        /** @type {any} */ (last.querySelector(`.setup-row[data-row-id="${madeTo.id}"]`)).click();
-        /** @type {any} */ (last.querySelector('.workspace-move-commit')).click();
-
-        await waitFor(() => last.querySelector('.workspace-move-overwrite'),
-          { description: 'the refusal and the way past it' });
-        assert(/shared\.txt/.test(String(last.querySelector('.setup-error')?.textContent ?? '')),
-          `the file they disagree about is named, got ${JSON.stringify(last.querySelector('.setup-error')?.textContent)}`);
-        assert(contested.workspaceId === madeFrom.id,
-          `and until that is answered nobody has moved, got ${JSON.stringify(contested.workspaceId)}`);
-
-        /** @type {any} */ (last.querySelector('.workspace-move-overwrite')).click();
-        const forced = await third;
-        assert(forced.moved === true,
-          `someone who read that and meant it gets it, got ${JSON.stringify(forced)}`);
-        const overwritten = await destination.readFile({ path: 'shared.txt' });
-        assert(String(overwritten?.content ?? '').includes('the source went its own way'),
-          `and the tree moved out of is what is there, got ${JSON.stringify(overwritten?.content)}`);
-
-        assert(asked.length === 0,
-          `none of it is asked in a dialog over the dialog, got ${JSON.stringify(asked)}`);
-      } finally {
-        /** @type {any} */ (window).showModal = realModal;
-        session.workspaces = saved;
-        await unregisterWorkspace(madeFrom.id).catch(() => {});
-        await unregisterWorkspace(madeTo.id).catch(() => {});
-        await project.copyTree({ to: '.', delete: [fromDir, toDir] });
       }
     });
 
@@ -554,20 +453,19 @@ export async function runTests() {
         release(busy);
         Object.defineProperty(busy, 'isProcessing', { get: () => true, configurable: true });
 
-        const settled = openWorkspaceMove(busy);
+        const settled = openWorkspaceMove(busy, made.id);
         const dialog = /** @type {any} */ (document.querySelector('.workspace-move-overlay'));
-        /** @type {any} */ (dialog.querySelector(`.setup-row[data-row-id="${made.id}"]`)).click();
         /** @type {any} */ (dialog.querySelector('.workspace-move-commit')).click();
 
         await waitFor(() => document.querySelector('.workspace-move-overlay .setup-error'),
-          { description: 'the refusal to be shown where the choice was made' });
+          { description: 'the refusal to be shown where it was asked for' });
         const said = document.querySelector('.workspace-move-overlay .setup-error')?.textContent ?? '';
         assert(/turn/i.test(said),
           `and to say what stopped it, got ${JSON.stringify(said)}`);
         assert((busy.workspaceId || '') === '',
           `with the conversation left where it was, got ${JSON.stringify(busy.workspaceId)}`);
 
-        // The dialog is still open on the same choice, so the answer to "now
+        // The dialog is still open on the same question, so the answer to "now
         // then?" is one press rather than starting again.
         Object.defineProperty(busy, 'isProcessing', { get: () => false, configurable: true });
         /** @type {any} */ (document.querySelector('.workspace-move-commit')).click();
@@ -578,180 +476,6 @@ export async function runTests() {
         /** @type {any} */ (window).showModal = realModal;
         session.workspaces = saved;
         await unregisterWorkspace(made.id).catch(() => {});
-      }
-    });
-
-    await run('the dialog can build somewhere new and move into it in one act', async () => {
-      // Provisioning for a conversation that already exists is
-      // `provisionWorkspace` and nothing else — `ensureInitialised` is nowhere
-      // in this path, and neither is the setup record, which the send path reads
-      // to decide whether to park a message. A conversation moving house goes on
-      // sending while its tree is built.
-      const name = `dialog-new-${Math.random().toString(36).slice(2, 8)}`;
-      const dir = `${projectPath}/${name}`;
-      const projectOps = createBoundOps(() => ({}));
-      /** @type {string} */
-      let built = '';
-      // As in the cases above: this conversation is leaving the shared project
-      // fixture, whose dirtiness belongs to whichever lane is building a
-      // repository in it just now.
-      const realModal = /** @type {any} */ (window).showModal;
-      /** @type {any} */ (window).showModal = async () => true;
-      try {
-        const moving = await makeConversation(session, 'moving-into-a-new-one');
-        release(moving);
-
-        const settled = openWorkspaceMove(moving);
-        const dialog = /** @type {any} */ (document.querySelector('.workspace-move-overlay'));
-        const newRow = /** @type {any} */ (dialog.querySelector(
-          `.setup-row[data-row-id="${NEW_ROW_PREFIX}${FixtureProvider.MANIFEST.id}"]`));
-        assert(newRow,
-          `a conversation under way may make somewhere new, not only pick what exists, got ${JSON.stringify(dialog.textContent)}`);
-
-        newRow.click();
-        const field = /** @type {HTMLInputElement} */ (document.querySelector('.workspace-move-overlay #fixture-dir'));
-        assert(field, 'choosing it expands the provider\'s own form, the same one the panel shows');
-        const before = /** @type {HTMLButtonElement} */ (document.querySelector('.workspace-move-commit'));
-        assert(before.disabled,
-          'and the button waits until the form says it may be pressed');
-        assert(/create/i.test(before.textContent ?? ''),
-          `saying what pressing it will do, got ${JSON.stringify(before.textContent)}`);
-
-        field.value = dir;
-        field.dispatchEvent(new Event('input', { bubbles: true }));
-        assert(document.querySelectorAll('.workspace-move-overlay').length === 1,
-          `precondition: one dialog on screen, got ${document.querySelectorAll('.workspace-move-overlay').length}`);
-        const armed = /** @type {HTMLButtonElement} */ (document.querySelector('.workspace-move-commit'));
-        assert(!armed.disabled,
-          'naming a destination arms the button, which is the form reporting itself');
-        armed.click();
-
-        // A provision that cannot finish leaves the dialog open on its own
-        // error, which is right for a user and a hang for a case that only ever
-        // waits to be closed.
-        await waitFor(() => (moving.workspaceId || '') !== '' || !!document.querySelector('.workspace-move-overlay .setup-error'),
-          { description: 'the workspace to be built and the conversation moved into it' });
-        const failure = document.querySelector('.workspace-move-overlay .setup-error')?.textContent ?? '';
-        assert(!failure, `the provision finished, got ${JSON.stringify(failure)}`);
-
-        const outcome = await settled;
-        built = moving.workspaceId;
-        assert(outcome.moved === true && built,
-          `the conversation ends up in what was built, got ${JSON.stringify(outcome)}`);
-        const row = (await listWorkspaces()).find((/** @type {any} */ ws) => ws.id === built);
-        assert(row?.state === 'ready' && row?.root === dir,
-          `left as a ready row rooted where the form said, got ${JSON.stringify(row)}`);
-        assert((await projectOps.stat({ path: `${name}/made-here.txt` })).exists,
-          'and really built there, by the provider that offered to');
-      } finally {
-        /** @type {any} */ (window).showModal = realModal;
-        if (built) await unregisterWorkspace(built).catch(() => {});
-        await projectOps.shell({ command: `rm -rf ${name}` }).catch(() => {});
-      }
-    });
-
-    await run('calling off a move\'s build leaves nothing behind and nobody moved', async () => {
-      // The same compensation stack the setup panel's Cancel runs, reached from
-      // the other view. What makes this worth its own case is that a move can be
-      // called off *after* the conversation has work in it: the thing that must
-      // survive intact is a conversation that is already under way.
-      const name = `dialog-cancel-${Math.random().toString(36).slice(2, 8)}`;
-      const dir = `${projectPath}/${name}`;
-      const projectOps = createBoundOps(() => ({}));
-      const realModal = /** @type {any} */ (window).showModal;
-      /** @type {any} */ (window).showModal = async () => true;
-      try {
-        const moving = await makeConversation(session, 'called-it-off');
-        release(moving);
-
-        const settled = openWorkspaceMove(moving);
-        /** @type {any} */ (document.querySelector(
-          `.workspace-move-overlay .setup-row[data-row-id="${NEW_ROW_PREFIX}${FixtureProvider.MANIFEST.id}"]`)).click();
-        const field = /** @type {HTMLInputElement} */ (document.querySelector('.workspace-move-overlay #fixture-dir'));
-        const stall = /** @type {HTMLInputElement} */ (document.querySelector('.workspace-move-overlay #fixture-stall'));
-        field.value = dir;
-        // Long enough that the cancel lands inside the slow step rather than
-        // after a provision that finished while nobody was looking.
-        stall.value = '3000';
-        field.dispatchEvent(new Event('input', { bubbles: true }));
-        /** @type {any} */ (document.querySelector('.workspace-move-commit')).click();
-
-        await waitFor(() => /Waiting about/.test(
-          document.querySelector('.workspace-move-overlay')?.textContent ?? ''),
-        { description: 'the slow step to be named, which is the dialog saying what it is waiting on' });
-        /** @type {any} */ (document.querySelector('.workspace-move-overlay .setup-cancel')).click();
-
-        await waitFor(() => !document.querySelector('.workspace-move-overlay .setup-progress'),
-          { description: 'the unwinding to finish and the choice to come back' });
-        assert((moving.workspaceId || '') === '',
-          `a move called off moves nobody, got ${JSON.stringify(moving.workspaceId)}`);
-        assert(!(await projectOps.stat({ path: name })).exists,
-          'and what had been built is unwound rather than left for someone to find');
-        assert(!(await listWorkspaces()).some((/** @type {any} */ ws) => ws.root === dir),
-          'with no half-made row left on the table');
-        assert(document.querySelector('.workspace-move-overlay'),
-          'while the dialog is still open, because the user cancelled a build and not the question');
-
-        /** @type {any} */ (document.querySelector('.workspace-move-cancel')).click();
-        const outcome = await settled;
-        assert(outcome.moved === false,
-          `and closing it reports that nothing happened, got ${JSON.stringify(outcome)}`);
-      } finally {
-        /** @type {any} */ (window).showModal = realModal;
-        await projectOps.shell({ command: `rm -rf ${name}` }).catch(() => {});
-      }
-    });
-
-    await run('the dialog offers a tree that exists and no row knows about', async () => {
-      // The pool, from the other end: a tree somebody built by hand is one click
-      // from being somewhere this conversation works, with no provisioning and
-      // no recompile. Adoption is what makes "move into wt2" cost nothing.
-      const name = `dialog-adopt-${Math.random().toString(36).slice(2, 8)}`;
-      const dir = `${projectPath}/${name}`;
-      const projectOps = createBoundOps(() => ({}));
-      const realModal = /** @type {any} */ (window).showModal;
-      /** @type {any} */ (window).showModal = async () => true;
-      /** @type {string} */
-      let adoptedId = '';
-      try {
-        await writeFileOp({ path: `${name}/AGENTS.md`, content: `# a tree nobody registered ${name}` });
-        FixtureProvider.report = {
-          orphanedWorkspaces: [],
-          orphanedArtifacts: [{
-            id: name,
-            label: 'a tree nobody registered',
-            detail: dir,
-            workspace: { kind: 'local', root: dir, label: 'a tree nobody registered' }
-          }],
-          confirmed: []
-        };
-
-        const moving = await makeConversation(session, 'moving-into-what-was-there');
-        release(moving);
-        const settled = openWorkspaceMove(moving);
-
-        await waitFor(() => document.querySelector('.workspace-move-overlay .setup-row-adopt'),
-          { description: 'the provider to say what exists that the table has never heard of' });
-        /** @type {any} */ (document.querySelector('.workspace-move-overlay .setup-row-adopt')).click();
-
-        await waitFor(() => (session.workspaces ?? []).some((/** @type {any} */ row) => row.root === dir),
-          { description: 'the offer to be taken up and registered' });
-        adoptedId = (session.workspaces ?? []).find((/** @type {any} */ row) => row.root === dir)?.id ?? '';
-        const chosen = /** @type {HTMLElement|null} */ (
-          document.querySelector(`.workspace-move-overlay .setup-row[data-row-id="${adoptedId}"]`));
-        assert(chosen?.getAttribute('aria-checked') === 'true',
-          'adopting chooses it, because the click has to do something visible');
-
-        /** @type {any} */ (document.querySelector('.workspace-move-commit')).click();
-        const outcome = await settled;
-        assert(outcome.moved === true && moving.workspaceId === adoptedId,
-          `and one more press moves the conversation into it, got ${JSON.stringify(outcome)}`);
-      } finally {
-        /** @type {any} */ (window).showModal = realModal;
-        FixtureProvider.report = null;
-        if (adoptedId) await unregisterWorkspace(adoptedId).catch(() => {});
-        session.workspaces = (session.workspaces ?? []).filter((/** @type {any} */ row) => row.root !== dir);
-        await projectOps.copyTree({ to: '.', delete: [name] });
       }
     });
 

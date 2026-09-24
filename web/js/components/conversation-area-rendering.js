@@ -48,7 +48,6 @@ import { stripThinkingTags } from '../utils/content-utils.js';
 import { itemGoal } from '../model/thread-alias.js';
 import { liveMessageForThread } from '../utils/thread-display.js';
 import { rebindConversation } from '../services/workspace-rebinding.js';
-import { openWorkspaceMove } from './workspace-move-dialog.js';
 import { openWorkspaceReconnect } from './workspace-reconnect-dialog.js';
 
 /** @typedef {import('../../sdk/lib/message.js').Message} Message */
@@ -414,9 +413,9 @@ function ensureStrandedBanner(conversation, binding, existing, messageList) {
 
     // First, and only where the record is what went missing: the binding this
     // conversation still carries is the last trace of that workspace anywhere,
-    // and both of the buttons below spend it by rebinding. Putting the
-    // workspace back is also the only one of the three that fixes it for every
-    // other conversation bound to the same id.
+    // and the button below spends it by rebinding. Putting the workspace back is
+    // also the only one of the two that fixes it for every other conversation
+    // bound to the same id.
     if (lost) {
       const found = document.createElement('button');
       found.type = 'button';
@@ -433,12 +432,6 @@ function ensureStrandedBanner(conversation, binding, existing, messageList) {
     rebind.addEventListener('click', () => { void rebindConversation(conversation, ''); });
     banner.appendChild(rebind);
 
-    const elsewhere = document.createElement('button');
-    elsewhere.type = 'button';
-    elsewhere.className = 'workspace-banner-elsewhere';
-    elsewhere.textContent = 'Another workspace…';
-    elsewhere.addEventListener('click', () => { void openWorkspaceMove(conversation); });
-    banner.appendChild(elsewhere);
   }
 
   if (messageList.firstElementChild !== banner) {

@@ -150,8 +150,7 @@ function buildRecommendations(provider) {
  * The rows themselves come from `setupRows`, which is view-free and knows
  * nothing about which conversation is asking. What is here is how they look and
  * how they answer: the radio group, the roving tabindex, the status a row was
- * probed for, the adopt row that is an offer rather than a choice, and the body
- * the selected "New…" row expands into.
+ * probed for, and the adopt row that is an offer rather than a choice.
  * @param {object} request - What to draw.
  * @param {import('../services/workspace-places.js').SetupRow[]} request.rows - The places, in order.
  * @param {string|null} request.selection - The selected row's id, or null for none.
@@ -162,13 +161,6 @@ function buildRecommendations(provider) {
  * @param {string} [request.adoptVerb] - What taking up an offer does here, when
  *   it is not plain adoption: putting a lost workspace back is the same row and
  *   a different act, and the row is what says which.
- * @param {(row: any) => HTMLElement|null} [request.expandSelected] - The selected row's body.
- * @param {boolean} [request.asBlocks] - Draw each place as a block rather than
- *   as a line. Blocks are for the views where picking one of these is the whole
- *   question — the create dialog's rail is the exception — and give the name, what
- *   choosing it means and the address a line each. A view that lists places to
- *   one side of the question it is really asking leaves this off and gets a
- *   line apiece.
  * @param {boolean} [request.asRail] - Draw the group as a column of names down
  *   the side of the view, in the shape the settings panel's sidebar has. For the
  *   view that answers the choice in a pane beside the list rather than under the
@@ -182,13 +174,12 @@ function buildRecommendations(provider) {
  */
 export function buildPlaceRows(request) {
   const {
-    rows, selection, label, statusFor, onSelect, onAdopt, expandSelected, adoptVerb, asBlocks, asRail,
+    rows, selection, label, statusFor, onSelect, onAdopt, adoptVerb, asRail,
     role = 'radiogroup'
   } = request;
 
   const group = document.createElement('div');
-  group.className = ['setup-rows', asBlocks && 'setup-rows-blocks', asRail && 'setup-rows-rail']
-    .filter(Boolean).join(' ');
+  group.className = ['setup-rows', asRail && 'setup-rows-rail'].filter(Boolean).join(' ');
   group.setAttribute('role', role);
   group.setAttribute('aria-label', label);
 
@@ -266,20 +257,14 @@ export function buildPlaceRows(request) {
       }
       onSelect(row);
     });
-    // A row and the body it expands into are one thing being chosen, so they
-    // share a wrapper and the card draws that wrapper as the block. The body
-    // cannot go inside the row itself — nothing interactive nests in a button —
-    // and left as the row's sibling it renders outside the block it belongs to.
+    // Each row is wrapped, so that a view which draws a choice as something
+    // larger than its row has an element to draw. Where there is no such view
+    // the wrapper stands aside, and the rows go on being the group's own
+    // children.
     const choice = document.createElement('div');
     choice.className = 'setup-choice';
     choice.appendChild(element);
     group.appendChild(choice);
-
-    // The selected "New…" row expands in place; the others stay one line.
-    if (selected && row.providerId) {
-      const body = expandSelected?.(row);
-      if (body) choice.appendChild(body);
-    }
   }
 
   // With nothing selected there is no row holding the group's one tab stop, so

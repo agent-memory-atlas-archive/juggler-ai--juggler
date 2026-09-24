@@ -560,34 +560,6 @@ export async function runTests() {
         `attributed to the box it was started from, got ${JSON.stringify(created[0].options.origin)}`);
     });
 
-    await check('moving one conversation is offered on its tab, in a box or out of one', () => {
-      bar._session = stubSession(
-        [workspace('ws_a', 'feature/auth')],
-        [['c1', 'ws_a'], ['c3', '']]
-      );
-      bar.render();
-
-      /**
-       * @param {string} id - Whose tab is right-clicked.
-       * @returns {string[]} What its menu offers.
-       */
-      const tabMenu = (id) => {
-        const tab = /** @type {HTMLElement} */ (
-          bar.querySelector(`.conversation-tab[data-conversation-id="${id}"]`));
-        tab.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 20 }));
-        const menu = document.querySelector('.juggler-context-menu');
-        const rows = Array.from(menu?.querySelectorAll('.juggler-context-menu-item') || [])
-          .map(row => row.textContent || '');
-        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-        return rows;
-      };
-
-      assert(tabMenu('c1').includes('Use a different workspace…'),
-        'the one workspace act that names a single conversation is on that conversation’s tab');
-      assert(tabMenu('c3').includes('Use a different workspace…'),
-        'including a tab with no box around it: "give this one a worktree" has the same home either way');
-    });
-
     await check('the ending is carried out for the conversation you came from, or for nobody', () => {
       const session = stubSession(
         [workspace('ws_a', 'feature/auth')],

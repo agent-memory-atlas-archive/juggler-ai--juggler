@@ -34,7 +34,7 @@ import keyShortcutManager from '../services/key-shortcut-manager.js';
 import { isAutoNameEnabled, refreshAutoNameSetting } from '../services/auto-name-setting.js';
 import { isTabHighlightEnabled, ATTENTION_PREFS_EVENT } from '../utils/attention-manager.js';
 import { workspaceGroups, selectedWorkspace } from '../services/workspace-provisioning.js';
-import { openWorkspaceMove, workspaceMovePlaces } from './workspace-move-dialog.js';
+import { openWorkspaceMove } from './workspace-move-dialog.js';
 import { openWorkspaceCreate } from './workspace-create-dialog.js';
 import JugglerElement from './juggler-element.js';
 import { showAlert } from './modal-dialog.js';
@@ -2036,16 +2036,16 @@ class ConversationBar extends JugglerElement {
         // A drop in another box is a rebinding, and a rebinding is not
         // something an eighth of a second of slipped finger may do: it moves
         // where a conversation's files and commands happen, under an agent that
-        // may be working. So the gesture asks instead, through the dialog that
-        // owns the move — including its question about work left behind in the
-        // tree, which a drag has nowhere to ask. The strip goes back to what the
-        // session says in the meantime: render() is held for the length of a
-        // gesture and draws the tab back in the box it came from as it lets go.
+        // may be working. So the gesture confirms itself first, through the
+        // dialog that owns the move — which is told where the tab landed, since
+        // the drop has already said. The strip goes back to what the session
+        // says in the meantime: render() is held for the length of a gesture and
+        // draws the tab back in the box it came from as it lets go.
         const landedIn = this._workspaceBoxOf(tab);
         const dragged = this._session.conversations.get(draggedId);
         if (dragged && landedIn !== homeWorkspaceId) {
           this.render();
-          void openWorkspaceMove(dragged, { selected: landedIn });
+          void openWorkspaceMove(dragged, landedIn);
           return;
         }
 
@@ -2238,20 +2238,6 @@ registerContextMenuProvider({
       { label: 'Rename', onClick: () => bar._enterRenameMode(convId) },
       { label: 'Duplicate', onClick: () => { void bar._duplicateConversation(convId); } },
     ];
-    // Where this one conversation works is the one workspace act that names a
-    // single conversation, so it is the one that cannot live on a box header:
-    // "move" on a box of three tabs says nothing about which of them moves. It
-    // is offered here whether or not this tab is in a box — a conversation in
-    // the project folder is drawn flat, and "actually, give this one a worktree"
-    // has to have the same home either way. Omitted only when there is nowhere
-    // it could go, which is a dialog with nothing in it.
-    const conv = bar._session?.conversations.get(convId);
-    if (conv && workspaceMovePlaces(conv).length) {
-      items.push({
-        label: 'Use a different workspace…',
-        onClick: () => { void openWorkspaceMove(conv); }
-      });
-    }
     // Omit "Move to Bin" mid-loop — same intent as the CSS that hides the
     // per-tab bin button while running. _binConversation enforces this too;
     // dropping the entry keeps the menu honest rather than offering a no-op.

@@ -614,8 +614,12 @@ class WorkspacePanel extends HTMLElement {
       if (answer === null) return;
       input = answer;
     } else {
+      // What the ending does, then what the host has to add about this tree,
+      // as separate paragraphs: one is the provider's sentence and the other
+      // is the coordination story, and a reader about to press a red button
+      // takes them in faster apart than run together.
       const agreed = await showConfirm(
-        [option.description, warning.warning].filter(Boolean).join(' '),
+        [option.description, warning.warning].filter(Boolean).join('\n\n'),
         option.label,
         { confirmText: option.label, danger: option.danger === true });
       if (!agreed) return;

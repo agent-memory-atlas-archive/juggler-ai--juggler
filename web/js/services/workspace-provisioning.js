@@ -462,6 +462,17 @@ function boundConversations(session, workspaceId, self) {
 }
 
 /**
+ * Names, written the way a sentence says them rather than the way an array
+ * prints: "A", "A and B", "A, B and C".
+ * @param {string[]} names - The names, in the order they were found.
+ * @returns {string} The list, for reading aloud.
+ */
+function nameList(names) {
+  if (names.length < 2) return names[0] ?? '';
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
+/**
  * See {@link FinishWarning}.
  * @param {any} session - The session the workspace belongs to.
  * @param {any} workspace - The row being finished with.
@@ -478,17 +489,22 @@ export function workspaceFinishWarning(session, workspace, options = {}) {
 
   const parts = [];
   if (peers.length) {
-    // "Also" needs somebody to be also to. Asked by a conversation, that is the
-    // reader; asked of the workspace itself — from its own box, where nobody is
-    // finishing with it on their own behalf — there is no self to leave out, and
-    // the sentence names everyone working here instead of implying the reader is
-    // one of them.
+    // A sentence about the people, not a tail on a sentence about the tree: this
+    // is read at the moment someone is about to take the tree away from them, so
+    // it leads with who they are.
+    //
+    // "Too" needs somebody to be additional to. Asked by a conversation, that is
+    // the reader; asked of the workspace itself — from its own box, where nobody
+    // is finishing with it on their own behalf — there is no self to leave out,
+    // and the sentence names everyone working here instead of implying the
+    // reader is one of them.
+    const being = peers.length === 1 ? 'is' : 'are';
     parts.push(conversation
-      ? `Also worked in by ${peers.join(', ')}.`
-      : `Worked in by ${peers.join(', ')}.`);
+      ? `${nameList(peers)} ${being} working here too.`
+      : `${nameList(peers)} ${being} working here.`);
   }
   if (action?.danger && status?.dirty) {
-    parts.push('It holds uncommitted work, which goes with it.');
+    parts.push('This workspace holds uncommitted work, which goes with it.');
   }
 
   return {
@@ -497,7 +513,9 @@ export function workspaceFinishWarning(session, workspace, options = {}) {
     refusal: busy.length
       ? `${busy.join(', ')} ${busy.length === 1 ? 'is' : 'are'} in the middle of a turn.`
       : '',
-    warning: parts.join(' ')
+    // A line each: these are separate facts about the tree, and two of them in
+    // one paragraph read as one muddled sentence.
+    warning: parts.join('\n')
   };
 }
 

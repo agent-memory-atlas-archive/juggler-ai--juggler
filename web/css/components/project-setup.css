@@ -60,11 +60,10 @@
     opacity: 0.8;
 }
 
-/* The ways out the banner carries when a binding needs one. Links rather than
-   buttons: they sit at the end of a line of prose and must not read as the
+/* The way out the banner carries when a binding needs one. A link rather than a
+   button: it sits at the end of a line of prose and must not read as the
    conversation's main action. */
-.workspace-banner-rebind,
-.workspace-banner-elsewhere {
+.workspace-banner-rebind {
     padding: 0;
     border: 0;
     background: none;
@@ -74,8 +73,7 @@
     cursor: pointer;
 }
 
-.workspace-banner-rebind:hover,
-.workspace-banner-elsewhere:hover {
+.workspace-banner-rebind:hover {
     color: var(--text-primary);
 }
 
@@ -99,9 +97,9 @@
     gap: 0.125rem;
 }
 
-/* A row and the body it expands into, as one object. Outside the card there is
-   no block to be part of, so the wrapper stands aside and the rows go on being
-   the group's own children. */
+/* The wrapper each row is given, for a view that draws a choice as something
+   larger than its row. No view does at present, so it stands aside and the rows
+   go on being the group's own children. */
 .setup-choice {
     display: contents;
 }
@@ -148,142 +146,6 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     color: var(--text-secondary);
-}
-
-/* Where picking one of these IS the question — the setup panel, the move dialog
-   — a choice is a block of the composer's own material: the same fill and the
-   same corner as the box directly below it, so the panel reads as part of the
-   thing about to be typed into rather than as a form printed over it. The block
-   is the wrapper, not the row, because the form the chosen row opens belongs
-   inside the block it was opened from. Everything under this class is that
-   layout; the plain rows above it are the one-line version. */
-.setup-rows-blocks .setup-choice {
-    display: block;
-    border-radius: 1.25rem;
-    background: var(--bubble-user-bg);
-    transition: background 150ms ease, box-shadow 150ms ease;
-}
-
-.setup-rows-blocks .setup-choice:has(.setup-row:hover) {
-    background: var(--bubble-user-bg-hover);
-}
-
-/* The one that is chosen, said twice: the fill comes up, and a hairline of
-   accent runs round the inside of the corner. Inside, because the block has no
-   border to recolour and a ring drawn outside it would sit in the gap. */
-.setup-rows-blocks .setup-choice:has(.setup-row[aria-checked="true"]) {
-    background: var(--bubble-user-bg-hover);
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-blue) 50%, transparent);
-}
-
-/* The row fills its block: a dot in its own column, and everything picking it
-   would mean stacked beside it. */
-.setup-rows-blocks .setup-row {
-    display: grid;
-    grid-template-columns: 0.875rem 1fr;
-    gap: 0.1875rem 0.75rem;
-    align-items: start;
-    width: 100%;
-    padding: 0.75rem 1rem;
-    border: 0;
-    border-radius: inherit;
-    background: none;
-}
-
-/* Blocks stand apart from each other; lines do not need to. */
-.setup-rows-blocks {
-    gap: 0.5rem;
-}
-
-/* The list's own hover and selection fills belong to the block here, which
-   draws both for the whole choice including its form. */
-.setup-rows-blocks .setup-row:hover,
-.setup-rows-blocks .setup-row[aria-checked="true"] {
-    background: none;
-}
-
-.setup-rows-blocks .setup-row:focus-visible {
-    outline: 1px solid var(--accent-blue);
-    outline-offset: -0.125rem;
-}
-
-/* The dot, drawn rather than borrowed from a form control: a hairline ring, and
-   a centre that arrives when the row is the answer. Absent from the adopt row,
-   which is a button among the choices and says its own verb instead. */
-.setup-rows-blocks .setup-row[role="radio"]::before {
-    content: "";
-    grid-row: 1;
-    grid-column: 1;
-    place-self: center;
-    width: 0.875rem;
-    height: 0.875rem;
-    border-radius: 50%;
-    background: color-mix(in srgb, var(--text-primary) 8%, transparent);
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 30%, transparent);
-    transition: background 150ms ease, box-shadow 150ms ease;
-}
-
-/* The filled centre, without a second element to draw it. */
-.setup-rows-blocks .setup-row[aria-checked="true"]::before {
-    background: radial-gradient(circle at center,
-        var(--accent-blue) 0 0.1875rem, transparent 0.2188rem);
-    box-shadow: inset 0 0 0 1px var(--accent-blue);
-}
-
-.setup-rows-blocks .setup-row-head {
-    display: flex;
-    align-items: baseline;
-    gap: 0 0.5rem;
-    grid-row: 1;
-    grid-column: 2;
-}
-
-/* Three steps, in the order they are wanted: the name, what choosing it would
-   mean, then the address for the reader who has decided and is checking. Weight
-   alone would leave three lines of one size in one colour and make the card a
-   paragraph; sized and dimmed apart, a choice can be told from its neighbours
-   without being read. */
-.setup-rows-blocks .setup-row-label {
-    font-size: 0.9375rem;
-    font-weight: 600;
-    color: var(--text-primary);
-}
-
-.setup-rows-blocks .setup-row-meaning,
-.setup-rows-blocks .setup-row-detail {
-    grid-column: 2;
-}
-
-/* The meaning is prose and wraps; the path under it is an address and does not,
-   because a wrapped path is a wall. */
-.setup-rows-blocks .setup-row-meaning {
-    overflow: visible;
-    white-space: normal;
-    font-size: 0.8125rem;
-    line-height: 1.45;
-    color: var(--text-secondary);
-}
-
-/* A path, in the face every other path in the app is set in. It is allowed to
-   wrap rather than be cut: in the dialog it is often the only thing telling two
-   copies of one tree apart, and the part that does that is the end. */
-.setup-rows-blocks .setup-row-detail {
-    margin-top: 0.0625rem;
-    font-family: var(--font-mono);
-    font-size: 0.75rem;
-    color: var(--text-tertiary);
-    white-space: normal;
-    overflow: visible;
-    overflow-wrap: anywhere;
-}
-
-/* Unless a provider answered, in which case the line is a sentence about how the
-   place is doing — "Nothing changed since the copy was made" — and a sentence in
-   monospace reads as something a program printed rather than as something the
-   app is telling you. */
-.setup-rows-blocks .setup-row-said {
-    font-family: inherit;
-    font-size: 0.8125rem;
 }
 
 /* Where the list runs down the side of the thing it is deciding — the create
@@ -362,17 +224,6 @@
     white-space: nowrap;
 }
 
-.setup-row-body {
-    padding: 0.25rem 0.375rem 0.5rem;
-}
-
-/* In the card the form is inside the block it was opened from, and starts where
-   that block's text starts: the row's own inset, plus the dot's column and the
-   gap after it. */
-.setup-rows-blocks .setup-row-body {
-    padding: 0 1rem 0.875rem 2.625rem;
-}
-
 .setup-fields {
     display: flex;
     flex-direction: column;
@@ -416,12 +267,6 @@
 
 .setup-recommend p {
     margin: 0;
-}
-
-/* One step down from the name above it, with the meaning it elaborates. */
-.setup-rows-blocks .setup-recommend {
-    font-size: 0.8125rem;
-    line-height: 1.45;
 }
 
 /* The notes are the surprises — what is not copied, what a fresh tree costs —
@@ -565,7 +410,7 @@
    the word before it. */
 .setup-progress-running {
     display: flex;
-    gap: 0.75rem;
+    gap: 1rem;
     align-items: flex-start;
 }
 
@@ -573,11 +418,15 @@
     flex: none;
 }
 
+/* Further apart than the two lines within a step, so the spacing itself says
+   which lines belong together. This is the whole of what is on screen for the
+   minutes a build takes, in a dialog with most of its height going spare —
+   there is nothing to be saved by setting it tight. */
 .setup-progress-steps {
     display: flex;
     flex: 1;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 0.875rem;
     min-width: 0;
 }
 
@@ -588,7 +437,14 @@
 .setup-progress-step {
     display: flex;
     flex-direction: column;
+    gap: 0.25rem;
+    line-height: 1.5;
     color: var(--text-secondary);
+}
+
+/* What is being waited on, which is the line read first. */
+.setup-progress-what {
+    font-weight: 500;
 }
 
 /* The last line is the step being waited on; the ones above it have happened.
@@ -604,7 +460,12 @@
    spare is a line that was thrown away for nothing. */
 .setup-progress-detail {
     font-family: var(--font-mono);
-    font-size: 0.75rem;
+    font-size: 0.8125rem;
+
+    /* Leaded, because this is the line that wraps: a path set solid puts its
+       second line hard under its first, and a path is read character by
+       character. */
+    line-height: 1.6;
     overflow-wrap: anywhere;
     color: var(--text-tertiary);
 }

@@ -511,13 +511,12 @@
     display: none;
 }
 
-/* Where a conversation that has already started should work instead: a move,
-   stated as one. Built from the house modal parts — the shared scrim on
+/* Whether a conversation dragged somewhere else should really work there: a
+   move, confirmed. Built from the house modal parts — the shared scrim on
    modal-backdrop, the shared card on modal-panel — so it is the same object as
    the bin, the about box and the settings panel rather than a second kind of
-   dialog. Only the measure and the rhythm are set here. The rows inside it are
-   the setup panel's own classes, deliberately: the same list of places should
-   look the same wherever it is offered. */
+   dialog. Only the measure and the rhythm are set here. The reconnect dialog
+   wears this chrome too, so nothing below is the move dialog's alone. */
 .workspace-move-overlay {
     position: fixed;
     inset: 0;
@@ -528,10 +527,10 @@
     padding: 1.5rem;
 }
 
-/* Wider than a message-and-two-buttons dialog, because what is in it is a list
-   of places to compare: each one a name, a sentence about what choosing it
-   means, and an address. Cut to the narrower measure they all end in ellipses,
-   which is the same as not printing them. */
+/* Wider than a message-and-two-buttons dialog, because what is in it is two
+   places to compare, each a name over a full address. Cut to the narrower
+   measure the addresses wrap to three lines, and a path that has to be
+   reassembled by eye is no longer the thing that settles which tree this is. */
 .workspace-move-dialog {
     width: min(36rem, 100%);
     max-height: 85vh;
@@ -571,20 +570,6 @@
     overflow-y: auto;
 }
 
-/* A heading and the list it names, held together: the gap above the pair is the
-   body's and belongs between sections, while the gap inside it is this one's and
-   is smaller, so the label reads as attached to the rows rather than floating
-   between them and the block above. */
-.workspace-move-places {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-}
-
-.workspace-move-places .setup-section-title {
-    margin: 0;
-}
-
 .workspace-move-footer {
     display: flex;
     justify-content: flex-end;
@@ -594,9 +579,9 @@
     border-top: 0.0625rem solid var(--border-divider);
 }
 
-/* Where it works now: stated rather than offered, and so not one of the rows
-   below it — but set as they are, name over address, because it is the thing
-   every one of them is an alternative to. */
+/* The two ends of the move, set identically — name over address — because the
+   reader's whole job here is to compare them, and two places written down two
+   ways have to be translated before they can be compared. */
 .workspace-move-now {
     display: flex;
     flex-direction: column;
@@ -646,9 +631,8 @@
     margin-top: -0.1875rem;
 }
 
-/* What the tree being left still holds, and whether to bring it. It sits under
-   the statement of where the conversation works because it is about that tree,
-   not about the list of places below it. */
+/* What a dialog on this surface has to say in prose before its buttons. The
+   reconnect dialog is built from it. */
 .workspace-move-work {
     display: flex;
     flex-direction: column;
@@ -658,13 +642,6 @@
 
 .workspace-move-work-lead {
     color: var(--text-primary);
-}
-
-.workspace-move-carry {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    cursor: pointer;
 }
 
 /* Making a workspace. The same scrim and the same card as the move dialog —
@@ -994,9 +971,12 @@
     font-family: var(--font-mono);
 }
 
+/* One fact per line: who else is working here and what is unsaved are separate
+   things to know, and the host writes them as separate lines. */
 .workspace-finish-warning {
     color: var(--warning-color, var(--error-color));
     line-height: 1.5;
+    white-space: pre-line;
 }
 
 .workspace-finish-field {

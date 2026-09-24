@@ -464,7 +464,7 @@ export async function runTests() {
         assert(before.exists === false,
           `it starts in the project, which cannot see that file, got ${JSON.stringify(before)}`);
 
-        await rebindConversation(conversation, outcome.workspace.id, { carry: false });
+        await rebindConversation(conversation, outcome.workspace.id);
         assert(conversation.workspaceId === outcome.workspace.id,
           `the binding moves, got ${JSON.stringify(conversation.workspaceId)}`);
 

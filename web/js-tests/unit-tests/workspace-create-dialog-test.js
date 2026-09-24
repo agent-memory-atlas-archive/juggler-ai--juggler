@@ -510,6 +510,30 @@ export async function runTests() {
         assert(said.scrollWidth <= said.clientWidth + 0.5,
           `and none of it is off the end, got ${said.scrollWidth}px of line in ${said.clientWidth}px`);
 
+        // And it is laid out like something meant to be read for a minute or
+        // two, which is how long it is up for. Set solid, a step and its path
+        // read as one wrapped line, and a path long enough to wrap sets its own
+        // lines on top of each other — in a dialog with most of its height going
+        // spare.
+        const owner = /** @type {HTMLElement} */ (said.closest('.setup-progress-step'));
+        const phrase = /** @type {HTMLElement} */ (owner.querySelector('.setup-progress-what'));
+        const under = said.getBoundingClientRect().top - phrase.getBoundingClientRect().bottom;
+        assert(under >= 3,
+          `a path is set off from the step it belongs to, got ${under}px between them`);
+
+        const size = parseFloat(getComputedStyle(said).fontSize);
+        const leading = parseFloat(getComputedStyle(said).lineHeight);
+        assert(leading >= size * 1.4,
+          `and has room between its own lines when it wraps, got ${leading}px of line for ${size}px of type`);
+
+        // The two spacings say which lines belong together, so they cannot be
+        // the same spacing: a step sits nearer its own path than the next step
+        // does.
+        const blocks = Array.from(document.querySelectorAll('.setup-progress-step'));
+        const between = blocks[1].getBoundingClientRect().top - blocks[0].getBoundingClientRect().bottom;
+        assert(between >= under * 2,
+          `one step stands further from the next than from its own path, got ${between}px against ${under}px`);
+
         // One way out, meaning one thing. Two Cancels — the progress's own and
         // the footer's, which dismisses the whole dialog — are two answers to a
         // question nobody asked twice.

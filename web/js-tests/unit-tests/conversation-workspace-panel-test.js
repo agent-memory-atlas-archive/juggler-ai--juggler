@@ -16,7 +16,6 @@
 
 import { waitFor, neutralizeStrayOverlays, assert } from '../utilities/test-helpers.js';
 import { INITIALISED_KEY } from '../../js/model/conversation.js';
-import api from '../../js/services/api.js';
 import contextItemRegistry from '../../js/registries/context-item-registry.js';
 import { writeFileOp } from '../../js/services/ops-api.js';
 import { createBoundOps } from '../../sdk/ops.js';
@@ -27,12 +26,7 @@ import {
   finishWorkspace,
   provisionLeftBehind
 } from '../../js/services/workspace-provisioning.js';
-import {
-  rebindConversation,
-  workspaceHeldWork,
-  workspaceWorkList,
-  carryWorkspaceWork
-} from '../../js/services/workspace-rebinding.js';
+import { rebindConversation } from '../../js/services/workspace-rebinding.js';
 import {
   setupRows,
   probeSetupStatuses,
@@ -43,6 +37,7 @@ import {
 import { ensureConversationChrome } from '../../js/components/conversation-area-rendering.js';
 import { buildProviderFields } from '../../js/components/workspace-setup-form.js';
 import '../../js/components/conversation-bar.js';
+import '../../js/components/workspace-panel.js';
 import { WORKSPACE_ELSEWHERE_HINT } from '../../js/components/model-selector.js';
 import {
   runWorkspaceSuite,
@@ -321,20 +316,6 @@ export async function runTests() {
         assert(!stranded.isProcessing,
           'with no turn started to die in the server');
 
-        // Two ways out, because there are two answers: back to the project,
-        // which is one press and usually right, or anywhere else, which is the
-        // same dialog the chip opens.
-        const elsewhere = /** @type {any} */ (banner?.querySelector('.workspace-banner-elsewhere'));
-        assert(elsewhere, 'and the other answer, for a conversation whose work belongs in another tree');
-        elsewhere.click();
-        const offered = document.querySelector('.workspace-move-overlay');
-        assert(offered, 'which opens the picker rather than deciding for them');
-        /** @type {any} */ (offered.querySelector('.workspace-move-cancel')).click();
-        assert(!document.querySelector('.workspace-move-overlay'),
-          'and closing it changes nothing');
-        assert(stranded.workspaceId === 'ws_tomb',
-          `leaving the conversation stranded where it was, got ${JSON.stringify(stranded.workspaceId)}`);
-
         rebind.click();
         await waitFor(() => stranded.workspaceId === '',
           { description: 'the rebind to move the conversation to the project' });
@@ -389,8 +370,6 @@ export async function runTests() {
           `in words, there being no row to name, got ${JSON.stringify(banner?.textContent)}`);
         assert(banner?.querySelector('.workspace-banner-rebind'),
           'with the way back to the project it has for every other kind of loss');
-        assert(banner?.querySelector('.workspace-banner-elsewhere'),
-          'and the way to anywhere else');
 
         // A workspace being built has no root either, and is the one unusable
         // binding that must stay silent: that conversation is waiting, not
@@ -734,349 +713,55 @@ export async function runTests() {
         `while a clean one does not invent a reason to hesitate, got ${JSON.stringify(clean.warning)}`);
     });
 
-    await run('a move says what the tree it leaves holds, and whether it can be listed', async () => {
-      // Two questions, and they are asked of two different places. Whether there
-      // is work here at all comes from the provider, because what counts as work
-      // held is the provider's to decide — a sandbox's unapplied edits are no
-      // business of git's at all. Whether that work can be listed file by file,
-      // and so carried, is git's, because git is the only thing here that can
-      // enumerate it. A tree may hold work that cannot be carried, and the move
-      // then says exactly what it said before carrying existed.
-      const made = await registerWorkspace({
-        root: `${projectPath}/src`,
-        label: 'holding work',
-        state: 'ready',
+    await run('the confirmation says one thing per line, and names who is working here', async () => {
+      // What is put in front of someone about to delete a tree is three separate
+      // facts — what the ending does, who else is in there, and what is in there
+      // unsaved — and run together into one paragraph they read as one muddled
+      // sentence: "Removes the copy and everything done in it. Worked in by
+      // Untitled 1." Each fact gets its own line, and the peers are a sentence
+      // about the people rather than a passive tail on a sentence about the tree.
+      const panel = /** @type {any} */ (document.createElement('workspace-panel'));
+      panel._workspace = workspaceRow('ws_confirm_lines', '/tmp/confirm-lines', {
         providerId: FixtureProvider.MANIFEST.id
       });
-      const saved = session.workspaces;
-      session.workspaces = [...saved, made];
-      try {
-        FixtureProvider.reported = { dirty: true, detail: '3 changes' };
-        const holding = await workspaceHeldWork(session, made.id);
-        assert(holding.dirty === true,
-          `a tree its provider reports as holding work is reported as holding it, got ${JSON.stringify(holding)}`);
-        assert(/uncommitted/i.test(holding.warning) && /holding work/.test(holding.warning),
-          `and the sentence names the work and the tree it is in, got ${JSON.stringify(holding.warning)}`);
-        assert(!/carr|bring|take it with/i.test(holding.warning),
-          `without promising the move will bring it, which is not the sentence's to promise, got ${JSON.stringify(holding.warning)}`);
+      // Stood in for rather than built: the panel reads nothing off a session
+      // here but who is bound to the workspace, and this case never gets as far
+      // as carrying the ending out.
+      panel._session = {
+        loadedConversationId: '',
+        conversations: new Map([['c1', { name: 'Untitled 1', workspaceId: 'ws_confirm_lines' }]])
+      };
+      panel._status = { dirty: true };
 
-        FixtureProvider.reported = { dirty: false };
-        const clean = await workspaceHeldWork(session, made.id);
-        assert(clean.dirty === false && clean.warning === '',
-          `while leaving a clean tree is nothing to stop anyone over, got ${JSON.stringify(clean)}`);
+      const option = {
+        id: 'done',
+        label: 'Delete this workspace',
+        danger: true,
+        description: 'Removes the copy and everything done in it.'
+      };
 
-        // The two trees no provider answers for: the project, and a row whose
-        // extension is gone. Both are places a conversation moves out of, so
-        // both get an answer rather than an exception.
-        FixtureProvider.reported = null;
-        const orphaned = await registerWorkspace({
-          root: `${projectPath}/src`,
-          label: 'made by something gone',
-          state: 'ready',
-          providerId: '@someone/uninstalled'
-        });
-        session.workspaces = [...saved, made, orphaned];
-        try {
-          const unanswered = await workspaceHeldWork(session, orphaned.id);
-          assert(typeof unanswered.dirty === 'boolean',
-            `a workspace whose provider is gone is asked git instead, got ${JSON.stringify(unanswered)}`);
-          const project = await workspaceHeldWork(session, '');
-          assert(typeof project.dirty === 'boolean',
-            `and so is the project, which has no provider by design, got ${JSON.stringify(project)}`);
-        } finally {
-          await unregisterWorkspace(orphaned.id).catch(() => {});
-        }
-
-        // Listability is a fact about the tree, not about the provider: a real
-        // repository with a file in it can be enumerated, and a directory that
-        // is not one cannot. Repositories are looked for DOWNWARDS from the
-        // root, which is what keeps a tree that is merely buried inside one from
-        // being handed its status.
-        const stamp = Math.random().toString(36).slice(2, 8);
-        const plain = `held-plain-${stamp}`;
-        const repo = `held-repo-${stamp}`;
-        const ops = createBoundOps(() => ({ workspaceId: '' }));
-        await writeFileOp({ path: `${plain}/notes.md`, content: 'no repository here' });
-        await writeFileOp({ path: `${repo}/notes.md`, content: 'work nobody has committed' });
-        await ops.shell({ command: `git -C ${repo} init -q` });
-        const noRepo = await registerWorkspace({
-          root: `${projectPath}/${plain}`, label: 'not a repository', state: 'ready'
-        });
-        const aRepo = await registerWorkspace({
-          root: `${projectPath}/${repo}`, label: 'a repository', state: 'ready'
-        });
-        session.workspaces = [...saved, made, noRepo, aRepo];
-        try {
-          const unlistable = await workspaceHeldWork(session, noRepo.id);
-          assert(unlistable.listable === false && unlistable.files === 0,
-            `a tree with no repository under it cannot have its work listed, got ${JSON.stringify(unlistable)}`);
-          const listable = await workspaceHeldWork(session, aRepo.id);
-          assert(listable.listable === true && listable.dirty === true && listable.files >= 1,
-            `while one that is a repository holding work can, and says how much, got ${JSON.stringify(listable)}`);
-        } finally {
-          await unregisterWorkspace(noRepo.id).catch(() => {});
-          await unregisterWorkspace(aRepo.id).catch(() => {});
-          await ops.copyTree({ to: '.', delete: [plain, repo] });
-        }
-      } finally {
-        FixtureProvider.reported = null;
-        session.workspaces = saved;
-        await unregisterWorkspace(made.id).catch(() => {});
-      }
-    });
-
-    await run('the work a tree holds is listed per repository, and an incomplete answer lists none', async () => {
-      // The manifest is stubbed rather than built out of a repository, because
-      // what is being tested is the reading of it: which of git's answers become
-      // a file to carry, which become a file to remove, and what happens when
-      // the manifest says it is not the whole story. Building trees proves the
-      // copying, next door; this proves the arithmetic.
-      const real = api.getGitReview;
       /** @type {any} */
-      let manifest = null;
-      /** @type {any} */
-      (api).getGitReview = async () => manifest;
+      let asked = null;
+      // @ts-ignore - the one presenter every dialog in the app goes through
+      const presenter = window.showModal;
+      // @ts-ignore - standing in for it intercepts the confirmation itself
+      window.showModal = async (/** @type {any} */ options) => { asked = options; return false; };
       try {
-        manifest = {
-          complete: true,
-          repos: [
-            {
-              path: '',
-              complete: true,
-              files: [
-                { path: 'src/new.js', index: '.', worktree: '?' },
-                { path: 'gone.js', index: '.', worktree: 'D' },
-                { path: 'renamed.js', oldPath: 'before.js', index: 'R', worktree: '.' },
-                { path: '.juggler/session.json', index: '.', worktree: 'M' }
-              ]
-            },
-            {
-              path: 'vendor/lib',
-              complete: true,
-              files: [{ path: 'patch.c', index: '.', worktree: 'M' }]
-            }
-          ]
-        };
-        const listed = await workspaceWorkList(session, 'ws_anything');
-        assert(listed.complete === true, `a complete manifest lists, got ${JSON.stringify(listed)}`);
-        assert(listed.paths.includes('src/new.js') && listed.paths.includes('vendor/lib/patch.c'),
-          `every repository's files are named from the root, not from the repository, got ${JSON.stringify(listed.paths)}`);
-        assert(listed.removed.includes('gone.js'),
-          `a file deleted here is deleted there, got ${JSON.stringify(listed.removed)}`);
-        assert(listed.paths.includes('renamed.js') && listed.removed.includes('before.js'),
-          `and a rename is the new name arriving and the old one going, got ${JSON.stringify(listed)}`);
-        assert(!listed.paths.some((/** @type {string} */ path) => path.startsWith('.juggler')),
-          `what is ours is not the user's work and is not carried, got ${JSON.stringify(listed.paths)}`);
-
-        // Short is a wrong answer here, not a small one: a carry that left the
-        // rest behind would still report that it had brought the work.
-        manifest = { complete: false, repos: [{ path: '', complete: true, files: [{ path: 'src/new.js', index: '.', worktree: 'M' }] }] };
-        const partial = await workspaceWorkList(session, 'ws_anything');
-        assert(partial.complete === false && partial.paths.length === 0,
-          `a manifest that cannot account for the tree carries nothing, got ${JSON.stringify(partial)}`);
-
-        manifest = { complete: true, repos: [{ path: '', complete: false, error: 'not readable', files: [] }] };
-        const broken = await workspaceWorkList(session, 'ws_anything');
-        assert(broken.complete === false,
-          `nor can one whose repository could not be read, got ${JSON.stringify(broken)}`);
+        await panel._finish(option);
       } finally {
-        /** @type {any} */ (api).getGitReview = real;
-      }
-    });
-
-    await run('a provider that can account for its own work is asked instead of git', async () => {
-      // The tree here is a plain directory with no repository under it, which is
-      // the discriminator: git can enumerate nothing in it, so an answer that
-      // lists files at all can only have come from the provider. That is the
-      // whole of what this hook is for — a sandbox's unapplied edits are not
-      // git's to find, and before it the move out of one could only say that the
-      // work stayed behind.
-      const stamp = Math.random().toString(36).slice(2, 8);
-      const plain = `provider-lists-${stamp}`;
-      const ops = createBoundOps(() => ({ workspaceId: '' }));
-      await writeFileOp({ path: `${plain}/notes.md`, content: 'work no repository can see' });
-
-      const made = await registerWorkspace({
-        root: `${projectPath}/${plain}`,
-        label: 'accounted for by its provider',
-        state: 'ready',
-        providerId: FixtureProvider.MANIFEST.id
-      });
-      const saved = session.workspaces;
-      session.workspaces = [...saved, made];
-
-      // Git is not merely expected to answer unhelpfully here; it is expected
-      // not to be asked at all, which is the difference between a provider that
-      // is consulted and one that is a fallback nobody reaches.
-      const real = api.getGitReview;
-      let askedGit = false;
-      /** @type {any} */
-      let manifest = { complete: false, repos: [] };
-      /** @type {any} */
-      (api).getGitReview = async () => { askedGit = true; return manifest; };
-
-      try {
-        FixtureProvider.reported = { dirty: true };
-        FixtureProvider.holds = {
-          complete: true,
-          paths: ['notes.md', 'src/new.js', '.juggler/ours.json'],
-          removed: ['gone.md']
-        };
-
-        const held = await workspaceHeldWork(session, made.id);
-        assert(held.listable === true,
-          `a tree its provider can list is listable, whatever git can see of it, got ${JSON.stringify(held)}`);
-        assert(held.files === 3,
-          `and the count is what the provider listed, less what is ours, got ${JSON.stringify(held)}`);
-
-        const listed = await workspaceWorkList(session, made.id);
-        assert(listed.complete === true && listed.paths.includes('notes.md')
-          && listed.paths.includes('src/new.js') && listed.removed.includes('gone.md'),
-        `the list carried is the provider's own, got ${JSON.stringify(listed)}`);
-        assert(!listed.paths.some((/** @type {string} */ path) => path.startsWith('.juggler')),
-          `with what is ours dropped from it, wherever the list came from, got ${JSON.stringify(listed.paths)}`);
-        assert(askedGit === false,
-          'and git was never asked about a tree its provider had already accounted for');
-
-        // The distinction the whole hook turns on: a provider that holds work it
-        // cannot list must not be read as one holding nothing. Inventing a
-        // warning is the worse error everywhere else in here; inventing a clean
-        // tree destroys work.
-        FixtureProvider.holds = { complete: false, paths: [], removed: [] };
-        const unlistable = await workspaceHeldWork(session, made.id);
-        assert(unlistable.dirty === true && unlistable.listable === false,
-          `work that cannot be listed is still work, got ${JSON.stringify(unlistable)}`);
-        const nothing = await workspaceWorkList(session, made.id);
-        assert(nothing.complete === false && nothing.paths.length === 0,
-          `and nothing is carried on the strength of it, got ${JSON.stringify(nothing)}`);
-
-        // No opinion is the default, and it is not an empty list: the host goes
-        // back to git, which is what answered for every tree before any provider
-        // had a view.
-        FixtureProvider.holds = null;
-        manifest = {
-          complete: true,
-          repos: [{ path: '', complete: true, files: [{ path: 'notes.md', index: '.', worktree: 'M' }] }]
-        };
-        const fromGit = await workspaceWorkList(session, made.id);
-        assert(askedGit === true && fromGit.complete === true && fromGit.paths.includes('notes.md'),
-          `a provider with no opinion leaves git the arbiter, got ${JSON.stringify(fromGit)}`);
-      } finally {
-        FixtureProvider.holds = null;
-        FixtureProvider.reported = null;
-        /** @type {any} */ (api).getGitReview = real;
-        session.workspaces = saved;
-        await unregisterWorkspace(made.id).catch(() => {});
-        await ops.copyTree({ to: '.', delete: [plain] }).catch(() => {});
-      }
-    });
-
-    await run('a move brings the work across, all of it or none of it', async () => {
-      // Two real repositories, because the rule being tested is what happens
-      // when both of them have been worked in: the copy is refused whole and by
-      // name where they genuinely disagree, and goes through where they agree —
-      // two people who made the same edit are not arguing about it.
-      //
-      // Neither tree can see the other: an operations scope is rooted at its own
-      // workspace and widened only by the project, so the work goes out through
-      // the project and back in. That the staging it leaves is gone afterwards
-      // is asserted below, on every path.
-      const stamp = Math.random().toString(36).slice(2, 8);
-      const fromDir = `carry-from-${stamp}`;
-      const toDir = `carry-to-${stamp}`;
-      const project = createBoundOps(() => ({ workspaceId: '' }));
-      const committed = 'the commit both trees start from\n';
-      const sameEdit = 'the edit they both made\n';
-
-      for (const dir of [fromDir, toDir]) {
-        await writeFileOp({ path: `${dir}/shared.txt`, content: committed });
-        await writeFileOp({ path: `${dir}/agreed.txt`, content: committed });
-        await writeFileOp({ path: `${dir}/doomed.txt`, content: committed });
-        const git = `git -C ${dir} -c user.name=Juggler -c user.email=tests@juggler.invalid -c commit.gpgsign=false`;
-        await project.shell({ command: `git -C ${dir} init -q` });
-        await project.shell({ command: `${git} add -A` });
-        await project.shell({ command: `${git} commit -q -m baseline` });
+        // @ts-ignore - Extending window object
+        window.showModal = presenter;
       }
 
-      // What the conversation has done since, in the tree it is leaving: a file
-      // made, a file edited, a file deleted — and one edit the other tree has
-      // already made for itself.
-      await writeFileOp({ path: `${fromDir}/new.txt`, content: 'made in the tree it is leaving\n' });
-      await writeFileOp({ path: `${fromDir}/shared.txt`, content: 'the source went its own way\n' });
-      await writeFileOp({ path: `${fromDir}/agreed.txt`, content: sameEdit });
-      await writeFileOp({ path: `${toDir}/agreed.txt`, content: sameEdit });
-      await project.copyTree({ to: '.', delete: [`${fromDir}/doomed.txt`] });
-
-      const madeFrom = await registerWorkspace({
-        root: `${projectPath}/${fromDir}`, label: 'the tree with the work in it', state: 'ready'
-      });
-      const madeTo = await registerWorkspace({
-        root: `${projectPath}/${toDir}`, label: 'the tree it is moving to', state: 'ready'
-      });
-      const saved = session.workspaces;
-      session.workspaces = [...saved, madeFrom, madeTo];
-      const destination = createBoundOps(() => ({ workspaceId: madeTo.id }));
-      // The staging directories are named by a stamp of their own, so what this
-      // case's carries leave behind is what appeared under here while it ran,
-      // not what is under here — another case mid-carry has a directory there
-      // and is entitled to it.
-      const staging = async () => /** @type {any[]} */ (
-        await project.readOnlyFileSystem().readdir('.juggler/carry').catch(() => []));
-      const stagingBefore = await staging();
-      try {
-        const listed = await workspaceWorkList(session, madeFrom.id);
-        const everything = listed.paths.includes('new.txt') && listed.paths.includes('shared.txt')
-          && listed.removed.includes('doomed.txt');
-        assert(listed.complete === true && everything,
-          `the tree's own work is what git says it is, got ${JSON.stringify(listed)}`);
-
-        const landed = await carryWorkspaceWork(session, {
-          fromId: madeFrom.id, toId: madeTo.id, paths: listed.paths, removed: listed.removed
-        });
-        assert(landed.done === true,
-          `a file both trees changed the same way is not a disagreement and stops nothing, got ${JSON.stringify(landed)}`);
-        const arrived = await destination.readFile({ path: 'new.txt' });
-        assert(String(arrived?.content ?? '').includes('made in the tree it is leaving'),
-          `a file made in the tree being left arrives in the one being moved to, got ${JSON.stringify(arrived?.content)}`);
-        assert((await destination.stat({ path: 'doomed.txt' })).exists === false,
-          'and a file deleted there is deleted here: what arrives is the tree as it stood');
-        assert((await project.stat({ path: `${fromDir}/new.txt` })).exists === true,
-          'while the work itself stays where it was made, because carrying it away is the one thing nothing can undo');
-
-        // Now they really do disagree. The refusal is the whole of it: it names
-        // what it will not overwrite, and the file that had nothing to do with
-        // the argument does not arrive either.
-        await writeFileOp({ path: `${toDir}/shared.txt`, content: 'the destination went its own way\n' });
-        await writeFileOp({ path: `${fromDir}/second.txt`, content: 'innocent bystander\n' });
-        const refused = await carryWorkspaceWork(session, {
-          fromId: madeFrom.id, toId: madeTo.id, paths: ['shared.txt', 'second.txt']
-        });
-        assert(refused.done === false && (refused.conflicts ?? []).includes('shared.txt'),
-          `a file changed in both trees refuses the carry, got ${JSON.stringify(refused)}`);
-        assert(/shared\.txt/.test(String(refused.message ?? '')),
-          `and the sentence names it, got ${JSON.stringify(refused.message)}`);
-        assert((await destination.stat({ path: 'second.txt' })).exists === false,
-          'with nothing copied at all: half a carry is what the refusal exists to prevent');
-
-        const forced = await carryWorkspaceWork(session, {
-          fromId: madeFrom.id, toId: madeTo.id, paths: ['shared.txt', 'second.txt'], overwrite: true
-        });
-        assert(forced.done === true,
-          `while someone who read that sentence and meant it can have it anyway, got ${JSON.stringify(forced)}`);
-        const overwritten = await destination.readFile({ path: 'shared.txt' });
-        assert(String(overwritten?.content ?? '').includes('the source went its own way'),
-          `and then the tree it came from is what is there, got ${JSON.stringify(overwritten?.content)}`);
-
-        const left = (await staging()).filter(
-          (/** @type {any} */ entry) => !stagingBefore.includes(entry));
-        assert(left.length === 0,
-          `every path through a carry takes its staging with it, got ${JSON.stringify(left)}`);
-      } finally {
-        session.workspaces = saved;
-        await unregisterWorkspace(madeFrom.id).catch(() => {});
-        await unregisterWorkspace(madeTo.id).catch(() => {});
-        await project.copyTree({ to: '.', delete: [fromDir, toDir] });
-      }
+      const lines = String(asked?.message ?? '').split('\n').map((/** @type {string} */ l) => l.trim()).filter(Boolean);
+      assert(lines[0] === option.description,
+        `what the ending does comes first, on a line of its own, got ${JSON.stringify(lines)}`);
+      assert(lines.length === 3,
+        `and the other two facts get a line each rather than being run together, got ${JSON.stringify(lines)}`);
+      assert(/^Untitled 1 is working here\b/.test(lines[1]),
+        `the peer line is a sentence about who is in there, got ${JSON.stringify(lines)}`);
+      assert(/uncommitted/i.test(lines[2]),
+        `and the unsaved work is said last, nearest the button, got ${JSON.stringify(lines)}`);
     });
 
     await run('a form says what the place it makes is good and bad for', async () => {
@@ -1192,98 +877,6 @@ export async function runTests() {
           'which is worth saying precisely because the directory really is still there');
       } finally {
         await projectOps.shell({ command: `rm -rf ${name}` }).catch(() => {});
-      }
-    });
-
-    await run('a tree whose provider could not be asked is not taken for an empty one', async () => {
-      // The one question in here an unanswerable answer must not settle. A
-      // provider that throws while reporting has said nothing about its tree,
-      // and taking that for "clean" turns the guard off entirely: the carry then
-      // writes over uncommitted work that was never listed and cannot be got
-      // back. Unknown is a reason to refuse, never a reason to go ahead.
-      const stamp = Math.random().toString(36).slice(2, 8);
-      const fromDir = `unanswered-from-${stamp}`;
-      const toDir = `unanswered-to-${stamp}`;
-      const project = createBoundOps(() => ({ workspaceId: '' }));
-
-      for (const dir of [fromDir, toDir]) {
-        await writeFileOp({ path: `${dir}/shared.txt`, content: 'the commit both trees start from\n' });
-        const git = `git -C ${dir} -c user.name=Juggler -c user.email=tests@juggler.invalid -c commit.gpgsign=false`;
-        await project.shell({ command: `git -C ${dir} init -q` });
-        await project.shell({ command: `${git} add -A` });
-        await project.shell({ command: `${git} commit -q -m baseline` });
-      }
-      await writeFileOp({ path: `${fromDir}/shared.txt`, content: 'the source went its own way\n' });
-      await writeFileOp({ path: `${toDir}/shared.txt`, content: 'work the destination has not committed\n' });
-
-      const madeFrom = await registerWorkspace({
-        root: `${projectPath}/${fromDir}`, label: 'the tree with the work in it', state: 'ready'
-      });
-      const madeTo = await registerWorkspace({
-        root: `${projectPath}/${toDir}`,
-        label: 'the tree that cannot answer',
-        state: 'ready',
-        providerId: FixtureProvider.MANIFEST.id
-      });
-      const saved = session.workspaces;
-      session.workspaces = [...saved, madeFrom, madeTo];
-      try {
-        FixtureProvider.statusError = 'the provider fell over';
-        const held = await workspaceHeldWork(session, madeTo.id);
-        assert(held.dirty === true,
-          `a tree nobody could ask holds work until something says otherwise, got ${JSON.stringify(held)}`);
-
-        const refused = await carryWorkspaceWork(session, {
-          fromId: madeFrom.id, toId: madeTo.id, paths: ['shared.txt']
-        });
-        assert(refused.done === false && (refused.conflicts ?? []).includes('shared.txt'),
-          `so the carry into it is refused by name, got ${JSON.stringify(refused)}`);
-        const kept = await project.readFile({ path: `${toDir}/shared.txt` });
-        assert(String(kept?.content ?? '').includes('work the destination has not committed'),
-          `and what that tree had not committed is still there, got ${JSON.stringify(kept?.content)}`);
-      } finally {
-        FixtureProvider.statusError = null;
-        session.workspaces = saved;
-        await unregisterWorkspace(madeFrom.id).catch(() => {});
-        await unregisterWorkspace(madeTo.id).catch(() => {});
-        await project.copyTree({ to: '.', delete: [fromDir, toDir] });
-      }
-    });
-
-    await run('a carry that cannot be made says so, rather than going quiet', async () => {
-      // Every other way a carry stops is a sentence the move dialog puts on the
-      // screen and leaves the choice up to be made again. A rejection is not a
-      // sentence: it left the dialog exactly as it was, with nothing moved and
-      // nothing said, which reads as a button that does not work.
-      const stamp = Math.random().toString(36).slice(2, 8);
-      const dir = `carry-refused-${stamp}`;
-      const project = createBoundOps(() => ({ workspaceId: '' }));
-      await writeFileOp({ path: `${dir}/kept.txt`, content: 'the tree being left\n' });
-      const made = await registerWorkspace({
-        root: `${projectPath}/${dir}`, label: 'the tree being left', state: 'ready'
-      });
-      const saved = session.workspaces;
-      session.workspaces = [...saved, made];
-      // What this carry leaves, rather than what is under there: the staging
-      // directory carries a stamp of its own, and a case carrying something in
-      // parallel owns the one it made.
-      const staging = async () => /** @type {any[]} */ (
-        await project.readOnlyFileSystem().readdir('.juggler/carry').catch(() => []));
-      const stagingBefore = await staging();
-      try {
-        const answer = await carryWorkspaceWork(session, {
-          fromId: made.id, toId: '', paths: ['../outside.txt']
-        });
-        assert(answer?.done === false && /couldn't bring the work/i.test(String(answer?.message ?? '')),
-          `a copy the scope refuses comes back as a refusal, got ${JSON.stringify(answer)}`);
-        const left = (await staging()).filter(
-          (/** @type {any} */ entry) => !stagingBefore.includes(entry));
-        assert(left.length === 0,
-          `and that path takes its staging with it like every other, got ${JSON.stringify(left)}`);
-      } finally {
-        session.workspaces = saved;
-        await unregisterWorkspace(made.id).catch(() => {});
-        await project.copyTree({ to: '.', delete: [dir] });
       }
     });
 

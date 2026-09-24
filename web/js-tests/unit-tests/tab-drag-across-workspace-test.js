@@ -172,13 +172,14 @@ function closeDialog() {
 }
 
 /**
- * The place the open move dialog starts on.
- * @returns {string|null} Its row id, or null when nothing is chosen.
+ * The place the open move dialog says the conversation is moving to.
+ * @returns {string|null} That workspace's id, '' for the project folder, or
+ *   null when no dialog is naming one.
  */
-function preselected() {
-  const row = /** @type {HTMLElement|null} */ (
-    document.querySelector('.workspace-move-dialog .setup-row[aria-checked="true"]'));
-  return row ? (row.dataset.rowId ?? null) : null;
+function destination() {
+  const named = /** @type {HTMLElement|null} */ (
+    document.querySelector('.workspace-move-dialog .workspace-move-to'));
+  return named ? (named.dataset.workspaceId ?? null) : null;
 }
 
 /**
@@ -221,8 +222,8 @@ export async function runTests() {
         `a drag across boxes moves the binding, which only the dialog does — it must not quietly reorder: ${JSON.stringify(calls)}`);
       await waitFor(() => !!document.querySelector('.workspace-move-dialog'),
         { description: 'the move dialog the drop asks through' });
-      assert(preselected() === 'ws_a',
-        `it opens on the box the tab was dropped in, got ${JSON.stringify(preselected())}`);
+      assert(destination() === 'ws_a',
+        `it asks about the box the tab was dropped in, got ${JSON.stringify(destination())}`);
       assert(boxOf(tabFor(bar, 'c2')) === 'ws_b',
         'and the tab is back where it started until the answer moves it');
     } finally {
@@ -261,8 +262,8 @@ export async function runTests() {
       assert(calls.length === 0, `nothing to reorder: ${JSON.stringify(calls)}`);
       await waitFor(() => !!document.querySelector('.workspace-move-dialog'),
         { description: 'the move dialog for a drop into the empty box' });
-      assert(preselected() === 'ws_b',
-        `the tree that outlived its conversations is a place to move into, got ${JSON.stringify(preselected())}`);
+      assert(destination() === 'ws_b',
+        `the tree that outlived its conversations is a place to move into, got ${JSON.stringify(destination())}`);
     } finally {
       teardown();
     }
@@ -279,8 +280,8 @@ export async function runTests() {
       assert(calls.length === 0, `leaving a workspace is a move, not a reorder: ${JSON.stringify(calls)}`);
       await waitFor(() => !!document.querySelector('.workspace-move-dialog'),
         { description: 'the move dialog for a drop in the strip' });
-      assert(preselected() === '',
-        `the strip outside every box is the project folder, got ${JSON.stringify(preselected())}`);
+      assert(destination() === '',
+        `the strip outside every box is the project folder, got ${JSON.stringify(destination())}`);
     } finally {
       teardown();
     }
