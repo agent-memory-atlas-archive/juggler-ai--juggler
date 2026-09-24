@@ -487,10 +487,11 @@ class WorkspacePanel extends HTMLElement {
    * What a button says, on two lines.
    *
    * The second is not decoration and is not a tooltip. Most of these end a
-   * place work is happening in, and a label alone cannot carry that — "Stop
-   * using this workspace" does not say that nothing is deleted, and nothing a
-   * pointer has to hover to find is going to be read by someone deciding
-   * whether it is safe to press.
+   * place work is happening in, and a label alone cannot carry that: a label
+   * has room for the one fact that separates it from the button beside it, and
+   * none for where the conversations go or what a deletion takes with it.
+   * Nothing a pointer has to hover to find is going to be read by someone
+   * deciding whether it is safe to press.
    * @param {string} text - What it is called.
    * @param {string} [note] - What happens if it is pressed.
    * @returns {DocumentFragment} The two lines.

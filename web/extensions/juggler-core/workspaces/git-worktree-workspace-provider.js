@@ -1059,6 +1059,14 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
    * common ending is a bare commit or nothing at all — one commit is often
    * several tasks — and an ending that lands work is a flow with conflicts in
    * it, which is its own feature rather than a fourth line in a menu.
+   *
+   * The two endings say "close the workspace" in the same words because that
+   * half is the same act, and differ only in the tree's fate, which is the
+   * whole of the choice. Each description leads with that difference and closes
+   * with the consequence they share, so the eye lands on the part that varies.
+   * The workspace is closed rather than deleted because that is what happens:
+   * the row is tombstoned, so a conversation that was elsewhere at the time is
+   * told it was closed rather than met with an id that means nothing.
    * @param {any} workspace - The row being finished with.
    * @returns {any[]} What can be done, the endings last and safest first.
    */
@@ -1085,16 +1093,16 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
       },
       {
         id: 'unbind',
-        label: 'Stop using this workspace',
-        description: `Nothing is deleted: the tree and ${branch || 'its branch'} stay exactly where they are, and you can pick them up again whenever you like.`
+        label: 'Close the workspace, keep the tree',
+        description: `The tree and ${branch || 'its branch'} stay on disk, ready to be adopted again. Conversations here return to the project folder.`
       },
       {
         id: 'discard',
-        label: 'Delete this workspace',
+        label: 'Close the workspace and delete the tree',
         danger: true,
         description: meta.branchCreatedByUs && branch
-          ? `Deletes the tree and the branch ${branch}, with everything in them.`
-          : 'Deletes the tree and everything in it; the branch was not ours to make, so it stays.'
+          ? `Deletes the tree and the branch ${branch}, with every commit on it. Conversations here return to the project folder.`
+          : 'Deletes the tree and everything in it, committed or not. The branch was not ours to make, so it stays. Conversations here return to the project folder.'
       }
     ];
   }

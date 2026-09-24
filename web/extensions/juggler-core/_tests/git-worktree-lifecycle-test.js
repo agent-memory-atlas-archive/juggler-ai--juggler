@@ -361,7 +361,7 @@ export async function runTests() {
     });
 
     await run('a tree you stopped using is offered again, which is what stopping was for', async () => {
-      // The whole point of "Stop using this workspace" over "Delete it": the
+      // The whole point of keeping the tree over deleting it: the
       // files and the branch stay, so you can come back. Two things had to
       // agree for that to be true and did not. The sweep was given only live
       // rows, so a parked tree's REPOSITORY was no longer looked in at all —
