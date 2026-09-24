@@ -16,6 +16,10 @@
  * The box with nothing in it is a drop target like any other. It is the case
  * the whole layout exists for — a tree that outlived its conversations — and
  * "put this one in there" is the obvious thing to want to do with it.
+ *
+ * A drop that cannot be honoured is answered rather than asked about. Being
+ * made to confirm a move and then told it was never available is the question
+ * and the answer in the wrong order.
  * @module unit-tests/tab-drag-across-workspace-test
  */
 
@@ -66,6 +70,15 @@ function mountBar(workspaces, bindings) {
      * @returns {any} The row, if the table holds it.
      */
     getWorkspace(id) { return workspaces.find((row) => row.id === id) || null; },
+    /**
+     * @param {string} id - Which workspace, '' for the project.
+     * @returns {string|null} The root to work in, or null when it cannot be.
+     */
+    workspaceRoot(id) {
+      if (!id) return this.projectPath;
+      const row = workspaces.find((one) => one.id === id);
+      return row && row.available && row.state === 'ready' ? row.root : null;
+    },
     /**
      * @param {string} id - Conversation moved.
      * @param {string} beforeId - Conversation it was dropped in front of.
@@ -166,9 +179,22 @@ function boxFor(bar, id) {
   return /** @type {HTMLElement} */ (bar.querySelector(`.conversation-box[data-workspace-id="${id}"]`));
 }
 
-/** Shut any move dialog this test opened, so the next one starts on a clear page. */
+/**
+ * Shut whatever a drop put on screen — the move dialog, or the notice a refused
+ * drop is answered with, which would otherwise sit out its five seconds over the
+ * case after this one.
+ */
 function closeDialog() {
   /** @type {HTMLElement|null} */ (document.querySelector('.workspace-move-cancel'))?.click();
+  /** @type {any} */ (document.querySelector('modal-dialog.is-notice'))?.close(null);
+}
+
+/**
+ * What the notice on screen says, if there is one.
+ * @returns {string} Its message, or '' when nothing is being said.
+ */
+function noticed() {
+  return document.querySelector('modal-dialog.is-notice .modal-message')?.textContent ?? '';
 }
 
 /**
@@ -226,6 +252,29 @@ export async function runTests() {
         `it asks about the box the tab was dropped in, got ${JSON.stringify(destination())}`);
       assert(boxOf(tabFor(bar, 'c2')) === 'ws_b',
         'and the tab is back where it started until the answer moves it');
+    } finally {
+      teardown();
+    }
+  });
+
+  await check('a conversation mid-turn is told it cannot move, not asked whether to', async () => {
+    const { bar, session, calls, teardown } = mountBar(
+      [workspace('ws_a', 'feature/auth'), workspace('ws_b', 'scratch-2')],
+      [['c1', 'ws_a'], ['c2', 'ws_b']]
+    );
+    try {
+      session.conversations.get('c2').isProcessing = true;
+      dragOnto(bar, tabFor(bar, 'c2'), tabFor(bar, 'c1'));
+
+      await waitFor(() => !!noticed(), { description: 'the drop to say why it went nowhere' });
+      assert(/turn/i.test(noticed()),
+        `a drop that cannot be honoured says so, got ${JSON.stringify(noticed())}`);
+      assert(!document.querySelector('.workspace-move-dialog'),
+        'and does not first ask whether to do the thing it is refusing to do');
+      assert(calls.length === 0 && session.conversations.get('c2').workspaceId === 'ws_b',
+        `with the conversation left where it was working: ${JSON.stringify(calls)}`);
+      assert(boxOf(tabFor(bar, 'c2')) === 'ws_b',
+        'and the tab back in its box, since nothing about it has changed');
     } finally {
       teardown();
     }

@@ -120,6 +120,20 @@ function strip(bar) {
 }
 
 /**
+ * Whether a computed colour hides what is behind it.
+ *
+ * Handles both serialisations a colour can arrive in: the legacy `rgba()` form,
+ * and the `color()` form with a slashed alpha that a wide-gamut space uses.
+ * @param {string} colour - A computed colour value.
+ * @returns {boolean} True if it is fully opaque.
+ */
+function isOpaque(colour) {
+  const alpha = /\/\s*([\d.]+)\s*\)\s*$/.exec(colour)?.[1]
+    ?? /^rgba\([^)]*,\s*([\d.]+)\s*\)$/.exec(colour)?.[1];
+  return alpha === undefined || Number(alpha) === 1;
+}
+
+/**
  * A conversation as `WorkerManager._doCreateNew` builds one: the real class,
  * carrying the workspace it was created for and nothing of its own yet.
  *
@@ -443,6 +457,50 @@ export async function runTests() {
         }
       } finally {
         if (was === undefined) delete root.dataset.theme; else root.dataset.theme = was;
+      }
+    });
+
+    await check('a tab keeps a fill of its own through every alert it wears', () => {
+      bar._session = stubSession([workspace('ws_a', 'feature/auth')], [['c1', 'ws_a']]);
+      bar.render();
+
+      const box = /** @type {HTMLElement} */ (
+        bar.querySelector('.conversation-box[data-workspace-id="ws_a"]'));
+      const tab = /** @type {HTMLElement} */ (box.querySelector('.conversation-tab'));
+
+      // The selected box is blue, and a tab's alert colours are yellow. Any
+      // alpha in one of them mixes the two into a colour neither means: the
+      // alert states were drawn against the page, and a box put a surface
+      // between the tab and the page it was mixing with.
+      box.classList.add('active');
+      tab.classList.remove('active');
+      // The tab eases its background over 150ms, and a value read inside that
+      // window is an interpolation of the two colours rather than either of
+      // them — which is opaque whatever the colour it is heading for. The
+      // target is the thing under test, so the easing is turned off to see it.
+      tab.style.transition = 'none';
+      try {
+        tab.classList.add('needs-attention');
+        const standing = getComputedStyle(tab).backgroundColor;
+        assert(isOpaque(standing),
+          'the standing needs-attention tint must be a fill, not a glaze: '
+          + `got ${standing}, which is the blue of the box it lies in showing through it`);
+
+        // The flash's "off" frame is the tab as it would otherwise be, which is
+        // a colour — reachable only by driving the animation to that frame.
+        tab.classList.add('attention-flash');
+        const flash = tab.getAnimations().find(a => /** @type {any} */ (a).animationName === 'tab-attention-flash');
+        assert(flash !== undefined, 'precondition: the one-shot flash is running on the tab');
+        /** @type {any} */ (flash).currentTime = 200;
+        const off = getComputedStyle(tab).backgroundColor;
+        assert(isOpaque(off),
+          'and the dark half of the flash is the tab, not a hole through it: '
+          + `got ${off} where the box behind it is ${getComputedStyle(box).backgroundColor} `
+          + `(the standing tint measured ${standing})`);
+      } finally {
+        tab.classList.remove('needs-attention', 'attention-flash');
+        box.classList.remove('active');
+        tab.style.removeProperty('transition');
       }
     });
 

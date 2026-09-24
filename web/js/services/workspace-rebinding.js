@@ -25,12 +25,49 @@
  */
 
 /**
+ * Why this move would be refused, or '' if nothing stands in its way.
+ *
+ * The rules themselves, asked without moving anything, because a caller that
+ * puts a question to the user before moving has to know the question is worth
+ * asking. A confirmation raised over a conversation that cannot move asks
+ * whether to do something it is about to refuse to do, which is a worse way of
+ * saying no than saying no.
+ *
+ * `rebindConversation` asks this again at the moment it writes. A gesture and
+ * the press that confirms it are two different times, a turn can start in
+ * between, and a service whose safety lives in its callers has none.
+ * @param {any} conversation - The conversation that would move.
+ * @param {string} workspaceId - Where it would go; '' is the project.
+ * @returns {string} What stops it, in a sentence that stands on its own, or ''.
+ */
+export function whyNotRebind(conversation, workspaceId) {
+  const session = conversation?.session;
+  if (!session) return `Couldn't move the conversation: it has no session.`;
+
+  // Going nowhere is refused by nothing: the move is already true.
+  const target = workspaceId || '';
+  if ((conversation.workspaceId || '') === target) return '';
+
+  if (conversation.isProcessing === true) {
+    return `Couldn't move the conversation: it's in the middle of a turn.`;
+  }
+
+  if (target && !session.workspaceRoot(target)) {
+    return `Couldn't move the conversation: that workspace can't be worked in.`;
+  }
+
+  return '';
+}
+
+/**
  * Move a conversation to another workspace.
  *
  * Refused while the conversation has a turn in flight, for the reason finishing
  * with a workspace is: the running turn's next operation would land in a tree it
  * never agreed to work in. Refused, too, for a target that cannot be worked in —
  * moving a conversation from one unusable place to another is not a way out.
+ * Both refusals are `whyNotRebind`'s, so that what is checked here and what a
+ * caller can check before asking the user are the same rules.
  *
  * What the tree being left holds stays in it. A move is a change of where the
  * conversation works, not a copy: the files are still on the disk, under the
@@ -40,21 +77,11 @@
  * @returns {Promise<{done: boolean, message?: string}>} What happened, and why not.
  */
 export async function rebindConversation(conversation, workspaceId) {
-  const session = conversation?.session;
-  if (!session) {
-    return { done: false, message: `Couldn't move the conversation: it has no session.` };
-  }
+  const refusal = whyNotRebind(conversation, workspaceId);
+  if (refusal) return { done: false, message: refusal };
 
   const target = workspaceId || '';
   if ((conversation.workspaceId || '') === target) return { done: true };
-
-  if (conversation.isProcessing === true) {
-    return { done: false, message: 'This conversation is in the middle of a turn.' };
-  }
-
-  if (target && !session.workspaceRoot(target)) {
-    return { done: false, message: `Couldn't move the conversation: that workspace can't be worked in.` };
-  }
 
   conversation.workspaceId = target;
   await refreshWorkspaceDerived(conversation);

@@ -37,7 +37,8 @@ import { workspaceGroups, selectedWorkspace } from '../services/workspace-provis
 import { openWorkspaceMove } from './workspace-move-dialog.js';
 import { openWorkspaceCreate } from './workspace-create-dialog.js';
 import JugglerElement from './juggler-element.js';
-import { showAlert } from './modal-dialog.js';
+import { showAlert, showNotice } from './modal-dialog.js';
+import { whyNotRebind } from '../services/workspace-rebinding.js';
 import './bin-modal.js';
 import './info-rail.js';
 import './workspace-box-header.js';
@@ -2041,10 +2042,22 @@ class ConversationBar extends JugglerElement {
         // the drop has already said. The strip goes back to what the session
         // says in the meantime: render() is held for the length of a gesture and
         // draws the tab back in the box it came from as it lets go.
+        //
+        // A move that cannot happen is said here instead, because a dialog
+        // asking whether to do something it will then refuse puts the user's
+        // answer and the outcome the wrong way round: they are made to decide,
+        // and then told it was never theirs to decide. The service asks the same
+        // question again when it writes — this is the drop declining to raise a
+        // question it already knows the answer to, not the check itself.
         const landedIn = this._workspaceBoxOf(tab);
         const dragged = this._session.conversations.get(draggedId);
         if (dragged && landedIn !== homeWorkspaceId) {
           this.render();
+          const refusal = whyNotRebind(dragged, landedIn);
+          if (refusal) {
+            showNotice(refusal);
+            return;
+          }
           void openWorkspaceMove(dragged, landedIn);
           return;
         }

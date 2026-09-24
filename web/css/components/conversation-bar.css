@@ -402,9 +402,14 @@ conversation-bar .conversation-tab:not(.active).is-awaiting {
    approval state regardless of focus) — this is the focus-gated "come back"
    signal and persists until the tab is seen. A flat background tint (not an
    edge marker) so it never curves at the tab's rounded corners; on awaiting
-   tabs the stronger .is-awaiting pulse simply overrides it. */
+   tabs the stronger .is-awaiting pulse simply overrides it.
+
+   Mixed into the tab's own fill rather than laid over it at 22% alpha: a tab
+   lying in a workspace box has that box's surface behind it, not the page, and
+   a selected box is blue — through which a translucent yellow reads as a muddy
+   green. Every colour a tab can wear has to be a colour, not a glaze. */
 conversation-bar .conversation-tab:not(.active).needs-attention {
-    background-color: color-mix(in srgb, var(--tab-awaiting) 22%, transparent);
+    background-color: color-mix(in srgb, var(--tab-awaiting) 22%, var(--bg-primary));
 }
 
 /* Snap the awaiting colour hard on/off (no fade) ~200ms per state, three times,
@@ -416,9 +421,13 @@ conversation-bar .conversation-tab:not(.active).attention-flash {
     animation: tab-attention-flash 0.4s step-end 3;
 }
 
+/* The dark half of the flash is the tab's ordinary fill — the colour it would
+   be with nothing wrong — so the flash reads as the alert colour arriving and
+   leaving. Not `transparent`, which is a hole: in a workspace box it shows the
+   box, and the flash alternates yellow with the blue of a selected one. */
 @keyframes tab-attention-flash {
     0% { background-color: var(--tab-awaiting); }
-    50% { background-color: transparent; }
+    50% { background-color: var(--bg-primary); }
     100% { background-color: var(--tab-awaiting); }
 }
 
