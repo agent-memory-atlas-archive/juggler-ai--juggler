@@ -48,7 +48,7 @@ func TestReorderConversations_DoesNotResurrectBinnedConv(t *testing.T) {
 	}
 
 	// A viewer that still shows the binned tab posts its whole list.
-	merged, err := mgr.ReorderConversations([]string{binned, keep})
+	merged, _, err := mgr.ReorderConversations([]string{binned, keep}, "")
 	if err != nil {
 		t.Fatalf("reorder: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestReorderConversations_StillReordersLiveConvs(t *testing.T) {
 	}
 
 	want := []string{b, c, a}
-	merged, err := mgr.ReorderConversations(want)
+	merged, _, err := mgr.ReorderConversations(want, a)
 	if err != nil {
 		t.Fatalf("reorder: %v", err)
 	}

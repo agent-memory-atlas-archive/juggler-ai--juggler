@@ -440,12 +440,18 @@ class APIService {
   /**
    * Reorder conversations within a session
    * @param {string[]} conversationOrder - Array of conversation IDs in desired order
+   * @param {string} [moved] - The one conversation a drag moved, where the
+   *   reorder is a move. A workspace box is placed by the conversation it sits
+   *   behind, so the server needs the mover by name to let the box keep where it
+   *   is drawn — two adjacent tabs swapping look the same either way round, so
+   *   it cannot be read back off the order. Omitted for a reorder that is not
+   *   one conversation moving, which leaves every box's place alone.
    * @returns {Promise<null>} Null on success
    */
-  async reorderConversations(conversationOrder) {
+  async reorderConversations(conversationOrder, moved = '') {
     return await this.request('/session/reorder', {
       method: 'PUT',
-      body: { order: conversationOrder }
+      body: { order: conversationOrder, moved }
     });
   }
 

@@ -1183,6 +1183,13 @@ class ConversationBar extends JugglerElement {
    * after the box, there being nothing past it inside the box to name. Both
    * fall out of the same walk: the first tab that is the anchor or comes after
    * it, a box's own tabs counting as coming after the box.
+   *
+   * This is the flat order's half of the answer and not the whole of it. Above
+   * a box and below it are different places to land that name the same
+   * conversation, so a caller handed a box as the anchor has been told where the
+   * tab goes in the order and not which side of the box it goes on. The drop
+   * settles that by moving the box, which is the only thing that can say it —
+   * see `_startDrag`'s commit.
    * @param {Element|null} anchor - What the drop landed in front of, or null for the end.
    * @param {HTMLElement} dragged - What is being dropped, which cannot precede itself.
    * @returns {string} The conversation id to land in front of, or '' for the end.
@@ -2072,6 +2079,24 @@ class ConversationBar extends JugglerElement {
         } else {
           this._session.moveConversationToEnd(draggedId);
         }
+
+        // Landing above a box is the one place the flat order cannot say on its
+        // own. Above a box and below it are two places to be and the same
+        // conversation to be in front of — the first tab under the box, there
+        // being nothing between them to name — and a box drawn at the same index
+        // as a tab is drawn first. So a drop that said only where it went in the
+        // order would be read as the slot below, whichever of the two the user
+        // chose, and the tab would appear to jump the box.
+        //
+        // The box is what settles it: it moves down to sit behind the tab just
+        // dropped. Its members and every other tab stay where they are, the box
+        // keeps both its neighbours bar the one it just swapped sides with, and
+        // "sits behind" now says what the strip shows.
+        const landedAbove = /** @type {HTMLElement|null} */ (anchor)?.classList
+          ?.contains('conversation-box')
+          ? /** @type {HTMLElement} */ (anchor).dataset.workspaceId
+          : '';
+        if (landedAbove) this._session.moveWorkspaceBox(landedAbove, draggedId);
       },
     });
   }

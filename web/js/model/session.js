@@ -51,7 +51,7 @@ import { BUILTIN_DEFAULT_ID } from '../../sdk/lib/system-prompt-registry.js';
  * @property {function(): Promise<{binned: Array<{id: string, name: string, lastModifiedAt: string}>}>} listBinnedConversations - List binned conversations
  * @property {function(string): Promise<void>} deleteBinnedConversation - Permanently delete a single binned conversation
  * @property {function((number|null)=): Promise<void>} emptyBin - Permanently delete binned conversations: all of them, or only those last active more than N days ago
- * @property {function(string[]): Promise<null>} reorderConversations - Reorder conversations
+ * @property {function(string[], string=): Promise<null>} reorderConversations - Reorder conversations, naming the one a drag moved
  * @property {function(string, Uint8Array): Promise<void>} saveConversationBinary - Save conversation binary state
  */
 
@@ -1358,6 +1358,11 @@ class Session {
     const current = order.indexOf(conversationId);
     if (current <= target) return; // at or above its ceiling — no churn, no POST
 
+    // While it still has a neighbour to hand its boxes' place to: a bump is a
+    // move like any other as far as a box anchored to it is concerned, and
+    // nothing about a turn coming to rest is a reason to move a workspace.
+    this._reanchorBoxesBeforeMove(conversationId);
+
     const without = order.filter(id => id !== conversationId);
     without.splice(target, 0, conversationId);
     this._setConversationOrder(without);
@@ -1367,7 +1372,7 @@ class Session {
     // Persist the new ordering. The server merges this (possibly partial)
     // order into the manifest, so a viewer that knows only some conversations
     // never drops the others (see SessionManager.ReorderConversations).
-    this._persistOrder('bump reorder');
+    this._persistOrder('bump reorder', conversationId);
   }
 
   /**
@@ -2458,11 +2463,51 @@ class Session {
    * writer of order). The server merges this (possibly partial) order into the
    * manifest. Failures are logged, not surfaced.
    * @param {string} label - Short context for the error log (e.g. 'bump reorder')
+   * @param {string} [moved] - The one conversation this reorder moved, where it
+   *   moved one. The server re-anchors any box placed behind it, so that a box
+   *   keeps the place it is drawn in — the same rule applied here for the redraw,
+   *   applied there for every other viewer and for the next load.
    * @private
    */
-  _persistOrder(label) {
-    this._apiService.reorderConversations(Array.from(this.conversations.keys()))
+  _persistOrder(label, moved = '') {
+    this._apiService.reorderConversations(Array.from(this.conversations.keys()), moved)
       .catch((/** @type {any} */ err) => console.error(`[Session] ${label} persist failed:`, err));
+  }
+
+  /**
+   * Hand a box's place on before the conversation it sits behind moves away.
+   *
+   * A box is placed by a neighbour rather than a number, and the neighbour is an
+   * ordinary tab with nothing drawn on it to say a box is anchored there. So
+   * dragging that one tab would otherwise move two things: the tab, because that
+   * is what was asked for, and the box, because the place it is drawn at is read
+   * off the tab that just left. One drag, one thing moved — the box keeps where
+   * it is drawn, and the anchor it keeps that place by is bookkeeping the user
+   * never sees.
+   *
+   * The place is handed to the conversation ahead of the one leaving, which is
+   * what the box is still sitting behind once it has gone, and to 'head' when
+   * there is nothing ahead of it. This is {@link reanchorBoxesAt}'s rule on the
+   * server, which the delete path has always applied; a move is the same
+   * departure as a delete as far as a box anchored to it is concerned.
+   *
+   * Rewritten locally so the strip redraws at once. The server applies the same
+   * rule to the order it is sent and broadcasts the table, so nothing is patched
+   * from here and there is nothing to race with a box's own move.
+   * @param {string} conversationId - The conversation about to move.
+   * @returns {void}
+   * @private
+   */
+  _reanchorBoxesBeforeMove(conversationId) {
+    if (!this.workspaces?.some?.(row => row.place === conversationId)) return;
+
+    const order = Array.from(this.conversations.keys());
+    const at = order.indexOf(conversationId);
+    const inherits = at > 0 ? order[at - 1] : 'head';
+
+    this.workspaces = this.workspaces.map(row =>
+      (row.place === conversationId ? { ...row, place: inherits } : row));
+    this._notify('session:workspaces-changed', this.workspaces);
   }
 
   /**
@@ -2481,6 +2526,9 @@ class Session {
       return false;
     }
 
+    // While it still has a neighbour to hand its boxes' place to.
+    this._reanchorBoxesBeforeMove(conversationId);
+
     // Move the conversation to sit immediately before `beforeId`.
     const order = Array.from(this.conversations.keys()).filter(id => id !== conversationId);
     order.splice(order.indexOf(beforeId), 0, conversationId);
@@ -2488,7 +2536,7 @@ class Session {
     this._notify('conversation:reordered', { conversationId, beforeId });
 
     // POST /reorder is the sole writer of conversation order.
-    this._persistOrder('reorder');
+    this._persistOrder('reorder', conversationId);
 
     return true;
   }
@@ -2567,6 +2615,9 @@ class Session {
       return false;
     }
 
+    // While it still has a neighbour to hand its boxes' place to.
+    this._reanchorBoxesBeforeMove(conversationId);
+
     // Every other id in its current order, then this one last.
     const order = Array.from(this.conversations.keys()).filter(id => id !== conversationId);
     order.push(conversationId);
@@ -2575,7 +2626,7 @@ class Session {
     this._notify('conversation:reordered', { conversationId, beforeId: null });
 
     // Persist via the dedicated reorder endpoint (the sole writer of order).
-    this._persistOrder('reorder');
+    this._persistOrder('reorder', conversationId);
 
     return true;
   }

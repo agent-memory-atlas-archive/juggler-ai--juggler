@@ -1196,16 +1196,20 @@ func (api *SessionAPI) HandleRenameConversation(w http.ResponseWriter, r *http.R
 	}
 }
 
-// HandleReorderConversations updates the conversation order
+// HandleReorderConversations updates the conversation order. `moved` is
+// optional and names the one conversation a drag moved, which is what a
+// workspace box anchored to it needs to keep its place; see
+// SessionManager.ReorderConversations.
 func (api *SessionAPI) HandleReorderConversations(w http.ResponseWriter, r *http.Request) {
 	req, ok := DecodeJSON[struct {
 		Order []string `json:"order"`
+		Moved string   `json:"moved"`
 	}](w, r)
 	if !ok {
 		return
 	}
 
-	merged, err := api.manager().ReorderConversations(req.Order)
+	merged, reanchored, err := api.manager().ReorderConversations(req.Order, req.Moved)
 	if err != nil {
 		WriteError(w, r, http.StatusInternalServerError, err.Error())
 		return
@@ -1215,5 +1219,11 @@ func (api *SessionAPI) HandleReorderConversations(w http.ResponseWriter, r *http
 
 	if api.broadcaster != nil {
 		api.broadcaster.BroadcastConversationsReordered(merged)
+	}
+	// A re-anchored box is a change to the workspace table, which rides its own
+	// broadcast: a viewer told only the order would draw the box at the place
+	// the row used to name.
+	if reanchored {
+		api.broadcastWorkspaces()
 	}
 }

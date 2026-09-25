@@ -110,6 +110,11 @@ function fakeSession(ids) {
     _isConvBusy: Session.prototype._isConvBusy,
     _setConversationOrder: Session.prototype._setConversationOrder,
     _replaceConversations: Session.prototype._replaceConversations,
+    // A bump moves a conversation, so a box anchored to it hands its place on
+    // rather than being dragged up the bar by a turn coming to rest. No
+    // workspaces here, so it is the real method answering that there is nothing
+    // to re-anchor.
+    _reanchorBoxesBeforeMove: Session.prototype._reanchorBoxesBeforeMove,
     _notify() { this.notifies++; },
     _persistOrder() { this.persists++; },
   };

@@ -189,6 +189,191 @@ func TestRemoveConv_ReanchorsBoxesOntoThePredecessor(t *testing.T) {
 	}
 }
 
+// A box keeps the place it is drawn in when the conversation it sits behind is
+// dragged somewhere else, the same way it does when that conversation is binned.
+// The tab a box is anchored to is an ordinary tab with nothing drawn on it to
+// say so, so a box that travelled with it would be moving on a gesture aimed at
+// something else entirely — and the drag that provoked this could send a box
+// four slots up the bar.
+//
+// The mover is named by the client rather than read back off the order: two
+// adjacent tabs swapping leaves the same pair of sequences whichever of them was
+// dragged, so there is nothing in the order itself to tell them apart.
+func TestReorderConversations_ReanchorsBoxOffTheDraggedConversation(t *testing.T) {
+	// The bar is [a, b, c, d] with a box drawn between b and c.
+	tests := []struct {
+		name       string
+		next       []int
+		place      int
+		moved      int
+		want       int
+		reanchored bool
+	}{
+		{
+			name:       "dragged to the head of the bar",
+			next:       []int{1, 0, 2, 3},
+			place:      1,
+			moved:      1,
+			want:       0,
+			reanchored: true,
+		},
+		{
+			name:       "dragged past the end of the bar",
+			next:       []int{0, 2, 3, 1},
+			place:      1,
+			moved:      1,
+			want:       0,
+			reanchored: true,
+		},
+		{
+			// The tab was already in front of the one below the box, so the flat
+			// order comes back identical and the box is the only thing that has
+			// moved. A re-anchor conditional on the order changing would miss
+			// this one, and the tab would spring back above the box on reload.
+			name:       "dragged from above the box to just below it",
+			next:       []int{0, 1, 2, 3},
+			place:      1,
+			moved:      1,
+			want:       0,
+			reanchored: true,
+		},
+		{
+			name:       "a box anchored to some other tab is left alone",
+			next:       []int{1, 0, 2, 3},
+			place:      2,
+			moved:      1,
+			want:       2,
+			reanchored: false,
+		},
+		{
+			// A bump, a duplicate, or a viewer syncing its whole list: nothing
+			// was dragged, so no box gives up its place.
+			name:       "a reorder that names no mover moves no box",
+			next:       []int{1, 0, 2, 3},
+			place:      1,
+			moved:      -1,
+			want:       1,
+			reanchored: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			projectDir := t.TempDir()
+			store, err := NewFileSessionStore(projectDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			mgr, err := NewSessionManager(SessionManagerConfig{Store: store, ProjectPath: projectDir})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer mgr.Shutdown()
+
+			ids := make([]string, 4)
+			for i, name := range []string{"A", "B", "C", "D"} {
+				id, _, err := mgr.CreateConversation(name)
+				if err != nil {
+					t.Fatal(err)
+				}
+				ids[i] = id
+			}
+			// A new conversation is created at the head of the bar, so the order
+			// they were made in is the reverse of the one they are in. Say it.
+			if _, _, err := mgr.ReorderConversations(ids, ""); err != nil {
+				t.Fatalf("setting up the order: %v", err)
+			}
+
+			ws, err := mgr.RegisterWorkspace(Workspace{
+				Root:  t.TempDir(),
+				State: WorkspaceStateReady,
+				Place: ids[tc.place],
+			})
+			if err != nil {
+				t.Fatalf("RegisterWorkspace: %v", err)
+			}
+
+			next := make([]string, len(tc.next))
+			for i, at := range tc.next {
+				next[i] = ids[at]
+			}
+			moved := ""
+			if tc.moved >= 0 {
+				moved = ids[tc.moved]
+			}
+
+			_, reanchored, err := mgr.ReorderConversations(next, moved)
+			if err != nil {
+				t.Fatalf("reorder: %v", err)
+			}
+			if reanchored != tc.reanchored {
+				t.Fatalf("reanchored = %v, want %v — the caller broadcasts the workspace table on the strength of this", reanchored, tc.reanchored)
+			}
+
+			var got string
+			for _, row := range mgr.ListWorkspaces() {
+				if row.ID == ws.ID {
+					got = row.Place
+				}
+			}
+			if want := ids[tc.want]; got != want {
+				t.Fatalf("place = %q, want %q (conversation %d of [a b c d])", got, want, tc.want)
+			}
+		})
+	}
+}
+
+// A box behind the first conversation has no predecessor to inherit when that
+// conversation is dragged away, so it takes the head of the bar — named as the
+// head, which is a position, and never as an empty field, which is the absence
+// of one.
+func TestReorderConversations_ReanchorsToTheHeadWhenNothingIsAhead(t *testing.T) {
+	projectDir := t.TempDir()
+	store, err := NewFileSessionStore(projectDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr, err := NewSessionManager(SessionManagerConfig{Store: store, ProjectPath: projectDir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mgr.Shutdown()
+
+	a, _, err := mgr.CreateConversation("A")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _, err := mgr.CreateConversation("B")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A new conversation is created at the head, so b is above a until this says
+	// otherwise. The box is then anchored to the first tab in the bar.
+	if _, _, err := mgr.ReorderConversations([]string{a, b}, ""); err != nil {
+		t.Fatalf("setting up the order: %v", err)
+	}
+
+	ws, err := mgr.RegisterWorkspace(Workspace{Root: t.TempDir(), State: WorkspaceStateReady, Place: a})
+	if err != nil {
+		t.Fatalf("RegisterWorkspace: %v", err)
+	}
+
+	if _, _, err := mgr.ReorderConversations([]string{b, a}, a); err != nil {
+		t.Fatalf("reorder: %v", err)
+	}
+
+	var got string
+	for _, row := range mgr.ListWorkspaces() {
+		if row.ID == ws.ID {
+			got = row.Place
+		}
+	}
+	if got != PlaceHead {
+		t.Fatalf("place = %q, want %q", got, PlaceHead)
+	}
+}
+
 // A manifest edited between runs can name a conversation that is not there. The
 // box goes back to having no recorded place — which is the truth, and is drawn
 // by its first member — rather than being sent to either end of the bar.

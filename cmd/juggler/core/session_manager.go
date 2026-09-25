@@ -530,18 +530,52 @@ func (m *SessionManager) LoadConversationBinary(convID string) ([]byte, error) {
 // posted order is one viewer's snapshot of its own tabs, and echoing that back
 // tells every other viewer to forget any conversation the sender had not heard
 // of yet.
-func (m *SessionManager) ReorderConversations(order []string) ([]string, error) {
-	return runWrite(m, func(s *sessionState) ([]string, error) {
+// `moved`, when set, names the one conversation the client dragged, and is what
+// lets a workspace box keep the place it is drawn in: a box is placed by the
+// conversation it sits behind, so that conversation moving means the box has to
+// hand its place on or be dragged along behind a tab nobody touched
+// (reanchorBoxesAt). It cannot be inferred from the order — two adjacent tabs
+// swapping is the same pair of sequences whichever of them was the one dragged —
+// so the mover is told rather than guessed. Empty means a reorder that is not
+// one conversation moving (a bump, a duplicate, a viewer syncing its whole
+// list), and no box changes place. Reports whether any box did.
+func (m *SessionManager) ReorderConversations(order []string, moved string) ([]string, bool, error) {
+	res, err := runWrite(m, func(s *sessionState) (reorderResult, error) {
 		known := make([]string, 0, len(order))
 		for _, id := range order {
 			if _, ok := s.store.ConvDir(id); ok {
 				known = append(known, id)
 			}
 		}
-		s.session.ConversationOrder = mergeConversationOrder(s.session.ConversationOrder, known)
-		merged := append([]string(nil), s.session.ConversationOrder...)
-		return merged, s.store.Save(s.session)
+		merged := mergeConversationOrder(s.session.ConversationOrder, known)
+
+		// While the old order still holds the neighbour a box is to inherit.
+		//
+		// Not conditional on the merged order differing: dragging a tab from
+		// above its box to just below it leaves the flat order exactly as it
+		// was — the tab was already in front of the one below the box — and the
+		// whole of what moved is the box. Re-anchoring is self-limiting anyway,
+		// since it is only ever the rows anchored to `moved`, and they are not
+		// anchored to it afterwards.
+		reanchored := false
+		if moved != "" {
+			reanchored = reanchorBoxesAt(s.session, moved)
+		}
+
+		s.session.ConversationOrder = merged
+		return reorderResult{
+			order:      append([]string(nil), merged...),
+			reanchored: reanchored,
+		}, s.store.Save(s.session)
 	})
+	return res.order, res.reanchored, err
+}
+
+// reorderResult is what one reorder did: the merged order to echo back, and
+// whether it moved a workspace box, which the caller must broadcast separately.
+type reorderResult struct {
+	order      []string
+	reanchored bool
 }
 
 // mergeConversationOrder re-slots the ids named in `desired` (in desired
@@ -1289,8 +1323,8 @@ func (m *SessionManager) PatchMetadata(patch map[string]any) (map[string]any, er
 // at the top, which is a different statement from having no place at all.
 //
 // It reads the predecessor from ConversationOrder, so it must run while convID
-// is still in it.
-func reanchorBoxesAt(s *Session, convID string) {
+// is still in it. Reports whether any box was anchored there to move.
+func reanchorBoxesAt(s *Session, convID string) bool {
 	predecessor := PlaceHead
 	for i, id := range s.ConversationOrder {
 		if id != convID {
@@ -1301,11 +1335,14 @@ func reanchorBoxesAt(s *Session, convID string) {
 		}
 		break
 	}
+	moved := false
 	for i := range s.Workspaces {
 		if s.Workspaces[i].Place == convID {
 			s.Workspaces[i].Place = predecessor
+			moved = true
 		}
 	}
+	return moved
 }
 
 // removeConvIDFromSession drops convID from ConversationOrder, Conversations,

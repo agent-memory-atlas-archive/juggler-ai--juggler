@@ -123,6 +123,7 @@ import { runTests as runWorkerInitDeclinedTests } from '../unit-tests/worker-ini
 import { runTests as runTabOrderMergeTests } from '../unit-tests/tab-order-merge-test.js';
 import { runTests as runTabDragOrderTests } from '../unit-tests/tab-drag-order-test.js';
 import { runTests as runTabDragAcrossWorkspaceTests } from '../unit-tests/tab-drag-across-workspace-test.js';
+import { runTests as runTabDragWorkspaceOrderTests } from '../unit-tests/tab-drag-workspace-order-test.js';
 import { runTests as runToolExecutionOrderTests } from '../unit-tests/tool-execution-order-test.js';
 import { runTests as runToolActionRenderTests } from '../unit-tests/tool-action-render-test.js';
 import { runTests as runJugglerSpinnerLiveTests } from '../unit-tests/juggler-spinner-live-test.js';
@@ -511,6 +512,7 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:tab-order-merge', run: runTabOrderMergeTests },
   { name: 'unit:tab-drag-order', run: runTabDragOrderTests },
   { name: 'unit:tab-drag-across-workspace', run: runTabDragAcrossWorkspaceTests },
+  { name: 'unit:tab-drag-workspace-order', run: runTabDragWorkspaceOrderTests },
   { name: 'unit:tool-execution-order', run: runToolExecutionOrderTests },
   { name: 'unit:tool-action-render', run: runToolActionRenderTests },
   { name: 'unit:juggler-spinner-live', run: runJugglerSpinnerLiveTests },
