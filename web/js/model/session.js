@@ -1111,6 +1111,33 @@ class Session {
   }
 
   /**
+   * Call a workspace something else.
+   *
+   * The label is the whole of what a workspace is called — nothing on disk is
+   * named after it, and no two workspaces have to differ — so this is a plain
+   * write, and the only refusals come from the server (a row that has been
+   * closed, a label longer than it will store).
+   *
+   * The table is updated here as well as by the broadcast that follows, so the
+   * box shows the new name the moment the server takes it rather than a round
+   * trip later. The broadcast is still the authority: it replaces this copy
+   * whole, and every other window hears it the same way.
+   * @param {string} workspaceId - The workspace to rename.
+   * @param {string} label - What to call it.
+   * @returns {Promise<Workspace>} The row as it now stands.
+   */
+  async renameWorkspace(workspaceId, label) {
+    const stored = await patchWorkspace(workspaceId, { label });
+    const rows = this.workspaces ?? [];
+    const at = rows.findIndex(row => row.id === workspaceId);
+    if (at !== -1) {
+      this.workspaces = rows.map((row, i) => (i === at ? stored : row));
+      this._notify('session:workspaces-changed', this.workspaces);
+    }
+    return stored;
+  }
+
+  /**
    * Where a binding says to work: the root a conversation's tools run in, its
    * provider is spawned in, and its seeds are read from.
    *

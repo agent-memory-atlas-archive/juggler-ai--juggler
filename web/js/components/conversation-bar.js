@@ -22,10 +22,11 @@
 
 import { MAX_CONVERSATIONS, CONVERSATION_LIMIT_MESSAGE } from '../model/session.js';
 import { UNTITLED_BASE } from '../model/conversation-naming.js';
-import { BIN_LARGE_BYTES, MAX_CONVERSATION_NAME_LENGTH } from '../utils/constants.js';
+import { BIN_LARGE_BYTES, MAX_CONVERSATION_NAME_LENGTH, MAX_WORKSPACE_LABEL_LENGTH } from '../utils/constants.js';
 import { setupColumnResize, applyColumnWidthPx } from '../utils/column-resize.js';
 import { startReorderDrag, settledRect } from '../utils/reorder-drag.js';
 import { DRAG_GRIP_HTML, pointerMayGrab } from '../utils/drag-grip.js';
+import { openInlineRename } from '../utils/inline-rename.js';
 import { workspaceTint } from '../utils/workspace-colour.js';
 import { formatBytes } from '../utils/format.js';
 import { registerContextMenuProvider } from '../services/context-menu-service.js';
@@ -1035,9 +1036,24 @@ class ConversationBar extends JugglerElement {
       // Selecting a box is selecting a workspace, and it is done the way a tab
       // is selected: by clicking it. The release that ends a drag also produces
       // a click, which is not one.
+      //
+      // And renaming rides on the second click, as it does on a tab: once the
+      // box is the chosen thing, a click on the name it is showing is a click
+      // on a name rather than a request for what is already on screen. Only on
+      // the name — a box with nothing in it answers a press anywhere, and
+      // renaming the place because someone aimed at the empty space below its
+      // conversations is not what they asked for.
       dragged.addEventListener('click', (e) => {
-        if (!onTheBox(/** @type {HTMLElement|null} */ (e.target))) return;
+        const target = /** @type {HTMLElement|null} */ (e.target);
+        if (!onTheBox(target)) return;
+        // macOS ctrl-click is a secondary click: WebKit fires `contextmenu`
+        // (which opens the box's menu) and a plain `click` alongside it.
+        if (/** @type {MouseEvent} */ (e).ctrlKey) return;
         if (this._dragJustOccurred) return;
+        if (this._session?.visibleWorkspaceId === workspaceId && target?.closest('.conversation-box-top')) {
+          this._enterWorkspaceRenameMode(workspaceId);
+          return;
+        }
         this._session?.selectWorkspace?.(workspaceId);
       });
 
@@ -1048,7 +1064,9 @@ class ConversationBar extends JugglerElement {
       dragged.addEventListener('pointerdown', (e) => {
         const event = /** @type {PointerEvent} */ (e);
         if (event.button !== 0 || event.ctrlKey) return;
-        if (!onTheBox(/** @type {HTMLElement|null} */ (event.target))) return;
+        const target = /** @type {HTMLElement|null} */ (event.target);
+        if (!onTheBox(target)) return;
+        if (target?.closest('.inline-rename')) return;
         if (!pointerMayGrab(event)) return;
         this._startBoxDrag(event, dragged);
       });
@@ -1372,8 +1390,8 @@ class ConversationBar extends JugglerElement {
       // render() fixes order separately and only moves nodes that need to move.
       const tabName = tab.querySelector('.conversation-tab-name');
 
-      // Don't disturb the input while the user is mid-rename. The post-commit
-      // teardown removes .is-renaming and a subsequent render() paints the name.
+      // Don't disturb the input while the user is mid-rename. Closing the editor
+      // removes .is-renaming, and a subsequent render() paints the name.
       // Compare before writing: assigning textContent replaces the text node
       // even when the string is identical, and this runs on every render.
       if (tabName && !tab.classList.contains('is-renaming') && tabName.textContent !== name) {
@@ -1569,7 +1587,7 @@ class ConversationBar extends JugglerElement {
       if (event.ctrlKey) return;
       const target = /** @type {HTMLElement|null} */ (event.target);
       if (target?.closest('.conversation-tab-bin')) return;
-      if (target?.closest('.conversation-tab-rename')) return;
+      if (target?.closest('.inline-rename')) return;
       if (!pointerMayGrab(event)) return;
       this._startDrag(event, tab);
     });
@@ -1906,14 +1924,15 @@ class ConversationBar extends JugglerElement {
 
 
   /**
-   * Enter inline rename mode on the tab for the given conversation. Builds a
-   * rename block inside the tab `<li>`, hides the normal tab button via the
-   * `.is-renaming` class, and wires Enter/Escape/blur to commit or cancel.
+   * Rename the tab for the given conversation, in place.
    *
-   * The rename block reserves a `.conversation-tab-rename-actions` slot under
-   * the input for a future auto-name button. When the rename editor closes
-   * (commit, cancel, or blur), keyboard focus moves to the visible
-   * conversation's message input so the user can type straight after naming.
+   * The editor itself is the shared one (utils/inline-rename.js), opened over
+   * the tab `<li>`; what is here is everything true of a conversation and not
+   * of anything else that gets renamed — when a rename is allowed at all, how
+   * long a name may be, what the server says when it refuses one, and the offer
+   * to hand naming back to the model. When the editor closes, however it
+   * closes, keyboard focus moves to the visible conversation's message input so
+   * the user can type straight after naming.
    * @param {string} conversationId
    * @param {object} [options]
    * @param {string} [options.initialValue] - Seed value for the input,
@@ -1936,152 +1955,130 @@ class ConversationBar extends JugglerElement {
     const tab = /** @type {HTMLElement|null} */ (this._cachedElements.get(conversationId));
     if (!tab) return;
 
-    // Idempotent: if already renaming, refocus the existing input.
-    if (tab.classList.contains('is-renaming')) {
-      const existing = /** @type {HTMLInputElement|null} */ (tab.querySelector('.conversation-tab-rename-input'));
-      existing?.focus();
-      existing?.select();
-      return;
-    }
+    openInlineRename(tab, {
+      value: initialValue ?? conv.name,
+      // UI-level enforcement of the shared name-length cap: the browser blocks
+      // further typed input at the limit. This editor backs both rename and the
+      // "name a new conversation" flow, so both paths are covered here. The data
+      // level (Session.renameConversation) is the backstop for paste/programmatic
+      // input that can exceed maxlength.
+      maxLength: MAX_CONVERSATION_NAME_LENGTH,
 
-    const original = initialValue ?? conv.name;
+      commit: async (newName) => {
+        try {
+          await /** @type {NonNullable<typeof this._session>} */ (this._session).renameConversation(conv.id, newName);
+          this.render();
+          return '';
+        } catch (e) {
+          const code = /** @type {any} */ (e)?.code;
+          // A name already taken is the one refusal the user can answer, so it
+          // is the one that keeps the editor open. A name the server calls
+          // invalid closes it: the editor has nothing to add that the empty
+          // result doesn't already say.
+          if (code === 'COLLISION') {
+            return `“${newName}” is already used by another conversation.`;
+          }
+          if (code !== 'INVALID') {
+            await showAlert(
+              `Couldn't rename the conversation: ${/** @type {any} */ (e)?.message || e}`,
+              'Rename failed'
+            );
+          }
+          return '';
+        }
+      },
 
-    const block = document.createElement('div');
-    block.className = 'conversation-tab-rename';
-    block.innerHTML = `
-      <input class="conversation-tab-rename-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
-      <div class="conversation-tab-rename-error" hidden></div>
-      <div class="conversation-tab-rename-actions"></div>
-    `;
-    const input = /** @type {HTMLInputElement} */ (block.querySelector('.conversation-tab-rename-input'));
-    const errorEl = /** @type {HTMLElement} */ (block.querySelector('.conversation-tab-rename-error'));
-    const actions = /** @type {HTMLElement} */ (block.querySelector('.conversation-tab-rename-actions'));
-    // UI-level enforcement of the shared name-length cap: the browser blocks
-    // further typed input at the limit. This input backs both rename and the
-    // "name a new conversation" flow, so both paths are covered here. The data
-    // level (Session.renameConversation) is the backstop for paste/programmatic
-    // input that can exceed maxlength.
-    input.maxLength = MAX_CONVERSATION_NAME_LENGTH;
-    input.value = original;
+      // "Auto-name": hand off to the model to name the tab from the first
+      // message instead of typing a name. Only offered once the conversation has
+      // a first user message to derive from — for a brand-new empty tab there's
+      // nothing to name, and the request would be a server-side no-op, so the
+      // button is omitted entirely (the empty actions row then collapses).
+      // pointerdown preventDefault keeps focus on the input so the button press
+      // doesn't trigger a blur→commit of the current (unchanged) value first. The
+      // server renames + broadcasts, which updates the tab; we just close the editor.
+      actions: ({ close }) => {
+        if (!conv.hasAutoNameSource()) return null;
+        const autoNameBtn = document.createElement('button');
+        autoNameBtn.type = 'button';
+        autoNameBtn.className = 'conversation-tab-auto-name';
+        autoNameBtn.textContent = 'Auto-name';
+        autoNameBtn.title = 'Let the model name this conversation from your first message';
+        autoNameBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); });
+        autoNameBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const session = /** @type {NonNullable<typeof this._session>} */ (this._session);
+          // The user handed naming back to the model, so the tab's name is
+          // provisional again — mark it before requesting, so a later /handoff of
+          // this conversation stays eligible for a derived title.
+          session.setNameIsProvisional(conv.id, true);
+          session.requestAutoName(conv.id);
+          close();
+        });
+        return autoNameBtn;
+      },
 
-    // Stop clicks inside the rename block from bubbling to the tab's click
-    // handler (which would re-trigger rename) and from initiating a drag.
-    block.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
-    block.addEventListener('click', (e) => { e.stopPropagation(); });
-
-    // `done` blocks any further commit/cancel work once teardown has run —
-    // covers the blur that fires when teardown() removes the focused input,
-    // and any double-commit from rapid Enter+blur sequences.
-    let done = false;
-
-    const showError = (/** @type {string} */ msg) => {
-      errorEl.textContent = msg;
-      errorEl.hidden = false;
-      input.focus();
-      input.select();
-    };
-
-    const teardown = () => {
-      if (done) return;
-      done = true;
-      tab.classList.remove('is-renaming');
-      if (block.parentNode) block.parentNode.removeChild(block);
       // Hand off to the visible conversation's composer-box so the user can type
       // straight after naming. We look it up through the conversation-tab
       // element registered with the bar rather than a global query, so the
       // lookup stays correct even when multiple conversation-tabs are mounted
       // side-by-side.
-      const tabEl = this._tabElements.get(conversationId);
-      const textarea = /** @type {HTMLTextAreaElement|null} */ (
-        tabEl?.querySelector('composer-box textarea') || null
-      );
-      textarea?.focus();
-    };
-
-    const commit = async () => {
-      if (done) return;
-      const newName = input.value.trim();
-      // Garbage input (empty/whitespace, unchanged, or rejected by the
-      // server as INVALID) silently cancels. Only a real collision warrants
-      // keeping the editor open with a message.
-      if (newName === '' || newName === original) {
-        teardown();
-        return;
-      }
-      try {
-        await /** @type {NonNullable<typeof this._session>} */ (this._session).renameConversation(conv.id, newName);
-        teardown();
-        this.render();
-      } catch (e) {
-        const code = /** @type {any} */ (e)?.code;
-        if (code === 'COLLISION') {
-          showError(`“${newName}” is already used by another conversation.`);
-          return;
-        }
-        if (code === 'INVALID') {
-          teardown();
-          return;
-        }
-        teardown();
-        await showAlert(
-          `Failed to rename conversation: ${/** @type {any} */ (e)?.message || e}`,
-          'Rename failed'
+      onClose: () => {
+        const tabEl = this._tabElements.get(conversationId);
+        const textarea = /** @type {HTMLTextAreaElement|null} */ (
+          tabEl?.querySelector('composer-box textarea') || null
         );
-      }
-    };
-
-    const cancel = () => {
-      teardown();
-    };
-
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        commit();
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        cancel();
-      }
+        textarea?.focus();
+      },
     });
-    input.addEventListener('blur', () => {
-      if (done) return;
-      commit();
+  }
+
+
+  /**
+   * Rename a workspace, in place on the box drawn for it.
+   *
+   * The same editor a tab opens (utils/inline-rename.js), over the row the name
+   * is on rather than over the whole box: what is being renamed is the place,
+   * and the conversations drawn below it are not part of the question.
+   *
+   * A label is only ever a name — nothing on disk is called after it, and two
+   * workspaces are free to share one — so there is nothing to refuse here that
+   * the server will not refuse itself, and no confirmation to ask for.
+   * @param {string} workspaceId - The workspace to rename.
+   * @private
+   */
+  _enterWorkspaceRenameMode(workspaceId) {
+    if (!this._session) return;
+
+    const workspace = this._session.getWorkspace(workspaceId);
+    if (!workspace) return;
+
+    const top = /** @type {HTMLElement|null} */ (
+      this._workspaceBoxes.get(workspaceId)?.querySelector('.conversation-box-top') || null
+    );
+    if (!top) return;
+
+    openInlineRename(top, {
+      // The label alone, never the root the box falls back to showing: a
+      // workspace with no label has no name yet, and offering its path as one to
+      // edit would make a name out of a fallback.
+      value: workspace.label || '',
+      maxLength: MAX_WORKSPACE_LABEL_LENGTH,
+
+      commit: async (label) => {
+        try {
+          await /** @type {NonNullable<typeof this._session>} */ (this._session).renameWorkspace(workspaceId, label);
+          this.render();
+          return '';
+        } catch (e) {
+          // Whatever the server refused for — a workspace finished with while
+          // the editor was open, a label longer than it stores — the name is
+          // still in the field to be fixed or abandoned, so the editor stays
+          // open and says what happened.
+          return `Couldn't rename it: ${/** @type {any} */ (e)?.message || e}`;
+        }
+      },
     });
-
-    // "Auto-name" button: hand off to the model to name the tab from the first
-    // message instead of typing a name. Only shown once the conversation has a
-    // first user message to derive from — for a brand-new empty tab there's
-    // nothing to name, and the request would be a server-side no-op, so we omit
-    // the button entirely (the :empty actions slot then collapses).
-    // pointerdown preventDefault keeps focus on the input so the button press
-    // doesn't trigger a blur→commit of the current (unchanged) value first. The
-    // server renames + broadcasts, which updates the tab; we just close the editor.
-    if (conv.hasAutoNameSource()) {
-      const autoNameBtn = document.createElement('button');
-      autoNameBtn.type = 'button';
-      autoNameBtn.className = 'conversation-tab-rename-auto';
-      autoNameBtn.textContent = 'Auto-name';
-      autoNameBtn.title = 'Let the model name this conversation from your first message';
-      autoNameBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); });
-      autoNameBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (done) return;
-        const session = /** @type {NonNullable<typeof this._session>} */ (this._session);
-        // The user handed naming back to the model, so the tab's name is
-        // provisional again — mark it before requesting, so a later /handoff of
-        // this conversation stays eligible for a derived title.
-        session.setNameIsProvisional(conv.id, true);
-        session.requestAutoName(conv.id);
-        teardown();
-      });
-      actions.appendChild(autoNameBtn);
-    }
-
-    tab.classList.add('is-renaming');
-    tab.appendChild(block);
-    input.focus();
-    input.select();
   }
 
 
@@ -2374,6 +2371,26 @@ registerContextMenuProvider({
       );
     }
     return items;
+  },
+});
+
+// Right-click menu for the workspace boxes. Rename is all it offers: everything
+// else a workspace can be asked — where it is, how it is doing, the ways of
+// finishing with it — is <workspace-panel>'s, where there is room to read it.
+//
+// A tab inside a box is still a tab, and claimed here first so it cannot be:
+// the menus resolve in registration order, and a right-click that renamed the
+// place instead of the conversation would be the same click doing two things.
+registerContextMenuProvider({
+  match: (start) => {
+    if (start?.closest('.conversation-tab[data-conversation-id]')) return null;
+    return start?.closest('.conversation-box[data-workspace-id]') || null;
+  },
+  build: (subject) => {
+    const bar = /** @type {any} */ (_activeBar);
+    const workspaceId = /** @type {HTMLElement} */ (subject).dataset.workspaceId || '';
+    if (!bar || !workspaceId) return null;
+    return [{ label: 'Rename', onClick: () => bar._enterWorkspaceRenameMode(workspaceId) }];
   },
 });
 

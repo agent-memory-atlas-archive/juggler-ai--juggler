@@ -197,6 +197,14 @@
 			]
 		},
 		{
+			"file": "patterns/inline-rename.css",
+			"layer": "patterns",
+			"owns": [
+				"inline-rename",
+				"inline-rename-*"
+			]
+		},
+		{
 			"file": "components/messages-1.css",
 			"layer": "components",
 			"owns": [
@@ -264,8 +272,6 @@
 				"bin-modal",
 				"conversation-bar",
 				"conversation-tab",
-				"conversation-tab-rename",
-				"conversation-tab-rename-*",
 				"info-cards-menu__check",
 				"workspace-menu"
 			]

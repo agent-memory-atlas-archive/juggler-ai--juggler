@@ -82,6 +82,20 @@ export const YJS_SYNC_BATCH_MAX_MS = 250;
  */
 export const MAX_CONVERSATION_NAME_LENGTH = 48;
 
+// ===== Workspace naming =====
+
+/**
+ * Maximum length (in characters) of a workspace's label — the name its box
+ * carries in the tab strip. Enforced where the name is typed (the inline-rename
+ * input's `maxlength`); the server's own limit (`core.MaxWorkspaceLabelLen`, 256)
+ * is the backstop for anything that arrives another way.
+ *
+ * The same figure as a conversation's for the same reason: the two are read one
+ * above the other in a column a few hundred pixels wide, where a name longer
+ * than this is an ellipsis with a beginning attached.
+ */
+export const MAX_WORKSPACE_LABEL_LENGTH = 48;
+
 // ===== Bin =====
 
 /**

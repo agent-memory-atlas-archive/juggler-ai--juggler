@@ -38,8 +38,8 @@ conversation-bar .conversation-tabs {
     gap: 0.375rem;
     margin: 0;
 
-    /* Extra bottom padding so the last tab's rename overlay (input + auto-name
-       button + shadow, ~3rem below the tab) stays inside the scroll container. */
+    /* Extra bottom padding so the last row's rename editor (input + auto-name
+       button + shadow, ~3rem below the row) stays inside the scroll container. */
     padding: 0.5rem 0.5rem 3.25rem;
     margin-right: 0.4rem;
     margin-left: 0.4rem;
@@ -119,6 +119,11 @@ conversation-bar .conversation-tabs > .conversation-box {
    that is left to add here. Counted as a whole tab's inset instead, the header
    stood most of a handle's width right of every row around it. */
 conversation-bar .conversation-box-top {
+    /* The row is what the box is renamed from, and the rename editor opens
+       inside whatever it is renaming — so this row is the positioned ancestor
+       that keeps it over the name rather than over the whole box and the
+       conversations in it. */
+    position: relative;
     display: flex;
     align-items: center;
     gap: 0.2rem;
@@ -760,86 +765,13 @@ conversation-bar .conversation-tab.active .conversation-tab-bin:hover {
     background: rgb(255 255 255 / 15%);
 }
 
-/* Inline rename editor. Appended INSIDE the tab <li> (position: relative —
-   see the .conversation-tab rule), so it tracks the tab on reorder without
-   any JS re-anchoring. It spills a small bleed beyond the tab's box plus a
-   drop shadow below it. The .conversation-tabs menu's overflow:auto clips at
-   its padding box, so the menu carries 0.5rem side padding + a 0.375rem gap
-   for the horizontal/inter-tab halo, and 1.25rem of *bottom* padding so the
-   last tab's shadow isn't cropped by the scroll edge (see that rule).
-   conversation-bar's overflow:hidden sits further out and doesn't crop. The overlay IS the visual tab while editing: same surface, one
-   accent border. The input has no border or background of its own, so
-   there's only ever one frame on screen. Inherits text colour so the
-   active-tab's white-on-blue stays readable without a separate palette.
-   .conversation-tab-rename-actions holds the "Auto-name" button stacked
-   beneath the input. */
-.conversation-tab-rename {
-    position: absolute;
-
-    /* Slight halo around the tab, on all sides. Stays within the menu's clip
-       box at every sidebar width (see the comment above). Only top/left/right
-       are pinned — the bottom is left `auto` so the overlay grows downward to
-       fit its content (e.g. the collision error line) instead of clamping to
-       the tab's height and clipping the overflow. min-height keeps the
-       no-error state identical to the old top/bottom-pinned box. */
-    inset: -0.25rem -0.25rem auto;
-    min-height: calc(100% + 0.5rem);
-    min-width: max(100%, 10rem);
-    z-index: 10;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 0.25rem;
-    padding: 0.5rem 0.75rem;
-
-    /* Match the active-tab surface (darkened accent-blue) so the overlay
-       reads as a "bigger version of the tab" with one frame, not as a
-       second floating element. */
-    background: color-mix(in srgb, var(--accent-blue) 70%, var(--bg-raised));
-    color: #fff;
-    border: 0.125rem solid var(--accent-blue);
-    border-radius: 0.8rem;
-    box-shadow: 0 0.25rem 0.75rem rgb(0 0 0 / 30%);
-    box-sizing: border-box;
-}
-
-.conversation-tab-rename-input {
-    width: 100%;
-    box-sizing: border-box;
-    background: transparent;
-    color: inherit;
-    border: none;
-    padding: 0;
-    margin: 0;
-    font-family: var(--font-ui);
-    font-size: 0.8125rem;
-    line-height: 1.2;
-    outline: none;
-}
-
-/* The one surface that opts out of the shared --selection-bg: this field sits on
-   the accent-blue rename overlay in white text, where a blue tint would barely
-   show. A white wash is the readable equivalent there. */
-.conversation-tab-rename-input::selection {
-    background: rgb(255 255 255 / 35%);
-}
-
-.conversation-tab-rename-error {
-    color: #ffd9d9;
-    font-size: 0.75rem;
-    line-height: 1.2;
-}
-
-.conversation-tab-rename-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.25rem;
-    margin-top: 0.5rem;
-}
-
-/* "Auto-name" button beneath the rename input: a low-key ghost button on the
-   overlay's accent surface, so it reads as a secondary action to typing a name. */
-.conversation-tab-rename-auto {
+/* "Auto-name", in the actions row of a tab's rename editor: a low-key ghost
+   button on the editor's accent surface, so it reads as secondary to typing a
+   name. It is the only button any rename editor offers, which is why it is
+   styled here rather than with the shared editor — and why it is written as a
+   descendant of the bar, which keeps it clear of the disabled-button rule in
+   base/ without a fight over specificity. */
+conversation-bar .conversation-tab-auto-name {
     align-self: flex-start;
     padding: 0.125rem 0.5rem;
     font-family: var(--font-ui);
@@ -852,13 +784,18 @@ conversation-bar .conversation-tab.active .conversation-tab-bin:hover {
     cursor: pointer;
 }
 
-.conversation-tab-rename-auto:hover {
+conversation-bar .conversation-tab-auto-name:hover {
     background: rgb(255 255 255 / 22%);
 }
 
-.conversation-tab-rename-actions:empty {
-    display: none;
-}
+/* The rename editor a tab or a box opens is the shared one
+   (patterns/inline-rename.css). What the strip owes it is room: it bleeds a
+   little beyond the row it covers and drops a shadow below that, and the
+   .conversation-tabs menu's overflow:auto clips at its padding box — so that
+   menu carries side padding and a gap for the horizontal halo, and enough
+   *bottom* padding that the last row's editor isn't cropped by the scroll edge
+   (see that rule). conversation-bar's overflow:hidden sits further out and
+   doesn't crop. */
 
 /* Bottom-of-bar Bin entry — opens the bin modal. Carries .btn-ghost, so the
    resting/hover/press chrome is the shared house style; this owns the row

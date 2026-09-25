@@ -199,14 +199,14 @@ export async function runTests() {
     assert(newTab.classList.contains('is-renaming'),
       `new tab must have .is-renaming class. Classes: "${newTab.className}"`);
 
-    // The rename block lives inside the tab <li> (position: absolute over
+    // The rename editor lives inside the tab <li> (position: absolute over
     // it), so it follows the tab on reorder. Looked up document-wide
     // since the tab itself is in the document either way.
     const renameInput = /** @type {HTMLInputElement|null} */ (
-      document.querySelector('.conversation-tab-rename .conversation-tab-rename-input')
+      document.querySelector('.inline-rename .inline-rename-input')
     );
     assert(!!renameInput,
-      `document must contain a .conversation-tab-rename-input after the + click`);
+      `document must contain a .inline-rename-input after the + click`);
     // The input is seeded with the conversation's canonical name — the name
     // the server actually assigned, not the blank "Untitled N" the client
     // requested. In the SHARED pool session a sibling lane may already hold
@@ -234,7 +234,7 @@ export async function runTests() {
     assert(newTab.classList.contains('is-renaming'),
       `after the broadcast echo, new tab must still have .is-renaming. Classes: "${newTab.className}"`);
     const renameInputAfter = /** @type {HTMLInputElement|null} */ (
-      document.querySelector('.conversation-tab-rename .conversation-tab-rename-input')
+      document.querySelector('.inline-rename .inline-rename-input')
     );
     assert(!!renameInputAfter,
       `after the broadcast echo, the rename input must still be in the document`);

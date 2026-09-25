@@ -1,0 +1,105 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+/* The editor that opens over a row to rename it. A pattern rather than the tab
+   strip's own, because two unrelated rows in that strip are renamed the same
+   way — a conversation's tab, and the header of the box a workspace is drawn as
+   — and a name typed into one should look and behave like a name typed into the
+   other.
+
+   The element and the keys that go with it are js/utils/inline-rename.js. What
+   stays with each component is where the editor is allowed to sit: the row is
+   the positioned ancestor, and anything clipping it is the component's to open
+   up (see .conversation-tabs, which carries bottom padding for exactly that).
+   Everything below is the part that is the same everywhere. */
+
+/* Appended INSIDE the row, which is positioned, so it tracks the row on reorder
+   without any JS re-anchoring. It spills a small bleed beyond the row's box plus
+   a drop shadow below it.
+
+   The overlay IS the visual row while editing: same surface, one accent border.
+   The input has no border or background of its own, so there's only ever one
+   frame on screen. It inherits text colour, so the white-on-blue of a selected
+   row stays readable without a separate palette. */
+.inline-rename {
+    position: absolute;
+
+    /* Slight halo around the row, on all sides. Only top/left/right are pinned —
+       the bottom is left `auto` so the overlay grows downward to fit its content
+       (e.g. the collision error line) instead of clamping to the row's height
+       and clipping the overflow. min-height keeps the no-error state the size of
+       the row it covers. */
+    inset: -0.25rem -0.25rem auto;
+    min-height: calc(100% + 0.5rem);
+    min-width: max(100%, 10rem);
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.25rem;
+    padding: 0.5rem 0.75rem;
+
+    /* Match the selected-row surface (darkened accent-blue) so the overlay
+       reads as a "bigger version of the row" with one frame, not as a
+       second floating element. */
+    background: color-mix(in srgb, var(--accent-blue) 70%, var(--bg-raised));
+    color: #fff;
+    border: 0.125rem solid var(--accent-blue);
+    border-radius: 0.8rem;
+    box-shadow: 0 0.25rem 0.75rem rgb(0 0 0 / 30%);
+    box-sizing: border-box;
+}
+
+.inline-rename-input {
+    width: 100%;
+    box-sizing: border-box;
+    background: transparent;
+    color: inherit;
+
+    /* Width alone, deliberately, rather than `border: none`: base/ tints a
+       focused field's border-color, and a field that also declares a colour is
+       picking a fight with that rule which it currently loses and would win the
+       day the sheets are wrapped in layers. There is no border either way at
+       zero width. */
+    border-width: 0;
+    padding: 0;
+    margin: 0;
+    font-family: var(--font-ui);
+    font-size: 0.8125rem;
+    line-height: 1.2;
+    outline: none;
+}
+
+/* The one surface that opts out of the shared --selection-bg: this field sits on
+   the accent-blue rename overlay in white text, where a blue tint would barely
+   show. A white wash is the readable equivalent there. */
+.inline-rename-input::selection {
+    background: rgb(255 255 255 / 35%);
+}
+
+/* What the editor says when a name was refused and the user can answer it. */
+.inline-rename-error {
+    color: #ffd9d9;
+    font-size: 0.75rem;
+    line-height: 1.2;
+}
+
+/* Whatever is offered as an alternative to typing a name, stacked beneath the
+   field. Most renames offer nothing, and the row collapses when it holds
+   nothing rather than leaving a gap under the field. */
+.inline-rename-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.25rem;
+    margin-top: 0.5rem;
+}
+
+.inline-rename-actions:empty {
+    display: none;
+}
+
+/* What a button in that row looks like is left to whoever puts one there: only
+   the conversation tabs do (their "Auto-name"), and one user is not a pattern. */

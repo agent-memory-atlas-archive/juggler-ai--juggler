@@ -485,7 +485,7 @@ class UIEventManager {
       const handler = (e) => {
         if (!isOpen()) return;
         const target = /** @type {HTMLElement|null} */ (e.target);
-        if (target?.closest('.conversation-tab-rename')) return;
+        if (target?.closest('.inline-rename')) return;
         if (target?.closest('.conversation-add-item')) {
           if (isAutoNameEnabled()) close();
           return;
@@ -527,7 +527,7 @@ class UIEventManager {
       direction: 'left',
       thresholdPx: 60,
       isActive: () => isOpen() && window.getComputedStyle(sidebar).position === 'absolute',
-      exclude: 'col-resize-handle, .drag-grip, .conversation-tab-rename',
+      exclude: 'col-resize-handle, .drag-grip, .inline-rename',
       onDismiss: close,
     });
   }

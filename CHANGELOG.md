@@ -9,6 +9,7 @@ of changes; this project follows semantic versioning.
 - A workspace box now carries the same drag grip its tabs do, so a finger can reorder one
 - Dragging a mid-turn conversation to another workspace now refuses at the drop, instead of after asking
 - Lots of workspace panel UX improvements and snagging
+- A workspace can now be renamed from its box, the way a conversation tab is
 
 ## [0.7.0] - 2026-09-24
 

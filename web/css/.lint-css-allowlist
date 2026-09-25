@@ -128,7 +128,7 @@ layer-inversion patterns/icons.css > components/approvals-2.css 30
 layer-inversion patterns/icons.css > components/model-picker.css 30
 layer-inversion patterns/icons.css > components/onboarding.css 30
 layer-inversion patterns/icons.css > components/pinboard.css 30
-layer-inversion patterns/markdown.css > components/conversation-bar.css 29
+layer-inversion patterns/markdown.css > components/conversation-bar.css 26
 layer-inversion patterns/markdown.css > components/properties-panel.css 29
 layer-inversion patterns/menus.css > components/onboarding.css 28
 layer-inversion patterns/menus.css > components/settings-2.css 28
@@ -251,7 +251,6 @@ layer-inversion patterns/overlay-chrome.css > components/messages-3.css 3
 layer-inversion patterns/overlay-chrome.css > components/overlays-and-updates.css 3
 layer-inversion patterns/overlay-chrome.css > components/pinboard.css 3
 layer-inversion patterns/spinner.css > components/properties-panel.css 3
-layer-inversion base/elements.css > components/conversation-bar.css 2
 layer-inversion base/elements.css > components/messages-3.css 2
 layer-inversion base/elements.css > components/workspace-panel.css 1
 layer-inversion base/elements.css > patterns/overlay-chrome.css 2
