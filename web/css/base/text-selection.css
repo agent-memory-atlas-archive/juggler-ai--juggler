@@ -1,0 +1,106 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+/* ============================================================================
+   TEXT SELECTION POLICY
+
+   The single place that decides what a mouse drag may select, and what the
+   highlight looks like when it does. The split is chrome vs content:
+
+     Chrome:  surfaces the user aims *clicks* at, never text: menus and
+              popups, the header, the sidebar, the composer's status row,
+              transient overlays and notices. A drag here is a mis-aimed
+              click, so a blue highlight is pure noise. Listed below.
+     Content: everything the user might reasonably want to copy: the
+              conversation transcript, context items, file and diff views,
+              the properties panel body, and the Settings tab bodies. These
+              are the browser default and are NOT listed here.
+
+   Two consequences worth knowing before adding a rule:
+     - `user-select` inherits, so naming a surface's root covers its whole
+       subtree. Prefer one rule on the root over per-label rules; naming
+       labels one at a time is what let popup subtitles, card bodies and
+       menu hints drift back into being selectable.
+     - A descendant's own rule always beats an ancestor's regardless of order,
+       so the carve-outs below (and component-level ones such as
+       `settings-panel .settings-content`, or `.workspace-create-dialog` in
+       components/settings-3.css) hold no matter where they sit. A surface whose
+       class belongs to a component sheet is declared there, not here: ownership
+       is what the architecture lint checks, and this block owns no component.
+   ============================================================================ */
+
+/* The highlight itself, so every platform draws the same one. An unstyled
+   selection takes the engine's own colour, which on Linux is the GTK theme's
+   accent — pinks and reds against these greys. `--selection-bg` is a
+   translucent blue in both themes, so the highlight tints message bubbles, code
+   blocks, diffs and images rather than filling over them.
+
+   Only the background is set, deliberately: a highlight naming no `color` is
+   painted over the text in the colour that text already had, so selected text
+   keeps its own and syntax highlighting survives being selected. (What
+   `getComputedStyle(el, '::selection').color` reports is engine-specific and
+   says nothing about what is painted.) Authoring the rule at all is also what
+   stops a platform substituting its selected-text colour (macOS recolours
+   selected text to white in dark appearance; GTK does its own thing).
+
+   The cost is that selection no longer greys out when the window loses focus —
+   one colour, both states. */
+::selection {
+    background-color: var(--selection-bg);
+}
+
+/* Transient surfaces: every anchored dropdown (strategy, model, permissions,
+   completions, info-cards, path recents), the phone bottom sheets those same
+   surfaces become, the project picker, and the composer's actions sheet.
+   `.dropdown-menu` is the shared surface class for all of them, so this one
+   selector covers both presentations. */
+.dropdown-menu,
+.pp-panel,
+.juggler-context-menu {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+/* Persistent chrome. `conversation-bar` covers the sidebar tabs, the Bin and
+   the ambient info rail (Tips / Usage / Git status cards) in one go, and
+   `.pinboard-panel` covers the board's own bands — its toolbar, tab strip, item
+   title and status line — leaving only what an item type renders selectable. */
+.app-header,
+conversation-bar,
+conversation-footer,
+token-display,
+update-button,
+update-notice,
+.find-bar,
+.disconnection-overlay,
+.bin-panel,
+.properties-panel-header,
+.pinboard-panel,
+.conversation-tab-loading-overlay {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+/* Carve-outs: fields the user types into, plus the two places an error worth
+   pasting into a report is reported — the update notice's status line, and a
+   pin whose item type threw. `.pinboard-content__body` is the board's content
+   half: file previews, transcripts and everything else a pin is for.
+   (The About dialog is deliberately absent from the chrome list above: it is
+   prose and links, so it stays selectable like any other content.) */
+.dropdown-menu input,
+.dropdown-menu textarea,
+.pp-panel input,
+.pp-panel textarea,
+conversation-bar input,
+.find-bar input,
+.pinboard-panel input,
+.pinboard-panel textarea,
+.pinboard-content__body,
+.pinboard-placeholder__error,
+.update-notice__status-text {
+    -webkit-user-select: text;
+    user-select: text;
+}

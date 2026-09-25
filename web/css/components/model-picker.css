@@ -809,3 +809,80 @@ model-tuning:empty {
    Sized via `--size` on the host. Coloured via `color` (the SVG fills
    from `currentColor`).
    ================================================================== */
+
+/* The empty-state nudge on the model chip: model-chip.js adds `.pulse` when
+   there is no model selected and the chip is configured to ask for one.
+   (@keyframes pulse is a base animation, shared with the tab bar.) */
+.pulse {
+    animation: pulse 2s infinite;
+}
+
+/* ==========================================================================
+   Phone: the picker as a bottom sheet
+   popup-surface.js re-presents the picker as a sheet, and
+   components/popup-sheet.css supplies the sheet geometry. What the picker
+   itself has to change to work stacked is here, beside the desktop rules it
+   is overriding — which is also what lets it override them.
+   ========================================================================== */
+@media (width <= 36rem) {
+    /* Model picker: one column, in DOM order — the chosen model and its dials,
+       then Recent, then the list, then the actions. A flex column rather than
+       the desktop grid (whose second column and extra rows have nowhere to go
+       here), so the sections and the injected grabber stack in the order they
+       appear. Recent lands above the list, which is the order a phone wants
+       them in anyway: the shortlist first, the whole catalogue after. */
+    .model-picker.popup-sheet.show {
+        display: flex;
+        flex-direction: column;
+    }
+
+    /* The SHEET is the single scroll container: every section takes its natural
+       height and none scrolls on its own. A column keeping its own
+       `flex: 1 1 auto` scroller gets no height here — the detail column alone
+       can meet the 85vh cap, squeezing the list to nothing.
+
+       EVERY nested scroller must be listed. A flex item left on the desktop's
+       `min-height: 0` is free to shrink below its content, and with the overflow
+       here turned visible that content does not clip — it paints straight over
+       whatever follows. Leaving the list column out is what put the actions
+       under the model rows.
+
+       Qualified with `.model-picker` for specificity, and it is load-bearing:
+       the picker's own rule is `.model-picker .model-picker-rows`, which has to
+       carry that prefix to survive the `.dropdown-menu menu` chrome reset. At
+       equal specificity the cascade would settle it on file order — and
+       components.css loads after this file — so an unqualified selector here
+       loses, and the list silently gives up its height on a phone. */
+    .model-picker.popup-sheet .model-picker-detail,
+    .model-picker.popup-sheet .model-picker-list,
+    .model-picker.popup-sheet .model-picker-rows {
+        min-height: auto;
+        overflow: visible;
+    }
+
+    /* Nothing scrolls on its own here, so the stable scrollbar gutter the desktop
+       list reserves is width taken from the rows for a bar that cannot appear —
+       and the padding that held their fill off that bar has nothing to hold it
+       off. A phone has no width to spare for either. */
+    .model-picker.popup-sheet .model-picker-rows {
+        scrollbar-gutter: auto;
+        padding-inline: 0;
+    }
+
+    /* Stacked, the sections are bands across the sheet rather than columns beside
+       each other, so every rule between them runs edge to edge — the list's below
+       and, out here, Recent's and the actions'. On the desktop those two are
+       inset to the left column's text line, which stacked would leave three
+       section rules of two different widths. The inset moves inside instead, so
+       the content still starts on the same line. */
+    .model-picker.popup-sheet .model-picker-recent,
+    .model-picker.popup-sheet .model-picker-footer {
+        margin-inline: 0;
+        padding-inline: var(--picker-gutter);
+    }
+
+    .model-picker.popup-sheet .model-picker-list {
+        border-left: none;
+        border-top: 0.0625rem solid var(--border-divider);
+    }
+}

@@ -76,7 +76,7 @@ plugin-catalog {
 }
 
 /* Explicit reload, under the explanation at the right edge of the header. The
-   chrome comes from .u-btn-ghost (utilities.css); this owns size and placement. */
+   chrome comes from .btn-ghost (utilities.css); this owns size and placement. */
 .catalog-reload {
   margin-top: 0.5rem;
   padding: 0.25rem 0.75rem;
@@ -355,11 +355,6 @@ plugin-catalog {
   color: var(--text-secondary);
 }
 
-.plugin-category {
-  background: rgb(139 92 246 / 15%);
-  color: #a78bfa;
-}
-
 .plugin-author {
   background: rgb(88 166 255 / 15%);
   color: var(--accent-blue);
@@ -391,47 +386,6 @@ plugin-catalog {
   padding: 0.1875rem 0.5rem;
   border-radius: 0.25rem;
   font-weight: 600;
-}
-
-.plugin-id-help {
-  font-size: 0.75rem;
-  color: var(--text-tertiary);
-  font-style: italic;
-}
-
-.plugin-module-url {
-  margin: 0;
-  font-size: 0.8125rem;
-  color: var(--text-secondary);
-  display: flex;
-  align-items: baseline;
-  gap: 0.375rem;
-}
-
-.plugin-module-url-label {
-  font-weight: 600;
-}
-
-.plugin-module-url-link {
-  text-decoration: none;
-  transition: opacity 0.15s;
-}
-
-.plugin-module-url-link:hover {
-  opacity: 0.8;
-}
-
-.plugin-module-url-link:hover .plugin-module-url-value {
-  text-decoration: underline;
-}
-
-.plugin-module-url-value {
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  color: var(--accent-blue);
-  background: var(--bg-tertiary);
-  padding: 0.125rem 0.4375rem;
-  border-radius: 0.25rem;
 }
 
 .plugin-detail-content {
@@ -469,127 +423,15 @@ plugin-catalog {
    LLM Instructions Box
    ========================================================================== */
 
-.llm-instructions-box {
-  margin: 0;
-  padding: 1rem;
-  background: var(--bg-primary);
-  border: 0.0625rem solid var(--border-color);
-  border-radius: 0.5rem;
-  font-family: var(--font-mono);
-  font-size: 0.8125rem;
-  line-height: 1.6;
-  color: var(--text-primary);
-  white-space: pre-wrap;
-  overflow-wrap: break-word;
-  max-height: 20rem;
-  overflow-y: auto;
-}
-
 /* ==========================================================================
    Preview Section - Uses Standard Context Item Card Structure (base styles in context-items.css)
    ========================================================================== */
 
-.preview-section-header {
-  margin-bottom: 1rem;
-}
-
-.preview-container {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
 /* Preview-specific sizing for context item content */
-.preview-container .ci-collapsed-content {
-  width: 8.75rem;
-  height: 8.75rem;
-  flex-shrink: 0;
-  box-sizing: border-box;
-  cursor: pointer;
-  transition: box-shadow 0.2s, transform 0.1s, width 200ms ease, height 200ms ease;
-  overflow: hidden;
-}
-
-.preview-container .ci-expanded-content {
-  width: 100%;
-  cursor: pointer;
-  transition: box-shadow 0.2s, transform 0.1s;
-}
-
-.preview-container .ci-expanded-content,
-.preview-container .ci-collapsed-content {
-  cursor: pointer;
-}
-
-.preview-container .ci-expanded-content:hover,
-.preview-container .ci-collapsed-content:hover {
-  box-shadow: 0 0.25rem 0.75rem rgb(0 0 0 / 20%);
-  transform: translateY(-0.0625rem);
-}
-
-.preview-container .ci-expanded-content:active,
-.preview-container .ci-collapsed-content:active {
-  transform: translateY(0);
-}
-
-.preview-error {
-  padding: 2rem;
-  text-align: center;
-  color: var(--text-tertiary);
-  font-size: 0.875rem;
-  font-style: italic;
-}
 
 /* ==========================================================================
    Capability Badges
    ========================================================================== */
-
-.capability-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-}
-
-.capability-badge {
-  padding: 0.375rem 0.75rem;
-  border-radius: 0.375rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  font-family: var(--font-mono);
-  display: inline-flex;
-  align-items: center;
-}
-
-.capability-watches-files {
-  background: rgb(88 166 255 / 15%);
-  color: var(--accent-blue);
-}
-
-.capability-user-addable {
-  background: rgb(63 185 80 / 15%);
-  color: var(--accent-green);
-}
-
-.capability-system-ci {
-  background: rgb(136 136 136 / 15%);
-  color: var(--text-tertiary);
-}
-
-.capability-requires-approval {
-  background: rgb(240 136 62 / 15%);
-  color: #f0883e;
-}
-
-.capability-supports-streaming {
-  background: rgb(167 139 250 / 15%);
-  color: #a78bfa;
-}
-
-.capability-supports-recovery {
-  background: rgb(86 212 221 / 15%);
-  color: #56d4dd;
-}
 
 /* ==========================================================================
    Permissions
@@ -608,36 +450,6 @@ plugin-catalog {
 /* ==========================================================================
    Backend Integration
    ========================================================================== */
-
-.backend-details {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  margin-top: 0.75rem;
-}
-
-.backend-detail-row {
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
-}
-
-.backend-detail-label {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--text-secondary);
-  min-width: 7.5rem;
-}
-
-.backend-detail-value {
-  font-family: var(--font-mono);
-  font-size: 0.8125rem;
-  color: var(--accent-blue);
-  background: var(--bg-tertiary);
-  padding: 0.1875rem 0.5rem;
-  border-radius: 0.25rem;
-  font-weight: 600;
-}
 
 /* ==========================================================================
    Tool Definitions
@@ -698,14 +510,6 @@ plugin-catalog {
   color: var(--text-secondary);
   line-height: 1.5;
   margin-bottom: 0.75rem;
-}
-
-.tool-schema-header {
-  font-size: 0.8125rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 0.375rem;
-  margin-top: 0.75rem;
 }
 
 .tool-params-list {
@@ -789,188 +593,15 @@ plugin-catalog {
    Operations (Backend)
    ========================================================================== */
 
-.operations-list {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-  margin-top: 1rem;
-}
-
-.operations-empty {
-  padding: 1.5rem;
-  text-align: center;
-  color: var(--text-tertiary);
-  font-size: 0.875rem;
-  font-style: italic;
-  background: var(--bg-tertiary);
-  border-radius: 0.5rem;
-  margin-top: 1rem;
-}
-
-.operation-item {
-  padding: 1rem;
-  background: var(--bg-tertiary);
-  border-radius: 0.5rem;
-  border: 0.0625rem solid var(--border-color);
-}
-
-.operation-header {
-  margin-bottom: 0.5rem;
-}
-
-.operation-name {
-  font-family: var(--font-mono);
-  font-size: 0.875rem;
-  font-weight: 700;
-  color: var(--accent-blue);
-  background: var(--bg-primary);
-  padding: 0.25rem 0.625rem;
-  border-radius: 0.25rem;
-}
-
-.operation-description {
-  font-size: 0.875rem;
-  color: var(--text-secondary);
-  line-height: 1.5;
-  margin-bottom: 0.75rem;
-}
-
-.operation-params-label {
-  font-size: 0.8125rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-top: 0.75rem;
-  margin-bottom: 0.375rem;
-}
-
-.operation-params {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.operation-param {
-  padding: 0.25rem 0.5rem;
-  border-radius: 0.25rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  font-family: var(--font-mono);
-}
-
-.operation-param-required {
-  background: rgb(240 136 62 / 15%);
-  color: #f0883e;
-}
-
-.operation-param-optional {
-  background: rgb(136 136 136 / 15%);
-  color: var(--text-tertiary);
-}
-
 /* ==========================================================================
    Usage Documentation & LLM Guidance (Markdown Content)
    ========================================================================== */
-
-.usage-content,
-.llm-guidance-content {
-  margin-top: 1rem;
-  padding: 1.5rem;
-  background: var(--bg-tertiary);
-  border-radius: 0.5rem;
-  border: 0.0625rem solid var(--border-color);
-  font-size: 0.875rem;
-  line-height: 1.6;
-  color: var(--text-primary);
-}
-
-.usage-content h1,
-.usage-content h2,
-.usage-content h3,
-.usage-content h4,
-.llm-guidance-content h1,
-.llm-guidance-content h2,
-.llm-guidance-content h3,
-.llm-guidance-content h4 {
-  margin-top: 1rem;
-  margin-bottom: 0.5rem;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.usage-content h1,
-.llm-guidance-content h1 {
-  font-size: 1.25rem;
-}
-
-.usage-content h2,
-.llm-guidance-content h2 {
-  font-size: 1.125rem;
-}
-
-.usage-content h3,
-.llm-guidance-content h3 {
-  font-size: 1rem;
-}
-
-.usage-content p,
-.llm-guidance-content p {
-  margin: 0.75rem 0;
-}
-
-.usage-content ul,
-.usage-content ol,
-.llm-guidance-content ul,
-.llm-guidance-content ol {
-  margin: 0.75rem 0;
-  padding-left: 1.5rem;
-}
-
-.usage-content li,
-.llm-guidance-content li {
-  margin: 0.375rem 0;
-}
-
-.usage-content code,
-.llm-guidance-content code {
-  font-family: var(--font-mono);
-  font-size: 0.8125rem;
-  background: var(--bg-primary);
-  padding: 0.125rem 0.375rem;
-  border-radius: 0.1875rem;
-  color: var(--accent-blue);
-}
-
-.usage-content pre,
-.llm-guidance-content pre {
-  margin: 0.75rem 0;
-  padding: 1rem;
-  background: rgb(0 0 0 / 20%);
-  border: 0.0625rem solid var(--border-color);
-  border-radius: 0.375rem;
-  overflow-x: auto;
-}
-
-.usage-content pre code,
-.llm-guidance-content pre code {
-  background: none;
-  padding: 0;
-}
-
-.usage-content strong,
-.llm-guidance-content strong {
-  font-weight: 700;
-  color: var(--text-primary);
-}
 
 /* ==========================================================================
    Strategy-Specific Styles
    ========================================================================== */
 
 /* Strategy capability badge */
-.capability-sub-conversations {
-  background: rgb(167 139 250 / 15%);
-  color: #a78bfa;
-}
 
 /* Strategy recommendations section */
 .strategy-recommendations {
@@ -1008,22 +639,6 @@ plugin-catalog {
   border: 0.0625rem solid var(--border-color);
 }
 
-.trigger-examples {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.trigger-example {
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  background: var(--bg-tertiary);
-  color: var(--accent-blue);
-  padding: 0.25rem 0.5rem;
-  border-radius: 0.25rem;
-  font-style: italic;
-}
-
 .approach-text {
   margin: 0;
   font-size: 0.875rem;
@@ -1053,49 +668,6 @@ plugin-catalog {
   font-size: 0.875rem;
   line-height: 1.6;
   color: var(--text-secondary);
-}
-
-.tradeoffs-group {
-  margin-top: 0.5rem;
-}
-
-.tradeoffs-content {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1.5rem;
-  margin-top: 0.75rem;
-  padding: 1rem;
-  background: var(--bg-tertiary);
-  border-radius: 0.5rem;
-  border: 0.0625rem solid var(--border-color);
-}
-
-.tradeoffs-heading {
-  font-size: 0.8125rem;
-  font-weight: 700;
-  margin-bottom: 0.5rem;
-  text-transform: uppercase;
-  letter-spacing: 0.0313rem;
-}
-
-.tradeoffs-pros .tradeoffs-heading {
-  color: var(--accent-green);
-}
-
-.tradeoffs-cons .tradeoffs-heading {
-  color: #f0883e;
-}
-
-.tradeoffs-list {
-  margin: 0;
-  padding-left: 1.25rem;
-  font-size: 0.8125rem;
-  line-height: 1.5;
-  color: var(--text-secondary);
-}
-
-.tradeoff-item {
-  margin-bottom: 0.375rem;
 }
 
 /* Failed plugins banner */

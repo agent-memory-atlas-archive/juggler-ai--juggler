@@ -53,7 +53,7 @@ composer-box textarea {
    same box, so the ring is what says where the file will end up. */
 composer-box composer-box-wrapper.drag-over,
 conversation-area.file-drag-over composer-box composer-box-wrapper {
-    box-shadow: 0 0 0 0.125rem var(--accent-color, #4a9eff);
+    box-shadow: 0 0 0 0.125rem var(--accent-blue);
 }
 
 /* Suggested replies: sitting on the composer's own background strip, directly
@@ -238,9 +238,9 @@ composer-box textarea.paste-mirrored {
    the transparent textarea text underneath. */
 composer-box .paste-mirror .paste-token {
     border-radius: 0.375rem;
-    color: var(--accent-color, #4a9eff);
-    background: color-mix(in srgb, var(--accent-color, #4a9eff) 20%, transparent);
-    box-shadow: 0 0 0 0.0625rem color-mix(in srgb, var(--accent-color, #4a9eff) 40%, transparent);
+    color: var(--accent-blue);
+    background: color-mix(in srgb, var(--accent-blue) 20%, transparent);
+    box-shadow: 0 0 0 0.0625rem color-mix(in srgb, var(--accent-blue) 40%, transparent);
 
     /* Signals the click-to-expand affordance. The mirror is pointer-events:none
        and sits behind the textarea, so the effective cursor over a pill is set on
@@ -254,8 +254,49 @@ composer-box .paste-mirror .paste-token {
    thread is blocked by the insert, so an animation would stutter anyway. */
 composer-box .paste-mirror .paste-token.expanding {
     opacity: 0.5;
-    background: color-mix(in srgb, var(--accent-color, #4a9eff) 38%, transparent);
-    box-shadow: 0 0 0 0.0625rem color-mix(in srgb, var(--accent-color, #4a9eff) 65%, transparent);
+    background: color-mix(in srgb, var(--accent-blue) 38%, transparent);
+    box-shadow: 0 0 0 0.0625rem color-mix(in srgb, var(--accent-blue) 65%, transparent);
+}
+
+/* ==========================================================================
+   Control buttons (.input-ctrl-btn)
+   The same ghost chrome patterns/buttons.css gives .btn-ghost, restated here
+   because the class belongs to this component: composer-box is its only user,
+   and every rule that refines it is in this file. Filed in patterns it would
+   be chrome nothing here could override; filed in utilities, as it was, it
+   would be chrome nothing anywhere could override.
+   ========================================================================== */
+
+composer-box .input-ctrl-btn {
+    border: 0.0625rem solid transparent;
+    border-radius: 1rem;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background var(--transition-base), border-color var(--transition-base), color var(--transition-base), transform var(--transition-base);
+}
+
+composer-box .input-ctrl-btn:hover:not(:disabled) {
+    background: var(--overlay-dark-70);
+    border-color: var(--overlay-light-30);
+    color: var(--text-primary);
+    transform: none;
+}
+
+composer-box .input-ctrl-btn:active {
+    transform: scale(0.95);
+}
+
+/* A disabled control button (e.g. the schedule button over an empty box) reads
+   as inert: dimmed, default cursor, no hover/active affordance. */
+composer-box .input-ctrl-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+:root[data-theme="light"] composer-box .input-ctrl-btn:hover:not(:disabled) {
+    background: rgb(255 255 255 / 95%);
+    border-color: var(--text-tertiary);
 }
 
 /* Strategy selector shares the .input-ctrl-btn ghost-pill style; only its

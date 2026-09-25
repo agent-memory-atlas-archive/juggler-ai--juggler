@@ -1,0 +1,34 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+/**
+ * The outer card every transient surface wears.
+ *
+ * One policy, one file, and it names the surfaces it applies to rather than
+ * belonging to any of them — which is why manifest.json marks it `enumerates`
+ * and the ownership check leaves it alone. The alternative is these four
+ * declarations copied into three component files, where nobody can see they are
+ * one decision.
+ *
+ * Lowest layer that can state it, so any of the three can still override its
+ * own corner: the phone bottom sheets do exactly that.
+ */
+
+/* Shared popup-surface chrome — the single definition of the outer "card" look
+   (background, border, large rounded corner, shadow) for every transient
+   surface: anchored dropdowns/menus, the pickers, and centred modal dialogs.
+   Tune the whole family via the --radius-popup / --popup-shadow tokens (:root
+   above). Each surface below adds only its own layout (size, position, internal
+   padding); none redefines this chrome. The phone bottom-sheet rules override
+   the radius to a top-only curve — see the popup-sheet block. */
+.dropdown-menu,
+.pp-panel,
+modal-panel {
+    background: var(--bg-secondary);
+    border: 0.0625rem solid var(--border-floating);
+    border-radius: var(--radius-popup);
+    box-shadow: var(--popup-shadow);
+}

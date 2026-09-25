@@ -51,7 +51,7 @@
    Standard close button for panels and modals.
    Usage: Add class "close-button" to any button element.
    Chrome (transparent rest, hover fill + hairline border, press dip) comes
-   from the shared .u-btn-ghost house style in utilities.css, which lists
+   from the shared .btn-ghost house style in utilities.css, which lists
    .close-button alongside it; this rule owns only the box. The × itself is
    an .icon-close span, so it centres on geometry rather than font metrics.
    ================================================================== */
@@ -232,12 +232,6 @@ code-block pre {
     margin: 0;
     padding: 0.9375rem;
     overflow-x: auto;
-}
-
-code-block code {
-    font-family: var(--font-mono);
-    font-size: 0.8125rem;
-    line-height: 1.5;
 }
 
 /* Scrollbar styling for code blocks - uses code-specific colors */

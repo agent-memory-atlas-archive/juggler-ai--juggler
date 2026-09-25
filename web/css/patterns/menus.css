@@ -1,0 +1,170 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+/* ============================================================================
+   MENU UTILITY SYSTEM
+
+   Reusable menu/dropdown components for the entire application.
+   NO domain-specific styles - use semantic classes only.
+
+   Structure:
+   <menu class="dropdown-menu [show]">
+     <li class="menu-item">Interactive item</li>
+     <li class="menu-header">Section Header</li>
+     <li class="menu-divider"></li>
+     <li class="menu-item unavailable">Disabled item</li>
+     <menu class="menu-group">
+       <li class="menu-item">Nested item</li>
+     </menu>
+   </menu>
+   ============================================================================ */
+
+/* Filed in `patterns`, which is what it is: chrome shared by unrelated
+   components, owned by none of them. It used to live in layout/app-shell.css —
+   a lower layer and a file about the app's columns — so a component that meant
+   to refine a menu row had to out-specify it from there. */
+
+/* Menu Container - Base dropdown/menu container */
+.dropdown-menu {
+    display: none;
+    position: fixed;
+    left: var(--dropdown-x, 0.5rem);
+    top: var(--dropdown-y, 0.5rem);
+    min-width: 10rem;
+    width: max-content;
+    max-width: 25rem;
+    z-index: var(--z-dropdown);
+    margin: 0;
+    padding: var(--popup-padding) var(--popup-padding-inline);
+    list-style: none;
+    overflow-y: auto;
+    max-height: 80vh;
+}
+
+.dropdown-menu.show {
+    display: block;
+}
+
+/* Hold-to-cycle HUDs (model / strategy / thinking shortcuts) open under a
+   modifier hold, while the OS has hidden the pointer because the user is
+   "typing". Until the pointer actually moves, suppress the menu's hover/click
+   so an item under the stationary invisible cursor doesn't light up as if
+   hovered. HoldToCycleController sets `hud-pointer-idle` on <body> when the menu
+   opens and clears it on the first pointermove. */
+body.hud-pointer-idle .dropdown-menu {
+    pointer-events: none;
+}
+
+/* Menu Item - Interactive clickable item. Rounded, inset rows: the container's
+   --popup-padding gutter keeps them clear of the large corner curve, and the
+   row's own radius echoes it. */
+.menu-item {
+    padding: 0.45rem 0.75rem;
+    border-radius: var(--radius-popup-item);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: background 150ms ease;
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    list-style: none;
+}
+
+.menu-item:hover {
+    background: var(--bg-raised);
+}
+
+/* Menu Item Variants */
+.menu-item.danger {
+    color: var(--accent-red);
+}
+
+.menu-item.danger:hover {
+    background: var(--bg-raised);
+}
+
+.menu-item.unavailable {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.menu-item.unavailable:hover {
+    background: transparent;
+}
+
+.menu-item.active {
+    color: var(--accent-green);
+}
+
+/* Menu Divider - Horizontal separator */
+.menu-divider {
+    height: 0.0625rem;
+    background: var(--border-divider);
+    margin: 0.375rem 0;
+    list-style: none;
+}
+
+/* Menu Header - Non-interactive section label */
+.menu-header {
+    padding: 0.5rem 0.75rem 0.375rem;
+    margin-top: 1rem;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.025rem;
+    cursor: default;
+    list-style: none;
+    background: var(--bg-raised);
+    margin-bottom: 0.2rem;
+}
+
+.menu-header:hover {
+    background: var(--bg-raised);
+}
+
+/* Menu Group - Nested submenu container */
+.menu-group {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+/* Indented items in menu groups */
+:where(.menu-group) .menu-item {
+    padding-left: 2rem;
+    font-size: 0.8125rem;
+}
+
+/* Menu Item Icon - Icon container within menu items */
+.menu-item-icon {
+    width: 1.25rem;
+    height: 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+.menu-item-icon svg {
+    width: 1.25rem;
+    height: 1.25rem;
+    fill: currentcolor;
+}
+
+/* Settings icon for menu items */
+.menu-settings-icon {
+    width: 1rem;
+    height: 1rem;
+    flex-shrink: 0;
+    background-color: var(--text-secondary);
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='m370-80-16-128q-13-5-24.5-12T307-235l-119 50L78-375l103-78q-1-7-1-13.5v-27q0-6.5 1-13.5L78-585l110-190 119 50q11-8 23-15t24-12l16-128h220l16 128q13 5 24.5 12t22.5 15l119-50 110 190-103 78q1 7 1 13.5v27q0 6.5-2 13.5l103 78-110 190-118-50q-11 8-23 15t-24 12L590-80H370Zm112-260q58 0 99-41t41-99q0-58-41-99t-99-41q-59 0-99.5 41T342-480q0 58 40.5 99t99.5 41Z'/%3E%3C/svg%3E");
+    mask-size: contain;
+    mask-repeat: no-repeat;
+    mask-position: center;
+}

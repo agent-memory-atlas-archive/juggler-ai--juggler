@@ -711,7 +711,7 @@ class StrategySelector extends HTMLElement {
                         </span>
                     </header>
                     <p class="strategy-item-description">${manifest.description}</p>
-                    <button type="button" class="strategy-info-button u-btn-ghost" data-strategy-info-id="${id}" title="View strategy details" aria-label="View ${manifest.name} strategy details">${INFO_SVG}</button>
+                    <button type="button" class="strategy-info-button btn-ghost" data-strategy-info-id="${id}" title="View strategy details" aria-label="View ${manifest.name} strategy details">${INFO_SVG}</button>
                 </li>
             `;
     }).join('');

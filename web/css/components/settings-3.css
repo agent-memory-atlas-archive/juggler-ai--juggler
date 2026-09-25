@@ -1087,7 +1087,7 @@ settings-panel .updates-mode-row .provider-control {
 settings-panel .updates-mode-radio {
     width: 1rem;
     height: 1rem;
-    accent-color: var(--accent-color);
+    accent-color: var(--accent-blue);
     cursor: pointer;
 }
 

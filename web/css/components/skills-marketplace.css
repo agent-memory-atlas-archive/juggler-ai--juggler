@@ -43,7 +43,7 @@
 
 /* Refresh the active view: re-fetch registries on Discover, rescan local folders
    on Installed. Icon-only, right-aligned on the header row. Carries
-   .u-btn-ghost for the shared button chrome; this owns placement and size. */
+   .btn-ghost for the shared button chrome; this owns placement and size. */
 .skills-refresh {
   margin-left: auto;
   display: inline-flex;

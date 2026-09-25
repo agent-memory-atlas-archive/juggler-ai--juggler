@@ -357,7 +357,7 @@ async function mountShell(pins) {
   const toggle = document.createElement('button');
   toggle.type = 'button';
   toggle.id = 'pinboard-header-button';
-  toggle.className = 'u-btn-ghost u-btn-icon-header pinboard-header-button';
+  toggle.className = 'btn-ghost btn-icon-header pinboard-header-button';
   toggle.title = 'Toggle Pinboard';
   toggle.setAttribute('aria-label', 'Toggle Pinboard');
   toggle.setAttribute('aria-expanded', 'false');
@@ -1628,8 +1628,8 @@ export async function runTests(_ctx) {
         const host = doc.createElement('div');
         host.style.cssText = 'position:relative;width:360px;height:480px';
         host.innerHTML = '<div class="pinboard-panel"></div>'
-          + '<button class="u-btn-icon-header pinboard-header-button"></button>'
-          + '<button class="u-btn-icon-header pinboard-header-button" hidden></button>';
+          + '<button class="btn-icon-header pinboard-header-button"></button>'
+          + '<button class="btn-icon-header pinboard-header-button" hidden></button>';
         doc.body.appendChild(host);
 
         const panel = /** @type {HTMLElement} */ (host.querySelector('.pinboard-panel'));
@@ -1639,7 +1639,7 @@ export async function runTests(_ctx) {
         assert(doc.defaultView?.getComputedStyle(buttons[0]).display !== 'none',
           'the toggle is the way in at every width, phone included');
         assert(doc.defaultView?.getComputedStyle(buttons[1]).display === 'none',
-          'and [hidden] still puts it away, over .u-btn-icon-header’s own display');
+          'and [hidden] still puts it away, over .btn-icon-header’s own display');
 
         // The open drawer's scrim must cover the board. On a phone the board is
         // the full width of .app-main, so a scrim beneath it is a scrim nobody

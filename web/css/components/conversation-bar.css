@@ -805,7 +805,7 @@ conversation-bar .conversation-tab.active .conversation-tab-bin:hover {
     display: none;
 }
 
-/* Bottom-of-bar Bin entry — opens the bin modal. Carries .u-btn-ghost, so the
+/* Bottom-of-bar Bin entry — opens the bin modal. Carries .btn-ghost, so the
    resting/hover/press chrome is the shared house style; this owns the row
    layout (icon, label, size hint, count badge) and the type scale. */
 conversation-bar .conversation-bin-button {
@@ -1460,7 +1460,7 @@ conversation-tab .conversation-tab-loading-content {
     flex-direction: column;
     align-items: center;
     gap: 0.75rem;
-    color: var(--text-muted, #888);
+    color: var(--text-tertiary);
 }
 
 conversation-tab .conversation-tab-loading-content juggler-spinner {
@@ -1510,3 +1510,46 @@ conversation-bar .conversation-tabs::-webkit-scrollbar-thumb {
    (folder icon + path + chevron — click to change it) plus an inline
    "open new window" button. Pushes header-actions to the right edge via
    margin-right: auto. */
+
+/* ==========================================================================
+   Phone: the sidebar becomes an off-canvas drawer
+   Rather than permanently stealing ~15rem of the width it slides in over the
+   conversation columns. .app-main is position:relative, so the absolute
+   positioning below anchors to it. No `.app-main` prefix is needed to win
+   against the base `conversation-bar { position: relative; width: 15rem }`:
+   that rule is in this file, above this one.
+   ========================================================================== */
+@media (width <= 36rem) {
+    conversation-bar {
+        position: absolute;
+        inset: 0 auto 0 0;
+        z-index: var(--z-dropdown);
+        width: min(15rem, 80vw);
+        transform: translateX(-100%);
+        transition: transform 200ms ease;
+
+        /* Horizontal drags are the swipe-to-dismiss gesture
+           (ui-event-manager.js `_setupSidebarSwipe`), vertical ones stay the
+           browser's so the tab list still scrolls. `pan-y` claims exactly that
+           split — `none` would take the scroll away too. It only states the
+           intent: holding a swipe against a browser that reads the drag's
+           vertical drift as a scroll takes cancelling the touchmove, which the
+           swipe does once it owns the gesture. */
+        touch-action: pan-y;
+    }
+
+    /* Shadow only while open: when closed the drawer's right edge sits at the
+       viewport's left edge (translateX(-100%)), so a permanent box-shadow would
+       blur its 1.5rem out over the page. Painting it only in the open state
+       keeps the closed drawer fully off-canvas. */
+    body.sidebar-open conversation-bar {
+        transform: translateX(0);
+        box-shadow: 0 0 1.5rem rgb(0 0 0 / 35%);
+    }
+
+    /* The resize grip stays active in drawer mode: it sits on the drawer's
+       right edge, so dragging it widens the open drawer to fit long tab names
+       (setupColumnResize sets an inline rem width that overrides the default
+       above; the same localStorage width is shared with fixed mode). The grip
+       rides off-screen with the drawer while it's closed. */
+}

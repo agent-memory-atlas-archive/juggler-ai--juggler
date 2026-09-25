@@ -381,28 +381,3 @@ conversation-footer token-display {
     overflow-wrap: break-word;
 }
 
-.llm-iteration-counter {
-    color: var(--text-secondary);
-    font-size: 0.75rem;
-    padding: 0.125rem 0.5rem;
-    border-radius: 0.25rem;
-    background-color: var(--bg-secondary);
-    margin-left: 0.5rem;
-    font-weight: 500;
-}
-
-.llm-iteration-counter.iteration-normal {
-    color: var(--accent-green);
-    background-color: rgb(76 175 80 / 10%);
-}
-
-.llm-iteration-counter.iteration-warning {
-    color: var(--accent-yellow);
-    background-color: rgb(255 193 7 / 10%);
-}
-
-.llm-iteration-counter.iteration-critical {
-    color: var(--error-color);
-    background-color: rgb(244 67 54 / 10%);
-}
-

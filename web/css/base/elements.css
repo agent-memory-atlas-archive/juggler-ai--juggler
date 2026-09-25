@@ -4,6 +4,21 @@
  *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
  */
 
+body {
+    font-family: var(--font-ui);
+    font-weight: var(--font-weight-normal);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    overflow: hidden;
+}
+
+/* Typography - relative font weights */
+strong,
+b {
+    font-weight: var(--font-weight-bold);
+}
+
 /* Scrollbar Styling - Global defaults using CSS variables */
 ::-webkit-scrollbar {
     width: var(--scrollbar-size-medium);
@@ -88,12 +103,12 @@ input, textarea {
    textarea would wrongly show the i-beam on its handle — hence the platform gate
    plus the resizer override below (WebView2/Chromium honours ::-webkit-resizer;
    WebKit ignores it, but native already handles macOS). */
-:root[data-os="windows"] input,
-:root[data-os="windows"] textarea {
+:where(:root[data-os="windows"]) input,
+:where(:root[data-os="windows"]) textarea {
     cursor: var(--cursor-text);
 }
 
-:root[data-os="windows"] textarea::-webkit-resizer {
+:where(:root[data-os="windows"]) textarea::-webkit-resizer {
     cursor: var(--cursor-row-resize);
 }
 
@@ -101,37 +116,9 @@ input:focus, textarea:focus {
     border-color: var(--accent-green);
 }
 
-/* Code Styles */
-
-/* Only apply to standalone pre elements (not inside ci-code-content) */
-pre {
-    background: var(--bg-secondary);
-    border-radius: 0.25rem;
-    padding: 0.9375rem;
-    overflow-x: auto;
-    margin: 0.625rem 0;
-}
-
-/* Remove border and extra styling from pre inside context item code blocks */
-.ci-code-content pre {
-    background: transparent;
-    border: none;
-    border-radius: 0;
-    padding: 0;
-    margin: 0;
-}
-
-code {
-    font-family: var(--font-mono);
-    font-size: 0.875rem;
-}
-
-/* Inline code */
-:not(pre) > code {
-    padding: 0.125rem 0.375rem;
-    border-radius: 0.1875rem;
-    color: var(--accent-green);
-}
+/* `pre` and `code` live in patterns/code.css, with the rest of the code-block
+   geometry: several unrelated components host one, and each has to be able to
+   override the box. */
 
 /* Links */
 a {
@@ -144,11 +131,6 @@ a:hover {
 }
 
 /* Utility Classes */
-.text-green { color: var(--accent-green); }
-.text-blue { color: var(--accent-blue); }
-.text-red { color: var(--accent-red); }
-.text-yellow { color: var(--accent-yellow); }
-.text-secondary { color: var(--text-secondary); }
 
 /* Animation */
 @keyframes pulse {
@@ -168,3 +150,9 @@ a:hover {
     }
 }
 
+/* Below a tablet the whole type scale steps down one notch. */
+@media (width <= 48rem) {
+    body {
+        font-size: 0.8125rem;
+    }
+}

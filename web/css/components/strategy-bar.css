@@ -4,9 +4,9 @@
  *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
  */
 
-/* Header-bar buttons use the shared .u-btn-ghost house style (utilities.css);
-   their size/padding/icon come from the co-classes (u-btn-circular-control,
-   u-btn-icon-header, u-btn-pill-control, ppd-chip, ppd-new-window-button). */
+/* Header-bar buttons use the shared .btn-ghost house style
+   (patterns/buttons.css); their size/padding/icon come from the co-classes
+   (btn-circular-control, btn-icon-header, ppd-chip, ppd-new-window-button). */
 
 strategy-selector {
     display: flex;
@@ -96,7 +96,7 @@ strategy-selector[hidden] {
     color: var(--text-primary);
 }
 
-/* The button carries .u-btn-ghost for its chrome but wants a dimmer resting
+/* The button carries .btn-ghost for its chrome but wants a dimmer resting
    icon than the ghost colour. Scoped to .strategy-item so it outranks the
    utility: utilities are the last layer, so an unscoped rule here could not
    win whatever the source order. */
@@ -131,7 +131,7 @@ strategy-selector[hidden] {
     line-height: 1.4;
 }
 
-/* Input-controls buttons share the .u-btn-ghost house style (chrome lives in
+/* Input-controls buttons share the .btn-ghost house style (chrome lives in
    utilities.css, keyed off `composer-box .input-ctrl-btn`); this owns only their
    size and layout — smaller and shorter than the header buttons. */
 composer-box .input-ctrl-btn {
@@ -201,9 +201,6 @@ composer-box .skill-button .skill-glyph {
 
 /* Context Item Context Menu - uses dropdown-menu utility from styles.css
    NOTE: Positioning handled by positionDropdown() utility */
-.context-item-context-menu {
-    z-index: var(--z-modal);
-}
 
 /* Shared close (×) icon - the glyph inside every .close-button. Drawn as a mask
    rather than a text "×" so it is centred by geometry: a text glyph is placed by

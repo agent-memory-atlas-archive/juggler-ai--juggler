@@ -21,10 +21,7 @@
 			"file": "tokens/theme-dark.css",
 			"layer": "tokens",
 			"owns": [
-				"b",
-				"body",
-				"ci-text-block",
-				"strong"
+				"ci-text-block"
 			]
 		},
 		{
@@ -39,6 +36,8 @@
 			"layer": "base",
 			"owns": [
 				"a",
+				"b",
+				"body",
 				"button",
 				"input",
 				"text-blue",
@@ -46,14 +45,22 @@
 				"text-red",
 				"text-secondary",
 				"text-yellow",
+				"strong",
 				"textarea"
 			]
+		},
+		{
+			"file": "base/text-selection.css",
+			"layer": "base",
+			"enumerates": true,
+			"owns": []
 		},
 		{
 			"file": "layout/app-shell.css",
 			"layer": "layout",
 			"owns": [
 				"app-container",
+				"app-main",
 				"bell-button",
 				"bin-panel",
 				"col-resize-handle",
@@ -63,39 +70,20 @@
 				"conversation-tab-loading-overlay",
 				"conversation-tabs-container",
 				"disconnection-overlay",
-				"dropdown-menu",
 				"find-bar",
-				"header-*",
 				"juggler-context-menu",
 				"logo",
-				"menu-divider",
-				"menu-group",
-				"menu-header",
-				"menu-item",
-				"menu-item-icon",
 				"menu-reset-icon",
-				"menu-settings-icon",
 				"modal-panel",
 				"network-button",
-				"open-settings-item",
 				"pinboard-content__body",
 				"pinboard-placeholder__error",
 				"pp-panel",
-				"set-default-model-item",
 				"settings-button",
+				"sidebar-backdrop",
 				"tool-grouping-button",
 				"update-notice__status-text",
 				"zoom-*"
-			]
-		},
-		{
-			"file": "layout/responsive.css",
-			"layer": "layout",
-			"owns": [
-				"app-main",
-				"popup-*",
-				"pulse",
-				"sidebar-backdrop"
 			]
 		},
 		{
@@ -109,7 +97,47 @@
 			"file": "layout/app-header.css",
 			"layer": "layout",
 			"owns": [
-				"app-header"
+				"app-header",
+				"header-*"
+			]
+		},
+		{
+			"file": "patterns/buttons.css",
+			"layer": "patterns",
+			"owns": [
+				"btn-circular-control",
+				"btn-ghost",
+				"btn-icon-header",
+				"close-button"
+			]
+		},
+		{
+			"file": "patterns/popup-surface.css",
+			"layer": "patterns",
+			"enumerates": true,
+			"owns": []
+		},
+		{
+			"file": "patterns/menus.css",
+			"layer": "patterns",
+			"owns": [
+				"dropdown-menu",
+				"menu-divider",
+				"menu-group",
+				"menu-header",
+				"menu-item",
+				"menu-item-icon",
+				"menu-settings-icon",
+				"open-settings-item",
+				"set-default-model-item"
+			]
+		},
+		{
+			"file": "patterns/code.css",
+			"layer": "patterns",
+			"owns": [
+				"code",
+				"pre"
 			]
 		},
 		{
@@ -330,6 +358,7 @@
 			"layer": "components",
 			"owns": [
 				"model-*",
+				"pulse",
 				"recent-*",
 				"thinking-mini",
 				"thinking-seg",
@@ -605,12 +634,17 @@
 			]
 		},
 		{
+			"file": "components/popup-sheet.css",
+			"layer": "components",
+			"owns": [
+				"popup-*"
+			]
+		},
+		{
 			"file": "vendor/prism-theme.css",
 			"layer": "vendor",
 			"owns": [
 				"bash-*",
-				"code",
-				"pre",
 				"token"
 			]
 		},
@@ -618,19 +652,11 @@
 			"file": "utilities/utilities.css",
 			"layer": "utilities",
 			"owns": [
-				"close-button",
-				"hidden",
-				"u-badge",
-				"u-badge-*",
-				"u-btn-*",
-				"u-card",
-				"u-empty-*",
-				"u-icon-*",
-				"u-interactive-row",
-				"u-scrollbar-thin"
+				"hidden"
 			]
 		}
 	],
+	"$enumerates": "A sheet whose job is to state ONE policy across every surface it applies to, rather than to own a group of its own: base/text-selection.css (what a mouse drag may select) and patterns/popup-surface.css (the outer card every transient surface wears). Their selectors name roots other sheets own, and that is the point — the alternative is the same declaration copied into a dozen component files, where nobody can see it is one decision. The ownership check skips them. They earn it by being small, by holding one policy each, and by sitting in the lowest layer that can state it, so any component can still override its own case.",
 	"$dynamicClasses": "Class names assembled in JS, so no literal exists to find. Each pattern below was proven by locating the composing expression (e.g. `color-${…}`) in web/js. Keep them tight: a pattern broad enough to cover a whole family stops the dead-selector check from seeing anything in it.",
 	"dynamicClasses": [
 		"color-*",

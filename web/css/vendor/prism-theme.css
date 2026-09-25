@@ -7,35 +7,6 @@
 /* PrismJS Tomorrow Night Theme */
 /* Based on https://github.com/PrismJS/prism-themes */
 
-code[class*="language-"],
-pre[class*="language-"] {
-  color: var(--text-primary);
-  background: transparent;
-  font-family: var(--font-mono);
-  font-size: 1em;
-  text-align: left;
-  white-space: pre;
-  word-spacing: normal;
-  word-break: normal;
-  overflow-wrap: normal;
-  line-height: 1.5;
-  tab-size: 4;
-  hyphens: none;
-}
-
-pre[class*="language-"] {
-  padding: 0;
-  margin: 0;
-  overflow: visible;
-  background: transparent;
-}
-
-/* Inline code styling */
-:not(pre) > code[class*="language-"] {
-  white-space: normal;
-}
-
-.token.block-comment,
 .token.cdata,
 .token.comment,
 .token.doctype,
@@ -139,7 +110,7 @@ pre[class*="language-"] {
 }
 
 .bash-command-assignment {
-  color: color-mix(in srgb, var(--bash-command-arg, var(--syntax-property)) 68%, var(--text-muted));
+  color: color-mix(in srgb, var(--bash-command-arg, var(--syntax-property)) 68%, var(--text-tertiary));
   font-style: italic;
 }
 
@@ -190,40 +161,4 @@ pre[class*="language-"] {
 .bash-command-segment-5 {
   --bash-command-head: var(--bash-segment-5-head);
   --bash-command-arg: var(--bash-segment-5-arg);
-}
-
-/*
- * Integration overrides for highlighted code embedded in app chrome (not a
- * standalone code block). The base `code[class*="language-"]` rule above forces
- * `font-size: 1em` and `white-space: pre`; inside a tile summary or a property
- * subsection we want the surrounding layout's sizing and wrapping to win.
- */
-
-/* Highlighted inline snippets embedded in app chrome should keep the host
-   component's spacing. Plain markdown inline code is styled by `.markdown code`
-   below instead. */
-:not(pre) > code.syntax-highlight {
-  padding: 0;
-  border-radius: 0;
-  color: inherit;
-  font-size: inherit;
-  white-space: inherit;
-  background: transparent;
-}
-
-/* Properties panel: a highlighted <pre> must keep its host class's box — Prism's
-   `pre[class*="language-"]` otherwise clobbers padding, background, and forces
-   `white-space: pre`. The extra `.syntax-highlight` class raises specificity so
-   the panel's own layout (wrapping, padding, result-section background) wins. */
-.properties-panel-code.syntax-highlight {
-  white-space: pre-wrap;
-  font-size: 0.75rem;
-  padding: 0.1rem 0.5rem;
-}
-
-.properties-panel-result.syntax-highlight {
-  white-space: pre-wrap;
-  font-size: 0.8125rem;
-  padding: 0.1rem 0.5rem;
-  background: var(--bg-primary);
 }

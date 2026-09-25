@@ -126,7 +126,7 @@ function takeScrollOffsets(dropdown) {
 /**
  * Measure a trigger's resting (untransformed) viewport rect.
  *
- * The header/control buttons that open anchored popups are `.u-btn-ghost`, which
+ * The header/control buttons that open anchored popups are `.btn-ghost`, which
  * applies `transform: scale(0.95)` on `:active` AND transitions `transform`
  * (utilities/utilities.css). A popup opened on click is positioned while the button is
  * still animating back to full size, so a plain `getBoundingClientRect()` reads

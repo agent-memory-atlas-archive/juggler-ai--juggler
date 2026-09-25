@@ -4,24 +4,24 @@
  *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
  */
 
-.markdown p,
-.markdown h1,
-.markdown h2,
-.markdown h3,
-.markdown h4,
-.markdown h5,
-.markdown h6,
-.markdown ul,
-.markdown ol,
-.markdown li,
-.markdown blockquote,
-.markdown table,
-.markdown th,
-.markdown td {
+:where(.markdown) p,
+:where(.markdown) h1,
+:where(.markdown) h2,
+:where(.markdown) h3,
+:where(.markdown) h4,
+:where(.markdown) h5,
+:where(.markdown) h6,
+:where(.markdown) ul,
+:where(.markdown) ol,
+:where(.markdown) li,
+:where(.markdown) blockquote,
+:where(.markdown) table,
+:where(.markdown) th,
+:where(.markdown) td {
     font-family: var(--font-sans);
 }
 
-.markdown p {
+:where(.markdown) p {
     margin: 0.625rem 0;
 }
 
@@ -31,11 +31,11 @@
    user bubble whose text is now rendered markdown (see user-message.js).
    Generalised from `p:first-child` so a message that opens or closes with a
    non-paragraph block doesn't gain a stray leading/trailing gap. */
-.markdown > :first-child {
+:where(.markdown) > :first-child {
     margin-top: 0;
 }
 
-.markdown > :last-child {
+:where(.markdown) > :last-child {
     margin-bottom: 0;
 }
 
@@ -52,22 +52,27 @@
 
 /* Same flush-to-the-padding rule as above, one level down. Layout containment
    means the inner block's margin can't collapse out through the box, so it
-   would otherwise show up as a gap the plain-markdown case doesn't have. */
-.markdown-html-scope > [data-markdown-scope] > :first-child {
+   would otherwise show up as a gap the plain-markdown case doesn't have.
+
+   Only the outer box is weightless: `[data-markdown-scope] > :first-child` has
+   to keep enough weight to beat the margin the block-level rules below put on
+   whatever lands first — a `.code-block-wrap`, a table wrapper — which is the
+   whole point of the rule. */
+:where(.markdown-html-scope) > [data-markdown-scope] > :first-child {
     margin-top: 0;
 }
 
-.markdown-html-scope > [data-markdown-scope] > :last-child {
+:where(.markdown-html-scope) > [data-markdown-scope] > :last-child {
     margin-bottom: 0;
 }
 
-.markdown code {
+:where(.markdown) code {
     padding: 0.1875rem 0.1rem;
     border-radius: 0.1875rem;
     color: var(--accent-green, #3fb950);
 }
 
-.markdown pre {
+:where(.markdown) pre {
     background: rgb(0 0 0 / 3%);
     padding: 0.875rem;
     border-radius: 0.25rem;
@@ -76,7 +81,7 @@
     border: 0.0625rem solid var(--border-color, #30363d);
 }
 
-.markdown pre code {
+:where(.markdown) pre code {
     padding: 0;
     color: var(--text-primary, #e6edf3);
     font-family: var(--font-mono);
@@ -87,12 +92,12 @@
    decorateCodeBlocks(), so the corner copy button stays pinned to the visible
    corner while the <pre> scrolls horizontally. Inherits the <pre>'s vertical
    rhythm; the inner <pre> drops its own margin to avoid doubling it. */
-.markdown .code-block-wrap {
+:where(.markdown) .code-block-wrap {
     position: relative;
     margin: 0.75rem 0;
 }
 
-.markdown .code-block-wrap pre {
+:where(.markdown) .code-block-wrap pre {
     margin: 0;
 }
 
@@ -157,13 +162,13 @@
     }
 }
 
-.markdown ul,
-.markdown ol {
+:where(.markdown) ul,
+:where(.markdown) ol {
     margin: 0.625rem 0;
     padding-left: 1.5rem;
 }
 
-.markdown li {
+:where(.markdown) li {
     margin: 0.375rem 0;
 }
 
@@ -172,7 +177,7 @@
    assistant reply — reads as tracked work instead of literal "[x]" text. GFM
    spells two states; markdown.js recognises five and replaces the marker with
    this markup, so there is no <input> here to restyle. */
-.markdown .task-box {
+:where(.markdown) .task-box {
     /* Geometry comes from the shared `.tick-box` primitive; the size is passed
        through so it and the hanging indent below cannot drift apart. */
     --tick-box-size: var(--task-box-size);
@@ -185,17 +190,17 @@
 
 /* The glyph is a masked element rather than a border trick: two rotated 1.5px
    borders antialias into a smudge at this size. */
-.markdown .task-box-mark {
+:where(.markdown) .task-box-mark {
     background-color: var(--tick-box-mark-color, transparent);
 }
 
-.markdown .task-box--pending {
+:where(.markdown) .task-box--pending {
     --tick-box-border: var(--task-pending-border);
 }
 
 /* A step that is running is the one thing worth finding in a long list, so the
    box breathes. Opacity only — it composites, so a plan left open costs nothing. */
-.markdown .task-box--in-progress {
+:where(.markdown) .task-box--in-progress {
     --tick-box-border: var(--task-progress-box);
     --tick-box-fill: var(--task-progress-box);
     --tick-box-mark-color: var(--task-progress-mark);
@@ -203,36 +208,36 @@
     animation: task-box-pulse 1.6s ease-in-out infinite;
 }
 
-.markdown .task-box--completed {
+:where(.markdown) .task-box--completed {
     --tick-box-border: var(--task-done-box);
     --tick-box-fill: var(--task-done-box);
     --tick-box-mark-color: var(--task-done-mark);
 }
 
-.markdown .task-box--failed {
+:where(.markdown) .task-box--failed {
     --tick-box-border: var(--task-failed-box);
     --tick-box-fill: var(--task-failed-box);
     --tick-box-mark-color: var(--task-failed-mark);
 }
 
-.markdown .task-box--skipped {
+:where(.markdown) .task-box--skipped {
     --tick-box-border: var(--task-skipped-border);
     --tick-box-mark-color: var(--task-skipped-mark);
 }
 
-.markdown .task-box--in-progress .task-box-mark {
+:where(.markdown) .task-box--in-progress .task-box-mark {
     mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='M240-440v-80h480v80H240Z'/%3E%3C/svg%3E") center/contain no-repeat;
 }
 
-.markdown .task-box--completed .task-box-mark {
+:where(.markdown) .task-box--completed .task-box-mark {
     mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z'/%3E%3C/svg%3E") center/contain no-repeat;
 }
 
-.markdown .task-box--failed .task-box-mark {
+:where(.markdown) .task-box--failed .task-box-mark {
     mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z'/%3E%3C/svg%3E") center/contain no-repeat;
 }
 
-.markdown .task-box--skipped .task-box-mark {
+:where(.markdown) .task-box--skipped .task-box-mark {
     mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='M647-440H160v-80h487L423-744l57-56 320 320-320 320-57-56 224-224Z'/%3E%3C/svg%3E") center/contain no-repeat;
 }
 
@@ -251,7 +256,7 @@
 /* Hanging indent, so a wrapped line — or a plan step's "Result:" continuation —
    aligns with the text above it instead of flowing back under the box. The
    inset is exactly the space the box occupies. */
-.markdown li.task-list-item {
+:where(.markdown) li.task-list-item {
     padding-inline-start: calc(var(--task-box-size) + var(--task-box-gap));
     text-indent: calc(-1 * (var(--task-box-size) + var(--task-box-gap)));
 }
@@ -260,47 +265,47 @@
    code block, a second paragraph — would start a step to the left. Reset them
    all, then re-assert on the paragraph a *loose* list wraps the first line in,
    which is the one block the indent is actually for. */
-.markdown li.task-list-item > * {
+:where(.markdown) li.task-list-item > * {
     text-indent: 0;
 }
 
-.markdown li.task-list-item > p:first-child {
+:where(.markdown) li.task-list-item > p:first-child {
     text-indent: calc(-1 * (var(--task-box-size) + var(--task-box-gap)));
 }
 
 /* A skipped step was passed over deliberately: still legible, no longer live. */
-.markdown li.task-list-item--skipped {
+:where(.markdown) li.task-list-item--skipped {
     color: var(--text-secondary);
 }
 
-.markdown a {
+:where(.markdown) a {
     color: var(--accent-blue, #58a6ff);
     text-decoration: none;
 }
 
-.markdown a:hover {
+:where(.markdown) a:hover {
     text-decoration: underline;
 }
 
-.markdown h1,
-.markdown h2,
-.markdown h3,
-.markdown h4,
-.markdown h5,
-.markdown h6 {
+:where(.markdown) h1,
+:where(.markdown) h2,
+:where(.markdown) h3,
+:where(.markdown) h4,
+:where(.markdown) h5,
+:where(.markdown) h6 {
     margin: 1rem 0 0.5rem;
     color: var(--text-primary, #e6edf3);
     font-weight: 600;
 }
 
-.markdown h1 { font-size: 1.5rem; }
-.markdown h2 { font-size: 1.25rem; }
-.markdown h3 { font-size: 1.125rem; }
-.markdown h4 { font-size: 1rem; }
-.markdown h5 { font-size: 0.875rem; }
-.markdown h6 { font-size: 0.875rem; }
+:where(.markdown) h1 { font-size: 1.5rem; }
+:where(.markdown) h2 { font-size: 1.25rem; }
+:where(.markdown) h3 { font-size: 1.125rem; }
+:where(.markdown) h4 { font-size: 1rem; }
+:where(.markdown) h5 { font-size: 0.875rem; }
+:where(.markdown) h6 { font-size: 0.875rem; }
 
-.markdown blockquote {
+:where(.markdown) blockquote {
     border-left: 0.1875rem solid var(--accent-blue, #58a6ff);
     margin: 0.75rem 0;
     padding: 0.5rem 1rem;
@@ -308,7 +313,7 @@
     color: var(--text-secondary, #8b949e);
 }
 
-.markdown hr {
+:where(.markdown) hr {
     border: none;
     border-top: 0.0625rem solid var(--border-divider, #30363d);
     margin: 1rem 0;
@@ -319,34 +324,34 @@
    of spilling off the edge. A <table> ignores overflow itself, so it needs
    this block ancestor to scroll. The wrapper owns the table's vertical rhythm;
    the inner table drops its own margin to avoid doubling it. */
-.markdown .table-scroll-wrap {
+:where(.markdown) .table-scroll-wrap {
     overflow-x: auto;
     margin: 0.75rem 0;
 }
 
-.markdown .table-scroll-wrap table {
+:where(.markdown) .table-scroll-wrap table {
     margin: 0;
 }
 
-.markdown table {
+:where(.markdown) table {
     border-collapse: collapse;
     width: 100%;
     margin: 0.75rem 0;
 }
 
-.markdown table th,
-.markdown table td {
+:where(.markdown) table th,
+:where(.markdown) table td {
     border: 0.0625rem solid var(--border-color, #30363d);
     padding: 0.5rem 0.75rem;
     text-align: left;
 }
 
-.markdown table th {
+:where(.markdown) table th {
     background: rgb(0 0 0 / 15%);
     font-weight: 600;
 }
 
-.markdown img {
+:where(.markdown) img {
     max-width: 100%;
     height: auto;
     border-radius: 0.25rem;

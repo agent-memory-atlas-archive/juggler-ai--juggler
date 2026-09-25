@@ -49,7 +49,7 @@ app-container {
    position them.
 
    The `.app-header` prefix is load-bearing: the button also carries
-   `.u-btn-icon-header` (utilities.css), which sets `display: flex` at the same
+   `.btn-icon-header` (utilities.css), which sets `display: flex` at the same
    specificity and loads AFTER this file — so a bare `.sidebar-toggle-button`
    hide rule would lose the cascade and the burger would always show. The
    descendant prefix raises specificity above the utility. */
@@ -58,387 +58,22 @@ app-container {
     flex-shrink: 0;
 }
 
+/* …and revealed again on a phone, where the sidebar collapses to a drawer.
+   Gated on viewport width ONLY — it appears in any context (browser tab or
+   native window). Same specificity as the hide rule above and later in the
+   file, so it wins while the query is active. */
+@media (width <= 36rem) {
+    .app-header .sidebar-toggle-button {
+        display: flex;
+        order: -1;
+    }
+}
+
 .sidebar-backdrop {
     display: none;
 }
 
-/* ============================================================================
-   TEXT SELECTION POLICY
-
-   The single place that decides what a mouse drag may select, and what the
-   highlight looks like when it does. The split is chrome vs content:
-
-     Chrome:  surfaces the user aims *clicks* at, never text: menus and
-              popups, the header, the sidebar, the composer's status row,
-              transient overlays and notices. A drag here is a mis-aimed
-              click, so a blue highlight is pure noise. Listed below.
-     Content: everything the user might reasonably want to copy: the
-              conversation transcript, context items, file and diff views,
-              the properties panel body, and the Settings tab bodies. These
-              are the browser default and are NOT listed here.
-
-   Two consequences worth knowing before adding a rule:
-     - `user-select` inherits, so naming a surface's root covers its whole
-       subtree. Prefer one rule on the root over per-label rules; naming
-       labels one at a time is what let popup subtitles, card bodies and
-       menu hints drift back into being selectable.
-     - A descendant's own rule always beats an ancestor's regardless of order,
-       so the carve-outs below (and component-level ones such as
-       `settings-panel .settings-content`, or `.workspace-create-dialog` in
-       components/settings-3.css) hold no matter where they sit. A surface whose
-       class belongs to a component sheet is declared there, not here: ownership
-       is what the architecture lint checks, and this block owns no component.
-   ============================================================================ */
-
-/* The highlight itself, so every platform draws the same one. An unstyled
-   selection takes the engine's own colour, which on Linux is the GTK theme's
-   accent — pinks and reds against these greys. `--selection-bg` is a
-   translucent blue in both themes, so the highlight tints message bubbles, code
-   blocks, diffs and images rather than filling over them.
-
-   Only the background is set, deliberately: a highlight naming no `color` is
-   painted over the text in the colour that text already had, so selected text
-   keeps its own and syntax highlighting survives being selected. (What
-   `getComputedStyle(el, '::selection').color` reports is engine-specific and
-   says nothing about what is painted.) Authoring the rule at all is also what
-   stops a platform substituting its selected-text colour (macOS recolours
-   selected text to white in dark appearance; GTK does its own thing).
-
-   The cost is that selection no longer greys out when the window loses focus —
-   one colour, both states. */
-::selection {
-    background-color: var(--selection-bg);
-}
-
-/* Transient surfaces: every anchored dropdown (strategy, model, permissions,
-   completions, info-cards, path recents), the phone bottom sheets those same
-   surfaces become, the project picker, and the composer's actions sheet.
-   `.dropdown-menu` is the shared surface class for all of them, so this one
-   selector covers both presentations. */
-.dropdown-menu,
-.pp-panel,
-.juggler-context-menu {
-    -webkit-user-select: none;
-    user-select: none;
-}
-
-/* Persistent chrome. `conversation-bar` covers the sidebar tabs, the Bin and
-   the ambient info rail (Tips / Usage / Git status cards) in one go, and
-   `.pinboard-panel` covers the board's own bands — its toolbar, tab strip, item
-   title and status line — leaving only what an item type renders selectable. */
-.app-header,
-conversation-bar,
-conversation-footer,
-token-display,
-update-button,
-update-notice,
-.find-bar,
-.disconnection-overlay,
-.bin-panel,
-.properties-panel-header,
-.pinboard-panel,
-.conversation-tab-loading-overlay {
-    -webkit-user-select: none;
-    user-select: none;
-}
-
-/* Carve-outs: fields the user types into, plus the two places an error worth
-   pasting into a report is reported — the update notice's status line, and a
-   pin whose item type threw. `.pinboard-content__body` is the board's content
-   half: file previews, transcripts and everything else a pin is for.
-   (The About dialog is deliberately absent from the chrome list above: it is
-   prose and links, so it stays selectable like any other content.) */
-.dropdown-menu input,
-.dropdown-menu textarea,
-.pp-panel input,
-.pp-panel textarea,
-conversation-bar input,
-.find-bar input,
-.pinboard-panel input,
-.pinboard-panel textarea,
-.pinboard-content__body,
-.pinboard-placeholder__error,
-.update-notice__status-text {
-    -webkit-user-select: text;
-    user-select: text;
-}
-
-/* ============================================================================
-   MENU UTILITY SYSTEM
-
-   Reusable menu/dropdown components for the entire application.
-   NO domain-specific styles - use semantic classes only.
-
-   Structure:
-   <menu class="dropdown-menu [show]">
-     <li class="menu-item">Interactive item</li>
-     <li class="menu-header">Section Header</li>
-     <li class="menu-divider"></li>
-     <li class="menu-item unavailable">Disabled item</li>
-     <menu class="menu-group">
-       <li class="menu-item">Nested item</li>
-     </menu>
-   </menu>
-   ============================================================================ */
-
-/* Shared popup-surface chrome — the single definition of the outer "card" look
-   (background, border, large rounded corner, shadow) for every transient
-   surface: anchored dropdowns/menus, the pickers, and centred modal dialogs.
-   Tune the whole family via the --radius-popup / --popup-shadow tokens (:root
-   above). Each surface below adds only its own layout (size, position, internal
-   padding); none redefines this chrome. The phone bottom-sheet rules override
-   the radius to a top-only curve — see the popup-sheet block. */
-.dropdown-menu,
-.pp-panel,
-modal-panel {
-    background: var(--bg-secondary);
-    border: 0.0625rem solid var(--border-floating);
-    border-radius: var(--radius-popup);
-    box-shadow: var(--popup-shadow);
-}
-
-/* Menu Container - Base dropdown/menu container */
-.dropdown-menu {
-    display: none;
-    position: fixed;
-    left: var(--dropdown-x, 0.5rem);
-    top: var(--dropdown-y, 0.5rem);
-    min-width: 10rem;
-    width: max-content;
-    max-width: 25rem;
-    z-index: var(--z-dropdown);
-    margin: 0;
-    padding: var(--popup-padding) var(--popup-padding-inline);
-    list-style: none;
-    overflow-y: auto;
-    max-height: 80vh;
-}
-
-.dropdown-menu.show {
-    display: block;
-}
-
-/* Hold-to-cycle HUDs (model / strategy / thinking shortcuts) open under a
-   modifier hold, while the OS has hidden the pointer because the user is
-   "typing". Until the pointer actually moves, suppress the menu's hover/click
-   so an item under the stationary invisible cursor doesn't light up as if
-   hovered. HoldToCycleController sets `hud-pointer-idle` on <body> when the menu
-   opens and clears it on the first pointermove. */
-body.hud-pointer-idle .dropdown-menu {
-    pointer-events: none;
-}
-
-/* Menu Item - Interactive clickable item. Rounded, inset rows: the container's
-   --popup-padding gutter keeps them clear of the large corner curve, and the
-   row's own radius echoes it. */
-.menu-item {
-    padding: 0.45rem 0.75rem;
-    border-radius: var(--radius-popup-item);
-    color: var(--text-primary);
-    font-size: 0.875rem;
-    cursor: pointer;
-    transition: background 150ms ease;
-    display: flex;
-    align-items: center;
-    gap: 0.625rem;
-    list-style: none;
-}
-
-.menu-item:hover {
-    background: var(--bg-raised);
-}
-
-/* Menu Item Variants */
-.menu-item.danger {
-    color: var(--accent-red);
-}
-
-.menu-item.danger:hover {
-    background: var(--bg-raised);
-}
-
-.menu-item.unavailable {
-    opacity: 0.4;
-    cursor: not-allowed;
-}
-
-.menu-item.unavailable:hover {
-    background: transparent;
-}
-
-.menu-item.active {
-    color: var(--accent-green);
-}
-
-/* Menu Divider - Horizontal separator */
-.menu-divider {
-    height: 0.0625rem;
-    background: var(--border-divider);
-    margin: 0.375rem 0;
-    list-style: none;
-}
-
-/* Menu Header - Non-interactive section label */
-.menu-header {
-    padding: 0.5rem 0.75rem 0.375rem;
-    margin-top: 1rem;
-    color: var(--text-secondary);
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.025rem;
-    cursor: default;
-    list-style: none;
-    background: var(--bg-raised);
-    margin-bottom: 0.2rem;
-}
-
-.menu-header:hover {
-    background: var(--bg-raised);
-}
-
-/* Menu Group - Nested submenu container */
-.menu-group {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-}
-
-/* Indented items in menu groups */
-.menu-group .menu-item {
-    padding-left: 2rem;
-    font-size: 0.8125rem;
-}
-
-/* Menu Item Icon - Icon container within menu items */
-.menu-item-icon {
-    width: 1.25rem;
-    height: 1.25rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    margin-left: auto;
-}
-
-.menu-item-icon svg {
-    width: 1.25rem;
-    height: 1.25rem;
-    fill: currentcolor;
-}
-
-/* Settings menu item styling */
-#open-settings-item,
-#set-default-model-item {
-    font-weight: 700;
-}
-
-/* Settings icon for menu items */
-.menu-settings-icon {
-    width: 1rem;
-    height: 1rem;
-    flex-shrink: 0;
-    background-color: var(--text-secondary);
-    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='m370-80-16-128q-13-5-24.5-12T307-235l-119 50L78-375l103-78q-1-7-1-13.5v-27q0-6.5 1-13.5L78-585l110-190 119 50q11-8 23-15t24-12l16-128h220l16 128q13 5 24.5 12t22.5 15l119-50 110 190-103 78q1 7 1 13.5v27q0 6.5-2 13.5l103 78-110 190-118-50q-11 8-23 15t-24 12L590-80H370Zm112-260q58 0 99-41t41-99q0-58-41-99t-99-41q-59 0-99.5 41T342-480q0 58 40.5 99t99.5 41Z'/%3E%3C/svg%3E");
-    mask-size: contain;
-    mask-repeat: no-repeat;
-    mask-position: center;
-}
-
-.menu-reset-icon {
-    width: 1rem;
-    height: 1rem;
-    flex-shrink: 0;
-    background-color: var(--text-secondary);
-    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='M440-122q-121-15-200.5-105.5T160-440q0-66 26-126.5T260-672l57 57q-38 34-57.5 79T240-440q0 88 56 155.5T440-202v80Zm80 0v-80q87-16 143.5-83T720-440q0-100-70-170t-170-70h-3l44 44-56 56-140-140 140-140 56 56-44 44h3q134 0 227 93t93 227q0 121-79.5 211.5T520-122Z'/%3E%3C/svg%3E");
-    mask-size: contain;
-    mask-repeat: no-repeat;
-    mask-position: center;
-}
-
-/* Header Actions Container
-   Pinned to absolute pixel sizes so the +/- zoom (which works by scaling
-   the root font-size) does not affect these controls. px is intentional
-   here — rems would defeat the purpose. */
-/* stylelint-disable rem-over-px/rem-over-px, unit-disallowed-list */
-header-actions {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    padding: 4px 8px;
-    flex-shrink: 0;
-}
-
-/* The regular-controls group is transparent to layout on wide viewports — its
-   buttons behave as direct flex children of header-actions. It only becomes a
-   real (non-wrapping, shrink-to-fit) flex row on a narrow header; see the
-   width <= 36rem block below. */
-.header-actions-controls {
-    display: contents;
-}
-
-header-actions .u-btn-icon-header {
-    width: 32px;
-    height: 32px;
-    padding: 0;
-    font-size: 14px;
-}
-
-header-actions .u-btn-icon-header svg,
-header-actions .u-btn-icon-header::before {
-    width: 20px;
-    height: 20px;
-}
-/* stylelint-enable rem-over-px/rem-over-px, unit-disallowed-list */
-
-/* Touch devices: the header controls are sized for a mouse (2rem), below the
-   comfortable tap target. Grow them where the pointer is coarse and there's no
-   hover to aid aiming — and pin them to an absolute 44px (the iOS minimum),
-   like the desktop header-actions above, so the +/- zoom (which scales the root
-   font-size) can't blow the tap targets up or shrink them away on a phone. The
-   hamburger rides the same fixed size; its glyph is pinned too. The logo is
-   pinned alongside them so the whole header-bar row stays a fixed, deliberate
-   size on a phone regardless of zoom. */
-/* stylelint-disable rem-over-px/rem-over-px, unit-disallowed-list */
-@media (hover: none) {
-    header-actions .u-btn-icon-header,
-    .app-header .sidebar-toggle-button,
-    .app-header .u-btn-circular-control {
-        width: 44px;
-        height: 44px;
-    }
-
-    .app-header .u-btn-pill-control {
-        height: 44px;
-    }
-
-    .app-header .sidebar-toggle-button svg {
-        width: 24px;
-        height: 24px;
-    }
-
-    .app-header .u-btn-circular-control svg {
-        width: 18px;
-        height: 18px;
-    }
-
-    /* .app-header prefix raises specificity above the .logo::before height in
-       the @media (width <= 64rem) block below, which loads later in this file
-       and would otherwise win the cascade on a phone (both queries match). */
-    .app-header .logo::before {
-        height: 28px;
-    }
-
-    /* The help button opens Settings › Keyboard shortcuts — a reference surface
-       with nothing to offer a device that has no keyboard. Drop it from the
-       touch header so it doesn't crowd the button row with a dead affordance. */
-    header-actions .help-button {
-        display: none;
-    }
-}
-/* stylelint-enable rem-over-px/rem-over-px, unit-disallowed-list */
-
-/* Header icon buttons use .u-btn-icon-header utility (see utilities.css)
+/* Header icon buttons use .btn-icon-header utility (see utilities.css)
    Theme button uses inline SVG, plugins/settings use ::before pseudo-elements */
 
 /* Zoom Out Button - mask icon */
@@ -745,3 +380,56 @@ conversation-message-list-wrapper {
     position: relative;
 }
 
+/* The wordmark shrinks with the header's padding at the same breakpoint. */
+@media (width <= 64rem) {
+    .logo::before {
+        height: 1.5rem;
+    }
+}
+
+/* Phone: the drawer's scrim, and one conversation column per screen. */
+@media (width <= 36rem) {
+    /* Scrim: covers the columns beneath the open drawer; tap to dismiss. */
+    .sidebar-backdrop {
+        display: block;
+        position: absolute;
+        inset: 0;
+        z-index: var(--z-controls);
+        background: var(--modal-scrim);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 200ms ease;
+    }
+
+    /* Above everything the drawer is covering, and below the drawer itself. At
+       --z-controls the scrim ties with <pinboard-shell>, which is a later
+       sibling and therefore paints over it — so with the board open the drawer
+       hung over an undimmed workspace, and every tap "outside" the drawer landed
+       on the board instead of on the one element that dismisses it. On a phone
+       the board is the full width of .app-main, so there was nothing left to
+       tap. Raised only while the drawer is open: the rest of the time the scrim
+       is inert and must not sit over the board at all. */
+    body.sidebar-open .sidebar-backdrop {
+        z-index: calc(var(--z-dropdown) - 1);
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    /* Main content: a 30rem column is wider than a phone, forcing horizontal
+       scroll mid-column. Make each column fill the viewport and snap, so the
+       columns page cleanly instead of half-showing. */
+    column-container {
+        scroll-snap-type: x mandatory;
+    }
+
+    column-container conversation-area,
+    column-container conversation-area[style*="width"],
+    column-container properties-panel,
+    column-container properties-panel[style*="width"]:not(:last-child),
+    column-container workspace-panel,
+    column-container workspace-panel[style*="width"] {
+        flex: 0 0 100%;
+        min-width: 0;
+        scroll-snap-align: start;
+    }
+}

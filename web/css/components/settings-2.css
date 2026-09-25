@@ -586,13 +586,6 @@ settings-panel .chime-select option {
     padding: 0.25rem 0.5rem;
 }
 
-settings-panel .settings-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.75rem;
-    margin-top: 2rem;
-}
-
 settings-panel .settings-btn {
     padding: 0.625rem 1.25rem;
     border-radius: 0.375rem;
@@ -657,7 +650,7 @@ settings-panel .settings-btn.icon svg {
 }
 
 settings-panel .settings-btn.icon.spinning svg {
-    animation: u-spin 0.8s linear infinite;
+    animation: control-spin 0.8s linear infinite;
     transform-origin: center;
 }
 
@@ -1039,10 +1032,6 @@ settings-panel .mcp-repeat-row .mcp-input {
     min-width: 0;
 }
 
-settings-panel .mcp-env-row .mcp-env-key {
-    flex: 0 1 12rem;
-}
-
 settings-panel .mcp-remove-row,
 settings-panel .mcp-reveal-btn {
     flex-shrink: 0;
@@ -1411,10 +1400,6 @@ settings-panel .toggle-label {
         grid-template-columns: 1fr;
         gap: 0.75rem;
         padding: 0.75rem 0.875rem;
-    }
-
-    settings-panel .settings-actions {
-        margin-top: 1.25rem;
     }
 
     /* The two chime menus sit side by side on desktop; on a phone-width control

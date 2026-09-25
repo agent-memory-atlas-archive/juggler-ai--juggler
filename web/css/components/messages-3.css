@@ -233,7 +233,6 @@ tool-group-message .thread-summary {
     .thread-summary.thread-status[data-kind="paused"] { animation: none; }
 }
 
-
 /* Thread column header - shown above thread conversation columns.
    Uses properties-panel-section/header for consistent styling with properties panel. */
 .thread-column-header {
@@ -277,20 +276,12 @@ thread-column-actions {
     color: var(--accent-blue, #58a6ff);
 }
 
-
 .thread-column .conversation-message-list {
     padding-top: 1rem;
     scroll-padding-top: 1rem;
 }
 
-
 /* Message action buttons (rollback, branch) */
-.message-actions {
-    margin-top: 0.5rem;
-    display: flex;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-}
 
 .message-action-btn {
     background: transparent;

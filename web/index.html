@@ -186,14 +186,18 @@
     <!-- Element defaults -->
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/base/reset.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/base/elements.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/base/text-selection.css">
 
     <!-- The shell -->
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/layout/app-shell.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/layout/responsive.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/layout/window-chrome.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/layout/app-header.css">
 
     <!-- Shared patterns -->
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/buttons.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/popup-surface.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/menus.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/code.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/markdown.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/overlay-chrome.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/icons.css">
@@ -229,6 +233,7 @@
 
     <!-- Vendor. A syntax theme has to beat the generic pre/code styling the
          feature groups apply, so it sits above components. -->
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/popup-sheet.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/vendor/prism-theme.css">
 
     <!-- Utilities, last, so they win -->
@@ -339,7 +344,7 @@
             <!-- Sidebar drawer toggle (hamburger). Hidden by CSS except on
                  narrow viewports, where the conversation sidebar becomes an
                  off-canvas drawer. Toggles body.sidebar-open. -->
-            <button class="u-btn-icon-header sidebar-toggle-button" id="sidebar-toggle-button"
+            <button class="btn-icon-header sidebar-toggle-button" id="sidebar-toggle-button"
                     title="Toggle conversations" aria-label="Toggle conversation sidebar"
                     aria-expanded="false">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960">
@@ -361,14 +366,14 @@
                  (hidden by CSS in remote browser tabs — they have no host to
                  spawn a window). -->
             <project-path-display id="project-path-display" title="Project directory">
-                <button class="u-btn-ghost ppd-chip" id="project-path-chip" type="button"
+                <button class="btn-ghost ppd-chip" id="project-path-chip" type="button"
                         title="Change project folder" aria-label="Change project folder">
                     <span class="ppd-path"></span>
                     <svg class="ppd-chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" aria-hidden="true">
                         <path d="M480-360 280-560h400L480-360Z"/>
                     </svg>
                 </button>
-                <button class="u-btn-ghost ppd-new-window-button" id="project-new-window-button" type="button"
+                <button class="btn-ghost ppd-new-window-button" id="project-new-window-button" type="button"
                         title="Open a new window" aria-label="Open a new window">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" aria-hidden="true">
                         <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h240v80H200v560h560v-240h80v240q0 33-23.5 56.5T760-120H200Zm440-400v-120H520v-80h120v-120h80v120h120v80H720v120h-80Z"/>
@@ -377,7 +382,7 @@
                 <!-- Connected-clients indicator: hidden unless OTHER clients share
                      this session, then shows their count + a people icon. Click
                      opens the Connectivity settings. Visible in every mode. -->
-                <button class="u-btn-ghost ppd-clients-indicator" id="project-clients-indicator" type="button" hidden
+                <button class="btn-ghost ppd-clients-indicator" id="project-clients-indicator" type="button" hidden
                         title="Other clients are connected"
                         aria-label="Connected clients">
                     <span class="ppd-clients-count"></span>
@@ -405,7 +410,7 @@
                      Both glyphs ship in the markup and CSS shows the one for
                      the current state; each depicts what a click WILL do —
                      fold the rows together, or unfold them again. -->
-                <button class="u-btn-ghost u-btn-icon-header tool-grouping-button" id="tool-grouping-button"
+                <button class="btn-ghost btn-icon-header tool-grouping-button" id="tool-grouping-button"
                         title="Group consecutive tool uses" aria-label="Group consecutive tool uses"
                         data-shortcut-id="toggle-tool-grouping" aria-pressed="false">
                     <svg class="tool-grouping-fold" xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" aria-hidden="true">
@@ -417,7 +422,7 @@
                 </button>
 
                 <!-- Undo / Redo -->
-                <button class="u-btn-ghost u-btn-circular-control control-undo-button" id="control-undo-button"
+                <button class="btn-ghost btn-circular-control control-undo-button" id="control-undo-button"
                         aria-label="Undo last operation"
                         title="Undo" data-shortcut-id="undo"
                         disabled>
@@ -425,7 +430,7 @@
                         <path d="M280-200v-80h284q63 0 109.5-40T720-420q0-60-46.5-100T564-560H312l104 104-56 56-200-200 200-200 56 56-104 104h252q97 0 166.5 63T800-420q0 94-69.5 157T564-200H280Z"/>
                     </svg>
                 </button>
-                <button class="u-btn-ghost u-btn-circular-control control-redo-button" id="control-redo-button"
+                <button class="btn-ghost btn-circular-control control-redo-button" id="control-redo-button"
                         aria-label="Redo last undone operation"
                         title="Redo" data-shortcut-id="redo"
                         disabled>
@@ -434,21 +439,21 @@
                     </svg>
                 </button>
                 <!-- Zoom Controls -->
-                <button class="u-btn-ghost u-btn-icon-header zoom-out-button" id="zoom-out-button" title="Decrease font size" data-shortcut-id="zoom-out" aria-label="Decrease font size"></button>
-                <button class="u-btn-ghost u-btn-icon-header zoom-in-button" id="zoom-in-button" title="Increase font size" data-shortcut-id="zoom-in" aria-label="Increase font size"></button>
+                <button class="btn-ghost btn-icon-header zoom-out-button" id="zoom-out-button" title="Decrease font size" data-shortcut-id="zoom-out" aria-label="Decrease font size"></button>
+                <button class="btn-ghost btn-icon-header zoom-in-button" id="zoom-in-button" title="Increase font size" data-shortcut-id="zoom-in" aria-label="Increase font size"></button>
 
                 <!-- Theme Button — flips between light and dark. The icon and
                      tooltip are set from the painted theme by UIEventManager;
                      the default here is the Dark (dark_mode) glyph, matching
                      the pre-paint block's default. -->
-                <button class="u-btn-ghost u-btn-icon-header theme-button" id="theme-button" title="Theme: Dark — click for Light" aria-label="Theme: Dark — click for Light">
+                <button class="btn-ghost btn-icon-header theme-button" id="theme-button" title="Theme: Dark — click for Light" aria-label="Theme: Dark — click for Light">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960">
                         <path d="M480-120q-150 0-255-105T120-480q0-150 105-255t255-105q8 0 17 .5t23 1.5q-36 32-56 79t-20 99q0 90 63 153t153 63q52 0 99-18.5t79-51.5q1 12 1.5 19.5t.5 14.5q0 150-105 255T480-120Zm0-60q109 0 190-67.5T771-406q-25 11-53.67 16.5Q688.67-384 660-384q-114.69 0-195.34-80.66Q384-545.31 384-660q0-24 5-51.5t18-62.5q-98 27-162.5 109.5T180-480q0 125 87.5 212.5T480-180Zm-4-297Z"/>
                     </svg>
                 </button>
 
                 <!-- Notification Sounds (bell) Button — per-window sound on/off -->
-                <button class="u-btn-ghost u-btn-icon-header bell-button" id="bell-button" title="Toggle notification sounds" aria-label="Toggle notification sounds">
+                <button class="btn-ghost btn-icon-header bell-button" id="bell-button" title="Toggle notification sounds" aria-label="Toggle notification sounds">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960">
                         <path d="M160-200v-66.67h84v-310q0-86.67 51.33-153.67Q346.67-797.33 432-817.33v-29.34q0-20 14.07-34.33 14.06-14.33 34-14.33 19.93 0 34.26 14.33 14.34 14.33 14.34 34.33v29.34q85.33 20 137 87 51.66 67 51.66 153.66v310h83.34V-200H160Zm320-302Zm-.18 422q-33.15 0-56.49-23.43Q400-126.85 400-160h160q0 33.33-23.49 56.67Q513.03-80 479.82-80ZM310.67-266.67h338.66v-310q0-70.66-49.5-120.16t-120.16-49.5q-70.67 0-120.17 49.5-49.5 49.5-49.5 120.16v310Z"/>
                     </svg>
@@ -456,22 +461,22 @@
                 </button>
 
                 <!-- Network Button -->
-                <button class="u-btn-ghost u-btn-icon-header network-button" id="network-button" title="Network settings" aria-label="Network settings"></button>
+                <button class="btn-ghost btn-icon-header network-button" id="network-button" title="Network settings" aria-label="Network settings"></button>
 
                 <!-- Help Button — opens Settings › Keyboard shortcuts -->
-                <button class="u-btn-ghost u-btn-icon-header help-button" id="help-button" title="Tips &amp; keyboard shortcuts" aria-label="Tips and keyboard shortcuts">
+                <button class="btn-ghost btn-icon-header help-button" id="help-button" title="Tips &amp; keyboard shortcuts" aria-label="Tips and keyboard shortcuts">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960">
                         <path d="M478-240q21 0 35.5-14.5T528-290q0-21-14.5-35.5T478-340q-21 0-35.5 14.5T428-290q0 21 14.5 35.5T478-240Zm-36-154h74q0-33 7.5-52t42.5-52q26-26 41-49.5t15-56.5q0-56-41-86t-97-30q-57 0-92.5 30T342-618l66 26q5-18 22.5-39t53.5-21q32 0 48 17.5t16 38.5q0 20-12 37.5T506-526q-44 39-54 59t-10 73Zm38 314q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Z"/>
                     </svg>
                 </button>
 
                 <!-- Settings Button -->
-                <button class="u-btn-ghost u-btn-icon-header settings-button" id="settings-button" title="Settings" aria-label="Settings"></button>
+                <button class="btn-ghost btn-icon-header settings-button" id="settings-button" title="Settings" aria-label="Settings"></button>
 
                 <!-- Pinboard toggle. The board's only way in, at every width, so
                      it sits in the same place on a phone as on a desktop. Last
                      in the row: the board opens beside it, on the same edge. -->
-                <button class="u-btn-ghost u-btn-icon-header pinboard-header-button" id="pinboard-header-button"
+                <button class="btn-ghost btn-icon-header pinboard-header-button" id="pinboard-header-button"
                         title="Toggle Pinboard" aria-label="Toggle Pinboard"
                         data-shortcut-id="toggle-pinboard" aria-controls="pinboard-panel"
                         aria-expanded="false" hidden>

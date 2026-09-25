@@ -1,0 +1,869 @@
+/**
+ * css-markup-model — what the app's markup can actually look like, harvested
+ * from the code that builds it.
+ *
+ * A CommonJS module `require`d by scripts/lint-css-arch, extensionless like the
+ * rest of scripts/ — which is also what keeps it out of the browser-ESM eslint
+ * config that governs web/.
+ *
+ * The layer-inversion check in lint-css-arch asks one question of this model:
+ * can a single element match both of these selectors? Answering it needs facts
+ * no stylesheet contains — which tag a class lands on, which classes share an
+ * element, what nests inside what. They are read out of `web/index.html` and
+ * every `web/{js,sdk,extensions}/**\/*.js`, by parsing the JS (espree, the same
+ * parser lint-docs-code uses) and by parsing the HTML in its template literals.
+ *
+ * ## The direction of doubt
+ *
+ * Every fact here says something is POSSIBLE. Collecting one too many makes the
+ * inversion check more permissive — it reports a pair that cannot really
+ * happen, and someone wastes ten minutes proving it. MISSING one makes the
+ * check reject a pair that can happen, and a real cascade bug ships. So the
+ * harvest is deliberately generous, and anywhere it cannot see, it says so
+ * rather than guessing:
+ *
+ *   - a class added to an element whose tag is unknown marks that class
+ *     "tag-open" — it could be on anything, and no tag evidence can rule it out
+ *   - a class never seen at all has no evidence either way, and the check
+ *     treats it as unconstrained
+ *   - `contains` edges are evidence FOR nesting. Absence of an edge is not
+ *     evidence against it: the model never says "X cannot contain Y" on its
+ *     own. Only a closed scope declared in manifest.json does that, and each
+ *     one carries the evidence that closed it.
+ *
+ * ## What it reads
+ *
+ *   document.createElement('div')          a tag, bound to the variable
+ *   createElement('div', 'a b')            the sdk/lib/html.js helper, and the
+ *                                          per-component helpers with the same
+ *                                          (tag, className) shape
+ *   el.className = 'a b' / += 'c'          classes for el
+ *   el.classList.add/toggle/replace(…)     classes for el
+ *   el.setAttribute('class', 'a b')        classes for el
+ *   parent.appendChild(child)              a containment edge; also append,
+ *                                          prepend, insertBefore,
+ *                                          replaceChildren
+ *   el.innerHTML = `<p class=…>`           the fragment's tree, under el
+ *   any `<tag class=…>` in a literal       the fragment's tree, free-standing
+ *
+ * Variables are resolved through eslint-scope, so two `const row`s in different
+ * functions stay different elements. Fields on `this` are keyed per file, which
+ * merges a class's element with a subclass's if they share a name — generous in
+ * the safe direction.
+ *
+ * An interpolation (`${…}`) in a fragment's content, or an innerHTML assigned
+ * anything but a literal, makes that element OPEN: its subtree is unknown, and
+ * a closed-scope claim about it would be a guess.
+ */
+
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+
+/**
+ * Call names that take (tag, className) and return an element. Each is a real
+ * helper in the tree; a name not in this list contributes nothing, so a new
+ * helper costs evidence rather than correctness.
+ *   createElement   web/sdk/lib/html.js, web/sdk/lib/syntax-highlight.js
+ *   _createElement  web/js/components/plugin-catalog.js
+ *   el              web/js/components/review-panel.js
+ */
+const ELEMENT_HELPERS = new Set(['createElement', '_createElement', 'el']);
+
+/** Elements HTML closes for you, so a fragment parser must not stack them. */
+const VOID_ELEMENTS = new Set([
+	'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input',
+	'link', 'meta', 'param', 'source', 'track', 'wbr',
+]);
+
+const HOLE = '\u0000';
+
+// ---------------------------------------------------------------------------
+// Elements
+// ---------------------------------------------------------------------------
+
+/**
+ * One element the harvest has seen built. `tag` is null when the code creates
+ * it from a variable, `open` is true when something unreadable goes inside it.
+ */
+class Element {
+	constructor(tag = null) {
+		this.tag = tag;
+		this.classes = new Set();   // classes it certainly carries
+		this.probable = new Set();  // names an interpolation may have extended
+		this.children = [];
+		this.open = false;     // something unreadable goes inside it
+		this.tagOpen = false;  // its own tag could not be read
+		this.complete = true;  // we have read every class it carries
+	}
+
+	/** Fold in one class attribute or className value. */
+	addClasses({ certain, probable, complete }) {
+		for (const cls of certain) this.classes.add(cls);
+		for (const cls of probable) this.probable.add(cls);
+		if (!complete) this.complete = false;
+	}
+
+	/** Its tokens as a selector would name them: the tag, and every class. */
+	tokens() {
+		const out = this.tag ? [this.tag] : [];
+		return out.concat([...this.classes], [...this.probable]);
+	}
+}
+
+const CLASS_RE = /^-?[a-zA-Z][\w-]*$/;
+
+/**
+ * Split a class attribute or className value.
+ *
+ * Returns the classes it definitely sets, and the ones it only probably does:
+ * `class="thinking-chip${level ? '' : ' default'}"` certainly has a class
+ * starting "thinking-chip", but the interpolation could be extending the name
+ * rather than adding a second class. A probable class still says which tag it
+ * lands on — useful, and wrong only if some other rule styles the prefix as a
+ * name in its own right — but it never counts as evidence about which classes
+ * share an element, where a wrong answer would hide a real inversion.
+ */
+function classesIn(value) {
+	const certain = [];
+	const probable = [];
+	for (const raw of value.split(/\s+/)) {
+		const token = raw.trim();
+		if (!token) continue;
+		if (CLASS_RE.test(token)) { certain.push(token); continue; }
+		if (!token.includes(HOLE)) continue;
+		const prefix = token.slice(0, token.indexOf(HOLE));
+		if (prefix.length > 1 && CLASS_RE.test(prefix)) probable.push(prefix);
+	}
+	return { certain, probable, complete: !value.includes(HOLE) };
+}
+
+/** True when a string had something interpolated into it. */
+function hasHole(value) {
+	return value.includes(HOLE);
+}
+
+// ---------------------------------------------------------------------------
+// HTML fragments
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse a fragment of HTML into Elements. Tolerant by design: the input is
+ * half a template literal, so unbalanced tags are normal and an unclosed
+ * element simply stays open until its parent closes.
+ *
+ * Returns the roots; every element is also reported to `onElement` so the
+ * caller can fold it into the global evidence.
+ */
+function parseFragment(html, onElement) {
+	const roots = [];
+	const stack = [];
+	// The `>|$` matters: a template is often cut off mid-tag and concatenated
+	// with the next expression, so the last tag in a fragment may never close.
+	const tagRe = /<(\/?)([a-zA-Z][\w-]*)((?:[^>"']|"[^"]*"|'[^']*')*)(?:>|$)/g;
+	let last = 0;
+	let match;
+
+	const text = (from, to) => {
+		if (!stack.length) return;
+		if (hasHole(html.slice(from, to))) stack[stack.length - 1].open = true;
+	};
+
+	while ((match = tagRe.exec(html))) {
+		text(last, match.index);
+		last = tagRe.lastIndex;
+		const [, closing, rawTag, attrs] = match;
+		const tag = rawTag.toLowerCase();
+
+		if (closing) {
+			for (let i = stack.length - 1; i >= 0; i--) {
+				if (stack[i].tag === tag) { stack.length = i; break; }
+			}
+			continue;
+		}
+
+		const element = new Element(tag);
+		const classAttr = /\bclass\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/.exec(attrs);
+		if (classAttr) {
+			const value = classAttr[2] ?? classAttr[3] ?? classAttr[4] ?? '';
+			element.addClasses(classesIn(value));
+		}
+		onElement(element);
+
+		if (stack.length) stack[stack.length - 1].children.push(element);
+		else roots.push(element);
+
+		if (!VOID_ELEMENTS.has(tag) && !/\/\s*$/.test(attrs)) stack.push(element);
+	}
+	text(last, html.length);
+	return roots;
+}
+
+/** Does this string look like it carries markup rather than prose? */
+function looksLikeHTML(value) {
+	return /<[a-zA-Z][\w-]*(\s|>|\/)/.test(value);
+}
+
+// ---------------------------------------------------------------------------
+// The JavaScript walk
+// ---------------------------------------------------------------------------
+
+/** Every node in the tree, parents first. */
+function* walkAST(node, parent = null) {
+	if (!node || typeof node.type !== 'string') return;
+	yield [node, parent];
+	for (const key of Object.keys(node)) {
+		if (key === 'parent' || key === 'loc' || key === 'range') continue;
+		const value = node[key];
+		if (Array.isArray(value)) {
+			for (const child of value) if (child && typeof child.type === 'string') yield* walkAST(child, node);
+		} else if (value && typeof value.type === 'string') {
+			yield* walkAST(value, node);
+		}
+	}
+}
+
+/**
+ * The static text of a string or template literal, with `${…}` as a hole.
+ *
+ * `resolve` is optional and lets a caller follow an interpolation back to the
+ * local that produced it — `class="token ${className}"` says nothing until you
+ * read the `const className = …` three lines above it.
+ */
+function staticText(node, resolve = null) {
+	if (!node) return null;
+	// `el.className = colorClass` is a bare identifier, not a template, and is
+	// just as worth following.
+	if (resolve && (node.type === 'Identifier' || node.type === 'CallExpression')) {
+		const followed = resolve(node);
+		if (followed !== null && followed !== undefined) return followed;
+	}
+	if (node.type === 'Literal' && typeof node.value === 'string') return node.value;
+	if (node.type === 'TemplateLiteral') {
+		const parts = [node.quasis[0].value.cooked ?? ''];
+		for (let i = 0; i < node.expressions.length; i++) {
+			const filled = resolve ? resolve(node.expressions[i]) : null;
+			parts.push(filled === null ? HOLE : filled, node.quasis[i + 1].value.cooked ?? '');
+		}
+		return parts.join('');
+	}
+	if (node.type === 'ConditionalExpression') {
+		// `busy ? 'a' : 'a b'` — take both branches. Merging them can only
+		// claim a pairing that one branch already makes, which is the
+		// permissive direction.
+		const consequent = staticText(node.consequent, resolve);
+		const alternate = staticText(node.alternate, resolve);
+		if (consequent === null && alternate === null) return null;
+		return `${consequent ?? HOLE} ${alternate ?? HOLE}`;
+	}
+	if (node.type === 'LogicalExpression' && ['&&', '||', '??'].includes(node.operator)) {
+		// `active && 'is-open'` is that class or nothing.
+		const right = staticText(node.right, resolve);
+		const left = node.operator === '&&' ? '' : staticText(node.left, resolve);
+		if (right === null && left === null) return null;
+		return `${left ?? HOLE} ${right ?? HOLE}`;
+	}
+	if (node.type === 'BinaryExpression' && node.operator === '+') {
+		const left = staticText(node.left, resolve);
+		const right = staticText(node.right, resolve);
+		if (left === null && right === null) return null;
+		return (left ?? HOLE) + (right ?? HOLE);
+	}
+	return null;
+}
+
+/** A literal string argument, or null if it is computed. */
+function literalString(node) {
+	if (node && node.type === 'Literal' && typeof node.value === 'string') return node.value;
+	if (node && node.type === 'TemplateLiteral' && node.expressions.length === 0) return node.quasis[0].value.cooked ?? '';
+	return null;
+}
+
+function memberName(node) {
+	if (!node || node.type !== 'MemberExpression' || node.computed) return null;
+	return node.property.type === 'Identifier' ? node.property.name : null;
+}
+
+/**
+ * Harvest one JavaScript file into the shared evidence.
+ *
+ * `keyOf` gives each expression that names an element a stable identity:
+ * a resolved variable for `const row = …`, the string `this.foo` for a field.
+ * Anything else is anonymous, and facts about it are kept on a throwaway
+ * element so they still count as "seen" without being attributed.
+ */
+function harvestJS(source, file, espree, eslintScope, evidence) {
+	let ast;
+	try {
+		ast = espree.parse(source, { ecmaVersion: 'latest', sourceType: 'module', loc: true, range: true });
+	} catch {
+		return; // Not a module we can read; its markup simply goes unseen.
+	}
+	const scopeManager = eslintScope.analyze(ast, { ecmaVersion: 2022, sourceType: 'module' });
+
+	// Identifier node → the variable it resolves to, so same-named locals in
+	// different functions stay apart.
+	const resolved = new Map();
+	const scopes = [scopeManager.globalScope];
+	while (scopes.length) {
+		const scope = scopes.pop();
+		for (const ref of scope.references) if (ref.resolved) resolved.set(ref.identifier, ref.resolved);
+		scopes.push(...scope.childScopes);
+	}
+
+	// Parent links, for naming the function a parameter belongs to.
+	const parents = new Map();
+	for (const [node, parent] of walkAST(ast)) parents.set(node, parent);
+
+	/** The name a function is called by, or null if it has none to speak of. */
+	const functionName = (fn) => {
+		if (fn.id && fn.id.name) return fn.id.name;
+		const parent = parents.get(fn);
+		if (!parent) return null;
+		if (parent.type === 'VariableDeclarator' && parent.id.type === 'Identifier') return parent.id.name;
+		if (parent.type === 'Property' && !parent.computed) return parent.key.name ?? null;
+		if (parent.type === 'MethodDefinition' && !parent.computed) return parent.key.name ?? null;
+		if (parent.type === 'AssignmentExpression') return memberName(parent.left);
+		return null;
+	};
+
+	/**
+	 * A class name handed in as an argument — `createCopyButton(text,
+	 * 'code-copy-button')`, `setupButton('btn-primary …', …)`. When the value
+	 * being used as a class is a parameter, note which parameter of which
+	 * function it is; the model pairs that with every literal the call sites
+	 * pass, so the class lands on the tag the factory builds.
+	 */
+	const classFromParameter = (node, element) => {
+		if (!node || node.type !== 'Identifier') return;
+		// Only worth recording when we know what the factory builds. A helper
+		// whose tag is ALSO a parameter — `_createElement(tag, className)` —
+		// would otherwise report every class it is ever passed as sitting on an
+		// element of unknown tag, throwing away what its call sites plainly say.
+		if (!element.tag) return;
+		const variable = resolved.get(node);
+		const def = variable?.defs?.[0];
+		if (!def || def.type !== 'Parameter') return;
+		const name = functionName(def.node);
+		if (!name) return;
+		// `className = 'x'` makes the parameter an AssignmentPattern, so match
+		// through it — and take the default as a value the callers get too.
+		const bare = (p) => (p && p.type === 'AssignmentPattern' ? p.left : p);
+		const index = def.node.params.findIndex((p) => bare(p) === def.name
+			|| (bare(p)?.type === 'Identifier' && bare(p).name === variable.name));
+		if (index < 0) return;
+		evidence.addClassParameter(name, index, element.tag);
+		const fallback = def.node.params[index];
+		if (fallback && fallback.type === 'AssignmentPattern') {
+			const value = literalString(fallback.right);
+			if (value) evidence.addCallSite(name, index, value);
+		}
+	};
+
+	// Class names a function hands back: `return 'ci-section';`. Collected up
+	// front because the helper is often defined below its callers.
+	const returnedText = new Map();
+	for (const [node] of walkAST(ast)) {
+		if (!/Function(Declaration|Expression)|ArrowFunctionExpression/.test(node.type)) continue;
+		const name = functionName(node);
+		if (!name) continue;
+		const texts = returnedText.get(name) ?? new Set();
+		const scan = (n, depth) => {
+			if (!n || depth > 8) return;
+			for (const [child] of walkAST(n)) {
+				if (child !== n && /Function(Declaration|Expression)|ArrowFunctionExpression/.test(child.type)) continue;
+				if (child.type !== 'ReturnStatement') continue;
+				const text = staticText(child.argument, resolveText);
+				if (text !== null) texts.add(text);
+			}
+			// An expression-bodied arrow returns without a statement.
+			if (n.type === 'ArrowFunctionExpression' && n.body.type !== 'BlockStatement') {
+				const text = staticText(n.body, resolveText);
+				if (text !== null) texts.add(text);
+			}
+		};
+		scan(node, 0);
+		if (texts.size) returnedText.set(name, texts);
+	}
+
+	/** The class values a call can produce, when we can see the function. */
+	const classFromReturn = (node, element) => {
+		if (!node || node.type !== 'CallExpression') return false;
+		const name = memberName(node.callee) ?? (node.callee.type === 'Identifier' ? node.callee.name : null);
+		const texts = name ? returnedText.get(name) : null;
+		if (!texts) return false;
+		// One element per returned value: the call produces one of them, not
+		// all of them, so they must not look like classes that share an element.
+		for (const text of texts) {
+			const classes = classesIn(text);
+			if (!classes.certain.length && !classes.probable.length) continue;
+			const twin = new Element(element.tag);
+			if (!element.tag) twin.tagOpen = true;
+			twin.addClasses(classes);
+			note(twin);
+		}
+		return true;
+	};
+
+	/**
+	 * Follow an interpolation back to the text it can hold.
+	 *
+	 * Only the shapes that actually appear: a local whose initialiser is
+	 * literal (directly or through a conditional), and `classes.join(' ')`
+	 * over an array of literals. A conditional contributes both branches,
+	 * which over-states what one element carries and never under-states it.
+	 */
+	// A function declaration, not a const: the returns pre-pass above calls it.
+	function resolveText(node, depth = 0) {
+		if (!node || depth > 4) return null;
+		if (node.type === 'Identifier') {
+			const variable = resolved.get(node);
+			const def = variable?.defs?.[0];
+			if (!def || def.type !== 'Variable' || !def.node.init) return null;
+			// Only a const nobody reassigns can stand in for its value.
+			if (def.parent?.kind !== 'const') return null;
+			return staticText(def.node.init, (n) => resolveText(n, depth + 1));
+		}
+		if (node.type === 'CallExpression') {
+			// A helper that hands back a class name — `getColorClass()` returns
+			// one of six. Joined together they over-state what one element
+			// carries, which is the permissive direction, and they are still
+			// the complete set of names the helper can produce.
+			const name = memberName(node.callee) ?? (node.callee.type === 'Identifier' ? node.callee.name : null);
+			const texts = name ? returnedText.get(name) : null;
+			if (texts && texts.size) return [...texts].join(' ');
+		}
+		if (node.type === 'CallExpression' && memberName(node.callee) === 'join') {
+			const array = node.callee.object;
+			const items = array.type === 'ArrayExpression' ? array
+				: (array.type === 'Identifier' && resolved.get(array)?.defs?.[0]?.node?.init);
+			if (!items || items.type !== 'ArrayExpression') return null;
+			const parts = items.elements.map((e) => staticText(e, (n) => resolveText(n, depth + 1)));
+			// A `.push()`ed class is one we cannot see, so the list stays open;
+			// the literals we can see still name their element's tag.
+			return parts.map((p) => p ?? HOLE).join(' ');
+		}
+		return staticText(node, (n) => resolveText(n, depth + 1));
+	}
+
+	const elements = new Map();
+	const keyOf = (node) => {
+		if (!node) return null;
+		if (node.type === 'Identifier') return resolved.get(node) ?? `${file}#${node.name}`;
+		if (node.type === 'MemberExpression' && !node.computed && node.object.type === 'ThisExpression') {
+			return `${file}#this.${memberName(node)}`;
+		}
+		return null;
+	};
+	const elementFor = (node) => {
+		const key = keyOf(node);
+		if (key === null) return new Element(null); // anonymous: facts still count
+		if (!elements.has(key)) elements.set(key, new Element(null));
+		return elements.get(key);
+	};
+	const note = (element) => evidence.add(element);
+
+	/** The element an expression creates, if it creates one. */
+	const created = (node) => {
+		if (!node || node.type !== 'CallExpression') return null;
+		const name = memberName(node.callee) ?? (node.callee.type === 'Identifier' ? node.callee.name : null);
+		if (name === 'createElement' && node.callee.type === 'MemberExpression') {
+			// document.createElement('div')
+			const element = new Element(literalString(node.arguments[0]));
+			const classes = literalString(node.arguments[1]);
+			if (classes) element.addClasses(classesIn(classes));
+			return element;
+		}
+		if (name && ELEMENT_HELPERS.has(name)) {
+			const tag = literalString(node.arguments[0]);
+			const classText = staticText(node.arguments[1], resolveText);
+			const element = new Element(tag);
+			if (classText !== null) {
+				element.addClasses(classesIn(classText));
+				// An interpolated class list means there may be more classes we
+				// cannot see, but the tag is still known for the ones we can.
+			} else if (node.arguments.length > 1) {
+				element.complete = false;
+				classFromParameter(node.arguments[1], element);
+			}
+			return element;
+		}
+		return null;
+	};
+
+	for (const [node] of walkAST(ast)) {
+		// const row = document.createElement('div')  /  this.row = createElement(…)
+		if (node.type === 'VariableDeclarator' || (node.type === 'AssignmentExpression' && node.operator === '=')) {
+			const target = node.type === 'VariableDeclarator' ? node.id : node.left;
+			const value = node.type === 'VariableDeclarator' ? node.init : node.right;
+			const fresh = created(value);
+			if (fresh) {
+				const key = keyOf(target);
+				if (key === null) { note(fresh); continue; }
+				const existing = elements.get(key);
+				if (existing) {
+					// The name is reused for another element: merge rather than
+					// lose either, which keeps both tags in play.
+					if (fresh.tag && existing.tag && fresh.tag !== existing.tag) existing.tagOpen = true;
+					existing.tag = existing.tag ?? fresh.tag;
+					for (const cls of fresh.classes) existing.classes.add(cls);
+					for (const cls of fresh.probable) existing.probable.add(cls);
+					if (!fresh.complete) existing.complete = false;
+				} else {
+					elements.set(key, fresh);
+					note(fresh);
+				}
+				continue;
+			}
+		}
+
+		// el.className = 'a b'  /  el.className += ' c'  /  el.innerHTML = `…`
+		if (node.type === 'AssignmentExpression' && node.left.type === 'MemberExpression') {
+			const property = memberName(node.left);
+			if (property === 'className') {
+				const element = elementFor(node.left.object);
+				const text = staticText(node.right, resolveText);
+				if (text === null) {
+					element.complete = false;
+					classFromParameter(node.right, element);
+					classFromReturn(node.right, element);
+				}
+				else element.addClasses(classesIn(text));
+				note(element);
+				continue;
+			}
+			if (property === 'innerHTML' || property === 'outerHTML') {
+				const element = elementFor(node.left.object);
+				const html = staticText(node.right, resolveText);
+				if (html === null || !looksLikeHTML(html)) element.open = true;
+				else {
+					if (hasHole(html)) element.open = true;
+					for (const root of parseFragment(html, note)) element.children.push(root);
+				}
+				note(element);
+				continue;
+			}
+		}
+
+		// { className: 'image-lightbox' } — an options object handed to a
+		// factory. Which tag it builds is the factory's business, but the class
+		// list is this element's, whole.
+		if (node.type === 'Property' && !node.computed
+			&& ['className', 'class'].includes(node.key.name ?? node.key.value)) {
+			const text = staticText(node.value, resolveText);
+			if (text !== null) {
+				const element = new Element(null);
+				element.tagOpen = true;
+				element.addClasses(classesIn(text));
+				note(element);
+			}
+			continue;
+		}
+
+		if (node.type !== 'CallExpression') continue;
+		const callee = node.callee;
+		const name = memberName(callee);
+
+		// Every literal anyone passes anywhere, indexed by call name and
+		// position. Only the positions a factory goes on to use as a class are
+		// ever read back out; the rest cost a map entry and nothing else.
+		const calleeName = name ?? (callee.type === 'Identifier' ? callee.name : null);
+		if (calleeName) {
+			for (let i = 0; i < node.arguments.length; i++) {
+				// staticText, not literalString: `'update-notice__button' +
+				// (extra ? ' ' + extra : '')` still names a class.
+				const value = staticText(node.arguments[i], resolveText);
+				if (value) evidence.addCallSite(calleeName, i, value);
+			}
+		}
+
+		// el.classList.add('a', 'b') / .toggle('a', cond) / .replace('a', 'b')
+		if (name && callee.type === 'MemberExpression' && memberName(callee.object) === 'classList') {
+			if (['add', 'toggle', 'replace', 'remove'].includes(name)) {
+				const element = elementFor(callee.object.object);
+				for (const arg of node.arguments) {
+					const value = literalString(arg);
+					if (value) element.addClasses(classesIn(value));
+					else {
+						element.complete = false;
+						classFromParameter(arg, element);
+						classFromReturn(arg, element);
+					}
+				}
+				note(element);
+			}
+			continue;
+		}
+
+		// el.setAttribute('class', 'a b')
+		if (name === 'setAttribute' && literalString(node.arguments[0]) === 'class') {
+			const element = elementFor(callee.object);
+			const text = staticText(node.arguments[1], resolveText);
+			if (text === null) {
+				element.complete = false;
+				classFromParameter(node.arguments[1], element);
+				classFromReturn(node.arguments[1], element);
+			}
+			else element.addClasses(classesIn(text));
+			note(element);
+			continue;
+		}
+
+		// parent.appendChild(child) and friends
+		if (['appendChild', 'append', 'prepend', 'replaceChildren', 'insertBefore'].includes(name)) {
+			const parent = elementFor(callee.object);
+			const args = name === 'insertBefore' ? node.arguments.slice(0, 1) : node.arguments;
+			for (const arg of args) {
+				const key = keyOf(arg);
+				const fresh = created(arg);
+				if (fresh) note(fresh); // built in the argument, named nowhere else
+				const child = fresh ?? (key !== null ? elements.get(key) : null);
+				if (child) parent.children.push(child);
+				else parent.open = true; // something we cannot follow goes in here
+			}
+			note(parent);
+			continue;
+		}
+
+		// el.insertAdjacentHTML('beforeend', `<p …>`)
+		if (name === 'insertAdjacentHTML') {
+			const parent = elementFor(callee.object);
+			const html = staticText(node.arguments[1], resolveText);
+			if (html === null) parent.open = true;
+			else {
+				if (hasHole(html)) parent.open = true;
+				for (const root of parseFragment(html, note)) parent.children.push(root);
+			}
+			note(parent);
+			continue;
+		}
+	}
+
+	// Any markup in a literal anywhere else — a render() that returns a string,
+	// a fragment handed to a helper. Attributed to no parent, but its own
+	// tags, classes and nesting are all evidence. Concatenations are read whole
+	// (`\`<button …\` + attrs + \`>\``), so the pieces are not parsed twice.
+	for (const [node, parent] of walkAST(ast)) {
+		const isConcatenation = node.type === 'BinaryExpression' && node.operator === '+';
+		if (node.type !== 'TemplateLiteral' && node.type !== 'Literal' && !isConcatenation) continue;
+		if (parent && parent.type === 'BinaryExpression' && parent.operator === '+') continue;
+		const text = staticText(node, resolveText);
+		if (text === null || !looksLikeHTML(text)) continue;
+		parseFragment(text, note);
+	}
+
+	for (const element of elements.values()) note(element);
+}
+
+// ---------------------------------------------------------------------------
+// The model
+// ---------------------------------------------------------------------------
+
+/** Fold Elements into the questions the inversion check asks, and answer them. */
+class MarkupModel {
+	constructor() {
+		this.tags = new Map();        // class → Set(tag) it has been seen on
+		this.tagOpen = new Set();     // class seen on an element of unknown tag
+		this.seen = new Set();        // every class the markup mentions at all
+		this.confident = new Set();   // …on an element we could read whole
+		this.unreadable = new Set();  // …on an element we could NOT read whole
+		this.closed = new Set();      // …and never on one we could not
+		this.classSets = [];          // classes observed together on one element
+		this.contains = new Map();    // token → Set(token) seen inside it
+		this.elements = new Set();    // a Set: the walk reports some twice
+		this.classParams = new Map(); // "fn#index" → tags it becomes a class on
+		this.callSites = new Map();   // "fn#index" → literals passed there
+	}
+
+	add(element) {
+		this.elements.add(element);
+	}
+
+	/** `name`'s parameter `index` is used as a class, on a `tag` element. */
+	addClassParameter(name, index, tag) {
+		const key = `${name}#${index}`;
+		if (!this.classParams.has(key)) this.classParams.set(key, new Set());
+		this.classParams.get(key).add(tag);
+	}
+
+	/** Somebody called `name` with this literal in position `index`. */
+	addCallSite(name, index, value) {
+		const key = `${name}#${index}`;
+		if (!this.callSites.has(key)) this.callSites.set(key, new Set());
+		this.callSites.get(key).add(value);
+	}
+
+	/** Turn class-name arguments into the elements their factories build. */
+	#foldParameters() {
+		for (const [key, tags] of this.classParams) {
+			for (const value of this.callSites.get(key) || []) {
+				const classes = classesIn(value);
+				if (!classes.certain.length && !classes.probable.length) continue;
+				for (const tag of tags) {
+					const element = new Element(tag);
+					if (tag === null) element.tagOpen = true;
+					element.addClasses(classes);
+					this.elements.add(element);
+				}
+			}
+		}
+	}
+
+	/** Fold every element that was added into the lookup tables. */
+	finish() {
+		this.#foldParameters();
+		for (const element of this.elements) {
+			for (const cls of element.classes) {
+				this.seen.add(cls);
+				if (element.complete) this.confident.add(cls);
+				else this.unreadable.add(cls);
+				this.#recordTag(cls, element);
+			}
+			// A probable class says which tag it sits on, and nothing more: the
+			// name may have been extended by the interpolation next to it, so
+			// it never counts as an element we read whole.
+			for (const cls of element.probable) {
+				this.seen.add(cls);
+				this.unreadable.add(cls);
+				this.#recordTag(cls, element);
+			}
+			// Co-occurrence only counts when the whole class list was readable.
+			if (element.complete && element.classes.size > 1) this.classSets.push(element.classes);
+			this.#recordContainment(element);
+		}
+		// A class is closed when every element seen carrying it was read whole,
+		// which makes the set of elements that carry it known.
+		for (const cls of this.confident) if (!this.unreadable.has(cls)) this.closed.add(cls);
+		return this;
+	}
+
+	#recordTag(cls, element) {
+		if (element.tag) {
+			if (!this.tags.has(cls)) this.tags.set(cls, new Set());
+			this.tags.get(cls).add(element.tag);
+		} else {
+			this.tagOpen.add(cls);
+		}
+		if (element.tagOpen) this.tagOpen.add(cls);
+	}
+
+	/** Every token inside this element can appear under every token on it. */
+	#recordContainment(element) {
+		const inner = new Set();
+		const gather = (node, depth) => {
+			if (depth > 24) return;
+			for (const child of node.children) {
+				for (const token of child.tokens()) inner.add(token);
+				gather(child, depth + 1);
+			}
+		};
+		gather(element, 0);
+		if (!inner.size) return;
+		for (const token of element.tokens()) {
+			if (!this.contains.has(token)) this.contains.set(token, new Set());
+			const set = this.contains.get(token);
+			for (const token2 of inner) set.add(token2);
+		}
+	}
+
+	/**
+	 * Which tags a class has been seen on, or null when that is not known —
+	 * either it was never seen, or it was put on an element whose tag the
+	 * harvest could not read.
+	 */
+	tagsOf(cls) {
+		if (this.tagOpen.has(cls) || !this.tags.has(cls)) return null;
+		return this.tags.get(cls);
+	}
+
+	/** Has anything ever put this class on an element? */
+	isKnownClass(cls) {
+		return this.seen.has(cls);
+	}
+
+	/**
+	 * Can one element carry all of these classes?
+	 *
+	 * One class is enough to answer it. If every element ever seen carrying
+	 * `.btn-icon-header` had its whole class list readable — they are all
+	 * literals in index.html and a handful of components — then the elements
+	 * that carry it are known, and a class on none of them is on none of them.
+	 * The other class can be as unreadable as it likes.
+	 *
+	 * The residual risk is an `el.className = someVariable` that the harvest
+	 * could not resolve and that happens to set a closed class: that element is
+	 * recorded as unreadable, but not as unreadable *for that class*, so the
+	 * class stays closed and a real pairing could be missed. Nothing in the
+	 * tree does this today — the unresolved assignments all pass through
+	 * parameters the model does follow — and the alternative is thousands of
+	 * pairs nobody can review.
+	 */
+	canCoexist(classes) {
+		if (classes.length < 2) return true;
+		if (!classes.some((c) => this.closed.has(c))) return true;
+		return this.classSets.some((set) => classes.every((c) => set.has(c)));
+	}
+
+	/** Positive evidence that `outer` has had `inner` somewhere beneath it. */
+	hasContained(outer, inner) {
+		return this.contains.get(outer)?.has(inner) ?? false;
+	}
+
+	stats() {
+		return {
+			elements: this.elements.size,
+			classes: this.seen.size,
+			classesWithTag: [...this.seen].filter((c) => this.tagsOf(c)).length,
+			closedClasses: this.closed.size,
+			classSets: this.classSets.length,
+			containers: this.contains.size,
+		};
+	}
+}
+
+function walkFiles(dir, test, out = []) {
+	let entries;
+	try {
+		entries = fs.readdirSync(dir, { withFileTypes: true });
+	} catch {
+		return out;
+	}
+	for (const entry of entries) {
+		const full = path.join(dir, entry.name);
+		if (entry.isDirectory()) {
+			if (entry.name === 'node_modules') continue;
+			walkFiles(full, test, out);
+		} else if (test(entry.name)) {
+			out.push(full);
+		}
+	}
+	return out;
+}
+
+/**
+ * Build the model for a checkout. `espree` and `eslintScope` are passed in so
+ * the caller owns the one awkward dependency (tooling/node_modules) and can
+ * explain itself when it is missing.
+ */
+function buildMarkupModel({ repoRoot, espree, eslintScope }) {
+	const model = new MarkupModel();
+	const jsFiles = [
+		...walkFiles(path.join(repoRoot, 'web', 'js'), (n) => n.endsWith('.js')),
+		...walkFiles(path.join(repoRoot, 'web', 'sdk'), (n) => n.endsWith('.js')),
+		...walkFiles(path.join(repoRoot, 'web', 'extensions'), (n) => n.endsWith('.js')),
+	];
+	for (const file of jsFiles) {
+		let source;
+		try { source = fs.readFileSync(file, 'utf8'); } catch { continue; }
+		harvestJS(source, path.relative(repoRoot, file), espree, eslintScope, model);
+	}
+	for (const name of ['index.html', 'engine.html', 'sandbox.html']) {
+		let html;
+		try { html = fs.readFileSync(path.join(repoRoot, 'web', name), 'utf8'); } catch { continue; }
+		parseFragment(html, (element) => model.add(element));
+	}
+	return model.finish();
+}
+
+module.exports = { buildMarkupModel, parseFragment, Element };

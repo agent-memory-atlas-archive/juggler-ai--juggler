@@ -14,12 +14,6 @@
 # Audit what is still owed:  node scripts/lint-css-arch --emit-allowlist
 
 # --- token-parity ---------------------------------------------------------
-# Two bare var()s that resolve to nothing, so the whole declaration is dropped:
-# components/project-setup.css:535 (outline) and vendor/prism-theme.css:142
-# (inside a color-mix, which takes the rest of the value with it).
-token-parity --accent-color
-token-parity --text-muted
-
 # Theme-independent tokens that share the dark theme's :root block only because
 # dark was written first. They move to tokens/scale.css.
 token-parity --modal-scrim
@@ -28,164 +22,6 @@ token-parity --overlay-dark-50
 token-parity --overlay-dark-25
 token-parity --overlay-dark-15
 token-parity --overlay-dark-10
-
-
-# --- dead-selector --------------------------------------------------------
-# Classes styled here that no JS, HTML or extension names, and that match no
-# dynamicClasses pattern in manifest.json. Each is either genuinely dead or a
-# name assembled somewhere the pattern list does not yet cover.
-dead-selector menu-reset-icon
-dead-selector u-btn-pill-control
-dead-selector llm-iteration-counter
-dead-selector iteration-normal
-dead-selector iteration-warning
-dead-selector iteration-critical
-dead-selector text-green
-dead-selector text-blue
-dead-selector text-red
-dead-selector text-yellow
-dead-selector text-secondary
-dead-selector u-btn-label
-dead-selector message-actions
-dead-selector u-empty-state
-dead-selector u-empty-state-lg
-dead-selector u-badge
-dead-selector u-badge-muted
-dead-selector u-badge-blue
-dead-selector u-badge-green
-dead-selector u-badge-red
-dead-selector u-badge-orange
-dead-selector u-badge-purple
-dead-selector u-icon-svg
-dead-selector u-icon-sm
-dead-selector u-icon-md
-dead-selector u-icon-lg
-dead-selector u-icon-xl
-dead-selector u-scrollbar-thin
-dead-selector u-interactive-row
-dead-selector u-card
-dead-selector ppd-folder-icon
-dead-selector context-item-context-menu
-dead-selector token-low
-dead-selector settings-actions
-dead-selector mcp-env-row
-dead-selector mcp-env-key
-dead-selector action-approval-message
-dead-selector transaction-summary
-dead-selector tx-duration
-dead-selector tx-tokens
-dead-selector tx-separator
-dead-selector action-confirmation-actions
-dead-selector action-result-details
-dead-selector menu-item-flex
-dead-selector menu-item-meta
-dead-selector collapsed-badge
-dead-selector context-item-badge
-dead-selector preformatted-output
-dead-selector text-muted
-dead-selector text-primary
-dead-selector transaction-band-even
-dead-selector transaction-band-odd
-dead-selector message-edit-textarea
-dead-selector ci-expanded-content
-dead-selector ci-collapsed-content
-dead-selector ci-btn
-dead-selector ci-remove-btn
-dead-selector ci-file-path
-dead-selector ci-file-path-header
-dead-selector ci-metadata
-dead-selector ci-badge
-dead-selector ci-badge-label
-dead-selector ci-badge-value
-dead-selector ci-section-title
-dead-selector ci-section-content
-dead-selector ci-list
-dead-selector ci-list-item
-dead-selector ci-empty
-dead-selector ci-empty-icon
-dead-selector ci-error
-dead-selector ci-error-title
-dead-selector ci-error-message
-dead-selector ci-warning
-dead-selector ci-success
-dead-selector ci-loading
-dead-selector collapsed-content
-dead-selector collapsed-main
-dead-selector collapsed-title
-dead-selector collapsed-subtitle
-dead-selector collapsed-preview
-dead-selector collapsed-meta
-dead-selector expanded-header
-dead-selector expanded-header-left
-dead-selector expanded-header-right
-dead-selector expanded-title
-dead-selector expanded-subtitle
-dead-selector ci-search-results
-dead-selector ci-search-file
-dead-selector ci-search-file-header
-dead-selector ci-search-match
-dead-selector ci-search-line-num
-dead-selector ci-search-highlight
-dead-selector ci-stats
-dead-selector ci-stat
-dead-selector ci-stat-value
-dead-selector ci-stat-label
-dead-selector question-answer-ci
-dead-selector qa-section
-dead-selector qa-label
-dead-selector qa-text
-dead-selector answer-text
-dead-selector ci-preview
-dead-selector system-ci
-dead-selector ci-output-label
-dead-selector response-json
-dead-selector plugin-category
-dead-selector plugin-id-help
-dead-selector plugin-module-url
-dead-selector plugin-module-url-label
-dead-selector plugin-module-url-link
-dead-selector plugin-module-url-value
-dead-selector llm-instructions-box
-dead-selector preview-section-header
-dead-selector preview-container
-dead-selector preview-error
-dead-selector capability-badges
-dead-selector capability-badge
-dead-selector capability-watches-files
-dead-selector capability-user-addable
-dead-selector capability-system-ci
-dead-selector capability-requires-approval
-dead-selector capability-supports-streaming
-dead-selector capability-supports-recovery
-dead-selector backend-details
-dead-selector backend-detail-row
-dead-selector backend-detail-label
-dead-selector backend-detail-value
-dead-selector tool-schema-header
-dead-selector operations-list
-dead-selector operations-empty
-dead-selector operation-item
-dead-selector operation-header
-dead-selector operation-name
-dead-selector operation-description
-dead-selector operation-params-label
-dead-selector operation-params
-dead-selector operation-param
-dead-selector operation-param-required
-dead-selector operation-param-optional
-dead-selector usage-content
-dead-selector llm-guidance-content
-dead-selector capability-sub-conversations
-dead-selector trigger-examples
-dead-selector trigger-example
-dead-selector tradeoffs-group
-dead-selector tradeoffs-content
-dead-selector tradeoffs-heading
-dead-selector tradeoffs-pros
-dead-selector tradeoffs-cons
-dead-selector tradeoffs-list
-dead-selector tradeoff-item
-dead-selector block-comment
 
 
 # --- ownership ------------------------------------------------------------
@@ -207,36 +43,18 @@ ownership components/settings-3.css:commands-menu
 ownership components/settings-3.css:find-bar
 ownership components/settings-3.css:settings-panel
 ownership components/strategy-bar.css:composer-box
-ownership utilities/utilities.css:composer-box
 
 # Cross-cutting policy that names every component it applies to — the text
 # selection rules and the menu system in app-shell, and the app-wide @media
 # stack in responsive. These move to the components they modify, which is what
 # empties layout/responsive.css entirely.
 ownership layout/app-shell.css:app-header
-ownership layout/app-shell.css:app-main
-ownership layout/app-shell.css:conversation-bar
-ownership layout/app-shell.css:conversation-footer
 ownership layout/app-shell.css:conversation-tab
-ownership layout/app-shell.css:pinboard-panel
-ownership layout/app-shell.css:properties-panel-header
-ownership layout/app-shell.css:sidebar-backdrop
-ownership layout/app-shell.css:token-display
-ownership layout/app-shell.css:update-button
-ownership layout/app-shell.css:update-notice
 ownership layout/app-shell.css:window-mode
-ownership layout/responsive.css:app-header
-ownership layout/responsive.css:body
-ownership layout/responsive.css:column-container
-ownership layout/responsive.css:header-actions
-ownership layout/responsive.css:logo
 ownership patterns/markdown.css:window-mode
 
 # Roots several unrelated components style, which is the definition of a
 # pattern: they want a patterns/ file of their own rather than an owner.
-ownership base/elements.css:ci-code-content
-ownership base/elements.css:code
-ownership base/elements.css:pre
 ownership base/reset.css:button
 ownership base/reset.css:input
 ownership base/reset.css:textarea
@@ -244,7 +62,6 @@ ownership components/approvals-1.css:dropdown-menu
 ownership components/approvals-2.css:dropdown-menu
 ownership components/composer.css:dropdown-menu
 ownership components/context-items.css:ci-text-block
-ownership components/context-items.css:collapsed-badge
 ownership components/context-items.css:skills-badge
 ownership components/diff-viewer.css:menu-header
 ownership components/diff-viewer.css:menu-item
@@ -269,5 +86,227 @@ ownership components/properties-panel.css:code-copy-button
 ownership components/properties-panel.css:message-copy-button
 ownership layout/app-header.css:conversation-bar
 ownership layout/app-header.css:conversation-tabs-container
-ownership vendor/prism-theme.css:properties-panel-code
-ownership vendor/prism-theme.css:properties-panel-result
+
+
+# --- layer-inversion -------------------------------------------------------
+# A rule filed below a rule it overrides: the lower-layer rule wins today by
+# being more specific, and would lose the moment the sheets are wrapped in
+# their layers. One entry per file pair, `<lower> > <higher> <count>`, because
+# the fix is per file pair and the findings run to thousands.
+#
+# The count is a ratchet: exceeding it fails, and so does beating it — the
+# number comes down with the work. To see what is behind one:
+#
+#   node scripts/lint-css-arch --inversions <lower> <higher>
+#
+# What is left here is not a list of mistakes to fix one at a time. It is two
+# things: component base styles sitting in utilities/ where a component cannot
+# reach them, and cross-cutting policy filed in layout/ instead of in the
+# components it modifies. Re-classifying and re-filing those empties the block.
+# (Deleting the dead CSS already took it from 33,908 to 14,828.)
+layer-inversion patterns/icons.css > components/composer.css 240
+layer-inversion layout/app-shell.css > patterns/icons.css 163
+layer-inversion patterns/icons.css > components/properties-panel.css 150
+layer-inversion patterns/icons.css > components/messages-2.css 135
+layer-inversion patterns/icons.css > components/diff-viewer.css 120
+layer-inversion layout/app-header.css > patterns/icons.css 105
+layer-inversion patterns/icons.css > components/messages-1.css 90
+layer-inversion patterns/icons.css > components/conversation-bar.css 78
+layer-inversion patterns/markdown.css > components/plugin-catalog.css 74
+layer-inversion patterns/menus.css > components/composer.css 66
+layer-inversion patterns/menus.css > components/diff-viewer.css 65
+layer-inversion patterns/menus.css > components/properties-panel.css 61
+layer-inversion patterns/icons.css > components/overlays-and-updates.css 45
+layer-inversion patterns/markdown.css > components/settings-3.css 45
+layer-inversion patterns/menus.css > components/plugin-catalog.css 32
+layer-inversion components/composer.css > vendor/prism-theme.css 31
+layer-inversion components/model-picker.css > vendor/prism-theme.css 31
+layer-inversion components/plugin-catalog.css > vendor/prism-theme.css 31
+layer-inversion patterns/menus.css > components/conversation-bar.css 31
+layer-inversion patterns/menus.css > components/messages-2.css 31
+layer-inversion patterns/icons.css > components/approvals-2.css 30
+layer-inversion patterns/icons.css > components/model-picker.css 30
+layer-inversion patterns/icons.css > components/onboarding.css 30
+layer-inversion patterns/icons.css > components/pinboard.css 30
+layer-inversion patterns/markdown.css > components/conversation-bar.css 29
+layer-inversion patterns/markdown.css > components/properties-panel.css 29
+layer-inversion patterns/menus.css > components/onboarding.css 28
+layer-inversion patterns/menus.css > components/settings-2.css 28
+layer-inversion layout/app-header.css > components/properties-panel.css 27
+layer-inversion layout/app-header.css > patterns/menus.css 27
+layer-inversion patterns/buttons.css > components/diff-viewer.css 26
+layer-inversion patterns/markdown.css > components/overlays-and-updates.css 26
+layer-inversion patterns/markdown.css > components/settings-2.css 25
+layer-inversion patterns/markdown.css > components/onboarding.css 24
+layer-inversion patterns/menus.css > components/overlays-and-updates.css 23
+layer-inversion patterns/markdown.css > components/context-items.css 22
+layer-inversion patterns/markdown.css > components/workspace-panel.css 22
+layer-inversion layout/app-header.css > components/settings-3.css 21
+layer-inversion layout/app-header.css > components/skills-marketplace.css 20
+layer-inversion layout/app-shell.css > patterns/menus.css 20
+layer-inversion patterns/markdown.css > components/approvals-2.css 20
+layer-inversion patterns/menus.css > components/messages-1.css 19
+layer-inversion patterns/modal-dialog.css > components/model-picker.css 19
+layer-inversion patterns/markdown.css > components/model-picker.css 18
+layer-inversion patterns/menus.css > components/pinboard.css 18
+layer-inversion patterns/modal-dialog.css > components/diff-viewer.css 16
+layer-inversion patterns/overlay-chrome.css > components/properties-panel.css 16
+layer-inversion layout/app-header.css > components/messages-2.css 15
+layer-inversion layout/app-shell.css > components/composer.css 15
+layer-inversion patterns/code.css > components/plugin-catalog.css 15
+layer-inversion patterns/icons.css > components/about-modal.css 15
+layer-inversion patterns/icons.css > components/messages-3.css 15
+layer-inversion patterns/icons.css > components/plugin-catalog.css 15
+layer-inversion patterns/icons.css > components/settings-2.css 15
+layer-inversion patterns/icons.css > components/strategy-bar.css 15
+layer-inversion layout/app-header.css > components/conversation-bar.css 14
+layer-inversion layout/app-header.css > components/pinboard.css 14
+layer-inversion layout/app-shell.css > components/properties-panel.css 14
+layer-inversion layout/app-shell.css > components/settings-3.css 14
+layer-inversion base/elements.css > components/properties-panel.css 13
+layer-inversion layout/app-header.css > components/model-picker.css 13
+layer-inversion layout/app-header.css > components/settings-2.css 13
+layer-inversion layout/app-shell.css > components/pinboard.css 13
+layer-inversion patterns/markdown.css > components/diff-viewer.css 13
+layer-inversion patterns/menus.css > components/approvals-2.css 13
+layer-inversion layout/app-header.css > components/diff-viewer.css 12
+layer-inversion layout/app-header.css > patterns/buttons.css 12
+layer-inversion patterns/menus.css > components/settings-3.css 12
+layer-inversion patterns/overlay-chrome.css > components/composer.css 12
+layer-inversion layout/app-shell.css > components/messages-2.css 11
+layer-inversion patterns/markdown.css > components/messages-2.css 11
+layer-inversion patterns/markdown.css > components/pinboard.css 11
+layer-inversion patterns/markdown.css > components/project-setup.css 11
+layer-inversion patterns/markdown.css > components/skills-marketplace.css 11
+layer-inversion patterns/overlay-chrome.css > components/diff-viewer.css 11
+layer-inversion base/elements.css > components/diff-viewer.css 10
+layer-inversion base/elements.css > components/settings-3.css 10
+layer-inversion patterns/markdown.css > components/settings-1.css 10
+layer-inversion layout/app-header.css > components/strategy-bar.css 9
+layer-inversion layout/app-shell.css > components/project-setup.css 9
+layer-inversion layout/app-shell.css > components/strategy-bar.css 9
+layer-inversion patterns/menus.css > components/model-picker.css 9
+layer-inversion patterns/overlay-chrome.css > components/messages-2.css 9
+layer-inversion base/elements.css > components/plugin-catalog.css 8
+layer-inversion layout/app-shell.css > components/model-picker.css 8
+layer-inversion layout/app-shell.css > components/settings-2.css 8
+layer-inversion layout/window-chrome.css > components/diff-viewer.css 8
+layer-inversion patterns/buttons.css > components/settings-3.css 8
+layer-inversion base/elements.css > components/project-setup.css 7
+layer-inversion base/elements.css > components/skills-marketplace.css 7
+layer-inversion layout/app-header.css > components/composer.css 7
+layer-inversion layout/app-header.css > components/popup-sheet.css 7
+layer-inversion patterns/buttons.css > components/properties-panel.css 7
+layer-inversion patterns/markdown.css > components/about-modal.css 7
+layer-inversion patterns/menus.css > components/about-modal.css 7
+layer-inversion base/elements.css > components/pinboard.css 6
+layer-inversion layout/app-header.css > components/project-setup.css 6
+layer-inversion layout/app-header.css > patterns/overlay-chrome.css 6
+layer-inversion layout/app-shell.css > components/popup-sheet.css 6
+layer-inversion layout/app-shell.css > components/skills-marketplace.css 6
+layer-inversion patterns/markdown.css > components/popup-sheet.css 6
+layer-inversion patterns/menus.css > components/skills-marketplace.css 6
+layer-inversion patterns/menus.css > components/strategy-bar.css 6
+layer-inversion patterns/overlay-chrome.css > components/conversation-bar.css 6
+layer-inversion tokens/theme-dark.css > base/elements.css 6
+layer-inversion layout/app-header.css > patterns/spinner.css 5
+layer-inversion layout/app-shell.css > components/conversation-bar.css 5
+layer-inversion patterns/code.css > components/overlays-and-updates.css 5
+layer-inversion patterns/markdown.css > components/composer.css 5
+layer-inversion patterns/markdown.css > components/messages-3.css 5
+layer-inversion patterns/menus.css > components/context-items.css 5
+layer-inversion patterns/menus.css > components/messages-3.css 5
+layer-inversion patterns/overlay-chrome.css > components/messages-1.css 5
+layer-inversion patterns/overlay-chrome.css > components/model-picker.css 5
+layer-inversion patterns/popup-surface.css > components/diff-viewer.css 5
+layer-inversion base/elements.css > components/model-picker.css 4
+layer-inversion base/elements.css > patterns/buttons.css 4
+layer-inversion layout/app-header.css > components/about-modal.css 4
+layer-inversion layout/app-header.css > components/context-items.css 4
+layer-inversion layout/app-shell.css > components/plugin-catalog.css 4
+layer-inversion patterns/buttons.css > components/pinboard.css 4
+layer-inversion patterns/buttons.css > components/popup-sheet.css 4
+layer-inversion patterns/buttons.css > components/skills-marketplace.css 4
+layer-inversion patterns/code.css > components/settings-3.css 4
+layer-inversion patterns/popup-surface.css > components/composer.css 4
+layer-inversion patterns/popup-surface.css > components/properties-panel.css 4
+layer-inversion patterns/spinner.css > components/settings-3.css 4
+layer-inversion tokens/theme-dark.css > components/messages-3.css 4
+layer-inversion tokens/theme-dark.css > layout/app-shell.css 4
+layer-inversion base/elements.css > components/approvals-2.css 3
+layer-inversion base/elements.css > components/messages-2.css 3
+layer-inversion base/elements.css > components/overlays-and-updates.css 3
+layer-inversion base/elements.css > patterns/markdown.css 3
+layer-inversion layout/app-header.css > components/approvals-2.css 3
+layer-inversion layout/app-shell.css > components/context-items.css 3
+layer-inversion layout/app-shell.css > patterns/overlay-chrome.css 3
+layer-inversion layout/app-shell.css > patterns/spinner.css 3
+layer-inversion layout/window-chrome.css > patterns/icons.css 3
+layer-inversion patterns/buttons.css > components/model-picker.css 3
+layer-inversion patterns/markdown.css > components/messages-1.css 3
+layer-inversion patterns/markdown.css > components/strategy-bar.css 3
+layer-inversion patterns/menus.css > components/project-setup.css 3
+layer-inversion patterns/modal-dialog.css > components/conversation-bar.css 3
+layer-inversion patterns/overlay-chrome.css > components/messages-3.css 3
+layer-inversion patterns/overlay-chrome.css > components/overlays-and-updates.css 3
+layer-inversion patterns/overlay-chrome.css > components/pinboard.css 3
+layer-inversion patterns/spinner.css > components/properties-panel.css 3
+layer-inversion base/elements.css > components/conversation-bar.css 2
+layer-inversion base/elements.css > components/messages-3.css 2
+layer-inversion base/elements.css > components/workspace-panel.css 2
+layer-inversion base/elements.css > patterns/overlay-chrome.css 2
+layer-inversion base/elements.css > patterns/popup-surface.css 2
+layer-inversion layout/app-header.css > components/approvals-1.css 2
+layer-inversion layout/app-shell.css > components/approvals-1.css 2
+layer-inversion layout/app-shell.css > patterns/buttons.css 2
+layer-inversion layout/app-shell.css > patterns/markdown.css 2
+layer-inversion layout/window-chrome.css > components/properties-panel.css 2
+layer-inversion layout/window-chrome.css > patterns/menus.css 2
+layer-inversion patterns/buttons.css > components/context-items.css 2
+layer-inversion patterns/buttons.css > components/messages-2.css 2
+layer-inversion patterns/buttons.css > components/project-setup.css 2
+layer-inversion patterns/buttons.css > components/strategy-bar.css 2
+layer-inversion patterns/code.css > components/properties-panel.css 2
+layer-inversion patterns/menus.css > components/workspace-panel.css 2
+layer-inversion patterns/modal-dialog.css > components/settings-2.css 2
+layer-inversion patterns/overlay-chrome.css > components/approvals-2.css 2
+layer-inversion patterns/overlay-chrome.css > components/onboarding.css 2
+layer-inversion patterns/overlay-chrome.css > components/plugin-catalog.css 2
+layer-inversion patterns/popup-surface.css > components/conversation-bar.css 2
+layer-inversion patterns/spinner.css > components/skills-marketplace.css 2
+layer-inversion tokens/theme-dark.css > components/conversation-bar.css 2
+layer-inversion base/elements.css > components/composer.css 1
+layer-inversion base/elements.css > components/context-items.css 1
+layer-inversion base/elements.css > components/messages-1.css 1
+layer-inversion base/elements.css > layout/window-chrome.css 1
+layer-inversion base/elements.css > patterns/menus.css 1
+layer-inversion base/text-selection.css > components/settings-2.css 1
+layer-inversion layout/app-header.css > components/messages-3.css 1
+layer-inversion layout/app-header.css > components/overlays-and-updates.css 1
+layer-inversion layout/app-header.css > components/plugin-catalog.css 1
+layer-inversion layout/app-header.css > components/settings-1.css 1
+layer-inversion layout/app-shell.css > components/about-modal.css 1
+layer-inversion layout/app-shell.css > components/diff-viewer.css 1
+layer-inversion layout/app-shell.css > components/messages-3.css 1
+layer-inversion layout/window-chrome.css > components/model-picker.css 1
+layer-inversion layout/window-chrome.css > components/popup-sheet.css 1
+layer-inversion patterns/buttons.css > components/about-modal.css 1
+layer-inversion patterns/buttons.css > components/conversation-bar.css 1
+layer-inversion patterns/buttons.css > components/settings-2.css 1
+layer-inversion patterns/code.css > components/context-items.css 1
+layer-inversion patterns/code.css > components/model-picker.css 1
+layer-inversion patterns/code.css > components/pinboard.css 1
+layer-inversion patterns/code.css > components/popup-sheet.css 1
+layer-inversion patterns/code.css > components/project-setup.css 1
+layer-inversion patterns/menus.css > components/popup-sheet.css 1
+layer-inversion patterns/overlay-chrome.css > components/about-modal.css 1
+layer-inversion patterns/overlay-chrome.css > components/settings-2.css 1
+layer-inversion patterns/overlay-chrome.css > components/strategy-bar.css 1
+layer-inversion patterns/overlay-chrome.css > components/workspace-panel.css 1
+layer-inversion patterns/popup-surface.css > components/pinboard.css 1
+layer-inversion patterns/spinner.css > components/context-items.css 1
+layer-inversion patterns/spinner.css > components/messages-2.css 1
+layer-inversion patterns/spinner.css > components/model-picker.css 1
+layer-inversion patterns/spinner.css > components/pinboard.css 1
+layer-inversion patterns/spinner.css > components/popup-sheet.css 1
+layer-inversion patterns/spinner.css > components/project-setup.css 1

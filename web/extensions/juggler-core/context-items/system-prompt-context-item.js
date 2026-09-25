@@ -24,7 +24,7 @@ const SYSTEM_PROMPT_STYLES = `
   margin-top: 0.5rem;
   padding: 0.375rem 0.75rem;
   font-size: 0.75rem;
-  background-color: var(--accent-color, #6366f1);
+  background-color: var(--accent-blue);
   color: white;
   border: none;
   border-radius: 0.25rem;
@@ -33,7 +33,7 @@ const SYSTEM_PROMPT_STYLES = `
   align-self: flex-start;
 }
 .system-prompt-preset-btn:hover {
-  background-color: var(--accent-color-hover, #4f46e5);
+  background-color: var(--accent-blue-light);
 }
 .system-prompt-textarea {
   width: 100%;
@@ -223,7 +223,7 @@ const SYSTEM_PROMPT_STYLES = `
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--accent-color, #6366f1);
+  color: var(--accent-blue);
 }
 .sp-preset-row-icon svg {
   width: 1rem;
@@ -247,7 +247,7 @@ const SYSTEM_PROMPT_STYLES = `
 .sp-preset-default-badge {
   font-size: 0.6875rem;
   font-weight: 600;
-  color: var(--accent-color, #6366f1);
+  color: var(--accent-blue);
   white-space: nowrap;
 }
 .sp-preset-setdefault-btn,

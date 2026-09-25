@@ -4,7 +4,7 @@
  *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
  */
 
-juggler-spinner {
+:where(juggler-spinner) {
     --size: 2rem;
     --duration: 1.5s;
     --js-n: 3;
@@ -47,7 +47,7 @@ juggler-spinner {
    animation-delay, which is not animatable and would snap every club to a new
    position) — so the cascade opens out and closes up smoothly instead of
    bunching. */
-juggler-spinner .js-pivot {
+:where(juggler-spinner) .js-pivot {
     position: absolute;
     left: 50%;
     top: 50%;
@@ -63,11 +63,11 @@ juggler-spinner .js-pivot {
    on removal it is set and the element detaches once the fade has run. The fade
    is shorter than the re-spacing glide, so the count settles visually before
    the spacing does. */
-juggler-spinner .js-pivot.js-faded {
+:where(juggler-spinner) .js-pivot.js-faded {
     opacity: 0;
 }
 
-juggler-spinner .js-orbit {
+:where(juggler-spinner) .js-orbit {
     position: absolute;
     left: 0;
     top: 0;
@@ -83,7 +83,7 @@ juggler-spinner .js-orbit {
    any club count. Expressed against the --duration variable (not
    animation-duration) so the offsets stay proportional if --duration is
    overridden. */
-juggler-spinner .js-club {
+:where(juggler-spinner) .js-club {
     position: absolute;
     width: var(--js-club-w);
     height: var(--js-club-h);
@@ -100,7 +100,7 @@ juggler-spinner .js-club {
    (e.g. the footer Pause button), blowing every club up to a full 1rem square
    and piling them in the centre. The svg always lives inside .js-club, so this
    still matches all three. */
-juggler-spinner .js-club svg {
+:where(juggler-spinner) .js-club svg {
     display: block;
     width: 100%;
     height: 100%;
@@ -150,7 +150,7 @@ juggler-spinner .js-club svg {
 
    The duration is a fraction of the orbit rather than an absolute, so the fall
    still finishes within one pass of the bottom whatever --duration says. */
-juggler-spinner .js-club.js-dropping {
+:where(juggler-spinner) .js-club.js-dropping {
     animation:
         juggler-spinner-spin var(--duration) linear infinite,
         juggler-spinner-drop calc(var(--duration) * 0.6) linear 1;

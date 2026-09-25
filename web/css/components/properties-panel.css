@@ -404,6 +404,23 @@ reveal-button {
     cursor: default;
 }
 
+/* A highlighted <pre> keeps this panel's box, not the syntax theme's: the
+   shared `pre[class*="language-"]` rule in patterns/code.css sets padding and
+   `white-space: pre`, and the panel wraps instead. The `.syntax-highlight`
+   co-class is what the highlighter adds, so these only apply once it has run. */
+.properties-panel-code.syntax-highlight {
+    white-space: pre-wrap;
+    font-size: 0.75rem;
+    padding: 0.1rem 0.5rem;
+}
+
+.properties-panel-result.syntax-highlight {
+    white-space: pre-wrap;
+    font-size: 0.8125rem;
+    padding: 0.1rem 0.5rem;
+    background: var(--bg-primary);
+}
+
 /* Code blocks */
 .properties-panel-code {
     border-radius: 0.25rem;
@@ -494,11 +511,6 @@ properties-panel-section .properties-panel-result {
     white-space: nowrap;
     color: var(--text-secondary);
     background: var(--bg-raised);
-}
-
-.properties-panel-token-chip.token-low {
-    background: color-mix(in srgb, var(--accent-green) 25%, var(--bg-raised));
-    color: var(--text-primary);
 }
 
 .properties-panel-token-chip.token-high {
@@ -1034,7 +1046,6 @@ properties-panel-tx-metadata .meta-item {
        control inside the item sets its own cursor, so buttons keep the hand. */
     cursor: auto;
 }
-
 
 /* Suppress browser focus boxes */
 .conversation-item:focus {

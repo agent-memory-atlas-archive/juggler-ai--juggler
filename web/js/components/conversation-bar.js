@@ -743,7 +743,7 @@ class ConversationBar extends JugglerElement {
     let binBtn = /** @type {HTMLButtonElement|null} */ (this._cachedElements.get('bin-button'));
     if (!binBtn) {
       binBtn = document.createElement('button');
-      binBtn.className = 'u-btn-ghost conversation-bin-button';
+      binBtn.className = 'btn-ghost conversation-bin-button';
       binBtn.title = 'View binned conversations';
       binBtn.setAttribute('aria-label', 'Open bin');
       binBtn.innerHTML = `${BIN_ICON_SVG}<span class="conversation-bin-label">Bin</span><span class="conversation-bin-size" hidden></span><span class="conversation-bin-count" hidden></span>`;

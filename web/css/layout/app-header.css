@@ -4,7 +4,7 @@
  *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
  */
 
-.app-header project-path-display {
+:where(.app-header) project-path-display {
     display: flex;
     align-items: center;
     gap: 0.25rem;
@@ -15,10 +15,10 @@
 }
 
 /* The chip: a button styled to signpost "click to change project". Border,
-   background and hover chrome come from the shared .u-btn-ghost house style
+   background and hover chrome come from the shared .btn-ghost house style
    (utilities.css); this owns only the chip's layout (path + folder/chevron
    icons) and typography. */
-.app-header .ppd-chip {
+:where(.app-header) .ppd-chip {
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
@@ -29,33 +29,26 @@
     font-weight: 500;
 }
 
-.app-header .ppd-path {
+:where(.app-header) .ppd-path {
     overflow: hidden;
     min-width: 0;
     white-space: nowrap;
     text-overflow: ellipsis;
 }
 
-.app-header .ppd-folder-icon,
-.app-header .ppd-chevron {
-    width: 0.875rem;
-    height: 0.875rem;
+:where(.app-header) .ppd-chevron {
+    width: 1.125rem;
+    height: 1.125rem;
     flex-shrink: 0;
     fill: var(--text-tertiary);
     transition: fill var(--transition-base);
 }
 
-.app-header .ppd-chevron {
-    width: 1.125rem;
-    height: 1.125rem;
-}
-
-.app-header .ppd-chip:hover .ppd-folder-icon,
-.app-header .ppd-chip:hover .ppd-chevron {
+:where(.app-header) .ppd-chip:hover .ppd-chevron {
     fill: var(--text-secondary);
 }
 
-.app-header project-path-display.is-empty .ppd-chip {
+:where(.app-header) project-path-display.is-empty .ppd-chip {
     font-style: italic;
     opacity: 0.85;
 }
@@ -63,7 +56,7 @@
 /* Inline "open new window" button welded to the right of the chip. Native
    window only — hidden by default and revealed under .window-mode (styles.css),
    since a remote browser tab has no host able to spawn a window. */
-.app-header .ppd-new-window-button {
+:where(.app-header) .ppd-new-window-button {
     display: none;
     align-items: center;
     justify-content: center;
@@ -73,14 +66,14 @@
     padding: 0;
 }
 
-.app-header .ppd-new-window-button svg {
+:where(.app-header) .ppd-new-window-button svg {
     width: 1.125rem;
     height: 1.125rem;
     fill: var(--text-secondary);
     transition: fill var(--transition-base);
 }
 
-.app-header .ppd-new-window-button:hover svg {
+:where(.app-header) .ppd-new-window-button:hover svg {
     fill: var(--text-primary);
 }
 
@@ -89,7 +82,7 @@
    new-window button it shows in every mode, since a remote browser tab is
    exactly the shared-session case. Tinted with the accent so it reads as an
    active, informative state without being loud. */
-.app-header .ppd-clients-indicator {
+:where(.app-header) .ppd-clients-indicator {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -104,18 +97,18 @@
     line-height: 1;
 }
 
-.app-header .ppd-clients-indicator[hidden] {
+:where(.app-header) .ppd-clients-indicator[hidden] {
     display: none;
 }
 
-.app-header .ppd-clients-indicator svg {
+:where(.app-header) .ppd-clients-indicator svg {
     width: 1.125rem;
     height: 1.125rem;
     fill: currentcolor;
 }
 
-.app-header .ppd-clients-indicator:hover:not(:disabled),
-.app-header .ppd-clients-indicator:active:not(:disabled) {
+:where(.app-header) .ppd-clients-indicator:hover:not(:disabled),
+:where(.app-header) .ppd-clients-indicator:active:not(:disabled) {
     color: var(--accent-blue, #58a6ff);
 }
 
@@ -145,3 +138,155 @@ body.workspace-selected conversation-tabs-container {
     display: none;
 }
 
+/* Header Actions Container
+   Pinned to absolute pixel sizes so the +/- zoom (which works by scaling
+   the root font-size) does not affect these controls. px is intentional
+   here — rems would defeat the purpose. */
+/* stylelint-disable rem-over-px/rem-over-px, unit-disallowed-list */
+header-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 4px 8px;
+    flex-shrink: 0;
+}
+
+/* The regular-controls group is transparent to layout on wide viewports — its
+   buttons behave as direct flex children of header-actions. It only becomes a
+   real (non-wrapping, shrink-to-fit) flex row on a narrow header; see the
+   width <= 36rem block below. */
+.header-actions-controls {
+    display: contents;
+}
+
+header-actions .btn-icon-header {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    font-size: 14px;
+}
+
+header-actions .btn-icon-header svg,
+header-actions .btn-icon-header::before {
+    width: 20px;
+    height: 20px;
+}
+/* stylelint-enable rem-over-px/rem-over-px, unit-disallowed-list */
+
+/* Touch devices: the header controls are sized for a mouse (2rem), below the
+   comfortable tap target. Grow them where the pointer is coarse and there's no
+   hover to aid aiming — and pin them to an absolute 44px (the iOS minimum),
+   like the desktop header-actions above, so the +/- zoom (which scales the root
+   font-size) can't blow the tap targets up or shrink them away on a phone. The
+   hamburger rides the same fixed size; its glyph is pinned too. The logo is
+   pinned alongside them so the whole header-bar row stays a fixed, deliberate
+   size on a phone regardless of zoom. */
+/* stylelint-disable rem-over-px/rem-over-px, unit-disallowed-list */
+@media (hover: none) {
+    header-actions .btn-icon-header,
+    .app-header .sidebar-toggle-button,
+    .app-header .btn-circular-control {
+        width: 44px;
+        height: 44px;
+    }
+
+    .app-header .sidebar-toggle-button svg {
+        width: 24px;
+        height: 24px;
+    }
+
+    .app-header .btn-circular-control svg {
+        width: 18px;
+        height: 18px;
+    }
+
+    /* .app-header prefix raises specificity above the .logo::before height in
+       the @media (width <= 64rem) block in app-shell.css, which also matches on
+       a phone. Both are `layout`, so specificity settles it. */
+    .app-header .logo::before {
+        height: 28px;
+    }
+
+    /* The help button opens Settings › Keyboard shortcuts — a reference surface
+       with nothing to offer a device that has no keyboard. Drop it from the
+       touch header so it doesn't crowd the button row with a dead affordance. */
+    header-actions .help-button {
+        display: none;
+    }
+}
+/* stylelint-enable rem-over-px/rem-over-px, unit-disallowed-list */
+
+/* Tighten the header's padding before anything else has to move. */
+@media (width <= 64rem) {
+    .app-header {
+        padding: 0.5rem 0.75rem;
+    }
+}
+
+/* ==========================================================================
+   Narrow viewports (phones)
+   header-actions is a fixed-width, non-shrinking cluster, so on a narrow
+   screen its rightmost buttons (network, settings) run off the right edge.
+   Let the header wrap and drop the WHOLE action cluster onto its own
+   full-width second row. Row 1 keeps the hamburger, logo, and project path;
+   row 2 is the buttons. Pill labels collapse to icon-only.
+
+   The regular icon buttons are kept on ONE non-wrapping row that spans the
+   full header width: they're spread edge-to-edge (space-between) so no
+   leftover space pools in front of the first button, and each may shrink so
+   the row always fits rather than spilling a button off the right. The
+   undo/redo circles are pinned (never shrink) so they can't distort into
+   ovals. The update pill — a non-icon control that can't collapse to a glyph
+   and whose label must stay readable ("Downloading update… 42%") — is the one
+   exception: it sits outside the icon group and takes a full row of its own
+   above them, present only when relevant.
+   ========================================================================== */
+@media (width <= 36rem) {
+    /* Tighten the whole header on a phone: the desktop's generous 12px/20px
+       padding wastes scarce width and height once the actions drop to their own
+       row. */
+    .app-header {
+        flex-wrap: wrap;
+        gap: 0 0.5rem;
+        padding: 0.5rem 0.75rem;
+    }
+
+    /* Drop header-actions' own inset so the button row reaches the header's
+       edges — with the reduced .app-header padding above, its only remaining
+       margin from the screen edge. */
+    header-actions {
+        flex-basis: 100%;
+        min-width: 0;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        padding: 0;
+    }
+
+    /* The icon buttons become a single non-wrapping row that fills the header
+       width; they spread edge-to-edge and shrink to fit so nothing wraps or
+       spills. */
+    header-actions .header-actions-controls {
+        display: flex;
+        flex: 1 1 100%;
+        flex-wrap: nowrap;
+        align-items: center;
+        justify-content: space-between;
+        min-width: 0;
+    }
+
+    header-actions .header-actions-controls > button {
+        flex: 0 1 auto;
+        min-width: 0;
+    }
+
+    /* Keep the visible undo/redo circles perfectly round — they must never be
+       squeezed into ovals; the transparent icon buttons absorb the shrink. */
+    header-actions .header-actions-controls > .btn-circular-control {
+        flex-shrink: 0;
+    }
+
+    /* The update pill gets its own full-width row, above the icon buttons. */
+    header-actions > update-button:not([hidden]) {
+        flex: 0 0 100%;
+        justify-content: flex-end;
+    }}

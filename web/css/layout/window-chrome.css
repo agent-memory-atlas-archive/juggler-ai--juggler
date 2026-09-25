@@ -4,21 +4,21 @@
  *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
  */
 
-.window-mode .logo {
+:where(.window-mode) .logo {
     cursor: default;
 }
 
 /* Opt interactive regions out of drag — custom property inherits into their children too */
-.window-mode header-actions,
-.window-mode project-path-display,
-.window-mode .sidebar-toggle-button {
+:where(.window-mode) header-actions,
+:where(.window-mode) project-path-display,
+:where(.window-mode) .sidebar-toggle-button {
     --wails-draggable: no-drag;
 }
 
 /* conversation-bar empty space is draggable; buttons within it are not */
-.window-mode conversation-bar button,
-.window-mode conversation-bar input,
-.window-mode conversation-bar select {
+:where(.window-mode) conversation-bar button,
+:where(.window-mode) conversation-bar input,
+:where(.window-mode) conversation-bar select {
     --wails-draggable: no-drag;
 }
 
@@ -65,14 +65,15 @@
    Only meaningful inside the native desktop app, which handles it via its
    loopback nativeCtl endpoint; a remote browser tab has no native host (the
    request is a no-op there), so the affordance stays hidden. Base styles +
-   default (hidden) state live in components.css next to the chip.
+   default (hidden) state live in app-header.css next to the chip.
    Shown on every native platform (mac/windows/linux).
    ============================================================================ */
 
-/* Selector carries .app-header so it outweighs the base hide rule in
-   components.css (.app-header .ppd-new-window-button), which loads later and
-   would otherwise win the equal-specificity tie by source order. */
-.window-mode .app-header .ppd-new-window-button {
+/* `.window-mode` keeps its weight because it is the condition under which this
+   rule means to win: it has to beat the base hide rule in app-header.css
+   (`.app-header .ppd-new-window-button`), which is in the same layer and loads
+   later. `.app-header` only says where to look, so it carries none. */
+.window-mode :where(.app-header) .ppd-new-window-button {
     display: flex;
 }
 
@@ -90,8 +91,8 @@ window-caption-controls {
     display: none;
 }
 
-:root[data-window-platform="windows"] .window-mode window-caption-controls,
-:root[data-window-platform="linux"] .window-mode window-caption-controls {
+:where(:root[data-window-platform="windows"] .window-mode) window-caption-controls,
+:where(:root[data-window-platform="linux"] .window-mode) window-caption-controls {
     display: flex;
 
     --wails-draggable: no-drag; /* buttons are clickable, not a drag region */
@@ -111,14 +112,14 @@ window-caption-controls {
 
 /* Windows: full-height buttons flush to the top-right corner, native-caption
    style. Cancel the header's right + vertical padding so they sit flush. */
-:root[data-window-platform="windows"] .window-mode window-caption-controls {
+:where(:root[data-window-platform="windows"] .window-mode) window-caption-controls {
     align-self: stretch; /* span the full header height */
     margin: -0.75rem -1.25rem -0.75rem 0;
 }
 
 /* Linux: compact rounded buttons inset from the corner, matching the GNOME /
    Adwaita convention. They sit within the header padding rather than flush. */
-:root[data-window-platform="linux"] .window-mode window-caption-controls {
+:where(:root[data-window-platform="linux"] .window-mode) window-caption-controls {
     align-self: center;
     gap: 0.25rem;
     margin-left: 0.5rem; /* separate from the header actions to their left */
@@ -137,12 +138,12 @@ window-caption-controls {
 }
 
 /* Windows caption width: 46px, full header height (stretched container). */
-:root[data-window-platform="windows"] .window-caption-btn {
+:where(:root[data-window-platform="windows"]) .window-caption-btn {
     width: 2.875rem; /* 46px — standard Windows caption-button width */
 }
 
 /* Linux (Adwaita): small circular buttons. */
-:root[data-window-platform="linux"] .window-caption-btn {
+:where(:root[data-window-platform="linux"]) .window-caption-btn {
     width: 1.75rem;
     height: 1.75rem;
     border-radius: 50%;

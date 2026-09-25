@@ -2,19 +2,26 @@
 /**
  * lint-css-arch — checks the CSS architecture contract in web/css/README.md.
  *
- * Six checks, all driven by web/css/manifest.json:
+ * Seven checks, all driven by web/css/manifest.json:
  *
- *   ownership     a selector lives in the file that owns its root
- *   dead-selector a class in the CSS is referenced by no JS, HTML or extension
- *   token-parity  every var() resolves; theme colour tokens exist in both themes
- *   link-parity   index.html and headless-test.html link the manifest's sheets
- *   layer-order   a sheet's directory is its layer, and the list is in layer order
- *   asset-url     every relative url() resolves to a file that exists
+ *   ownership       a selector lives in the file that owns its root
+ *   dead-selector   a class in the CSS is referenced by no JS, HTML or extension
+ *   token-parity    every var() resolves; theme colour tokens exist in both themes
+ *   link-parity     index.html and headless-test.html link the manifest's sheets
+ *   layer-order     a sheet's directory is its layer, and the list is in layer order
+ *   asset-url       every relative url() resolves to a file that exists
+ *   layer-inversion a rule is filed below a rule it overrides
  *
  * Known violations live in web/css/.lint-css-allowlist, one per line, as
  * `<check> <item>` with an optional `# note`. The allowlist is the outstanding
  * debt: entries may be removed, never added, and an entry that no longer
  * matches anything is itself an error so the file cannot rot.
+ *
+ * layer-inversion allowlists a count per file pair rather than one entry per
+ * finding — `<lower> > <higher> <n>` — because the findings run to thousands
+ * and are fixed a file at a time. The count is a ratchet: exceeding it fails,
+ * and so does beating it, which is how the number comes down as the work lands.
+ * `--inversions <lower> <higher>` prints the findings behind one number.
  *
  * Run via `make lint` / `make lint-files`; never invoke it by hand.
  */
@@ -57,8 +64,18 @@ function stripComments(src) {
 	return out;
 }
 
+/** The text between the brace at `open` and the one that closes it. */
+function blockAt(clean, open) {
+	let depth = 0;
+	for (let i = open; i < clean.length; i++) {
+		if (clean[i] === '{') depth++;
+		else if (clean[i] === '}') { depth--; if (depth === 0) return clean.slice(open + 1, i); }
+	}
+	return clean.slice(open + 1);
+}
+
 /**
- * Walk a stylesheet and yield every rule with its selector, line and the
+ * Walk a stylesheet and yield every rule with its selector, line, body and the
  * at-rule stack it sits inside.
  */
 function parseRules(src) {
@@ -90,7 +107,7 @@ function parseRules(src) {
 			} else {
 				stack.push(text);
 				if (text && !inKeyframes) {
-					rules.push({ selector: text, line: preludeLine, at: stack.slice(0, -1) });
+					rules.push({ selector: text, line: preludeLine, at: stack.slice(0, -1), body: blockAt(clean, i) });
 				}
 			}
 			prelude = '';
@@ -106,13 +123,41 @@ function parseRules(src) {
 }
 
 /**
+ * `:where(.markdown) p` is about a `p` inside `.markdown`, exactly as
+ * `.markdown p` is: the wrapper sets the weight to zero and changes nothing
+ * about what the selector matches. Anything reading a selector for its shape
+ * rather than its specificity wants it unwrapped first.
+ *
+ * A comma inside the wrapper means several selectors standing in one place,
+ * which has no single shape, so those are left as they are.
+ */
+function unwrapGrouping(selector) {
+	let out = '';
+	for (let i = 0; i < selector.length; i++) {
+		const m = /^:(where|is)\(/.exec(selector.slice(i));
+		if (!m) { out += selector[i]; continue; }
+		let depth = 0;
+		let j = i + m[0].length - 1;
+		for (; j < selector.length; j++) {
+			if (selector[j] === '(') depth++;
+			else if (selector[j] === ')') { depth--; if (!depth) break; }
+		}
+		const inner = selector.slice(i + m[0].length, j);
+		if (selectorParts(inner).length > 1) { out += selector.slice(i, j + 1); i = j; continue; }
+		out += unwrapGrouping(inner);
+		i = j;
+	}
+	return out;
+}
+
+/**
  * The root of a selector: the thing it is "about". `:root`, `html` and `body`
  * are containers rather than subjects, so a rule that starts with one is about
  * whatever it descends to — `:root[data-theme="light"] .badge` is about
  * `.badge`.
  */
 function rootOf(selectorPart) {
-	const compounds = selectorPart
+	const compounds = unwrapGrouping(selectorPart)
 		.trim()
 		.split(/\s+|\s*[>+~]\s*/)
 		.filter(Boolean);
@@ -141,6 +186,252 @@ function selectorParts(selector) {
 	}
 	if (current.trim()) parts.push(current);
 	return parts;
+}
+
+// ---------------------------------------------------------------------------
+// The cascade — selectors taken apart far enough to ask whether two rules can
+// ever meet on one element.
+// ---------------------------------------------------------------------------
+
+/**
+ * One compound of a complex selector: everything that must be true of a single
+ * element. `nots` holds what `:not()` says must NOT be true of it.
+ */
+function parseCompound(text) {
+	const compound = { tag: null, id: null, classes: [], attrs: [], pseudoClasses: [], pseudoElements: [], nots: [], functional: [] };
+	let i = 0;
+	const ident = () => {
+		const m = /^-?[\w-]+/.exec(text.slice(i));
+		if (!m) return '';
+		i += m[0].length;
+		return m[0];
+	};
+	const balanced = () => {
+		let depth = 0;
+		const start = i;
+		for (; i < text.length; i++) {
+			if (text[i] === '(') depth++;
+			else if (text[i] === ')') { depth--; if (!depth) { i++; return text.slice(start + 1, i - 1); } }
+		}
+		return text.slice(start + 1);
+	};
+	while (i < text.length) {
+		const c = text[i];
+		if (c === '.') { i++; compound.classes.push(ident()); continue; }
+		if (c === '#') { i++; compound.id = ident(); continue; }
+		if (c === '[') {
+			const end = text.indexOf(']', i);
+			compound.attrs.push(text.slice(i, end < 0 ? text.length : end + 1));
+			i = end < 0 ? text.length : end + 1;
+			continue;
+		}
+		if (c === ':') {
+			const isElement = text[i + 1] === ':';
+			i += isElement ? 2 : 1;
+			const name = ident();
+			let arg = null;
+			if (text[i] === '(') arg = balanced();
+			if (isElement || ['before', 'after', 'first-line', 'first-letter', 'selection', 'placeholder', 'backdrop', 'marker'].includes(name)) {
+				compound.pseudoElements.push(name);
+			} else if (arg !== null && ['not', 'is', 'where', 'has', 'matches', '-webkit-any'].includes(name)) {
+				compound.functional.push({ name, arg });
+				if (name === 'not') compound.nots.push(arg);
+			} else {
+				compound.pseudoClasses.push(arg === null ? name : `${name}(${arg})`);
+			}
+			continue;
+		}
+		if (c === '*') { i++; continue; }
+		if (/[\w-]/.test(c)) { compound.tag = ident().toLowerCase(); continue; }
+		i++;
+	}
+	return compound;
+}
+
+/** Split a complex selector into compounds, keeping the combinator before each. */
+function parseComplex(selector) {
+	const compounds = [];
+	let depth = 0;
+	let current = '';
+	let combinator = null;
+	let quote = null;
+	const flush = () => {
+		if (current.trim()) compounds.push({ combinator, ...parseCompound(current.trim()), text: current.trim() });
+		current = '';
+	};
+	for (let i = 0; i < selector.length; i++) {
+		const c = selector[i];
+		if (quote) { current += c; if (c === quote) quote = null; continue; }
+		if (c === '"' || c === "'") { quote = c; current += c; continue; }
+		if (c === '(' || c === '[') depth++;
+		if (c === ')' || c === ']') depth--;
+		if (!depth && /[\s>+~]/.test(c)) {
+			const next = /^[\s]*([>+~])?/.exec(selector.slice(i))[1] ?? null;
+			if (current.trim()) { flush(); combinator = next ?? ' '; } else if (next) { combinator = next; }
+			continue;
+		}
+		current += c;
+	}
+	flush();
+	return compounds;
+}
+
+const SPEC_SCORE = (s) => s[0] * 10000 + s[1] * 100 + s[2];
+
+/** [ids, classes, elements] for a complex selector. */
+function specificity(selector) {
+	const total = [0, 0, 0];
+	for (const compound of parseComplex(selector)) {
+		if (compound.id) total[0]++;
+		total[1] += compound.classes.length + compound.attrs.length + compound.pseudoClasses.length;
+		if (compound.tag) total[2]++;
+		total[2] += compound.pseudoElements.length;
+		for (const fn of compound.functional) {
+			if (fn.name === 'where') continue;
+			// :is/:not/:has count as their most specific argument.
+			let best = [0, 0, 0];
+			for (const part of selectorParts(fn.arg)) {
+				const s = specificity(part.trim());
+				if (SPEC_SCORE(s) > SPEC_SCORE(best)) best = s;
+			}
+			total[0] += best[0]; total[1] += best[1]; total[2] += best[2];
+		}
+	}
+	return total;
+}
+
+/** Declarations in a rule body, as property → whether it is !important. */
+function declarationsIn(body) {
+	const out = new Map();
+	let depth = 0;
+	let current = '';
+	const take = (text) => {
+		const colon = text.indexOf(':');
+		if (colon < 0) return;
+		const property = text.slice(0, colon).trim().toLowerCase();
+		if (!property || property.startsWith('--') || /[{}@]/.test(property) || /\s/.test(property)) return;
+		out.set(property, /!\s*important/i.test(text.slice(colon)));
+	};
+	for (const c of body) {
+		if (c === '(' || c === '{') depth++;
+		if (c === ')' || c === '}') depth--;
+		if (c === ';' && depth <= 0) { take(current); current = ''; continue; }
+		current += c;
+	}
+	take(current);
+	return out;
+}
+
+/**
+ * The longhands a shorthand covers. Only the ones that actually collide in
+ * this tree: the point is to catch `padding` against `padding-left`, not to
+ * reimplement the property database.
+ */
+const SHORTHANDS = {
+	margin: ['margin-top', 'margin-right', 'margin-bottom', 'margin-left'],
+	padding: ['padding-top', 'padding-right', 'padding-bottom', 'padding-left'],
+	inset: ['top', 'right', 'bottom', 'left'],
+	border: ['border-width', 'border-style', 'border-color', 'border-top', 'border-right', 'border-bottom', 'border-left'],
+	'border-width': ['border-top-width', 'border-right-width', 'border-bottom-width', 'border-left-width'],
+	'border-color': ['border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color'],
+	'border-radius': ['border-top-left-radius', 'border-top-right-radius', 'border-bottom-left-radius', 'border-bottom-right-radius'],
+	flex: ['flex-grow', 'flex-shrink', 'flex-basis'],
+	'flex-flow': ['flex-direction', 'flex-wrap'],
+	font: ['font-size', 'font-family', 'font-weight', 'line-height', 'font-style', 'font-variant'],
+	background: ['background-color', 'background-image', 'background-position', 'background-size', 'background-repeat', 'background-clip', 'background-origin', 'background-attachment'],
+	transition: ['transition-property', 'transition-duration', 'transition-timing-function', 'transition-delay'],
+	animation: ['animation-name', 'animation-duration', 'animation-timing-function', 'animation-delay', 'animation-iteration-count', 'animation-direction', 'animation-fill-mode', 'animation-play-state'],
+	grid: ['grid-template-columns', 'grid-template-rows', 'grid-template-areas', 'grid-auto-columns', 'grid-auto-rows', 'grid-auto-flow'],
+	'grid-template': ['grid-template-columns', 'grid-template-rows', 'grid-template-areas'],
+	'grid-area': ['grid-row-start', 'grid-row-end', 'grid-column-start', 'grid-column-end'],
+	'place-items': ['align-items', 'justify-items'],
+	'place-content': ['align-content', 'justify-content'],
+	'place-self': ['align-self', 'justify-self'],
+	gap: ['row-gap', 'column-gap'],
+	overflow: ['overflow-x', 'overflow-y'],
+	'list-style': ['list-style-type', 'list-style-position', 'list-style-image'],
+	outline: ['outline-width', 'outline-style', 'outline-color'],
+	mask: ['mask-image', 'mask-position', 'mask-size', 'mask-repeat'],
+	'text-decoration': ['text-decoration-line', 'text-decoration-color', 'text-decoration-style', 'text-decoration-thickness'],
+	'scroll-margin': ['scroll-margin-top', 'scroll-margin-right', 'scroll-margin-bottom', 'scroll-margin-left'],
+	'scroll-padding': ['scroll-padding-top', 'scroll-padding-right', 'scroll-padding-bottom', 'scroll-padding-left'],
+};
+
+const PROPERTY_ALIASES = new Map();
+for (const [shorthand, longhands] of Object.entries(SHORTHANDS)) {
+	for (const longhand of longhands) {
+		if (!PROPERTY_ALIASES.has(longhand)) PROPERTY_ALIASES.set(longhand, new Set());
+		PROPERTY_ALIASES.get(longhand).add(shorthand);
+	}
+}
+
+/**
+ * A property and everything that can overwrite it: itself, the longhands it
+ * expands to, and the shorthands that set it. NOT its siblings — `font-size`
+ * and `font-family` are both part of `font` and have nothing to say to each
+ * other.
+ */
+function propertyFamily(property) {
+	if (property === 'all') return null; // fights with everything
+	const family = new Set([property]);
+	for (const longhand of SHORTHANDS[property] || []) family.add(longhand);
+	for (const shorthand of PROPERTY_ALIASES.get(property) || []) family.add(shorthand);
+	return family;
+}
+
+/** The @media/@container conditions a rule sits under, lowest first. */
+function mediaContext(at) {
+	return at.filter((a) => /^@(media|container)\b/i.test(a)).map((a) => a.replace(/\s+/g, ' ').trim());
+}
+
+const LENGTH_RE = /([\d.]+)(px|rem|em)?/;
+function toPx(value) {
+	const m = LENGTH_RE.exec(value);
+	if (!m) return null;
+	return m[2] === 'rem' || m[2] === 'em' ? parseFloat(m[1]) * 16 : parseFloat(m[1]);
+}
+
+/** The width band and the discrete features a condition demands. */
+function mediaTerms(conditions) {
+	const terms = { min: -Infinity, max: Infinity, discrete: new Map() };
+	for (const condition of conditions) {
+		for (const m of condition.matchAll(/\(\s*(?:(min|max)-width\s*:\s*([^)]+)|width\s*(<=|>=|<|>)\s*([^)]+))\)/g)) {
+			if (m[1]) {
+				const px = toPx(m[2]);
+				if (px === null) continue;
+				if (m[1] === 'min') terms.min = Math.max(terms.min, px);
+				else terms.max = Math.min(terms.max, px);
+			} else {
+				const px = toPx(m[4]);
+				if (px === null) continue;
+				if (m[3] === '<=') terms.max = Math.min(terms.max, px);
+				else if (m[3] === '<') terms.max = Math.min(terms.max, px - 0.02);
+				else if (m[3] === '>=') terms.min = Math.max(terms.min, px);
+				else terms.min = Math.max(terms.min, px + 0.02);
+			}
+		}
+		for (const m of condition.matchAll(/\(\s*(hover|pointer|orientation|prefers-color-scheme|prefers-reduced-motion|display-mode|forced-colors)\s*:\s*([^)]+)\)/g)) {
+			terms.discrete.set(m[1], m[2].trim());
+		}
+	}
+	return terms;
+}
+
+/**
+ * Can both rules apply at once? An unconditioned rule always can; two
+ * conditioned ones can unless their widths do not overlap or they disagree
+ * about a feature that only has one value at a time.
+ */
+function mediaCompatible(a, b) {
+	if (!a.length || !b.length) return true;
+	if (a.join(' && ') === b.join(' && ')) return true;
+	const left = mediaTerms(a);
+	const right = mediaTerms(b);
+	if (left.max < right.min || right.max < left.min) return false;
+	for (const [feature, value] of left.discrete) {
+		if (right.discrete.has(feature) && right.discrete.get(feature) !== value) return false;
+	}
+	return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -228,16 +519,25 @@ function sheetFiles(manifest) {
 	return manifest.sheets.map((s) => ({ ...s, abs: path.join(cssDir, s.file) }));
 }
 
-/** ownership: a selector lives in the file that owns its root. */
+/**
+ * ownership: a selector lives in the file that owns its root.
+ *
+ * A sheet marked `enumerates` in the manifest is exempt, because naming other
+ * groups' roots is its whole job: one policy stated once across every surface
+ * it applies to, rather than the same declaration copied into a dozen files
+ * where nobody can see it is one decision.
+ */
 function checkOwnership(manifest, sheets, sources) {
 	const failures = [];
 	const owners = [];
 	for (const sheet of sheets) {
+		if (sheet.enumerates) continue;
 		for (const pattern of sheet.owns || []) {
 			if (pattern !== '*') owners.push({ pattern, re: globToRegExp(pattern), file: sheet.file });
 		}
 	}
 	for (const sheet of sheets) {
+		if (sheet.enumerates) continue;
 		const wildcard = (sheet.owns || []).includes('*');
 		for (const rule of parseRules(sources.get(sheet.file) || '')) {
 			for (const part of selectorParts(rule.selector)) {
@@ -263,22 +563,55 @@ function checkOwnership(manifest, sheets, sources) {
 	return dedupe(failures);
 }
 
-/** dead-selector: a class the CSS styles that nothing else ever names. */
+/**
+ * dead-selector: a name the CSS styles that nothing else ever uses.
+ *
+ * Classes, ids and `@keyframes`. It began as classes only, and both of the
+ * others turned out to be hiding dead rules: `#open-settings-item` and a
+ * `slideIn` animation nothing referenced. An id is the same kind of claim as a
+ * class — "some element out there is called this" — and a keyframes nothing
+ * animates with is a definition nobody reads.
+ */
 function checkDeadSelectors(manifest, sheets, sources) {
 	const tokens = referencedTokens();
 	const dynamic = (manifest.dynamicClasses || []).map(globToRegExp);
 	const seen = new Map();
+	const ids = new Map();
+	const keyframes = new Map();
+	const animated = new Set();
+
 	for (const sheet of sheets) {
 		const clean = stripComments(sources.get(sheet.file) || '');
 		for (const m of clean.matchAll(/\.(-?[a-zA-Z][\w-]*)/g)) {
 			if (!seen.has(m[1])) seen.set(m[1], sheet.file);
 		}
+		// `#id` in a selector, not a colour or a url() fragment.
+		for (const m of clean.matchAll(/#(-?[a-zA-Z][\w-]*)/g)) {
+			if (/^[\da-f]{3,8}$/i.test(m[1])) continue;
+			if (!ids.has(m[1])) ids.set(m[1], sheet.file);
+		}
+		for (const m of clean.matchAll(/@(?:-\w+-)?keyframes\s+([\w-]+)/g)) {
+			if (!keyframes.has(m[1])) keyframes.set(m[1], sheet.file);
+		}
+		for (const m of clean.matchAll(/animation(?:-name)?\s*:([^;}]*)/g)) {
+			for (const word of m[1].split(/[\s,]+/)) if (word) animated.add(word);
+		}
 	}
+
 	const failures = [];
 	for (const [cls, file] of seen) {
 		if (tokens.has(cls)) continue;
 		if (dynamic.some((re) => re.test(cls))) continue;
 		failures.push({ item: cls, message: `${file} — .${cls} is referenced by no JS, HTML or extension` });
+	}
+	for (const [id, file] of ids) {
+		if (tokens.has(id)) continue;
+		failures.push({ item: `#${id}`, message: `${file} — #${id} is referenced by no JS, HTML or extension` });
+	}
+	for (const [name, file] of keyframes) {
+		if (animated.has(name)) continue;
+		if (tokens.has(name)) continue;
+		failures.push({ item: `@${name}`, message: `${file} — @keyframes ${name} is used by no animation` });
 	}
 	return failures;
 }
@@ -459,9 +792,359 @@ function checkAssetUrls(sheets, sources) {
 	return dedupe(failures);
 }
 
+/**
+ * layer-inversion: a rule filed below a rule it overrides.
+ *
+ * Cascade layers are consulted BEFORE specificity. Within a layer specificity
+ * decides as it always did; across layers the higher layer wins at any
+ * specificity, and !important is the only escape. So wherever a rule in a
+ * lower-layer directory beats one in a higher-layer directory today by being
+ * more specific, the two regimes disagree, and wrapping the sheets in their
+ * layers would silently flip that rule off. Equal specificity is not an
+ * inversion: source order settles it today, the link list is in layer order,
+ * and both regimes then give the same answer.
+ *
+ * !important is not an inversion either, in either direction: an important
+ * declaration beats a normal one whatever the layers say, and between two
+ * important ones layer order is reversed, which puts the lower layer on top —
+ * the same answer specificity gives today.
+ *
+ * What is left is pairs that can genuinely land on one element, and deciding
+ * that needs the markup, not the stylesheets. scripts/css-markup-model
+ * harvests what tag a class lands on, what shares an element with what, and
+ * what nests inside what, from the code that builds the DOM.
+ */
+function checkLayerInversion(manifest, sheets, sources, model) {
+	const rank = new Map(manifest.layers.map((l, i) => [l, i]));
+	const rules = [];
+
+	for (const sheet of sheets) {
+		const layerRank = rank.get(sheet.layer);
+		if (layerRank === undefined) continue;
+		for (const rule of parseRules(sources.get(sheet.file) || '')) {
+			const declarations = declarationsIn(rule.body || '');
+			if (!declarations.size) continue;
+			const media = mediaContext(rule.at);
+			for (const part of selectorParts(rule.selector)) {
+				const selector = part.trim();
+				if (!selector) continue;
+				const compounds = parseComplex(selector);
+				if (!compounds.length) continue;
+				const subject = compounds[compounds.length - 1];
+				rules.push({
+					file: sheet.file,
+					layer: sheet.layer,
+					rank: layerRank,
+					line: rule.line,
+					selector,
+					declarations,
+					media,
+					score: SPEC_SCORE(specificity(selector)),
+					subject,
+					parent: compounds.length > 1 ? compounds[compounds.length - 2] : null,
+					ancestors: compounds.slice(0, -1),
+					ancestorTokens: compounds.slice(0, -1).flatMap((c) => [...c.classes, ...(c.tag ? [c.tag] : [])]),
+					pseudoElement: subject.pseudoElements.join(','),
+				});
+			}
+		}
+	}
+
+	// Every rule against every other, cheapest test first: layer, then
+	// specificity, then the two that need the selector taken apart.
+	const findings = new Map();
+	for (const lower of rules) {
+		for (const higher of rules) {
+			if (lower.rank >= higher.rank) continue;
+			if (lower.score <= higher.score) continue;
+			if (lower.pseudoElement !== higher.pseudoElement) continue;
+			if (!overlappingProperty(lower.declarations, higher.declarations)) continue;
+			if (!mediaCompatible(lower.media, higher.media)) continue;
+			if (!canMeet(lower, higher, model)) continue;
+
+			const item = `${lower.file} > ${higher.file}`;
+			if (!findings.has(item)) findings.set(item, []);
+			findings.get(item).push({ lower, higher });
+		}
+	}
+	return findings;
+}
+
+/** The properties the two rules are actually fighting over, for the report. */
+function contestedProperties(a, b) {
+	const contested = new Set();
+	for (const [property, important] of a) {
+		if (important) continue;
+		const family = propertyFamily(property);
+		for (const candidate of family === null ? b.keys() : family) {
+			if (b.has(candidate) && !b.get(candidate)) contested.add(property === candidate ? property : `${property}/${candidate}`);
+		}
+	}
+	return [...contested];
+}
+
+/** A property both rules set, with neither of them shouting. */
+function overlappingProperty(a, b) {
+	for (const [property, important] of a) {
+		if (important) continue;
+		const family = propertyFamily(property);
+		const partners = family === null ? b.keys() : family;
+		for (const candidate of partners) {
+			if (b.has(candidate) && !b.get(candidate)) return true;
+		}
+	}
+	return false;
+}
+
+/** Pseudo-classes that cannot both be true of one element. */
+const EXCLUSIVE_PSEUDO_CLASSES = [
+	['disabled', 'enabled'],
+	['read-only', 'read-write'],
+	['checked', 'indeterminate'],
+	['valid', 'invalid'],
+	['empty', 'has'],
+];
+
+/**
+ * `:is(strong, b)` says the element is one of those tags, as surely as writing
+ * the tag would. Returns the tags it may be, or null when the list is not all
+ * tags — `:is(a, button, [role="button"])` leaves a div in play.
+ */
+function tagsFromMatchList(compound) {
+	const tags = new Set();
+	for (const fn of compound.functional) {
+		if (!['is', 'where', 'matches', '-webkit-any'].includes(fn.name)) continue;
+		const alternatives = selectorParts(fn.arg).map((part) => parseCompound(part.trim()));
+		if (!alternatives.length) continue;
+		if (!alternatives.every((alt) => alt.tag && !alt.classes.length && !alt.id)) return null;
+		for (const alt of alternatives) tags.add(alt.tag);
+	}
+	return tags.size ? tags : null;
+}
+
+/** Can one element satisfy both compounds? */
+function compoundsCompatible(a, b, model) {
+	if (a.id && b.id && a.id !== b.id) return false;
+
+	// Everything that constrains the element's tag: the tags written down, and
+	// the tags each class has ever been seen on. No overlap, no element.
+	const constraints = [];
+	if (a.tag) constraints.push(new Set([a.tag]));
+	if (b.tag) constraints.push(new Set([b.tag]));
+	for (const compound of [a, b]) {
+		const tags = tagsFromMatchList(compound);
+		if (tags) constraints.push(tags);
+	}
+	const classes = [...new Set([...a.classes, ...b.classes])];
+	for (const cls of classes) {
+		const tags = model.tagsOf(cls);
+		if (tags) constraints.push(tags);
+	}
+	if (constraints.length > 1) {
+		let intersection = null;
+		for (const set of constraints) {
+			intersection = intersection === null ? new Set(set) : new Set([...intersection].filter((t) => set.has(t)));
+		}
+		if (!intersection.size) return false;
+	}
+	if (!model.canCoexist(classes)) return false;
+	if (contradictsNegation(a, b) || contradictsNegation(b, a)) return false;
+	if (attributesContradict(a, b)) return false;
+
+	for (const [one, other] of EXCLUSIVE_PSEUDO_CLASSES) {
+		const has = (compound, name) => compound.pseudoClasses.some((p) => p === name || p.startsWith(`${name}(`))
+			|| compound.functional.some((f) => f.name === name);
+		if ((has(a, one) && has(b, other)) || (has(a, other) && has(b, one))) return false;
+	}
+	return true;
+}
+
+/** Does anything `a` excludes with :not() appear in `b` (or in `a` itself)? */
+function contradictsNegation(a, b) {
+	for (const negated of a.nots) {
+		for (const part of selectorParts(negated)) {
+			const forbidden = parseCompound(part.trim());
+			// Only a simple compound is safe to reason about: `:not(.x .y)`
+			// forbids a descendant relationship, not this element.
+			if (/[\s>+~]/.test(part.trim())) continue;
+			for (const side of [a, b]) {
+				if (forbidden.tag && side.tag === forbidden.tag) return true;
+				if (forbidden.classes.some((c) => side.classes.includes(c))) return true;
+				if (forbidden.attrs.some((at) => side.attrs.includes(at))) return true;
+				if (forbidden.pseudoClasses.some((p) => side.pseudoClasses.includes(p))) return true;
+			}
+		}
+	}
+	return false;
+}
+
+/** `[data-x="a"]` and `[data-x="b"]` on one element: no. */
+function attributesContradict(a, b) {
+	const exact = (attrs) => {
+		const map = new Map();
+		for (const attr of attrs) {
+			const m = /^\[\s*([\w-]+)\s*=\s*["']?([^"'\]]*)["']?\s*\]$/.exec(attr);
+			if (m) map.set(m[1], m[2]);
+		}
+		return map;
+	};
+	const left = exact(a.attrs);
+	const right = exact(b.attrs);
+	for (const [name, value] of left) {
+		if (right.has(name) && right.get(name) !== value) return true;
+	}
+	return false;
+}
+
+/**
+ * Elements that never contain another of their own kind. Not a style rule — a
+ * button inside a button (or a link inside a link, a form inside a form) is
+ * not something the HTML parser will build or this app ever asks for. It is
+ * what step 5a meant by "buttons do not nest", and it is what discharges the
+ * `X svg` against `.some-button svg` families in bulk.
+ */
+const NEVER_NESTED_IN_ITSELF = new Set(['button', 'a', 'form', 'p', 'label', 'textarea', 'select', 'option', 'summary']);
+
+/**
+ * Both selectors demand their element sit under every ancestor they name, so
+ * all those ancestors share one chain. Two different classes that are only
+ * ever the same non-nesting tag cannot both be on it.
+ */
+function chainImpossible(tokens, model) {
+	const tags = [];
+	for (const token of tokens) {
+		const known = model.tagsOf(token);
+		if (known && known.size === 1) {
+			const [tag] = known;
+			if (NEVER_NESTED_IN_ITSELF.has(tag)) tags.push([token, tag]);
+		} else if (NEVER_NESTED_IN_ITSELF.has(token)) {
+			tags.push([token, token]);
+		}
+	}
+	for (let i = 0; i < tags.length; i++) {
+		for (let j = i + 1; j < tags.length; j++) {
+			if (tags[i][0] !== tags[j][0] && tags[i][1] === tags[j][1]) return true;
+		}
+	}
+	return false;
+}
+
+/**
+ * Can one element match both rules? The subject compounds have to describe one
+ * element, a `>` or `+` on both sides puts the same requirement on the element
+ * next door, and the ancestors both sides name have to fit on one chain.
+ */
+function canMeet(lower, higher, model) {
+	if (!compoundsCompatible(lower.subject, higher.subject, model)) return false;
+
+	if (lower.parent && higher.parent && ['>', '+'].includes(lower.subject.combinator)
+		&& lower.subject.combinator === higher.subject.combinator) {
+		if (!compoundsCompatible(lower.parent, higher.parent, model)) return false;
+	}
+
+	return !chainImpossible([...new Set([...lower.ancestorTokens, ...higher.ancestorTokens])], model);
+}
+
 function dedupe(failures) {
 	const seen = new Set();
 	return failures.filter((f) => (seen.has(f.item) ? false : seen.add(f.item)));
+}
+
+// ---------------------------------------------------------------------------
+// layer-inversion: the markup model, and the ratchet that retires it
+// ---------------------------------------------------------------------------
+
+/**
+ * The markup evidence, built from the same espree the docs linter uses. The
+ * dependency is real but cheap (about a second), and there is no honest way to
+ * answer "can one element match both of these?" without reading the code that
+ * builds the elements.
+ */
+function loadMarkupModel() {
+	const toolingModules = path.join(repoRoot, 'tooling', 'node_modules');
+	let espree;
+	let eslintScope;
+	try {
+		espree = require(path.join(toolingModules, 'espree'));
+		eslintScope = require(path.join(toolingModules, 'eslint-scope'));
+	} catch {
+		console.error('lint-css-arch: tooling/node_modules is missing espree/eslint-scope.');
+		console.error("Run 'cd tooling && npm install' (or just 'make lint', which installs it).");
+		process.exit(2);
+	}
+	const { buildMarkupModel } = require(path.join(__dirname, 'css-markup-model'));
+	return buildMarkupModel({ repoRoot, espree, eslintScope });
+}
+
+function sortedInversions(findings) {
+	return [...findings].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+}
+
+/** The findings behind one count, for whoever is fixing that file pair. */
+function reportInversions(findings, lower, higher) {
+	if (!lower) {
+		console.log('layer-inversion counts, worst first:\n');
+		for (const [item, found] of sortedInversions(findings)) console.log(`  ${String(found.length).padStart(5)}  ${item}`);
+		console.log('\nFor one pair:  node scripts/lint-css-arch --inversions <lower> <higher>');
+		return;
+	}
+	const item = higher ? `${lower} > ${higher}` : [...findings.keys()].find((k) => k.startsWith(`${lower} >`));
+	const found = findings.get(item);
+	if (!found) {
+		console.log(`No inversions between ${lower} and ${higher ?? '(any)'}.`);
+		return;
+	}
+	console.log(`${item} — ${found.length} inversion${found.length === 1 ? '' : 's'}\n`);
+	for (const { lower: a, higher: b } of found) {
+		console.log(`  ${a.file}:${a.line}  ${a.selector}`);
+		console.log(`  ${b.file}:${b.line}  ${b.selector}`);
+		console.log(`      over: ${contestedProperties(a.declarations, b.declarations).join(', ')}\n`);
+	}
+}
+
+/**
+ * Compare the counts against the allowlist. The number may only go down, and
+ * going down is a failure too — one that says "write the smaller number" —
+ * because an allowlist nobody updates is an allowlist nobody reads.
+ */
+function reportInversionRatchet(findings, permitted) {
+	const bounds = new Map();
+	const problems = [];
+	for (const entry of permitted) {
+		const m = /^(\S+)\s*>\s*(\S+)\s+(\d+)$/.exec(entry);
+		if (!m) {
+			problems.push(`    .lint-css-allowlist: "layer-inversion ${entry}" is not "<lower> > <higher> <count>"`);
+			continue;
+		}
+		bounds.set(`${m[1]} > ${m[2]}`, Number(m[3]));
+	}
+
+	for (const [item, found] of sortedInversions(findings)) {
+		const bound = bounds.get(item);
+		if (bound === undefined) {
+			problems.push(`    ${item} — ${found.length} rule${found.length === 1 ? '' : 's'} filed below what they override`);
+			for (const { lower, higher } of found.slice(0, 3)) {
+				problems.push(`        ${lower.file}:${lower.line} ${lower.selector}  beats  ${higher.file}:${higher.line} ${higher.selector}`);
+			}
+			if (found.length > 3) problems.push(`        (node scripts/lint-css-arch --inversions ${item.replace(' > ', ' ')})`);
+		} else if (found.length > bound) {
+			// Which of them are the new ones is not knowable from a count, so
+			// point at the list rather than print three that may be innocent.
+			problems.push(`    ${item} — ${found.length} inversions, ${bound} allowed: ${found.length - bound} new`);
+			problems.push(`        node scripts/lint-css-arch --inversions ${item.replace(' > ', ' ')}`);
+		} else if (found.length < bound) {
+			problems.push(`    ${item} — down to ${found.length} from ${bound}: set the allowlist to "layer-inversion ${item} ${found.length}"`);
+		}
+	}
+	for (const [item, bound] of bounds) {
+		if (!findings.has(item)) problems.push(`    ${item} — none left of ${bound}: delete its allowlist entry`);
+	}
+
+	if (!problems.length) return 0;
+	console.error(`\n✗ layer-inversion (${problems.length})`);
+	for (const problem of problems.slice(0, 60)) console.error(problem);
+	if (problems.length > 60) console.error(`    … and ${problems.length - 60} more`);
+	return problems.length;
 }
 
 // ---------------------------------------------------------------------------
@@ -482,6 +1165,16 @@ function main() {
 		}
 	}
 
+	const inversions = checkLayerInversion(manifest, sheets, sources, loadMarkupModel());
+
+	// `--inversions <lower> <higher>` shows the findings behind one count,
+	// which is what you read while fixing a file pair.
+	const asked = process.argv.indexOf('--inversions');
+	if (asked >= 0) {
+		reportInversions(inversions, process.argv[asked + 1], process.argv[asked + 2]);
+		return;
+	}
+
 	const results = {
 		'ownership': checkOwnership(manifest, sheets, sources),
 		'dead-selector': checkDeadSelectors(manifest, sheets, sources),
@@ -498,6 +1191,7 @@ function main() {
 		for (const [check, failures] of Object.entries(results)) {
 			for (const failure of failures) console.log(`${check} ${failure.item}`);
 		}
+		for (const [item, found] of sortedInversions(inversions)) console.log(`layer-inversion ${item} ${found.length}`);
 		return;
 	}
 
@@ -524,6 +1218,8 @@ function main() {
 		}
 	}
 
+	failed += reportInversionRatchet(inversions, allowlist.get('layer-inversion') || new Set());
+
 	if (stale.length) {
 		failed += stale.length;
 		console.error(stale.length === 1
@@ -536,7 +1232,30 @@ function main() {
 		console.error(`\nlint-css-arch: ${failed} problem${failed === 1 ? '' : 's'}. The contract is web/css/README.md.`);
 		process.exit(1);
 	}
-	console.log(`✓ css architecture (${sheets.length} sheets, ${allowed} known violation${allowed === 1 ? '' : 's'} still allowlisted)`);
+	let inverted = 0;
+	for (const [, found] of inversions) inverted += found.length;
+	const debt = inverted ? `, ${inverted} rules still filed below what they override` : '';
+	console.log(`✓ css architecture (${sheets.length} sheets, ${allowed} known violation${allowed === 1 ? '' : 's'} still allowlisted${debt})`);
 }
 
-main();
+if (require.main === module) main();
+
+// The cascade model — the parser, specificity, the property families and the
+// reachability filter — is also what `scripts/css-cascade-diff` needs to answer
+// "did this refactor change who wins today?". Exporting it keeps one copy.
+module.exports = {
+	canMeet,
+	cssDir,
+	declarationsIn,
+	loadMarkupModel,
+	mediaCompatible,
+	mediaContext,
+	overlappingProperty,
+	parseComplex,
+	parseRules,
+	readManifest,
+	selectorParts,
+	specificity,
+	SPEC_SCORE,
+	unwrapGrouping,
+};

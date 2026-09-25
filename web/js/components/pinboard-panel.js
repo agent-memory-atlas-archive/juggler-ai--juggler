@@ -557,7 +557,7 @@ class PinboardPanel extends JugglerElement {
     // rather than asked a question that only ever has one answer this early.
     const popOut = document.createElement('button');
     popOut.type = 'button';
-    popOut.className = 'u-btn-ghost pinboard-toolbar__popout';
+    popOut.className = 'btn-ghost pinboard-toolbar__popout';
     popOut.title = 'Open this board in its own window';
     popOut.setAttribute('aria-label', 'Pop out Pinboard');
     popOut.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" aria-hidden="true"><path d="${POPOUT_ICON_PATH}"/></svg><span>Pop-out</span>`;

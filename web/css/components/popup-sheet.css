@@ -1,0 +1,140 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+/**
+ * Popup sheets (phones) — presentation owned by web/js/utils/popup-surface.js.
+ *
+ * On a narrow viewport presentPopup() turns a button-anchored dropdown into a
+ * bottom sheet: it adds `.popup-sheet` to the surface and, for modal popups, a
+ * sibling `.popup-sheet-scrim`. These rules own every sheet visual; the JS owns
+ * none.
+ *
+ * In `components`, and last in the link list, deliberately. A sheet has to
+ * beat the pinned desktop width of the surface it is re-presenting (model
+ * 36rem, strategy 22rem, permissions 34rem, path panel 32rem), and each of
+ * those widths is a component rule. From `patterns` it could not: the higher
+ * layer wins at any specificity, so the sheet would open at 36rem on a phone.
+ * Here it is in the same layer as what it overrides, each surface named in the
+ * selector list so it out-specifies that surface's own rule, which is what the
+ * cascade has always done for these — the difference is that the file now sits
+ * where the rule it beats can be seen from.
+ *
+ * Anything that is one surface's own sheet behaviour belongs in that surface's
+ * file, not here: the model picker's stacking rules are in model-picker.css.
+ */
+
+@media (width <= 36rem) {
+    .popup-sheet,
+    .popup-sheet.dropdown-menu,
+    .popup-sheet.strategy-dropdown,
+    .popup-sheet.permissions-popup,
+    .popup-sheet.pp-panel,
+    .popup-sheet.model-picker {
+        position: fixed;
+        inset: auto 0 0;
+        top: auto;
+        width: 100%;
+        min-width: 0;
+        max-width: 100%;
+        max-height: 85vh;
+        margin: 0;
+        border-radius: 1rem 1rem 0 0;
+        border-bottom: none;
+        box-shadow: 0 -0.5rem 1.5rem rgb(0 0 0 / 45%);
+        overflow-y: auto;
+        z-index: calc(var(--z-modal) + 1);
+        animation: popup-sheet-up 200ms ease;
+    }
+
+    /* While a drag-to-dismiss gesture is in flight, presentPopup pins the
+       transform inline (transition: none) so the sheet tracks the finger; on
+       release it restores this transition for the snap-back / dismiss glide. */
+    .popup-sheet {
+        /* How far a full-bleed child (the grabber) must pull out to reach the
+           sheet's edge: exactly the inline padding the surface pays. Sheets that
+           lay themselves out internally pay none, so they stay at zero —
+           declared last for the picker, a .dropdown-menu that sets `padding: 0`. */
+        --sheet-bleed: 0rem;
+
+        transition: transform 200ms ease;
+    }
+
+    .popup-sheet.dropdown-menu {
+        --sheet-bleed: var(--popup-padding-inline);
+    }
+
+    .popup-sheet.model-picker {
+        --sheet-bleed: 0rem;
+    }
+
+    /* Drag grabber — a real element (injected by presentPopup) so it can own
+       the grab-and-drag-down gesture. `touch-action: none` keeps that drag from
+       being claimed by the sheet's own scroll; `position: sticky` keeps the bar
+       pinned at the visual top while the content scrolls beneath it. */
+    .popup-sheet-grabber {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        flex: 0 0 auto;
+
+        /* Span the full width whatever the sheet's own layout is: all columns
+           when the sheet is a grid (e.g. the slash-commands menu's `auto 1fr`),
+           stretched when it's a flex column (model selector), full-width when
+           it's a plain block — so the centred line is always centred on the
+           whole popup, never on its first column.
+
+           `width: auto` plus a negative --sheet-bleed rather than `width: 100%`,
+           because 100% is the CONTENT box: on a surface that pads itself the bar
+           would stop short of the sheet's edges, and this is a touch target —
+           the drag would die in the padding. The bleed is whatever inline
+           padding that surface took, so the bar reaches the sheet's own edge. */
+        grid-column: 1 / -1;
+        align-self: stretch;
+        width: auto;
+        margin-inline: calc(var(--sheet-bleed, 0rem) * -1);
+        height: 1.75rem;
+        background: var(--bg-secondary);
+        border-radius: 1rem 1rem 0 0;
+        cursor: grab;
+        touch-action: none;
+    }
+
+    .popup-sheet-grabber:active {
+        cursor: grabbing;
+    }
+
+    .popup-sheet-grabber::before {
+        content: "";
+        position: absolute;
+        top: 0.5rem;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 2.25rem;
+        height: 0.25rem;
+        border-radius: 0.125rem;
+        background: var(--text-tertiary);
+        opacity: 0.6;
+    }
+
+    /* Dimmed backdrop behind modal sheets; tap to dismiss (wired in JS). */
+    .popup-sheet-scrim {
+        position: fixed;
+        inset: 0;
+        background: var(--modal-scrim);
+        z-index: var(--z-modal);
+        animation: popup-sheet-fade 200ms ease;
+    }
+}
+
+@keyframes popup-sheet-up {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+}
+
+@keyframes popup-sheet-fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}

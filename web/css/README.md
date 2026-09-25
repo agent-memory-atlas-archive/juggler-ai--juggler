@@ -39,22 +39,27 @@ HTML:
 | `layout` | The app shell — header, columns, conversation area, the responsive rules that move them. |
 | `patterns` | Idioms shared by several unrelated components: menus, modals, buttons, badges, icons. |
 | `components` | One file per feature group. The bulk of the CSS. |
-| `vendor` | Third-party themes. Above `components` because a syntax theme has to beat the generic `pre`/`code` styling a feature group applies to the block around it. |
-| `utilities` | Single-purpose `u-*` helpers. Last, so they win. |
+| `vendor` | Third-party themes — **the colours only**. Above `components` because a syntax theme has to beat the text colour a feature group applies to the block around it. The geometry PrismJS ships with (padding, `white-space`, `font-size`) is not here: it is in `patterns/code.css`, below the components that host a code block, because a panel knows how it wraps and a theme does not. |
+| `utilities` | Single-purpose `u-*` helpers, for styling that every element carrying it wants unconditionally. Last, so they win — and so nothing can override them. Shared chrome a component refines is not a utility: that is what `patterns` is for. |
 
 Layers mean **source order between files no longer decides who wins**, which is
 what makes it safe to have twenty component files instead of one enormous one.
 Two consequences worth knowing:
 
-- An override that crosses layers is explicit — a `layout` rule cannot be
-  quietly beaten by a `components` rule, whatever the specificity. If you find
-  yourself wanting that, the rule is in the wrong layer.
-- **A component cannot out-order a utility.** `utilities` is the last layer, so
-  a component rule that means to override a `u-` class it carries has to
-  out-*rank* it: qualify the selector with the co-class or an ancestor, and say
-  in a comment that it is there to beat the utility. `composer-box
-  .more-actions-btn.input-ctrl-btn` is one — a filled circular control that
-  borrows the press scale from `.input-ctrl-btn` but not its ghost chrome.
+- **Specificity does not cross a layer boundary.** Within a layer it decides as
+  it always did; between layers the higher layer wins at *any* specificity. A
+  `layout` rule cannot be quietly beaten by a `components` rule — and equally, a
+  `layout` rule cannot beat a `components` rule by qualifying its selector,
+  however specific it gets.
+- So **an override must live in the same layer as what it overrides**, or in a
+  higher one. There is no third option short of `!important`. If a rule exists to
+  override another and sits below it, that rule is in the wrong file, and no
+  amount of selector qualification will rescue it.
+- **A component cannot out-order a utility, or out-rank one either.** `utilities`
+  is the last layer, so a component that means to override a `u-` class it
+  carries cannot do it from `components` at all: either it stops carrying the
+  utility, or the shared part moves to `patterns`, or the utility loses the
+  declaration being fought over.
 - **Unlayered CSS beats every layer.** Extension stylesheets are unlayered, so
   an extension can override host styling without `!important`. That is the
   supported mechanism; do not use `!important` to achieve it.
@@ -146,10 +151,15 @@ that comes the obligation not to break the app:
 - No `!important`, no Shadow DOM, no inline styles for theming, no hardcoded
   colours, no `px`.
 
-Useful classes the host styles for you: `.ci-badge` / `.ci-badge-label` (label
-pill), `.ci-code-content` (monospace block), `.ci-empty`, `.ci-error`, and the
-twenty `color-*` presets (`slate blue indigo purple magenta pink red orange
-amber yellow lime green emerald teal cyan sky brown stone zinc crimson`).
+Useful classes the host styles for you: `.ci-code-content` (monospace block)
+and the twenty `color-*` presets (`slate blue indigo purple magenta pink red
+orange amber yellow lime green emerald teal cyan sky brown stone zinc
+crimson`).
+
+There were once badge, empty and error classes here too. Nothing used them —
+not the host, not an extension, not a test — so they went the way of every
+other rule the dead-selector check finds. If you want one back, say which and
+it comes back with a use.
 
 ## What the linter checks
 
@@ -163,5 +173,49 @@ amber yellow lime green emerald teal cyan sky brown stone zinc crimson`).
 | link parity | `index.html` and `headless-test.html` disagreeing on the sheet list. |
 | layer order | A sheet whose declared layer is not its directory, or one listed out of layer order. |
 | asset url | A relative `url()` that resolves to no file. |
+| layer inversion | A rule filed below a rule it overrides. |
+
+### The inversion check
+
+`layer-inversion` is the one that enforces the rule above — an override must
+live in the same layer as what it overrides, or higher. It pairs every rule
+against every other and keeps the pairs where a rule in a **lower** layer beats
+one in a **higher** layer on specificity: today the specific rule wins wherever
+it is filed, under layers it loses, so every such pair is a rule that would
+stop working. Equal specificity is not an inversion (source order settles it,
+and the link list is in layer order), and neither is `!important` in either
+direction.
+
+Whether a pair matters depends on the markup, not the stylesheets: `.markdown p`
+only fights `.catalog-title` if some element is a `<p>` carrying that class.
+`scripts/css-markup-model` answers that from the code that builds the DOM —
+which tag each class lands on, which classes share an element, which elements
+cannot nest. It is deliberately generous: where it cannot see, the pair is
+reported rather than assumed away.
+
+The counts are allowlisted per file pair and only ever go down. To see what is
+behind one:
+
+```
+node scripts/lint-css-arch --inversions components/pinboard.css utilities/utilities.css
+```
 
 Run it on what you changed with `make lint-files FILES="web/css/…"`.
+
+### Checking you changed nothing today
+
+`layer-inversion` looks forward, at what the wrap will do. `scripts/css-cascade-diff`
+looks the other way: it works out who wins each contested pair under **today's**
+cascade and compares that verdict against another revision.
+
+```
+node scripts/css-cascade-diff                 # working tree vs HEAD
+node scripts/css-cascade-diff --base develop
+```
+
+Use it whenever you move a rule to another file or lower a selector's
+specificity with `:where()`. Neither of those crosses a layer boundary, so
+neither shows up as an inversion — and both can hand a same-layer neighbour a
+fight it used to lose. A rule is identified by what it says rather than where it
+lives, so it keeps its identity across the move and can be held to the same
+verdict.

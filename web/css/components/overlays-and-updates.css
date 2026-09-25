@@ -4,7 +4,6 @@
  *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
  */
 
-
 .disconnection-overlay {
     position: fixed;
     inset: 0;
@@ -56,32 +55,12 @@
 }
 
 /* Transaction boundary bands for conversation items */
-.transaction-band-even {
-    background: transparent;
-}
-
-.transaction-band-odd {
-    background: var(--overlay-light-5);
-}
-
 
 /* ===================================================================
    Message Context Menu
    ================================================================== */
 
 /* Edit message textarea in modal */
-.message-edit-textarea {
-    background: var(--bg-tertiary);
-    border: 0.0625rem solid var(--border-color);
-    border-radius: 0.25rem;
-    color: var(--text-primary);
-}
-
-.message-edit-textarea:focus {
-    outline: none;
-    border-color: var(--accent-blue);
-    box-shadow: 0 0 0 0.125rem rgb(59 130 246 / 20%);
-}
 
 /* @ file completions menu */
 .completions-menu {

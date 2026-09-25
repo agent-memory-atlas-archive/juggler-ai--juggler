@@ -38,14 +38,18 @@
     <!-- Element defaults -->
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/base/reset.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/base/elements.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/base/text-selection.css">
 
     <!-- The shell -->
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/layout/app-shell.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/layout/responsive.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/layout/window-chrome.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/layout/app-header.css">
 
     <!-- Shared patterns -->
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/buttons.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/popup-surface.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/menus.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/code.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/markdown.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/overlay-chrome.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/icons.css">
@@ -81,6 +85,7 @@
 
     <!-- Vendor. A syntax theme has to beat the generic pre/code styling the
          feature groups apply, so it sits above components. -->
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/popup-sheet.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/vendor/prism-theme.css">
 
     <!-- Utilities, last, so they win -->

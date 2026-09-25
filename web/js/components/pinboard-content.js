@@ -803,7 +803,7 @@ class PinboardContent extends JugglerElement {
       }
       const button = document.createElement('button');
       button.type = 'button';
-      button.className = 'u-btn-ghost pinboard-item-toolbar__action';
+      button.className = 'btn-ghost pinboard-item-toolbar__action';
       if (icon) {
         // The label is what the control is called, whether it is drawn as words
         // or as a picture — so it stays, as the tooltip and to a screen reader.
@@ -822,7 +822,7 @@ class PinboardContent extends JugglerElement {
 
     const more = document.createElement('button');
     more.type = 'button';
-    more.className = 'u-btn-ghost pinboard-item-toolbar__more';
+    more.className = 'btn-ghost pinboard-item-toolbar__more';
     more.textContent = '⋯';
     more.setAttribute('aria-label', 'More actions');
     more.setAttribute('aria-haspopup', 'menu');

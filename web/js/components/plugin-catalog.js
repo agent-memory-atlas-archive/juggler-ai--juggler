@@ -711,7 +711,7 @@ class PluginCatalog extends JugglerElement {
   _renderReloadButton() {
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = 'u-btn-ghost catalog-reload';
+    button.className = 'btn-ghost catalog-reload';
     button.textContent = 'Reload extensions';
     button.title = 'Re-import every extension from disk';
     button.disabled = this._busy;
