@@ -248,10 +248,11 @@ export async function runTests() {
           panel.querySelector(`${selector} .workspace-panel-action-name`)?.textContent ?? '';
         assert(panel.querySelector('.workspace-panel-title')?.textContent === 'feat/menu (worktree)',
           `the panel names the place, which is the name on its row, got ${JSON.stringify(text)}`);
-        assert(panel.querySelector('.workspace-panel-kind')?.textContent === FixtureProvider.MANIFEST.name,
-          `then what kind of place that is, got ${JSON.stringify(text)}`);
+        assert(panel.querySelector('.workspace-panel-eyebrow')?.textContent
+          === `Workspace · ${FixtureProvider.MANIFEST.name}`,
+        `above a line saying what it is and which kind of one, got ${JSON.stringify(text)}`);
         assert(text.includes('/tmp/menu-tree') && text.includes('feat/menu · clean'),
-          `then where it is and how it is doing, got ${JSON.stringify(text)}`);
+          `then where it is and what its provider says about it, got ${JSON.stringify(text)}`);
         assert(text.split('(worktree)').length - 1 === 1,
           `each of which is said once: a small menu once found four ways to say "feat/menu", got ${JSON.stringify(text)}`);
 
@@ -272,10 +273,15 @@ export async function runTests() {
         // inherited into a column, which centres every stacked section —
         // changes no class name and nothing else would see it.
         const edge = (/** @type {any} */ element) => element?.getBoundingClientRect().left ?? -1;
-        const headings = [...panel.querySelectorAll('.workspace-panel-heading')];
-        const gutter = edge(headings[0]);
-        assert(gutter > 0 && headings.every((/** @type {any} */ h) => Math.abs(edge(h) - gutter) < 1),
-          `every section starts at the same edge, got ${JSON.stringify(headings.map(edge))}`);
+        const starts = [
+          panel.querySelector('.workspace-panel-eyebrow'),
+          panel.querySelector('.workspace-panel-title'),
+          ...panel.querySelectorAll('.workspace-panel-heading'),
+          ...panel.querySelectorAll('.workspace-panel-action')
+        ];
+        const gutter = edge(starts[0]);
+        assert(gutter > 0 && starts.every((/** @type {any} */ line) => Math.abs(edge(line) - gutter) < 1),
+          `every section starts at the same edge, got ${JSON.stringify(starts.map(edge))}`);
         assert(Math.abs(edge(panel.querySelector('.workspace-panel-path-row')) - gutter) < 1,
           'and so does the path');
 
@@ -296,19 +302,20 @@ export async function runTests() {
           'and one that only needs agreeing to does not');
 
         // An action that leaves the workspace in use is not an ending and is not
-        // filed under one: committing is the case this exists for, and it sat
-        // under "when you're done" for as long as it closed the workspace half
-        // the time.
+        // grouped with one: committing is the case this exists for, and it sat
+        // among the endings for as long as it closed the workspace half the
+        // time. What separates them is the rule above the endings, not a
+        // sentence — each of these labels already says whether the workspace
+        // survives it.
         const endings = panel.querySelector('.workspace-panel-endings');
-        assert(endings?.querySelector('.workspace-panel-heading')?.textContent
-          === 'When you’re done with this workspace',
-        'the endings are grouped under what they are for');
+        assert(!endings?.querySelector('.workspace-panel-heading'),
+          'the endings carry no heading: every one of them says outright what it ends');
         const doing = [...panel.querySelectorAll('.workspace-panel-doing [data-action]')];
         assert(doing.map((/** @type {any} */ row) => row.dataset.action).join(',') === 'note',
-          `what keeps the workspace sits above the endings, got ${JSON.stringify(doing.map((/** @type {any} */ row) => row.textContent))}`);
+          `what keeps the workspace sits above the rule, got ${JSON.stringify(doing.map((/** @type {any} */ row) => row.textContent))}`);
         assert([...endings.querySelectorAll('[data-action]')]
           .map((/** @type {any} */ row) => row.dataset.action).join(',') === 'done,leave,discard',
-        'and every way of not working here any more is under the heading that says so');
+        'and every way of not working here any more sits below it');
 
         // A destructive ending is marked as one. That is what warns, and it
         // warns wherever the button happens to sit.

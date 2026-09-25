@@ -199,14 +199,14 @@ export async function runTests() {
         'and the tab column stands down, the way it does for the two onboarding overlays');
       assert(panel.querySelector('.workspace-panel-title')?.textContent === 'ws_a',
         `the place is named, got ${JSON.stringify(panel.querySelector('.workspace-panel-title')?.textContent)}`);
-      assert(panel.querySelector('.workspace-panel-kind')?.textContent === FixtureProvider.MANIFEST.name,
+      assert(panel.querySelector('.workspace-panel-eyebrow')?.textContent?.includes(FixtureProvider.MANIFEST.name),
         'and said to be the kind of place whatever made it calls it');
     } finally {
       teardown();
     }
   });
 
-  check('the panel says what kind of thing this is, and what that kind is for', () => {
+  check('the head says what kind of thing this is, then what that kind is for, then its name', () => {
     const session = makeSession([workspace('ws_a')]);
     const { panel, teardown } = mountPanel(session);
     try {
@@ -214,13 +214,46 @@ export async function runTests() {
       panel._refresh();
 
       const eyebrow = panel.querySelector('.workspace-panel-eyebrow')?.textContent;
-      assert(eyebrow === 'Workspace',
-        `a box is clicked before it is understood, so the panel it opens uses the word, got ${JSON.stringify(eyebrow)}`);
+      assert(eyebrow === `Workspace · ${FixtureProvider.MANIFEST.name}`,
+        'a box is clicked before it is understood, so one line says the word the feature is named for and '
+        + `which kind of one this is, got ${JSON.stringify(eyebrow)}`);
 
       const note = panel.querySelector('.workspace-panel-kind-note')?.textContent;
       assert(note === FixtureProvider.MANIFEST.description,
-        `and the kind's name is followed by what that kind is for, which the provider already wrote, got ${JSON.stringify(note)}`);
+        `and under it what that kind is for, which the provider already wrote, got ${JSON.stringify(note)}`);
+
+      // Both of those are about the TYPE and both are manifest facts, so they
+      // are right on the first draw. The name is where this one workspace
+      // starts, and nothing above it may be about the instance.
+      const head = [...(panel.querySelector('.workspace-panel-head')?.children ?? [])]
+        .map((/** @type {any} */ line) => line.className).join(',');
+      assert(head === 'workspace-panel-eyebrow,workspace-panel-kind-note,workspace-panel-title',
+        `the kind is said before the name and each of those once, got ${JSON.stringify(head)}`);
     } finally {
+      teardown();
+    }
+  });
+
+  await checkAsync('the status read never rewrites the head', async () => {
+    const session = makeSession([workspace('ws_a')]);
+    const { panel, teardown } = mountPanel(session);
+    // A status that describes this instance the way the git worktree provider's
+    // does: which repository it is of, which is not what the head is about.
+    FixtureProvider.reported = { kind: 'Somewhere else, of juggler', detail: 'branch feat/x · clean' };
+    try {
+      session.selection = { kind: 'workspace', id: 'ws_a' };
+      panel._refresh();
+      const head = panel.querySelector('.workspace-panel-head')?.textContent;
+
+      await panel.refreshStatus();
+
+      assert(panel.textContent?.includes('branch feat/x · clean'),
+        'the answer arrived, so this is measuring the redraw that matters');
+      assert(panel.querySelector('.workspace-panel-head')?.textContent === head,
+        'a line that changes a second after the panel opens is a line somebody is already reading, so what '
+        + `the probe learnt goes in the status section, got ${JSON.stringify(panel.querySelector('.workspace-panel-head')?.textContent)}`);
+    } finally {
+      FixtureProvider.reported = null;
       teardown();
     }
   });
@@ -259,7 +292,7 @@ export async function runTests() {
       session.selection = { kind: 'workspace', id: 'ws_a' };
       panel._refresh();
 
-      const said = panel.querySelector('.workspace-panel-doing .workspace-panel-note')?.textContent;
+      const said = panel.querySelector('.workspace-panel-who .workspace-panel-note')?.textContent;
       assert(said === 'No conversations yet.',
         `an empty tree is a place waiting to be used, not a panel with a section missing, got ${JSON.stringify(said)}`);
     } finally {
@@ -325,14 +358,38 @@ export async function runTests() {
 
       const working = actionsIn(panel, '.workspace-panel-doing');
       assert(working === 'note',
-        `an action that leaves the workspace in use belongs with the rest of working here, got "${working}"`);
+        `an action that leaves the workspace in use sits above the rule, got "${working}"`);
 
       const endings = actionsIn(panel, '.workspace-panel-endings');
       assert(endings === 'done,leave',
-        `and every way of not working here any more goes under the heading that says so, got "${endings}"`);
+        `and every way of not working here any more sits below it, got "${endings}"`);
 
-      assert(!!panel.querySelector('.workspace-panel-create'),
-        'starting a conversation is the first thing you do in a place you are keeping');
+      assert(!!panel.querySelector('.workspace-panel-who .workspace-panel-create'),
+        'starting a conversation is the first thing you do in a place you are keeping, and it belongs with '
+        + 'the conversations already here');
+    } finally {
+      teardown();
+    }
+  });
+
+  check('only the two sections a label tells you anything about have one', () => {
+    const session = makeSession([workspace('ws_a')]);
+    const { panel, teardown } = mountPanel(session);
+    try {
+      session.selection = { kind: 'workspace', id: 'ws_a' };
+      panel._refresh();
+
+      const labelled = [...panel.querySelectorAll('.workspace-panel-heading')]
+        .map((/** @type {any} */ heading) => heading.textContent).join(',');
+      // A path with copy and reveal beside it is a path, and a button that says
+      // what it does and what will happen needs nothing over the top of it. What
+      // does need naming is a run of the provider's own words — a branch, a
+      // count, a divergence — and a column of conversation names.
+      assert(labelled === 'Status,Conversations',
+        `a heading that only names what is plainly below it is a line to read and nothing to know, got ${JSON.stringify(labelled)}`);
+      assert(!panel.querySelector('.workspace-panel-where .workspace-panel-heading')
+        && !panel.querySelector('.workspace-panel-endings .workspace-panel-heading'),
+      'so neither the path nor the endings carry one');
     } finally {
       teardown();
     }
@@ -400,6 +457,14 @@ export async function runTests() {
         `the answer fills the section that was already there rather than inserting one above the buttons, got child ${after.index} where it was ${before.index}`);
       assert(after.top === before.top,
         `so nothing below it moves at the moment someone is reaching for it, got ${after.top}px where it was ${before.top}px`);
+
+      // And the work the provider counted is reported once. The count is the
+      // fact; "this workspace is holding uncommitted work" underneath it is the
+      // same fact with the number taken out, so the flag is a colour on the line
+      // that accounts for it instead of a line of its own.
+      const lines = [...panel.querySelectorAll('.workspace-panel-state-lines > *')];
+      assert(lines.length === 1 && lines[0].classList.contains('workspace-panel-dirty'),
+        `uncommitted work colours the line that accounts for it, got ${JSON.stringify(lines.map((/** @type {any} */ line) => line.textContent))}`);
     } finally {
       FixtureProvider.reported = null;
       teardown();

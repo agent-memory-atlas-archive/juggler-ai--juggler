@@ -399,6 +399,38 @@ export async function runTests() {
     }
   });
 
+  // A shift does not happen instantly: the siblings are inverted to where they
+  // were and released to animate to where they now are, so for the length of
+  // that animation their rects report a position between the two. A pointer
+  // reporting faster than the screen redraws asks again while it is running,
+  // and an answer read off the animation is an answer about a strip the user
+  // stopped looking at — one slot out, for as long as the transition lasts.
+  run('a move made while the strip is still animating reads the strip it is animating to', () => {
+    const { strip, host, items, teardown } = mountStrip({ count: 4, wrap: false });
+    try {
+      const item = /** @type {HTMLElement} */ (items[0]);
+      const b = /** @type {HTMLElement} */ (items[1]);
+      const bBox = b.getBoundingClientRect();
+      const { commits } = drag({
+        item, strip, host, wrap: false, axis: 'y',
+        moves: [
+          // Past b's midpoint: a lands between b and c, and b starts moving up
+          // into the slot a has left.
+          { x: bBox.left + 10, y: bBox.top + bBox.height / 2 + 5 },
+          // Back up into the slot a is now drawn in, which is the one b is
+          // animating out of. Where a is, is where a stays.
+          { x: bBox.left + 10, y: bBox.top + 5 },
+        ],
+      });
+      assert(orderOf(strip) === 'bacd',
+        `a pointer inside the dragged item's own slot must leave it there, got "${orderOf(strip)}"`);
+      assert(commits.length === 1 && commits[0]?.toIndex === 1,
+        `and commit that slot, got ${JSON.stringify(commits)}`);
+    } finally {
+      teardown();
+    }
+  });
+
   run('a drag that lands where it started commits nothing', () => {
     const { strip, host, items, teardown } = mountStrip({ count: 3, wrap: false });
     try {

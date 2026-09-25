@@ -174,17 +174,18 @@ class WorkspacePanel extends HTMLElement {
   }
 
   /**
-   * What kind of place it is, in the words of whatever made it. The row's own
-   * label is the last resort — a workspace whose extension is gone has nobody
-   * left to name it.
-   * @returns {string} The kind.
+   * What kind of place it is, in the words of whatever made it.
+   *
+   * The provider's manifest name, which is a property of the TYPE and so is
+   * known from the first draw. A status read describes this instance — which
+   * repository the worktree is of, what the copy was taken from — and belongs
+   * in the lines a reader expects to be filled in late, not in the head where
+   * it would rewrite itself a second after the panel opened.
+   * @returns {string} The kind, or '' when its provider is not loaded.
    * @private
    */
   _kind() {
-    return this._status?.kind
-      || workspaceKind(this._session, this._workspace)
-      || this._workspace?.label
-      || '';
+    return workspaceKind(this._session, this._workspace) || '';
   }
 
   render() {
@@ -201,10 +202,14 @@ class WorkspacePanel extends HTMLElement {
     body.appendChild(this._head());
     body.appendChild(this._where());
     body.appendChild(this._state());
+    body.appendChild(this._who());
 
     const { options, unavailableReason } = workspaceFinishOptions(this._session, workspace);
 
-    body.appendChild(this._doing(options, unavailableReason ?? ''));
+    const keeps = unavailableReason ? [] : options.filter(option => option.keepsWorkspace);
+    if (keeps.length || unavailableReason) {
+      body.appendChild(this._doing(keeps, unavailableReason ?? ''));
+    }
 
     const endings = unavailableReason ? [] : options.filter(option => !option.keepsWorkspace);
     if (endings.length) body.appendChild(this._endings(endings));
@@ -236,13 +241,18 @@ class WorkspacePanel extends HTMLElement {
   }
 
   /**
-   * What it is, what it is called, and what that kind of place is for.
+   * The type, what that type is for, and then this one's name.
    *
-   * In that order, and the first line is the word itself. A box in the strip is
-   * clicked before it is understood, and what it opens is a branch name over a
-   * directory path — which is a description of something, if you already know
-   * what. Nothing above the endings said "workspace" at all, so the one term the
-   * whole feature is named for was the one thing the user had to supply.
+   * The first two lines are about the KIND of place and say nothing about this
+   * instance: "Workspace · Git Worktree", then the provider's own sentence about
+   * what a git worktree is. Both are manifest facts, so they are right on the
+   * first draw and never change under a reader. The name follows, and from there
+   * down the panel is about this workspace alone.
+   *
+   * A box in the strip is clicked before it is understood, and what it opens is
+   * a branch name over a directory path — which is a description of something,
+   * if you already know what. So the term the whole feature is named for, and
+   * the kind of place within it, are the first thing read.
    * @returns {HTMLElement} The panel's head.
    * @private
    */
@@ -250,27 +260,15 @@ class WorkspacePanel extends HTMLElement {
     const head = document.createElement('header');
     head.className = 'workspace-panel-head';
 
+    const kind = this._kind();
     const what = document.createElement('p');
     what.className = 'workspace-panel-eyebrow';
-    what.textContent = 'Workspace';
+    what.textContent = kind ? `Workspace · ${kind}` : 'Workspace';
     head.appendChild(what);
 
-    const title = document.createElement('h2');
-    title.className = 'workspace-panel-title';
-    title.textContent = this._label();
-    head.appendChild(title);
-
-    const kind = this._kind();
-    if (kind) {
-      const said = document.createElement('p');
-      said.className = 'workspace-panel-kind';
-      said.textContent = kind;
-      head.appendChild(said);
-    }
-
-    // The kind's own description, which the provider already wrote and which was
-    // being thrown away: "Scratch Copy" names the thing, and only the sentence
-    // under it says that the tree is a throwaway copy of another one.
+    // The kind's own description, which the provider already wrote: "Git
+    // Worktree" names the thing, and only the sentence under it says what one
+    // of those is.
     const note = workspaceKindNote(this._session, this._workspace);
     if (note) {
       const says = document.createElement('p');
@@ -278,12 +276,21 @@ class WorkspacePanel extends HTMLElement {
       says.textContent = note;
       head.appendChild(says);
     }
+
+    const title = document.createElement('h2');
+    title.className = 'workspace-panel-title';
+    title.textContent = this._label();
+    head.appendChild(title);
     return head;
   }
 
   /**
-   * Where the work happens, written out in full, with the things one does with
-   * a path: copy it, show it on disk, put it on the board.
+   * The root, written out in full, with the things one does with a path: copy
+   * it, show it on disk, put it on the board.
+   *
+   * No heading over it. A path under the name of the place, with copy and reveal
+   * beside it, is a path — a line of prose saying so would be telling a reader
+   * what they are already looking at.
    *
    * Whole, because no rule about which part of a path matters survives contact
    * with the paths providers actually make: a scratch copy's root ends in the
@@ -294,12 +301,7 @@ class WorkspacePanel extends HTMLElement {
    */
   _where() {
     const section = document.createElement('div');
-    section.className = 'workspace-panel-section';
-
-    const heading = document.createElement('h3');
-    heading.className = 'workspace-panel-heading';
-    heading.textContent = 'Where the work happens';
-    section.appendChild(heading);
+    section.className = 'workspace-panel-section workspace-panel-where';
 
     const path = this._workspace?.root ?? '';
     const row = document.createElement('div');
@@ -325,7 +327,7 @@ class WorkspacePanel extends HTMLElement {
     if (base) {
       const from = document.createElement('p');
       from.className = 'workspace-panel-detail';
-      from.textContent = `Made from ${base}.`;
+      from.textContent = `Base workspace: ${base}`;
       section.appendChild(from);
     }
     return section;
@@ -344,13 +346,18 @@ class WorkspacePanel extends HTMLElement {
   }
 
   /**
-   * How the tree is doing, in a section that is there from the first draw.
+   * What the provider reports about this workspace, in a section that is there
+   * from the first draw.
    *
    * Drawn empty and filled in, rather than appended when the answer arrives.
    * The answer is a round trip away and this section sits ABOVE the buttons, so
    * a section that appeared with it shoved every row of the panel down a second
    * after it opened — which is exactly when a pointer is on its way to one of
    * them. The heading and the room are immediate; only the words are late.
+   *
+   * It is the one part of the panel that keeps a heading, because the lines in it
+   * are the provider's own words — a branch, a count, a divergence — and a run of
+   * those under a path is facts with nothing saying what they are facts about.
    *
    * How much room is the sheet's business: the answer is one line or two, and
    * nothing here knows how tall a line is (`.workspace-panel-state-lines`).
@@ -366,7 +373,7 @@ class WorkspacePanel extends HTMLElement {
 
     const heading = document.createElement('h3');
     heading.className = 'workspace-panel-heading';
-    heading.textContent = 'How it is doing';
+    heading.textContent = 'Status';
     section.appendChild(heading);
 
     const lines = document.createElement('div');
@@ -385,14 +392,21 @@ class WorkspacePanel extends HTMLElement {
     };
 
     if (!this._status) {
-      say('workspace-panel-pending', 'Reading the tree…');
+      say('workspace-panel-pending', 'Reading…');
       return section;
     }
 
     const detail = this._status.detail || '';
     const problem = this._status.problem || '';
-    if (detail) say('workspace-panel-detail', detail);
-    if (this._status.dirty === true) say('workspace-panel-dirty', 'Holding uncommitted work.');
+    const dirty = this._status.dirty === true;
+    // Uncommitted work is a colour on the line that accounts for it, not a line
+    // of its own. A provider that reports it says what it consists of — "2
+    // changed, 1 staged", "3 files changed since the copy was made" — and a
+    // sentence under that repeating the yes/no it was derived from is one fact
+    // written twice, the second time with less in it. Only a provider that
+    // flagged the work without describing it gets a line to say so.
+    if (detail) say(`workspace-panel-detail${dirty ? ' workspace-panel-dirty' : ''}`, detail);
+    else if (dirty) say('workspace-panel-dirty', 'Uncommitted changes.');
     if (problem) say('workspace-panel-problem', problem);
     // A provider that answers with no opinion has still answered, and the
     // heading is already on screen by then. Saying so beats a heading over a gap.
@@ -401,26 +415,25 @@ class WorkspacePanel extends HTMLElement {
   }
 
   /**
-   * The things you do here that leave the workspace in use: starting a
-   * conversation, and whatever else its provider offers that keeps it.
+   * Who is working here, and the button that adds one.
    *
-   * Under a list of who is already working here, which the strip cannot show
-   * from a selected box — the box's own tabs are behind the panel that replaced
-   * them. It is also the thing that makes the endings below readable: they warn
-   * about the conversations working in a tree, and this is where you can see
-   * which ones those are.
-   * @param {any[]} options - Everything the provider offered.
-   * @param {string} unavailableReason - Why it offered nothing, if it did not.
+   * The list is something the strip cannot show from a selected box — the box's
+   * own tabs are behind the panel that replaced them — and it is what makes the
+   * endings below readable: they warn about the conversations working in a
+   * workspace, and this is where you see which ones those are.
+   *
+   * Named, because a column of conversation names under a path is a column of
+   * names: unlike the buttons, a list does not say what it is a list of.
    * @returns {HTMLElement} The section.
    * @private
    */
-  _doing(options, unavailableReason) {
+  _who() {
     const section = document.createElement('div');
-    section.className = 'workspace-panel-section workspace-panel-doing';
+    section.className = 'workspace-panel-section workspace-panel-who';
 
     const heading = document.createElement('h3');
     heading.className = 'workspace-panel-heading';
-    heading.textContent = 'Working here';
+    heading.textContent = 'Conversations';
     section.appendChild(heading);
 
     section.appendChild(this._working());
@@ -432,15 +445,36 @@ class WorkspacePanel extends HTMLElement {
     create.type = 'button';
     create.className = 'workspace-panel-action workspace-panel-create';
     create.appendChild(this._actionLabel(
-      'New conversation here',
-      'Starts one bound to this workspace, so its files and commands happen in this tree.'));
+      'New conversation in this workspace',
+      'Its files and commands happen in this root, not the project’s.'));
     create.addEventListener('click', () => this._create());
     rows.appendChild(create);
-
-    for (const option of (unavailableReason ? [] : options.filter(o => o.keepsWorkspace))) {
-      rows.appendChild(this._finishButton(option));
-    }
     section.appendChild(rows);
+    return section;
+  }
+
+  /**
+   * What the provider offers that leaves the workspace in use — committing,
+   * landing work — and the reason there is nothing on offer at all.
+   *
+   * No heading. Each of these says what it is and what it will do, on the button
+   * itself, which is where somebody deciding whether to press it is looking; a
+   * word over the top of them adds a line to read and nothing to know.
+   * @param {any[]} options - The provider's options that keep the workspace.
+   * @param {string} unavailableReason - Why it offered nothing, if it did not.
+   * @returns {HTMLElement} The section.
+   * @private
+   */
+  _doing(options, unavailableReason) {
+    const section = document.createElement('div');
+    section.className = 'workspace-panel-section workspace-panel-doing';
+
+    if (options.length) {
+      const rows = document.createElement('div');
+      rows.className = 'workspace-panel-actions';
+      for (const option of options) rows.appendChild(this._finishButton(option));
+      section.appendChild(rows);
+    }
 
     // A provider that is not loaded has nothing to offer, and the reason is
     // said rather than left as a gap: "this provider offers no endings" and
@@ -456,8 +490,12 @@ class WorkspacePanel extends HTMLElement {
   }
 
   /**
-   * The ways of finishing with the place, under a heading that says so before
-   * any label is read.
+   * The ways of finishing with the place, ruled off from everything that keeps
+   * it.
+   *
+   * The rule is the heading: everything above it leaves the workspace in use and
+   * everything below it does not, and each of these labels says outright that it
+   * closes the workspace and what becomes of what is on disk.
    * @param {any[]} endings - The options that do not keep the workspace.
    * @returns {HTMLElement} The section.
    * @private
@@ -465,11 +503,6 @@ class WorkspacePanel extends HTMLElement {
   _endings(endings) {
     const section = document.createElement('div');
     section.className = 'workspace-panel-section workspace-panel-endings';
-
-    const heading = document.createElement('h3');
-    heading.className = 'workspace-panel-heading';
-    heading.textContent = 'When you’re done with this workspace';
-    section.appendChild(heading);
 
     const rows = document.createElement('div');
     rows.className = 'workspace-panel-actions';

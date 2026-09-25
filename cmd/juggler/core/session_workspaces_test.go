@@ -1101,3 +1101,69 @@ func TestWorkspace_IDShapeRejectsSeparators(t *testing.T) {
 		}
 	}
 }
+
+// Two boxes with no conversation between them are drawn in the order the table
+// holds them, so that order is part of what the sidebar records — and until it
+// could be written, a user dragging one empty box above another was shown the
+// result and had it taken away again by the next broadcast, because nothing on
+// either row had changed.
+func TestReorderWorkspaces_WritesTheOrderTheTableIsHeldIn(t *testing.T) {
+	m, dir := managerForWorkspaceTest(t)
+
+	first, err := m.RegisterWorkspace(Workspace{Root: dir, State: WorkspaceStateReady})
+	if err != nil {
+		t.Fatalf("RegisterWorkspace: %v", err)
+	}
+	second, err := m.RegisterWorkspace(Workspace{Root: dir, State: WorkspaceStateReady})
+	if err != nil {
+		t.Fatalf("RegisterWorkspace: %v", err)
+	}
+	third, err := m.RegisterWorkspace(Workspace{Root: dir, State: WorkspaceStateReady})
+	if err != nil {
+		t.Fatalf("RegisterWorkspace: %v", err)
+	}
+
+	ids := func(list []Workspace) string {
+		out := make([]string, 0, len(list))
+		for _, ws := range list {
+			out = append(out, ws.ID)
+		}
+		return strings.Join(out, ",")
+	}
+
+	list, err := m.ReorderWorkspaces([]string{third.ID, first.ID, second.ID})
+	if err != nil {
+		t.Fatalf("ReorderWorkspaces: %v", err)
+	}
+	if got, want := ids(list), strings.Join([]string{third.ID, first.ID, second.ID}, ","); got != want {
+		t.Fatalf("order = %s, want %s", got, want)
+	}
+	if got := ids(m.ListWorkspaces()); got != ids(list) {
+		t.Fatalf("ListWorkspaces = %s, want the order just written (%s)", got, ids(list))
+	}
+
+	// A caller naming only some of them says where those go; the rest keep their
+	// order behind them. The strip a drop describes holds only the boxes that
+	// were drawn, and a workspace can be closed in another window mid-gesture.
+	list, err = m.ReorderWorkspaces([]string{second.ID, "ws_nothing_like_it"})
+	if err != nil {
+		t.Fatalf("ReorderWorkspaces (partial): %v", err)
+	}
+	if got, want := ids(list), strings.Join([]string{second.ID, third.ID, first.ID}, ","); got != want {
+		t.Fatalf("order = %s, want %s — named first, the rest as they were", got, want)
+	}
+
+	// And it survives the trip through session.json, or the order would last
+	// only as long as the process that was told about it.
+	fresh, err := NewFileSessionStore(dir)
+	if err != nil {
+		t.Fatalf("NewFileSessionStore: %v", err)
+	}
+	loaded, err := fresh.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got, want := ids(loaded.Workspaces), strings.Join([]string{second.ID, third.ID, first.ID}, ","); got != want {
+		t.Fatalf("reloaded order = %s, want %s", got, want)
+	}
+}

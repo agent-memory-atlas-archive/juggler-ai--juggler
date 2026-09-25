@@ -294,3 +294,36 @@ func TestWorkspaceRoutes_ReconcileClaimedOnce(t *testing.T) {
 		t.Fatalf("second claim = %q, want it refused", second.Body.String())
 	}
 }
+
+// The table's order is part of the sidebar's arrangement — it is what decides
+// between two boxes drawn in the same place, with no conversation between them
+// for either to sit behind — so a viewer can write it, and every other viewer
+// is told.
+func TestWorkspaceRoutes_ReorderWritesTheTableOrder(t *testing.T) {
+	s, bc, dir := newWorkspaceTestServer(t)
+
+	first := decodeWorkspace(t, pinboardRequest(t, s, http.MethodPost, "/api/session/workspaces",
+		fmt.Sprintf(`{"kind":"local","root":%q,"state":"ready"}`, dir)))
+	second := decodeWorkspace(t, pinboardRequest(t, s, http.MethodPost, "/api/session/workspaces",
+		fmt.Sprintf(`{"kind":"local","root":%q,"state":"ready"}`, dir)))
+	broadcasts := len(bc.workspaces)
+
+	rec := pinboardRequest(t, s, http.MethodPost, "/api/session/workspaces/reorder",
+		fmt.Sprintf(`{"ids":[%q,%q]}`, second.ID, first.ID))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST reorder: got %d (%s), want 200", rec.Code, rec.Body.String())
+	}
+	list := decodeWorkspaces(t, rec)
+	if len(list) != 2 || list[0].ID != second.ID || list[1].ID != first.ID {
+		t.Fatalf("reorder answered %+v, want %s before %s", list, second.ID, first.ID)
+	}
+	if len(bc.workspaces) != broadcasts+1 {
+		t.Fatalf("broadcasts = %d, want one more: a window that was only watching has to be told", len(bc.workspaces))
+	}
+
+	// And a plain read agrees, which is what the window told to look again gets.
+	listed := decodeWorkspaces(t, pinboardRequest(t, s, http.MethodGet, "/api/session/workspaces", ""))
+	if len(listed) != 2 || listed[0].ID != second.ID {
+		t.Fatalf("list = %+v, want the order just written", listed)
+	}
+}

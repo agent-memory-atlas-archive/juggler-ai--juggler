@@ -140,7 +140,7 @@ layer-inversion patterns/markdown.css > components/settings-2.css 25
 layer-inversion patterns/markdown.css > components/onboarding.css 24
 layer-inversion patterns/menus.css > components/overlays-and-updates.css 23
 layer-inversion patterns/markdown.css > components/context-items.css 22
-layer-inversion patterns/markdown.css > components/workspace-panel.css 22
+layer-inversion patterns/markdown.css > components/workspace-panel.css 20
 layer-inversion layout/app-header.css > components/settings-3.css 21
 layer-inversion layout/app-header.css > components/skills-marketplace.css 20
 layer-inversion layout/app-shell.css > patterns/menus.css 20

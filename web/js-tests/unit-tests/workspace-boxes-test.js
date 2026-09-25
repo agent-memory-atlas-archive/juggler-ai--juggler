@@ -553,6 +553,38 @@ export async function runTests() {
         + 'also put the keyboard in the strip — that left the box wearing a focus ring no clicked tab ever wears');
     });
 
+    await check('a box begins where a tab begins, down the same two columns', () => {
+      // The strip is one list, whatever a row is a row of: a box is dragged by
+      // the same grip as the tab above it, so the two stand in one column and
+      // their names start on one line. A box pays for its own padding and its
+      // top row must spend that much less on the inset — counted twice, the box
+      // header sat a handle's width right of every unboxed row beside it.
+      bar._session = stubSession([workspace('ws_a', 'feature/auth')], [['c1', 'ws_a'], ['c3', '']]);
+      bar.render();
+
+      const menu = /** @type {HTMLElement} */ (bar.querySelector('.conversation-tabs'));
+      const box = /** @type {HTMLElement} */ (
+        menu.querySelector('.conversation-box[data-workspace-id="ws_a"]'));
+      // The unboxed one. A tab lying inside a box is indented by the box, which
+      // is the point of the box, and is not what this is measured against.
+      const tab = /** @type {HTMLElement} */ (menu.querySelector(':scope > .conversation-tab'));
+
+      // Measured from each row's own left edge, which is the same edge for both
+      // — they are siblings in the strip — but says so in the failure.
+      const indent = (/** @type {Element} */ row, /** @type {Element} */ part) =>
+        part.getBoundingClientRect().left - row.getBoundingClientRect().left;
+
+      const tabGrip = indent(tab, /** @type {Element} */ (tab.querySelector(':scope > .drag-grip')));
+      const boxGrip = indent(box, /** @type {Element} */ (box.querySelector('.conversation-box-top > .drag-grip')));
+      assert(Math.abs(tabGrip - boxGrip) < 0.5,
+        `a box is dragged from the column its neighbours are dragged from, got ${boxGrip}px against a tab's ${tabGrip}px`);
+
+      const tabName = indent(tab, /** @type {Element} */ (tab.querySelector('.conversation-tab-name')));
+      const boxLabel = indent(box, /** @type {Element} */ (box.querySelector('.conversation-box-label')));
+      assert(Math.abs(tabName - boxLabel) < 0.5,
+        `and names the place where a tab names itself, got ${boxLabel}px against a tab's ${tabName}px`);
+    });
+
     await check('the strip ends with the outline of a box to make', () => {
       const menu = /** @type {HTMLElement} */ (bar.querySelector('.conversation-tabs'));
       const outlines = menu.querySelectorAll('.conversation-box-new');
@@ -622,6 +654,56 @@ export async function runTests() {
         'still at the end, after the pass that puts the boxes in order');
     });
 
+    await check('the outline gets out of the way of a drag, and comes back after it', () => {
+      // It is the last row of the strip and the one thing in it that is not a
+      // place to land, so a tab dragged to the foot of the bar has to be let go
+      // over something that will not take it — and the drag's own placeholder
+      // ends up below it. Nothing to explain while the gesture is on: the way to
+      // make a workspace is not what a drag is about, so it stands aside.
+      const menu = /** @type {HTMLElement} */ (bar.querySelector('.conversation-tabs'));
+      const outline = /** @type {HTMLElement} */ (menu.querySelector('.conversation-box-new'));
+      const shows = () => getComputedStyle(outline).display !== 'none';
+
+      /**
+       * Take hold of something, move far enough for it to mean a drag, then
+       * abandon the gesture — which lands nothing and writes nothing, so the
+       * only thing left to read is what the drag itself did to the strip.
+       * @param {HTMLElement} grip - What the pointer goes down on.
+       * @param {(press: any) => void} start - The gesture to start with it.
+       * @returns {boolean} Whether the outline was still drawn mid-drag.
+       */
+      const duringDrag = (grip, start) => {
+        /** @type {any} */ (grip).setPointerCapture = () => {};
+        /** @type {any} */ (grip).releasePointerCapture = () => {};
+        const from = grip.getBoundingClientRect();
+        const x = from.left + 4;
+        start({ clientX: x, clientY: from.top + from.height / 2, pointerId: 7 });
+        document.dispatchEvent(new PointerEvent('pointermove', {
+          pointerId: 7, buttons: 1, pointerType: 'touch',
+          clientX: x, clientY: from.top + 60, bubbles: true
+        }));
+        const mid = shows();
+        document.dispatchEvent(new PointerEvent('pointercancel', {
+          pointerId: 7, pointerType: 'touch', bubbles: true
+        }));
+        return mid;
+      };
+
+      assert(shows(), 'the outline is in the strip before anything is picked up');
+
+      const tab = /** @type {HTMLElement} */ (menu.querySelector('.conversation-tab'));
+      assert(!duringDrag(tab, (press) => bar._startDrag(press, tab)),
+        'a tab is dragged about a strip of places it can land, and the outline of a box to make is not '
+        + 'one of them — so it is not in the way while one is in the air');
+      assert(shows(), 'and it is back as soon as the gesture is over, abandoned or not');
+
+      const box = /** @type {HTMLElement} */ (menu.querySelector('.conversation-box'));
+      const header = /** @type {HTMLElement} */ (box.querySelector('.conversation-box-header'));
+      assert(!duringDrag(header, (press) => bar._startBoxDrag(press, box)),
+        'and the same while a whole box is being dragged past it');
+      assert(shows(), 'and back again after that one too');
+    });
+
     await check('a conversation started in a box is born bound to that workspace', async () => {
       /** @type {any[]} */
       const created = [];
@@ -631,7 +713,7 @@ export async function runTests() {
       };
       bar._lastCreateAt = 0;
 
-      // The workspace panel's "New conversation here" asks the strip rather
+      // The workspace panel's "New conversation in this workspace" asks the strip rather
       // than doing it, so the debounce and the conversation cap stay one set of
       // rules however many places carry the button.
       document.dispatchEvent(new CustomEvent('juggler:new-conversation-in-workspace', {

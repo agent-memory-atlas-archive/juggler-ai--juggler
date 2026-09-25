@@ -228,11 +228,11 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     id: 'git-worktree',
     name: 'Git Worktree',
     version: '1.0.0',
-    description: 'Another branch of this repository, checked out in a tree of its own',
+    description: 'Another branch of this repository, checked out in a worktree of its own',
     setupLabel: 'New git worktree',
     icon: 'icon-git-branch',
     recommendations: {
-      bestFor: 'work on a branch that should not disturb the tree you are looking at',
+      bestFor: 'work on a branch that should not disturb the checkout you are looking at',
       avoidFor: 'a quick edit to the branch you are already on',
       notes: [
         'The files are separate; ports, databases and anything else on this machine are not.',
@@ -971,7 +971,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
       // wait — so it is one step that keeps talking, saying what the hook itself
       // is saying. The step names the work; the hook's own output, which is the
       // only thing that knows how far along it is, is the detail under it.
-      const step = 'Setting the tree up';
+      const step = 'Setting the worktree up';
       ctx.progress(step, SETUP_HOOK);
       await this._mustStream(
         ctx,
@@ -1011,7 +1011,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     const repoDir = String(workspace?.meta?.repoDir ?? '');
     const kind = repoDir ? `Git worktree of ${baseName(repoDir)}` : 'Git worktree';
     if (workspace.available === false) {
-      return { kind, detail: 'The tree is missing.', available: false };
+      return { kind, detail: 'The worktree directory is missing.', available: false };
     }
 
     const answer = await api.getGitStatus(workspace.id, { signal: ctx.signal });
@@ -1048,7 +1048,13 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
       // "branch feat/x · clean" rather than "feat/x · clean": read on its own,
       // in a chip's menu or a row of a list, a bare name is a word with no job.
       // A detached head or no branch at all is already a phrase and says itself.
+      //
+      // The repository leads it, because a branch name is only half an address:
+      // somebody with three checkouts open needs to know which repository they
+      // are about to commit into, and every other line about this place — the
+      // root, the branch, the counts — is true of a worktree of any of them.
       detail: [
+        repoDir ? `repo ${baseName(repoDir)}` : '',
         repo.detached || !repo.branch ? branchPhrase(repo) : `branch ${repo.branch}`,
         countsPhrase(mine) || 'clean',
         divergencePhrase(repo)
@@ -1146,16 +1152,16 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
       },
       {
         id: 'unbind',
-        label: 'Close the workspace, keep the tree',
-        description: `The tree and ${branch || 'its branch'} stay on disk, ready to be adopted again. Conversations here return to the project folder.`
+        label: 'Close the workspace, keep the worktree',
+        description: `The worktree and ${branch || 'its branch'} stay on disk, ready to be adopted again. Conversations here return to the project folder.`
       },
       {
         id: 'discard',
-        label: 'Close the workspace and delete the tree',
+        label: 'Close the workspace and delete the worktree',
         danger: true,
         description: meta.branchCreatedByUs && branch
-          ? `Deletes the tree and the branch ${branch}, with every commit on it. Conversations here return to the project folder.`
-          : 'Deletes the tree and everything in it, committed or not. The branch was not ours to make, so it stays. Conversations here return to the project folder.'
+          ? `Deletes the worktree and the branch ${branch}, with every commit on it. Conversations here return to the project folder.`
+          : 'Deletes the worktree and everything in it, committed or not. The branch was not ours to make, so it stays. Conversations here return to the project folder.'
       }
     ];
   }
@@ -1180,7 +1186,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
         // What happened to the tree. Where the conversations that were working
         // in it have gone is the host's to say — it is the host that moves
         // them, and how many there were is not a thing a provider knows.
-        message: `Stopped using ${meta.dir ?? 'the tree'}. It and ${branch || 'its branch'} are still there.`
+        message: `Stopped using ${meta.dir ?? 'the worktree'}. It and ${branch || 'its branch'} are still there.`
       };
     }
     if (actionId === 'commit') return this._commit(workspace, ctx);
@@ -1304,7 +1310,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     const meta = workspace?.meta ?? {};
     const branch = String(meta?.branch ?? '');
     if (!branch) {
-      return { done: false, message: 'There is no record of which branch this tree is on, so there is nothing to land.' };
+      return { done: false, message: 'There is no record of which branch this worktree is on, so there is nothing to land.' };
     }
 
     const where = this._repoFromBase(workspace, ctx, 'there is nowhere to land the work');
@@ -1322,7 +1328,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     if (uncommitted.length) {
       return {
         done: false,
-        message: `This tree is still holding ${uncommitted.length === 1 ? 'a change' : `${uncommitted.length} changes`} nobody has committed. Commit the changes first — landing moves commits, and these would be left behind.`
+        message: `This worktree is still holding ${uncommitted.length === 1 ? 'a change' : `${uncommitted.length} changes`} nobody has committed. Commit the changes first — landing moves commits, and these would be left behind.`
       };
     }
 
@@ -1342,7 +1348,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     if (!merged?.success) {
       return {
         done: false,
-        message: gitSaid(`${into} has moved on since this tree was made, so ${branch} cannot be fast-forwarded onto it. Merging or rebasing it is a job for you and git.`, merged)
+        message: gitSaid(`${into} has moved on since this worktree was made, so ${branch} cannot be fast-forwarded onto it. Merging or rebasing it is a job for you and git.`, merged)
       };
     }
     if (/already up to date/i.test(String(merged?.stdout ?? ''))) {
@@ -1380,11 +1386,11 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     if (!meta.repoDir || !treeRel) {
       return {
         done: false,
-        message: 'There is no record of where this tree came from, so it is not ours to remove.'
+        message: 'There is no record of where this worktree came from, so it is not ours to remove.'
       };
     }
 
-    const where = this._repoFromBase(workspace, ctx, 'the tree is not ours to remove from here');
+    const where = this._repoFromBase(workspace, ctx, 'the worktree is not ours to remove from here');
     if (where.problem) return { done: false, message: where.problem };
     const repoRel = where.repoRel;
 

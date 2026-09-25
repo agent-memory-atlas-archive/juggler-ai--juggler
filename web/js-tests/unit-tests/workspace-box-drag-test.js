@@ -62,28 +62,29 @@ function mountBar(workspaces, bindings) {
      */
     getWorkspace(id) { return workspaces.find((row) => row.id === id) || null; },
     /**
-     * @param {string} workspaceId - Whose box moved.
-     * @param {string} place - 'head', or the conversation it now sits behind.
+     * Apply the arrangement the drop is reporting, the way the real session
+     * does: each box takes the place the strip gives it, and the conversation
+     * order is rebuilt. Only the changes are recorded, so a gesture that moved
+     * nothing is visible as having written nothing.
+     * @param {{order: string[], places: Map<string, string>, moved?: string}} arrangement - The strip as the drop found it.
      * @returns {boolean} Whether anything moved.
      */
-    moveWorkspaceBox(workspaceId, place) {
-      const row = workspaces.find((ws) => ws.id === workspaceId);
-      if (!row || !place || row.place === place) return false;
-      calls.push(['box', workspaceId, place]);
-      row.place = place;
-      return true;
-    },
-    /**
-     * @param {string} id - Conversation moved.
-     * @param {string} beforeId - Conversation it was dropped in front of.
-     * @returns {boolean} Always accepted.
-     */
-    reorderConversation(id, beforeId) { calls.push(['reorder', id, beforeId]); return true; },
-    /**
-     * @param {string} id - Conversation moved to the end.
-     * @returns {boolean} Always accepted.
-     */
-    moveConversationToEnd(id) { calls.push(['end', id]); return true; }
+    applyStripArrangement({ order, places }) {
+      for (const [workspaceId, place] of places) {
+        const row = workspaces.find((ws) => ws.id === workspaceId);
+        if (!row || row.place === place) continue;
+        calls.push(['box', workspaceId, place]);
+        row.place = place;
+      }
+      const before = [...session.conversations.keys()].join(',');
+      if (order.join(',') !== before) {
+        calls.push(['order', order.join(',')]);
+        const rebuilt = new Map();
+        for (const id of order) rebuilt.set(id, session.conversations.get(id));
+        session.conversations = rebuilt;
+      }
+      return calls.length > 0;
+    }
   };
   for (const [id, workspaceId] of bindings) {
     session.conversations.set(id, { id, name: id, workspaceId, session });
@@ -257,10 +258,11 @@ export async function runTests() {
       const first = tabFor(bar, 'c1').getBoundingClientRect();
       dragBoxToY(bar, boxFor(bar, 'ws_a'), first.top + 1);
 
-      assert(JSON.stringify(calls) === JSON.stringify([['box', 'ws_a', 'head']]),
+      assert(JSON.stringify(calls) === JSON.stringify([['box', 'ws_a', 'head'], ['order', 'c2,c3,c1']]),
         `dropped in front of everything, the box has nothing left to sit behind: ${JSON.stringify(calls)}`);
-      assert(order() === 'c1,c2,c3',
-        `and no conversation has moved — a box travels on its own, got ${order()}`);
+      assert(order() === 'c2,c3,c1',
+        'and its own conversations came with it: the order is the strip read top to bottom, and they are '
+        + `drawn inside the box that moved, got ${order()}`);
     } finally {
       teardown();
     }
@@ -275,10 +277,10 @@ export async function runTests() {
       const box = boxFor(bar, 'ws_a');
       dragBoxToY(bar, box, tabFor(bar, 'c1').getBoundingClientRect().bottom + 60);
 
-      assert(JSON.stringify(calls) === JSON.stringify([['box', 'ws_a', 'c1']]),
+      assert(JSON.stringify(calls) === JSON.stringify([['box', 'ws_a', 'c1'], ['order', 'c1,c2,c3']]),
         `the end of the bar is behind the last conversation that is not its own: ${JSON.stringify(calls)}`);
-      assert(order() === 'c2,c3,c1',
-        `and again nothing else moved, got ${order()}`);
+      assert(order() === 'c1,c2,c3',
+        `and its members followed it past the flat tab, got ${order()}`);
     } finally {
       teardown();
     }
@@ -314,6 +316,51 @@ export async function runTests() {
         `a box's place is its own, so one with nothing in it is moved and kept like any other: ${JSON.stringify(calls)}`);
       assert(order() === 'c1',
         `and the conversation it was dragged past stays where it is, got ${order()}`);
+    } finally {
+      teardown();
+    }
+  });
+
+  // The tabs a box has shifted past do not arrive instantly: each is inverted
+  // to where it was and released to animate to where it now is. A pointer
+  // reports faster than that animation finishes, so the next move is read while
+  // the tab it is being measured against is still drawn over the box's own
+  // placeholder — and the box is sent to the far end of the strip by a
+  // correction that never left it.
+  check('a box is not moved again by a pointer resting inside it', () => {
+    const { bar, calls, teardown } = mountBar(
+      [workspace('ws_a')],
+      [['c1', ''], ['c2', 'ws_a']]
+    );
+    try {
+      const box = boxFor(bar, 'ws_a');
+      const header = /** @type {HTMLElement} */ (box.querySelector('.conversation-box-header'));
+      /** @type {any} */ (header).setPointerCapture = () => {};
+      /** @type {any} */ (header).releasePointerCapture = () => {};
+      /** @type {any} */ (box).setPointerCapture = () => {};
+      /** @type {any} */ (box).releasePointerCapture = () => {};
+      const from = header.getBoundingClientRect();
+      const x = from.left + 10;
+      const above = tabFor(bar, 'c1').getBoundingClientRect().top + 1;
+
+      bar._startBoxDrag({ clientX: x, clientY: from.top + from.height / 2, pointerId: 1 }, box);
+      document.dispatchEvent(new PointerEvent('pointermove', {
+        pointerId: 1, buttons: 1, pointerType: 'touch', clientX: x, clientY: above, bubbles: true
+      }));
+      // Where the box now is — it is the one thing a shift does not animate — so
+      // this is a pointer inside the box it is dragging, asking for the place
+      // the box already has.
+      const resting = box.getBoundingClientRect();
+      document.dispatchEvent(new PointerEvent('pointermove', {
+        pointerId: 1, buttons: 1, pointerType: 'touch',
+        clientX: x, clientY: resting.bottom - 2, bubbles: true
+      }));
+      document.dispatchEvent(new PointerEvent('pointerup', {
+        pointerId: 1, pointerType: 'touch', clientX: x, clientY: resting.bottom - 2, bubbles: true
+      }));
+
+      assert(JSON.stringify(calls) === JSON.stringify([['box', 'ws_a', 'head'], ['order', 'c2,c1']]),
+        `the box was dropped where it was already shown, at the head of the bar: ${JSON.stringify(calls)}`);
     } finally {
       teardown();
     }

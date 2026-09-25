@@ -31,7 +31,7 @@ import { approvePermittedPendingApprovals } from './conversation-tool-actions.js
 import { ensureUserPresetsLoaded, getDefaultPresetSeed } from '../services/system-prompt-presets.js';
 import { isDefaultFileEditingOn, setFileEditingAllowed } from '../services/file-editing-permission.js';
 import { resolveDefaultStrategyId, BUILTIN_DEFAULT_STRATEGY_ID } from '../services/default-strategy.js';
-import { isWorkspaceUsable, patchWorkspace } from '../services/workspaces.js';
+import { isWorkspaceUsable, patchWorkspace, reorderWorkspaces } from '../services/workspaces.js';
 import { workspaceInstructionRoots, placeForNewConversation, placementForNewConversation } from '../services/workspace-provisioning.js';
 import { BUILTIN_DEFAULT_ID } from '../../sdk/lib/system-prompt-registry.js';
 
@@ -2511,6 +2511,99 @@ class Session {
   }
 
   /**
+   * Take the tab bar's word for the whole arrangement: the conversation order
+   * and where every box sits, written in one go.
+   *
+   * The strip drawn under a drag is the arrangement the user picked, and this is
+   * that arrangement being recorded: every conversation's place, and every drawn
+   * box's, in one call. Deriving it a second time from the one thing the drop
+   * landed in front of moves the box the drop touched and leaves every other one
+   * to a fallback that reads the conversation list — so a box nobody dragged
+   * follows a tab that moved, and the strip settles somewhere the preview never
+   * showed. One arrangement, written once, cannot disagree with itself.
+   *
+   * A place is a neighbour rather than an index, so the writes below commute:
+   * the order goes to the reorder endpoint and each box's place to its own row,
+   * in whichever order they arrive.
+   * @param {{order: string[], places: Map<string, string>, moved?: string}} arrangement - The strip as drawn: every conversation top to bottom, and each drawn box against the conversation it now sits behind, or 'head'.
+   * @returns {boolean} Whether any of it was news.
+   */
+  applyStripArrangement({ order, places, moved = '' }) {
+    const current = Array.from(this.conversations.keys());
+    const known = new Set(current);
+    const next = order.filter(id => known.has(id));
+
+    // A conversation created while the drag was held is not in the strip the
+    // drop is describing — the bar holds its renders for the length of a
+    // gesture. It keeps the neighbour it has rather than being swept to the end.
+    const listed = new Set(next);
+    let previous = '';
+    for (const id of current) {
+      if (!listed.has(id)) next.splice(previous ? next.indexOf(previous) + 1 : 0, 0, id);
+      previous = id;
+    }
+
+    const orderChanged = current.length !== next.length || current.some((id, i) => next[i] !== id);
+    if (orderChanged) {
+      this._setConversationOrder(next);
+      this._notify('conversation:reordered', { conversationId: moved, beforeId: null });
+      // Sent without naming what moved: the server re-anchors boxes around the
+      // conversation a reorder moved, which is the very rule being replaced
+      // here. Every drawn box's place is in this arrangement explicitly, so
+      // there is nothing left to infer and nothing to infer it differently.
+      this._persistOrder('arrangement');
+    }
+
+    // Boxes take the strip's order too. Two boxes with no conversation between
+    // them sit in the same place and are drawn in table order — the only thing
+    // left to tell them apart (see `workspaceGroups`) — so the table is kept in
+    // the order the strip has them, on the server as well as here. Here alone
+    // settles nothing: every workspace edit anywhere broadcasts the table, and
+    // the broadcast replaces this copy whole, so an order held only in this
+    // window is taken away by the next one.
+    const rows = this.workspaces ?? [];
+    const byId = new Map(rows.map(row => [row.id, row]));
+    /** @type {any[]} */
+    const reordered = [];
+    /** @type {string[]} */
+    const repositioned = [];
+    for (const [workspaceId, place] of places) {
+      const row = byId.get(workspaceId);
+      if (!row) continue;
+      if (row.place === place) {
+        reordered.push(row);
+        continue;
+      }
+      repositioned.push(workspaceId);
+      reordered.push({ ...row, place });
+    }
+    // A workspace with no box drawn — closed, or being built — is not in the
+    // strip to have an opinion about, and keeps both its place and its row.
+    for (const row of rows) if (!places.has(row.id)) reordered.push(row);
+
+    const resequenced = rows.some((row, i) => row.id !== reordered[i]?.id);
+    const tableChanged = rows.length !== reordered.length
+      || rows.some((row, i) => row !== reordered[i]);
+    if (tableChanged) {
+      this.workspaces = reordered;
+      this._notify('session:workspaces-changed', this.workspaces);
+    }
+
+    for (const workspaceId of repositioned) {
+      patchWorkspace(workspaceId, { place: places.get(workspaceId) }).catch((error) => {
+        console.error("[Session] Couldn't store where the workspace box was moved to:", error);
+      });
+    }
+    if (resequenced) {
+      reorderWorkspaces(reordered.map(row => row.id)).catch((error) => {
+        console.error("[Session] Couldn't store the order the workspace boxes were left in:", error);
+      });
+    }
+
+    return orderChanged || tableChanged;
+  }
+
+  /**
    * Reorder a conversation by moving it before another conversation
    * @param {string} conversationId - ID of conversation to move
    * @param {string} beforeId - ID of conversation to insert before
@@ -2569,68 +2662,6 @@ class Session {
     }
     return new Map(order);
   }
-
-  /**
-   * Move a workspace's box to a new place in the tab bar.
-   *
-   * A box's place is its own — the conversation it sits behind, stored on the
-   * workspace row — so moving one writes that field and touches no
-   * conversation. Its members are drawn inside it wherever the flat order has
-   * them, and are no more disturbed by the box moving than they are by the box
-   * being drawn.
-   *
-   * The row is updated here so the strip redraws at once, and patched on the
-   * server, which broadcasts the table to every other window.
-   * @param {string} workspaceId - The workspace whose box moved.
-   * @param {string} place - 'head', or the conversation it now sits behind. Never
-   *   empty: a drag always knows where it landed, and empty means the opposite —
-   *   a box with no place recorded at all.
-   * @returns {boolean} Whether anything moved.
-   */
-  moveWorkspaceBox(workspaceId, place) {
-    const workspace = this.getWorkspace(workspaceId);
-    if (!workspace || !place || workspace.place === place) {
-      return false;
-    }
-
-    this.workspaces = this.workspaces.map(row =>
-      (row.id === workspaceId ? { ...row, place } : row));
-    this._notify('session:workspaces-changed', this.workspaces);
-
-    patchWorkspace(workspaceId, { place }).catch((error) => {
-      console.error("[Session] Couldn't store where the workspace box was moved to:", error);
-    });
-
-    return true;
-  }
-
-  /**
-   * Move a conversation to the end of the tab list
-   * @param {string} conversationId - ID of conversation to move
-   * @returns {boolean} Whether move succeeded
-   */
-  moveConversationToEnd(conversationId) {
-    const conv = this.conversations.get(conversationId);
-    if (!conv) {
-      return false;
-    }
-
-    // While it still has a neighbour to hand its boxes' place to.
-    this._reanchorBoxesBeforeMove(conversationId);
-
-    // Every other id in its current order, then this one last.
-    const order = Array.from(this.conversations.keys()).filter(id => id !== conversationId);
-    order.push(conversationId);
-    this._setConversationOrder(order);
-
-    this._notify('conversation:reordered', { conversationId, beforeId: null });
-
-    // Persist via the dedicated reorder endpoint (the sole writer of order).
-    this._persistOrder('reorder', conversationId);
-
-    return true;
-  }
-
 
   /**
    * Bin a conversation. Mirrors deleteConversation locally (cancels

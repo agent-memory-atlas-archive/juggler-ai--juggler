@@ -155,6 +155,29 @@ func (api *SessionAPI) HandleUnregisterWorkspace(w http.ResponseWriter, r *http.
 	api.broadcastWorkspaces()
 }
 
+// HandleReorderWorkspaces rewrites the order the table is held in.
+//
+// The table's order is what decides between two boxes drawn in the same place —
+// two of them with no conversation between them to sit behind — so it is part
+// of the arrangement a user drags the sidebar into, and has to be recorded like
+// the rest of it. Ids the table does not have are ignored, and rows the caller
+// did not name keep their order behind the ones it did.
+func (api *SessionAPI) HandleReorderWorkspaces(w http.ResponseWriter, r *http.Request) {
+	req, ok := DecodeJSON[struct {
+		IDs []string `json:"ids"`
+	}](w, r)
+	if !ok {
+		return
+	}
+	list, err := api.manager().ReorderWorkspaces(req.IDs)
+	if err != nil {
+		WriteError(w, r, workspaceStatus(err), err.Error())
+		return
+	}
+	WriteJSON(w, r, http.StatusOK, map[string]any{"workspaces": list})
+	api.broadcastWorkspaces()
+}
+
 // HandleClaimWorkspaceReconcile answers whether this viewer is the one to
 // reconcile the table against what is actually on disk, and answers yes at most
 // once per run of the server.

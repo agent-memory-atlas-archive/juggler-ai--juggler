@@ -60,17 +60,15 @@ func (m *SessionManager) projectOpen() bool {
 	return m.projectPath != ""
 }
 
-// ListWorkspaces returns every registered workspace, in registration order.
+// ListWorkspaces returns every registered workspace, in the order the table
+// holds them — which is where two boxes sharing a place get their order from
+// (see ReorderWorkspaces).
 func (m *SessionManager) ListWorkspaces() []Workspace {
 	out, _ := runRead(m, func(s *sessionState) ([]Workspace, error) {
 		if s.session == nil {
 			return []Workspace{}, nil
 		}
-		list := make([]Workspace, 0, len(s.session.Workspaces))
-		for _, ws := range s.session.Workspaces {
-			list = append(list, ws.availableNow())
-		}
-		return list, nil
+		return listWorkspaces(s.session), nil
 	})
 	return out
 }
@@ -274,6 +272,78 @@ func (m *SessionManager) UpdateWorkspace(id string, patch WorkspacePatch) (Works
 		}
 		return ws.availableNow(), nil
 	})
+}
+
+// ReorderWorkspaces rewrites the order the table is held in, which is the order
+// the boxes sharing a place are drawn in.
+//
+// A box sits behind a conversation (see Workspace.Place), which puts it in one
+// of the gaps between them — and two boxes in the same gap, with no conversation
+// between them to tell them apart, are drawn in the order the table holds them.
+// So that order is part of what the sidebar shows, and a user who drags one
+// empty box above another has changed nothing on either row: the table is the
+// only field that holds where those two boxes sit, which is why the move is
+// recorded here.
+//
+// Named rows come first, in the order given; anything unnamed keeps its relative
+// order behind them. An id that is not on the table is ignored — the caller is
+// describing a strip that may have been drawn before a workspace was closed.
+func (m *SessionManager) ReorderWorkspaces(ids []string) ([]Workspace, error) {
+	if !m.projectOpen() {
+		return nil, ErrNoProject
+	}
+	return runWrite(m, func(s *sessionState) ([]Workspace, error) {
+		if s.session == nil {
+			return nil, ErrNoProject
+		}
+		byID := make(map[string]int, len(s.session.Workspaces))
+		for i, ws := range s.session.Workspaces {
+			byID[ws.ID] = i
+		}
+
+		ordered := make([]Workspace, 0, len(s.session.Workspaces))
+		taken := make(map[string]bool, len(ids))
+		for _, id := range ids {
+			idx, ok := byID[id]
+			if !ok || taken[id] {
+				continue
+			}
+			taken[id] = true
+			ordered = append(ordered, s.session.Workspaces[idx])
+		}
+		for _, ws := range s.session.Workspaces {
+			if !taken[ws.ID] {
+				ordered = append(ordered, ws)
+			}
+		}
+
+		same := true
+		for i := range ordered {
+			if ordered[i].ID != s.session.Workspaces[i].ID {
+				same = false
+				break
+			}
+		}
+		if same {
+			return listWorkspaces(s.session), nil
+		}
+
+		s.session.Workspaces = ordered
+		if err := s.store.Save(s.session); err != nil {
+			return nil, err
+		}
+		return listWorkspaces(s.session), nil
+	})
+}
+
+// listWorkspaces answers with the table as a caller reads it: availability
+// live rather than as last recorded.
+func listWorkspaces(session *Session) []Workspace {
+	list := make([]Workspace, 0, len(session.Workspaces))
+	for _, ws := range session.Workspaces {
+		list = append(list, ws.availableNow())
+	}
+	return list
 }
 
 // CloseWorkspace tombstones a workspace: the row stays, the state becomes

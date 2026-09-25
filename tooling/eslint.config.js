@@ -42,6 +42,8 @@ export default [
         Range: 'readonly',
         Highlight: 'readonly',
         DOMException: 'readonly',
+        DOMMatrixReadOnly: 'readonly',
+        DOMRect: 'readonly',
         PopStateEvent: 'readonly',
         getComputedStyle: 'readonly',
         atob: 'readonly',

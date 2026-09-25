@@ -58,17 +58,15 @@ function mountBar(ids) {
   const calls = [];
   bar._session = {
     conversations: new Map(ids.map((id) => [id, { id }])),
+    workspaces: [],
     /**
-     * @param {string} id - Conversation moved
-     * @param {string} beforeId - Conversation it was dropped in front of
+     * @param {{order: string[], places: Map<string, string>, moved?: string}} arrangement - The strip as the drop found it
      * @returns {boolean} Always accepted
      */
-    reorderConversation(id, beforeId) { calls.push(['reorder', id, beforeId]); return true; },
-    /**
-     * @param {string} id - Conversation moved to the end
-     * @returns {boolean} Always accepted
-     */
-    moveConversationToEnd(id) { calls.push(['end', id]); return true; }
+    applyStripArrangement({ order, moved }) {
+      calls.push(['arrangement', order.join(','), moved ?? '']);
+      return true;
+    }
   };
 
   const tabs = /** @type {HTMLElement[]} */ (Array.from(bar.querySelectorAll('.conversation-tab')));
@@ -181,11 +179,11 @@ export async function runTests(_ctx) {
   }
 
   // Test 3: the drop commits the arrangement the strip was showing, and a tab
-  // that joins the strip mid-gesture does not move it. The landing is the tab
-  // it came to rest in front of — an element, which stays the same element
-  // however many tabs arrive above it. Resolved by counting instead, the
-  // newcomer would shift every index after it and the drop would name a
-  // neighbour the user was never shown sitting next to.
+  // that joins the strip mid-gesture does not move it. What is committed is the
+  // whole strip, read off the DOM at the drop, so a newcomer is carried along
+  // in the place it arrived in. Resolved by counting into a list captured at
+  // the press instead, the newcomer would shift every index after it and the
+  // drop would name a neighbour the user was never shown sitting next to.
   {
     const { bar, tabs, calls, teardown } = mountBar(['a', 'b', 'c']);
     try {
@@ -205,12 +203,15 @@ export async function runTests(_ctx) {
 
       release();
 
-      assert(calls.length === 1, `expected one reorder, got ${JSON.stringify(calls)}`);
-      // The strip reads [new, b, a, c] at the drop, so the tab is committed
-      // where it is drawn: in front of c. Counting would have said b, which is
-      // one place further up than anything the strip ever showed.
-      assert(calls[0][0] === 'reorder' && calls[0][1] === 'a' && calls[0][2] === 'c',
-        `the drop named the wrong neighbour: ${JSON.stringify(calls[0])} — the strip is showing a in front of c, and the commit has to say the same`);
+      assert(calls.length === 1, `expected one commit, got ${JSON.stringify(calls)}`);
+      // The strip reads [new, b, a, c] at the drop, and that is what is
+      // written: a in front of c, where it is drawn, with the newcomer at the
+      // head where it arrived. Counting into the list captured at the press
+      // would have put a in front of b, one place further up than anything the
+      // strip ever showed.
+      assert(calls[0][1] === 'new,b,a,c',
+        `the drop wrote an order the strip never showed: ${JSON.stringify(calls[0][1])}, drawn as ${stripOrder(bar)}`);
+      assert(calls[0][2] === 'a', `and must name the tab the gesture moved, got ${JSON.stringify(calls[0][2])}`);
       passed++;
     } catch (e) {
       failed++;

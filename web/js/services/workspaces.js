@@ -123,6 +123,25 @@ export async function patchWorkspace(id, patch) {
 }
 
 /**
+ * Rewrite the order the table is held in.
+ *
+ * Two boxes with no conversation between them sit in the same place, and the
+ * table's order is the only thing that says which is drawn first — so a drag
+ * that swaps them has nothing on either row to write, and this is what it
+ * writes instead. Ids the table does not have are ignored; rows not named keep
+ * their order behind the ones that are.
+ * @param {string[]} ids - The workspaces in the order their boxes are drawn.
+ * @returns {Promise<import('../model/session.js').Workspace[]>} The table as it now stands.
+ */
+export async function reorderWorkspaces(ids) {
+  const answer = await fetchJson('/api/session/workspaces/reorder', {
+    method: 'POST',
+    body: { ids }
+  });
+  return answer?.workspaces ?? [];
+}
+
+/**
  * Tombstone a workspace: the row stays and the id keeps resolving, so a
  * conversation still bound to it is told it was closed rather than told it is
  * unknown. That second message belongs to a binding that is genuinely stale.

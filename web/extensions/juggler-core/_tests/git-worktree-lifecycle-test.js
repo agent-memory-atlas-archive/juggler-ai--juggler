@@ -709,6 +709,12 @@ export async function runTests() {
           `and is named by its branch, got ${JSON.stringify(outcome.workspace.label)}`);
         assert(fresh.detail?.includes('clean') && fresh.detail?.includes(BRANCH),
           `which is what it says, along with the branch it says it of, got ${JSON.stringify(fresh.detail)}`);
+        // And which repository that branch is in. A branch name is half an
+        // address: someone with three checkouts open is deciding which of them
+        // they are about to commit into, and the root, the branch and the counts
+        // would read the same for a worktree of any of them.
+        assert(fresh.detail?.includes(repo),
+          `and the repository it is a worktree of, got ${JSON.stringify(fresh.detail)}`);
 
         // Ours, not theirs. Nothing of Juggler's is written into a workspace
         // root any more, but a tree made by an older build may still hold one,

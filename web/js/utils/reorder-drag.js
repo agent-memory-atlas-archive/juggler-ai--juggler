@@ -51,6 +51,32 @@ const MAX_SCROLL_STEP_PX = 18;
 const SCROLL_OVERFLOW_MIN_PX = 4;
 
 /**
+ * An element's box where the layout has it, with whatever transform it is
+ * moving under taken back out.
+ *
+ * The strip is rearranged by FLIP: each item is inverted to where it was and
+ * released to animate to where it now is, so for the length of that animation
+ * `getBoundingClientRect` answers with a position between the two. A drop read
+ * from that is a drop read against the strip the user has stopped looking at,
+ * and the answer is a whole slot out — which is most of a gesture, since a
+ * pointer reports faster than the animation finishes and every shift starts
+ * another one.
+ *
+ * Only the translation is taken back out, translation being all that is ever
+ * applied here.
+ * @param {Element} element - The element to measure.
+ * @returns {DOMRect} Its box where the layout puts it, animation or no animation.
+ */
+export function settledRect(element) {
+  const rect = element.getBoundingClientRect();
+  const { transform } = getComputedStyle(element);
+  if (!transform || transform === 'none') return rect;
+  const { e: dx, f: dy } = new DOMMatrixReadOnly(transform);
+  if (!dx && !dy) return rect;
+  return new DOMRect(rect.left - dx, rect.top - dy, rect.width, rect.height);
+}
+
+/**
  * @typedef {object} ReorderDragOptions
  * @property {HTMLElement} item - The element being dragged.
  * @property {() => HTMLElement[]} items - The reorderable items, in strip order. Called live, and must exclude the floating clone. They need not share a parent: a strip built from nested lists is read as one sequence, and the item lands in the list its new neighbour is in.
@@ -227,7 +253,7 @@ export function startReorderDrag(event, options) {
   const indexAt = (clientX, clientY) => {
     const others = items().filter((el) => el !== item);
     for (let i = 0; i < others.length; i++) {
-      const box = /** @type {HTMLElement} */ (others[i]).getBoundingClientRect();
+      const box = settledRect(/** @type {HTMLElement} */ (others[i]));
       if (wrap) {
         if (clientY >= box.bottom) continue;
         if (clientY < box.top || clientX < box.left + box.width / 2) return i;
@@ -299,7 +325,11 @@ export function startReorderDrag(event, options) {
     for (const el of before) {
       const start = first.get(el);
       if (!start || el === item) continue;
-      const end = el.getBoundingClientRect();
+      // Where it is going, not where the animation it is already running has it
+      // at this instant: the inversion below replaces that transform, so
+      // measuring through it would count the same offset twice and the item
+      // would start its travel from somewhere it has never been.
+      const end = settledRect(el);
       const dx = start.left - end.left;
       const dy = start.top - end.top;
       el.style.transition = 'none';

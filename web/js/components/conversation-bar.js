@@ -24,7 +24,7 @@ import { MAX_CONVERSATIONS, CONVERSATION_LIMIT_MESSAGE } from '../model/session.
 import { UNTITLED_BASE } from '../model/conversation-naming.js';
 import { BIN_LARGE_BYTES, MAX_CONVERSATION_NAME_LENGTH } from '../utils/constants.js';
 import { setupColumnResize, applyColumnWidthPx } from '../utils/column-resize.js';
-import { startReorderDrag } from '../utils/reorder-drag.js';
+import { startReorderDrag, settledRect } from '../utils/reorder-drag.js';
 import { DRAG_GRIP_HTML, pointerMayGrab } from '../utils/drag-grip.js';
 import { formatBytes } from '../utils/format.js';
 import { registerContextMenuProvider } from '../services/context-menu-service.js';
@@ -1077,6 +1077,65 @@ class ConversationBar extends JugglerElement {
   }
 
   /**
+   * The strip passes into the gesture's hands.
+   *
+   * A tab and a whole box are dragged by different code and claim the strip in
+   * exactly the same way, so they claim it here: whatever a gesture is of, what
+   * it does to the strip around it is one thing, said once.
+   * @returns {void}
+   * @private
+   */
+  _dragStarted() {
+    this._dragging = true;
+    this._showNewWorkspace(false);
+  }
+
+  /**
+   * The strip goes back to the session.
+   * @param {boolean} dragged - Whether the press ever became a drag.
+   * @returns {void}
+   * @private
+   */
+  _dragEnded(dragged) {
+    this._dragging = false;
+    this._showNewWorkspace(true);
+    // Draw whatever arrived while the strip was held — including the
+    // arrangement this gesture has just committed. The commit runs first and its
+    // notify lands while _dragging is still true, so without this the strip
+    // keeps the drag's arrangement until some later, unrelated event happens to
+    // repaint it.
+    if (this._renderDeferred) {
+      this._renderDeferred = false;
+      this.render();
+    }
+    if (!dragged) return;
+    // The release that ends a drag also produces a click, which would otherwise
+    // act on whatever the item landed on: the conversation whose tab it is, or
+    // the workspace whose box it is.
+    this._dragJustOccurred = true;
+    setTimeout(() => { this._dragJustOccurred = false; }, 100);
+  }
+
+  /**
+   * Show or hide the row that makes a workspace, for the length of a gesture.
+   *
+   * It is the last row of the strip and the only one that is not somewhere to
+   * land, so while something is in the air it is in the way twice over: a drop
+   * aimed at the foot of the bar is aimed over it, and the placeholder a drag
+   * past the end leaves behind is drawn below it. Neither is what the gesture is
+   * about, and the way to make a workspace is not an offer worth making while a
+   * conversation is being moved — so it stands aside, and comes back whether the
+   * drag landed or was abandoned.
+   * @param {boolean} shown - Whether it is drawn.
+   * @returns {void}
+   * @private
+   */
+  _showNewWorkspace(shown) {
+    const row = /** @type {HTMLElement|undefined} */ (this._cachedElements.get('new-workspace'));
+    if (row) row.hidden = !shown;
+  }
+
+  /**
    * Which workspace's box something in the strip is drawn inside.
    * @param {HTMLElement} element - A tab, or anything else in the strip.
    * @returns {string} The workspace id, or '' for the flat strip — which is the
@@ -1122,6 +1181,10 @@ class ConversationBar extends JugglerElement {
    * reorder past a box into a proposal to move a conversation's working tree.
    * So containment decides, and nothing else: a drop is in a box when the
    * pointer is within that box, and is in the strip the rest of the time.
+   *
+   * Every rect here is a {@link settledRect}: a gesture asks this again while
+   * the last shift it caused is still animating, and where a tab is on its way
+   * to is the only thing worth asking about.
    * @param {number} clientX - Pointer x in client coordinates.
    * @param {number} clientY - Pointer y in client coordinates.
    * @param {HTMLElement} dragged - What is being dragged.
@@ -1138,7 +1201,7 @@ class ConversationBar extends JugglerElement {
     const box = /** @type {HTMLElement[]} */ (
       Array.from(this.querySelectorAll('.conversation-box:not(.drag-ghost)')))
       .find((candidate) => {
-        const rect = candidate.getBoundingClientRect();
+        const rect = settledRect(candidate);
         return clientX >= rect.left && clientX <= rect.right
           && clientY >= rect.top && clientY <= rect.bottom;
       });
@@ -1149,7 +1212,7 @@ class ConversationBar extends JugglerElement {
     if (!list) return null;
 
     for (const slot of this._dropSlots(list, dragged)) {
-      const rect = slot.getBoundingClientRect();
+      const rect = settledRect(slot);
       if (clientY < rect.top + rect.height / 2) return { parent: list, anchor: slot };
     }
     // Past the last tab in a box is the end of that box, which is a place in the
@@ -1164,66 +1227,77 @@ class ConversationBar extends JugglerElement {
   }
 
   /**
-   * The conversation a box dropped in front of `beforeId` comes to sit behind.
+   * Record the strip exactly as it is drawn.
    *
-   * A drop says what it landed in front of; a box's place is stored as what it
-   * sits behind. One is read off the flat order from the other. Landing in front
-   * of everything is the head of the bar, which is stored as 'head' and never as
-   * an absence — an empty place means no place recorded, which is a different
-   * thing and would send the box somewhere nobody dropped it.
+   * A drag rearranges the strip under the pointer, and by the time it is let go
+   * the arrangement on screen *is* the answer: the tabs are in their new order
+   * and each box is between the tabs the user put it between. So the drop reads
+   * it off, top to bottom, and hands the session the lot.
    *
-   * The box's own members are stepped over. A box cannot be placed relative to
-   * a conversation drawn inside it: that would be a box anchored to itself, and
-   * the answer would change every time it gained or lost a member.
-   * @param {string} beforeId - What the drop landed in front of, '' for the end.
-   * @param {string} workspaceId - The workspace being moved.
-   * @returns {string} The place to store: 'head', or the conversation it sits behind.
+   * Nothing works the arrangement out a second time, because the one thing a
+   * drop landed in front of cannot describe it: above a box and below it name
+   * the same neighbour, and a box the drop never touched would be left to a
+   * place derived from the conversation list, which the drop has just
+   * rewritten. Neither fault shows until the strip redraws from what was
+   * recorded, by which time the user is looking at something they never asked
+   * for.
+   * @param {string} [moved] - The conversation the gesture moved, for the redraw.
+   * @returns {void}
    * @private
    */
-  _placeForBox(beforeId, workspaceId) {
-    const ids = [...(this._session?.conversations?.values?.() ?? [])]
-      .filter((conv) => (conv.workspaceId || '') !== workspaceId)
-      .map((conv) => conv.id);
-    const at = beforeId ? ids.indexOf(beforeId) : ids.length;
-    return at <= 0 ? 'head' : (ids[at - 1] ?? 'head');
+  _commitArrangement(moved = '') {
+    const arrangement = this._readArrangement();
+    if (arrangement) this._session?.applyStripArrangement({ ...arrangement, moved });
   }
 
   /**
-   * Which conversation a drop in front of `anchor` lands in front of.
+   * The strip as it is drawn, in the terms the session records it in.
    *
-   * A landing is stored as a conversation either way — a tab's own place in the
-   * flat order, a box's place on its row — so it has to name one however it was
-   * drawn. An anchor that is a whole box
-   * names the first conversation in it; one that is a box's "Nothing here."
-   * line — the last thing in every box, drawn or not — names whatever comes
-   * after the box, there being nothing past it inside the box to name. Both
-   * fall out of the same walk: the first tab that is the anchor or comes after
-   * it, a box's own tabs counting as coming after the box.
+   * Read rather than written, because a drop that has a question to ask first
+   * must take the arrangement while it is still on the screen and hand it over
+   * only when the question has been answered — see {@link _startDrag}. The
+   * reading and the recording are the same reading either way: there is one
+   * arrangement, and it is this one.
    *
-   * This is the flat order's half of the answer and not the whole of it. Above
-   * a box and below it are different places to land that name the same
-   * conversation, so a caller handed a box as the anchor has been told where the
-   * tab goes in the order and not which side of the box it goes on. The drop
-   * settles that by moving the box, which is the only thing that can say it —
-   * see `_startDrag`'s commit.
-   * @param {Element|null} anchor - What the drop landed in front of, or null for the end.
-   * @param {HTMLElement} dragged - What is being dropped, which cannot precede itself.
-   * @returns {string} The conversation id to land in front of, or '' for the end.
+   * The dragged tab is in this walk like any other: it is left in the strip as
+   * the drag's placeholder, in the place it landed.
+   * @returns {{order: string[], places: Map<string, string>}|null} The strip, or
+   *   null before there is one to read.
    * @private
    */
-  _beforeIdAt(anchor, dragged) {
-    if (!anchor) return '';
-    const tabs = /** @type {HTMLElement[]} */ (
-      Array.from(this.querySelectorAll('.conversation-tab:not(.drag-ghost)')));
-    for (const tab of tabs) {
-      // A clone floating under the pointer has had its id taken off it, which
-      // is what says it is a picture of a tab rather than one.
-      const id = tab.dataset.conversationId;
-      if (!id || tab === dragged) continue;
-      const after = anchor.compareDocumentPosition(tab) & Node.DOCUMENT_POSITION_FOLLOWING;
-      if (tab === anchor || after) return id;
+  _readArrangement() {
+    // Read from the document rather than the element cache: what is being
+    // recorded is what is on the screen, and the screen is the only thing that
+    // cannot be out of date with itself.
+    const tabsMenu = /** @type {HTMLElement|null} */ (this.querySelector('.conversation-tabs'));
+    if (!tabsMenu || !this._session) return null;
+
+    /** @type {string[]} */
+    const order = [];
+    /** @type {Map<string, string>} */
+    const places = new Map();
+
+    for (const slot of this._dropSlots(tabsMenu, null)) {
+      if (slot.classList.contains('conversation-tab')) {
+        const id = slot.dataset.conversationId;
+        if (id) order.push(id);
+        continue;
+      }
+      const workspaceId = slot.dataset.workspaceId;
+      if (!workspaceId) continue;
+
+      // Where the box sits, said in the only terms a place has: the tab above
+      // it, or the head of the bar when there is nothing above it. Its own
+      // members come after it in the order, which is what makes that reading
+      // land the box in front of them again.
+      places.set(workspaceId, order[order.length - 1] ?? 'head');
+      for (const member of Array.from(slot.querySelectorAll('.conversation-tab'))) {
+        const id = /** @type {HTMLElement} */ (member).dataset.conversationId;
+        if (id) order.push(id);
+      }
     }
-    return '';
+
+    return { order, places };
   }
 
   /**
@@ -2036,25 +2110,9 @@ class ConversationBar extends JugglerElement {
         clone.classList.remove('is-renaming');
         clone.removeAttribute('data-conversation-id');
       },
-      onDragStart: () => { this._dragging = true; },
-      onDragEnd: ({ dragged }) => {
-        this._dragging = false;
-        // Draw whatever arrived while the strip was held — including, after a
-        // move, the order this drag has just committed. The commit runs first
-        // and its notify lands while _dragging is still true, so without this
-        // the strip keeps the drag's arrangement until some later, unrelated
-        // event happens to repaint it.
-        if (this._renderDeferred) {
-          this._renderDeferred = false;
-          this.render();
-        }
-        if (!dragged) return;
-        // The release that ends a drag also produces a click, which would
-        // otherwise switch to whatever the tab landed on.
-        this._dragJustOccurred = true;
-        setTimeout(() => { this._dragJustOccurred = false; }, 100);
-      },
-      onCommit: ({ anchor }) => {
+      onDragStart: () => this._dragStarted(),
+      onDragEnd: ({ dragged }) => this._dragEnded(dragged),
+      onCommit: () => {
         const draggedId = tab.dataset.conversationId;
         if (!draggedId || !this._session) return;
 
@@ -2067,6 +2125,14 @@ class ConversationBar extends JugglerElement {
         // says in the meantime: render() is held for the length of a gesture and
         // draws the tab back in the box it came from as it lets go.
         //
+        // The question is only ever about the binding. Where in the strip the
+        // tab goes was settled by the gesture, so it is read off the screen here
+        // — before the snap-back, which is the last moment it is there to read —
+        // and handed over when the move is agreed to. Nothing downstream of the
+        // drop knows where the drop was: a rebinding places a conversation the
+        // way a new one is placed, which is a different question with a
+        // different answer.
+        //
         // A move that cannot happen is said here instead, because a dialog
         // asking whether to do something it will then refuse puts the user's
         // answer and the outcome the wrong way round: they are made to decide,
@@ -2076,44 +2142,28 @@ class ConversationBar extends JugglerElement {
         const landedIn = this._workspaceBoxOf(tab);
         const dragged = this._session.conversations.get(draggedId);
         if (dragged && landedIn !== homeWorkspaceId) {
+          const arrangement = this._readArrangement();
           this.render();
           const refusal = whyNotRebind(dragged, landedIn);
           if (refusal) {
             showNotice(refusal);
             return;
           }
-          void openWorkspaceMove(dragged, landedIn);
+          const session = this._session;
+          void openWorkspaceMove(dragged, landedIn).then(({ moved }) => {
+            // A move declined, or refused when it came to be written, has moved
+            // nothing: the strip is already back to what the session says, and
+            // the arrangement goes with the question. A window that has moved
+            // on to another session keeps it too — the strip that was dropped
+            // in is not the one on the screen.
+            if (!moved || !arrangement || this._session !== session) return;
+            session.applyStripArrangement({ ...arrangement, moved: draggedId });
+          });
           return;
         }
 
-        // Read the strip as it stands at the drop, from the thing the tab
-        // actually landed in front of rather than from a count. The same count
-        // means two different places in a strip of nested lists, and which list
-        // this landed in is the whole question a moment ago.
-        const beforeId = this._beforeIdAt(anchor, tab);
-        if (beforeId && this._session.conversations.has(beforeId)) {
-          this._session.reorderConversation(draggedId, beforeId);
-        } else {
-          this._session.moveConversationToEnd(draggedId);
-        }
-
-        // Landing above a box is the one place the flat order cannot say on its
-        // own. Above a box and below it are two places to be and the same
-        // conversation to be in front of — the first tab under the box, there
-        // being nothing between them to name — and a box drawn at the same index
-        // as a tab is drawn first. So a drop that said only where it went in the
-        // order would be read as the slot below, whichever of the two the user
-        // chose, and the tab would appear to jump the box.
-        //
-        // The box is what settles it: it moves down to sit behind the tab just
-        // dropped. Its members and every other tab stay where they are, the box
-        // keeps both its neighbours bar the one it just swapped sides with, and
-        // "sits behind" now says what the strip shows.
-        const landedAbove = /** @type {HTMLElement|null} */ (anchor)?.classList
-          ?.contains('conversation-box')
-          ? /** @type {HTMLElement} */ (anchor).dataset.workspaceId
-          : '';
-        if (landedAbove) this._session.moveWorkspaceBox(landedAbove, draggedId);
+        // Everything else the drop has to say is on the screen already.
+        this._commitArrangement(draggedId);
       },
     });
   }
@@ -2125,12 +2175,14 @@ class ConversationBar extends JugglerElement {
    * another one: a workspace does not live in a workspace, so the only
    * containment question a tab drag has to answer does not arise here.
    *
-   * What is committed is the box's own place — the conversation it now sits
-   * behind — written to its workspace row and to nothing else. Its members stay
-   * exactly where they are in the conversation order, because where they are in
-   * that order has no bearing on where the box is drawn. A box with nothing in
-   * it commits the same field as any other: having no members to speak for it
-   * is no longer having nothing to say.
+   * What is committed is the strip as it stands — see {@link _commitArrangement}
+   * — which for a box drag is its new place, the place of any box it travelled
+   * past, and the conversation order it now reads in: a box's members travel
+   * with it, because the order is the strip top to bottom and they are drawn
+   * inside the thing that moved. None of that is visible in the strip beyond
+   * the box having moved, which is what was asked for. A box with nothing in it
+   * commits the same field as any other: having no members to speak for it is
+   * no longer having nothing to say.
    * @param {PointerEvent} e - The pointerdown that started it.
    * @param {HTMLElement} box - The box being dragged.
    * @private
@@ -2150,7 +2202,7 @@ class ConversationBar extends JugglerElement {
       axis: 'y',
       dropPlaceAt: (clientX, clientY) => {
         for (const slot of this._dropSlots(tabsMenu, box)) {
-          const rect = slot.getBoundingClientRect();
+          const rect = settledRect(slot);
           if (clientY < rect.top + rect.height / 2) return { parent: tabsMenu, anchor: slot };
         }
         return { parent: tabsMenu, anchor: null };
@@ -2164,27 +2216,9 @@ class ConversationBar extends JugglerElement {
           tab.removeAttribute('data-conversation-id');
         }
       },
-      onDragStart: () => { this._dragging = true; },
-      onDragEnd: ({ dragged }) => {
-        this._dragging = false;
-        if (this._renderDeferred) {
-          this._renderDeferred = false;
-          this.render();
-        }
-        if (!dragged) return;
-        // The release that ends a drag also produces a click, which would
-        // otherwise select whatever the box landed on.
-        this._dragJustOccurred = true;
-        setTimeout(() => { this._dragJustOccurred = false; }, 100);
-      },
-      onCommit: ({ anchor }) => {
-        const workspaceId = box.dataset.workspaceId || '';
-        if (!this._session || !workspaceId) return;
-        this._session.moveWorkspaceBox(
-          workspaceId,
-          this._placeForBox(this._beforeIdAt(anchor, box), workspaceId)
-        );
-      },
+      onDragStart: () => this._dragStarted(),
+      onDragEnd: ({ dragged }) => this._dragEnded(dragged),
+      onCommit: () => this._commitArrangement(),
     });
   }
 

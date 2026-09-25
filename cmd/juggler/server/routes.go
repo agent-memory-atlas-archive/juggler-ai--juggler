@@ -207,9 +207,13 @@ func (s *Server) setupSessionRoutes(sessionAPI *handlers.SessionAPI) {
 	// a bound conversation must be told it was closed, not that it is unknown.
 	// `reconcile` is a viewer asking whether checking the table against disk is
 	// its job — answered yes once per run, since the check is destructive.
+	// `reorder` writes the order the table is held in, which is the order two
+	// boxes drawn in the same place appear in — a part of the sidebar's
+	// arrangement that no single row can record.
 	api.HandleFunc("/session/workspaces", sessionAPI.HandleListWorkspaces).Methods("GET")
 	api.HandleFunc("/session/workspaces", sessionAPI.HandleRegisterWorkspace).Methods("POST")
 	api.HandleFunc("/session/workspaces/reconcile", sessionAPI.HandleClaimWorkspaceReconcile).Methods("POST")
+	api.HandleFunc("/session/workspaces/reorder", sessionAPI.HandleReorderWorkspaces).Methods("POST")
 	api.HandleFunc("/session/workspaces/{workspaceId}", sessionAPI.HandleUpdateWorkspace).Methods("PATCH")
 	api.HandleFunc("/session/workspaces/{workspaceId}", sessionAPI.HandleUnregisterWorkspace).Methods("DELETE")
 	api.HandleFunc("/session/workspaces/{workspaceId}/close", sessionAPI.HandleCloseWorkspace).Methods("POST")

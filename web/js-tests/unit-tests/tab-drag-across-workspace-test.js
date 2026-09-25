@@ -13,6 +13,11 @@
  * with the question about work left behind that a drag cannot ask, and the tab
  * goes straight back to the box it came from until an answer moves it.
  *
+ * The question is about the binding alone. Where in the strip the tab lands was
+ * settled by the gesture, and an answered move puts it exactly there — asserted
+ * on the drawn strip in tab-drag-workspace-order-test, which is where what a
+ * drop writes is compared with what it showed.
+ *
  * The box with nothing in it is a drop target like any other. It is the case
  * the whole layout exists for — a tree that outlived its conversations — and
  * "put this one in there" is the obvious thing to want to do with it.
@@ -80,16 +85,16 @@ function mountBar(workspaces, bindings) {
       return row && row.available && row.state === 'ready' ? row.root : null;
     },
     /**
-     * @param {string} id - Conversation moved.
-     * @param {string} beforeId - Conversation it was dropped in front of.
+     * A drop hands over the whole strip as it stands, so what is recorded is
+     * the arrangement: the conversation order, and where each box sits in it.
+     * @param {{order: string[], places: Map<string, string>, moved?: string}} arrangement - The strip as the drop found it.
      * @returns {boolean} Always accepted.
      */
-    reorderConversation(id, beforeId) { calls.push(['reorder', id, beforeId]); return true; },
-    /**
-     * @param {string} id - Conversation moved to the end.
-     * @returns {boolean} Always accepted.
-     */
-    moveConversationToEnd(id) { calls.push(['end', id]); return true; }
+    applyStripArrangement({ order, places }) {
+      calls.push(['arrangement', order.join(','),
+        [...places].map(([id, place]) => `${id}=${place}`).join(' ')]);
+      return true;
+    }
   };
   // The dialog reaches back through the conversation to ask the session what
   // else is on the table, so the back-reference a real conversation carries has
@@ -288,7 +293,7 @@ export async function runTests() {
     try {
       dragOnto(bar, tabFor(bar, 'c2'), tabFor(bar, 'c1'));
 
-      assert(JSON.stringify(calls) === JSON.stringify([['reorder', 'c2', 'c1']]),
+      assert(JSON.stringify(calls) === JSON.stringify([['arrangement', 'c2,c1', 'ws_a=head']]),
         `nothing about where it works has changed, so the drop commits itself: ${JSON.stringify(calls)}`);
       assert(!document.querySelector('.workspace-move-dialog'),
         'and nothing is asked');
@@ -348,7 +353,7 @@ export async function runTests() {
 
       assert(!document.querySelector('.workspace-move-dialog'),
         'the pointer was never inside the box, so nothing about where c1 works has been proposed');
-      assert(JSON.stringify(calls) === JSON.stringify([['end', 'c1']]),
+      assert(JSON.stringify(calls) === JSON.stringify([['arrangement', 'c2,c1', 'ws_a=head']]),
         `past the end of the strip is the end of the strip, not the inside of the last box: ${JSON.stringify(calls)}`);
       assert(boxOf(tabFor(bar, 'c1')) === '',
         'and the tab is still drawn flat');
@@ -368,7 +373,7 @@ export async function runTests() {
 
       assert(!document.querySelector('.workspace-move-dialog'),
         'above the first box is still outside it, however close the nearest tab inside it happens to be');
-      assert(JSON.stringify(calls) === JSON.stringify([['reorder', 'c1', 'c2']]),
+      assert(JSON.stringify(calls) === JSON.stringify([['arrangement', 'c1,c2', 'ws_a=c1']]),
         `landing in front of the box means landing in front of what the box holds: ${JSON.stringify(calls)}`);
       assert(boxOf(tabFor(bar, 'c1')) === '',
         'and the tab is still drawn flat');
@@ -435,7 +440,7 @@ export async function runTests() {
       const box = boxFor(bar, 'ws_a');
       dragToY(bar, tabFor(bar, 'c1'), box.getBoundingClientRect().bottom - 2);
 
-      assert(JSON.stringify(calls) === JSON.stringify([['reorder', 'c1', 'c3']]),
+      assert(JSON.stringify(calls) === JSON.stringify([['arrangement', 'c2,c1,c3', 'ws_a=head']]),
         `past the last tab in the box is the place the box ends, which is in front of whatever follows it: ${JSON.stringify(calls)}`);
       assert(!document.querySelector('.workspace-move-dialog'),
         'it never left the box, so nothing is asked');
