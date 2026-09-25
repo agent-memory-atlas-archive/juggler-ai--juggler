@@ -25,6 +25,7 @@ import { UNTITLED_BASE } from '../model/conversation-naming.js';
 import { BIN_LARGE_BYTES, MAX_CONVERSATION_NAME_LENGTH } from '../utils/constants.js';
 import { setupColumnResize, applyColumnWidthPx } from '../utils/column-resize.js';
 import { startReorderDrag } from '../utils/reorder-drag.js';
+import { DRAG_GRIP_HTML, pointerMayGrab } from '../utils/drag-grip.js';
 import { formatBytes } from '../utils/format.js';
 import { registerContextMenuProvider } from '../services/context-menu-service.js';
 import scheduledSendService, { SCHEDULED_SEND_ARMED_EVENT } from '../services/scheduled-send-service.js';
@@ -963,13 +964,22 @@ class ConversationBar extends JugglerElement {
       // in front of something, and until now an empty box had nothing to be in
       // front of.
       //
-      // The button is the box's rather than the header's. `<workspace-box-header>`
-      // shows the name and nothing else — a title, a status line and a row of
-      // controls in the width of a tab is what the workspace panel exists to
-      // undo — so the one affordance the box carries sits over its top corner
-      // instead, outside that element.
+      // The "+" and the grip are the box's rather than the header's.
+      // `<workspace-box-header>` shows the name and nothing else — a title, a
+      // status line and a row of controls in the width of a tab is what the
+      // workspace panel exists to undo — so the affordances the box carries sit
+      // outside that element: the button laid over its top corner, and the grip
+      // in a row alongside the header, where a tab keeps its own.
+      //
+      // The grip is the same one the tabs have, from the same place, and a box
+      // needs it for the same reason: a finger cannot start a reorder anywhere
+      // that has not taken the gesture off the browser, and the header spans the
+      // whole width, so it is not allowed to.
       box.innerHTML = `
-        <workspace-box-header class="conversation-box-header"></workspace-box-header>
+        <div class="conversation-box-top">
+          ${DRAG_GRIP_HTML}
+          <workspace-box-header class="conversation-box-header"></workspace-box-header>
+        </div>
         <button class="conversation-box-add" type="button"
                 title="New conversation in this workspace"
                 aria-label="New conversation in this workspace">+</button>
@@ -990,17 +1000,18 @@ class ConversationBar extends JugglerElement {
       /**
        * Whether a press here is a press on the box itself.
        *
-       * The name is always a grip. So is the whole of an empty box: there is
-       * nothing else in it to aim at, and a band of dead space around a short
-       * line of text is a box that looks draggable and is not. A box with tabs
-       * in it keeps them for themselves — a press on a tab selects that
-       * conversation, and dragging one moves it between boxes.
+       * The top row — the name, and the grip beside it — is always the box. So
+       * is the whole of an empty box: there is nothing else in it to aim at, and
+       * a band of dead space around a short line of text is a box that looks
+       * draggable and is not. A box with tabs in it keeps them for themselves —
+       * a press on a tab selects that conversation, and dragging one moves it
+       * between boxes.
        * @param {HTMLElement|null} target - What the pointer went down on.
        * @returns {boolean} True when the box should take it.
        */
       const onTheBox = (target) => {
         if (!target || target.closest('button')) return false;
-        if (target.closest('.conversation-box-header')) return true;
+        if (target.closest('.conversation-box-top')) return true;
         return !dragged.querySelector('.conversation-tab');
       };
 
@@ -1013,10 +1024,15 @@ class ConversationBar extends JugglerElement {
         this._session?.selectWorkspace?.(workspaceId);
       });
 
+      // Same rule as a tab's, from the same place: a mouse drags the box from
+      // anywhere on it, a finger only from the grip. Without that gate a touch
+      // anywhere on a full-width header would be taken for a drag and the
+      // sidebar would lose its scroll.
       dragged.addEventListener('pointerdown', (e) => {
         const event = /** @type {PointerEvent} */ (e);
         if (event.button !== 0 || event.ctrlKey) return;
         if (!onTheBox(/** @type {HTMLElement|null} */ (event.target))) return;
+        if (!pointerMayGrab(event)) return;
         this._startBoxDrag(event, dragged);
       });
     }
@@ -1232,7 +1248,7 @@ class ConversationBar extends JugglerElement {
       tab.dataset.conversationId = conv.id;
 
       tab.innerHTML = `
-        <span class="tab-drag-handle" aria-hidden="true">⠿</span>
+        ${DRAG_GRIP_HTML}
         <button class="conversation-tab-button">
           <span class="conversation-tab-name"></span>
         </button>
@@ -1439,8 +1455,9 @@ class ConversationBar extends JugglerElement {
     // rapid taps across different elements): first click switches to the tab, a
     // second click on the now-active tab renames it.
 
-    // Drag to reorder — touch/pen must start on the drag handle;
-    // mouse can drag from anywhere on the tab.
+    // Drag to reorder. Which pointers may grab where is the shared rule
+    // (utils/drag-grip.js): a mouse anywhere on the tab, a finger or pen only
+    // from the grip.
     tab.addEventListener('pointerdown', (e) => {
       const event = /** @type {PointerEvent} */ (e);
       if (event.button !== 0) return;
@@ -1450,7 +1467,7 @@ class ConversationBar extends JugglerElement {
       const target = /** @type {HTMLElement|null} */ (event.target);
       if (target?.closest('.conversation-tab-bin')) return;
       if (target?.closest('.conversation-tab-rename')) return;
-      if (event.pointerType !== 'mouse' && !target?.closest('.tab-drag-handle')) return;
+      if (!pointerMayGrab(event)) return;
       this._startDrag(event, tab);
     });
   }

@@ -1,0 +1,48 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+/* The grip a reorderable row is dragged by. A pattern rather than a component's
+   own, because three unrelated strips draw one: the conversation sidebar's tabs,
+   its workspace boxes, and the pinboard's tab strip. They had three copies of
+   these rules, differing only in the width of the target — and the workspace
+   box, having no copy, could not be dragged by a finger at all.
+
+   The element and the gate that goes with it are js/utils/drag-grip.js. What
+   stays with each component is geometry alone: how wide its grip is, and how big
+   the glyph. Everything below is the part that is the same everywhere. */
+.drag-grip {
+    /* The whole of what makes a touch reorder possible. Without it the browser
+       keeps the gesture for a scroll or a pan and cancels the drag as soon as the
+       finger moves — so a grip that fails to declare this is decoration. */
+    touch-action: none;
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    cursor: grab;
+}
+
+/* Where there is a hover, the grip waits out of sight until the row is pointed
+   at: a column of dots down a list of tabs is noise, and a mouse can find it by
+   arriving. It keeps its place in the layout so that revealing it moves nothing.
+
+   The reveal is the grip's own parent hovering, whatever that parent is — which
+   is what lets this rule be shared. Each strip's grip is a direct child of the
+   row it belongs to. */
+@media (hover: hover) {
+    .drag-grip {
+        opacity: 0;
+    }
+
+    *:hover > .drag-grip {
+        opacity: 1;
+    }
+}
+
+/* A coarse pointer has no hover to reveal it with, so the grip is simply always
+   visible: the rule above never matches, and the default opacity stands. Widths
+   are the component's, because a touch target is sized against the row it is in.
+   Nothing is needed here — the absence of a rule is the behaviour. */

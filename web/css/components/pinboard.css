@@ -270,7 +270,7 @@ pinboard-tabbar[hidden] {
 }
 
 /* The grip is hover-revealed too, and this one is the thing being held. */
-.pinboard-tab.drag-ghost .pinboard-tab__grip {
+.pinboard-tab.drag-ghost .drag-grip {
     opacity: 1;
 }
 
@@ -297,36 +297,18 @@ pinboard-tabbar[hidden] {
     outline: none;
 }
 
-/* The grip a finger drags a tab by. It carries `touch-action: none`, which is
-   the whole of what makes a touch reorder possible: without it the browser keeps
-   the gesture and cancels the drag as soon as the finger moves. Kept in the
-   layout at zero opacity where there is a hover to reveal it, so a touchscreen
-   that also has a mouse still has something to grab. */
-.pinboard-tab__grip {
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+/* The grip a finger drags a tab by — the shared one, whose `touch-action: none`
+   and hover-reveal are patterns/drag-grip.css. What is the strip's own is the
+   size of the target and the gap before it. */
+.pinboard-tab > .drag-grip {
     width: 1rem;
     margin-left: 0.25rem;
     font-size: 0.75rem;
-    touch-action: none;
-    cursor: grab;
-}
-
-@media (hover: hover) {
-    .pinboard-tab__grip {
-        opacity: 0;
-    }
-
-    .pinboard-tab:hover .pinboard-tab__grip {
-        opacity: 1;
-    }
 }
 
 /* A finger has no hover to find it with, and needs a target it can hit. */
 @media (pointer: coarse) {
-    .pinboard-tab__grip {
+    .pinboard-tab > .drag-grip {
         width: 1.75rem;
         font-size: 1.125rem;
     }

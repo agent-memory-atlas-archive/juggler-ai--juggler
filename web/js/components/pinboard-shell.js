@@ -181,7 +181,7 @@ class PinboardShell extends JugglerElement {
       direction: 'right',
       thresholdPx: 60,
       isActive: () => pinboardView.isOpen(),
-      exclude: '.pinboard-resize-handle, .pinboard-tab__grip',
+      exclude: '.pinboard-resize-handle, .drag-grip',
       yieldToScroll: true,
       onDismiss: () => pinboardView.close(),
     }));

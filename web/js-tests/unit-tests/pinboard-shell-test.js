@@ -601,7 +601,7 @@ export async function runTests(_ctx) {
       const { shell, teardown } = await mountShell([{ id: 'pin_s', type: 'probe', config: { label: 'A' } }]);
       try {
         const panel = /** @type {HTMLElement} */ (shell.querySelector('.pinboard-panel'));
-        const grip = /** @type {HTMLElement} */ (shell.querySelector('.pinboard-tab__grip'));
+        const grip = /** @type {HTMLElement} */ (shell.querySelector('.drag-grip'));
         assert(!!grip, 'the fixture needs a tab, to have a reorder grip to concede to');
 
         pinboardView.open();
@@ -810,7 +810,7 @@ export async function runTests(_ctx) {
         pinboardView.open();
         assert(bodyText(shell) === 'probe:alpha', 'the board starts on the first pin');
         const second = shell.querySelectorAll('.pinboard-tab')[1];
-        second.querySelector('.pinboard-tab__grip').click();
+        second.querySelector('.drag-grip').click();
         assert(bodyText(shell) === 'probe:beta',
           `a click on the grip must select its tab, still showing "${bodyText(shell)}"`);
       } finally {
@@ -855,7 +855,7 @@ export async function runTests(_ctx) {
         const first = shell.querySelector('.pinboard-tab');
         assert(!swipe(first.querySelector('.pinboard-tab__button')),
           'a finger on the tab is a tap or a scroll; taking it for a reorder would move the board on every drifting tap');
-        assert(swipe(first.querySelector('.pinboard-tab__grip')),
+        assert(swipe(first.querySelector('.drag-grip')),
           'and on the grip it is a reorder — the one element that claims the gesture, and so the only one the browser does not cancel');
       } finally {
         teardown();

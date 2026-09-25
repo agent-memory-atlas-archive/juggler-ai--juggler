@@ -7,6 +7,7 @@ of changes; this project follows semantic versioning.
 
 - A conversation needing attention in a selected workspace now flashes yellow, not the box's blue
 - Dragging a mid-turn conversation to another workspace now refuses at the drop, instead of after asking
+- A workspace box now carries the same drag grip its tabs do, so a finger can reorder one
 
 ## [0.7.0] - 2026-09-24
 

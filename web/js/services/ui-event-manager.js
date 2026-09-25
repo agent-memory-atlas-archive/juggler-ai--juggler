@@ -509,9 +509,11 @@ class UIEventManager {
    * A vertical drag is the tab list scrolling and must stay the browser's, which
    * the axis claim leaves alone — and is also why the drawer declares
    * `touch-action: pan-y` rather than `none`. Drags starting on the resize grip,
-   * a tab's drag handle or the rename editor belong to those. Nothing inside the
-   * bar scrolls horizontally, and `pan-y` forbids a horizontal pan in any case,
-   * so there is no scroller here to hand the gesture to.
+   * a reorder grip or the rename editor belong to those. One class covers every
+   * grip in the bar — a tab's and a workspace box's alike — because they are the
+   * same element from the same place (utils/drag-grip.js). Nothing inside the bar
+   * scrolls horizontally, and `pan-y` forbids a horizontal pan in any case, so
+   * there is no scroller here to hand the gesture to.
    *
    * Drawer mode only: on a wide viewport the bar is a static column
    * (`position: relative`), with nothing to slide out of the way.
@@ -525,7 +527,7 @@ class UIEventManager {
       direction: 'left',
       thresholdPx: 60,
       isActive: () => isOpen() && window.getComputedStyle(sidebar).position === 'absolute',
-      exclude: 'col-resize-handle, .tab-drag-handle, .conversation-tab-rename',
+      exclude: 'col-resize-handle, .drag-grip, .conversation-tab-rename',
       onDismiss: close,
     });
   }

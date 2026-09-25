@@ -30,7 +30,7 @@ import '../../js/components/conversation-bar.js';
 function tabMarkup(id) {
   return `
     <li class="conversation-tab" data-conversation-id="${id}">
-      <span class="tab-drag-handle" aria-hidden="true">⠿</span>
+      <span class="drag-grip" aria-hidden="true">⠿</span>
       <button class="conversation-tab-button"><span class="conversation-tab-name">${id}</span></button>
     </li>`;
 }

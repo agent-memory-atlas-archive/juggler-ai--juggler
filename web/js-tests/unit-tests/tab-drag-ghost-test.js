@@ -53,15 +53,15 @@ function mountBar({ transformed }) {
     <nav class="conversation-bar">
       <menu class="conversation-tabs">
         <li class="conversation-tab" data-conversation-id="a">
-          <span class="tab-drag-handle" aria-hidden="true">⠿</span>
+          <span class="drag-grip" aria-hidden="true">⠿</span>
           <button class="conversation-tab-button"><span class="conversation-tab-name">A</span></button>
         </li>
         <li class="conversation-tab" data-conversation-id="b">
-          <span class="tab-drag-handle" aria-hidden="true">⠿</span>
+          <span class="drag-grip" aria-hidden="true">⠿</span>
           <button class="conversation-tab-button"><span class="conversation-tab-name">B</span></button>
         </li>
         <li class="conversation-tab" data-conversation-id="c">
-          <span class="tab-drag-handle" aria-hidden="true">⠿</span>
+          <span class="drag-grip" aria-hidden="true">⠿</span>
           <button class="conversation-tab-button"><span class="conversation-tab-name">C</span></button>
         </li>
       </menu>

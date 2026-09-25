@@ -77,18 +77,35 @@ conversation-bar .conversation-box {
     border-radius: 0.9rem;
 }
 
+/* The box's top row: the grip it is dragged by, then the name. A row of its own
+   rather than the header element, because <workspace-box-header> holds the name
+   and nothing else — so the grip sits alongside it, the way the "+" sits over the
+   corner.
+
+   The inset is one tab's worth, which puts the box's grip on the same line as the
+   grips of the tabs below it: the left edge of the box reads as one column. */
+conversation-bar .conversation-box-top {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    padding-left: 0.4rem;
+    cursor: pointer;
+}
+
 /* The header is the workspace's own row: what the place is called and how it is
    doing. Everything in it is true of the tree rather than of any one
    conversation in it.
 
    The right-hand padding is the room the box's own "+" sits in, so a long name
-   ellipsises before it reaches the button rather than running underneath it. */
+   ellipsises before it reaches the button rather than running underneath it. It
+   takes no leading padding: the grip beside it provides that inset. */
 conversation-bar .conversation-box-header {
     display: flex;
+    flex: 1 1 auto;
     flex-direction: column;
     gap: 0.1rem;
     min-width: 0;
-    padding: 0.2rem 1.6rem 0.2rem 0.35rem;
+    padding: 0.2rem 1.6rem 0.2rem 0;
     cursor: pointer;
 }
 
@@ -484,9 +501,11 @@ conversation-bar .drag-ghost {
     will-change: transform;
 }
 
-/* Keep the grab handle lit on the ghost — it isn't hovered, so the hover-reveal
-   rule below wouldn't otherwise show it while dragging. */
-conversation-bar .conversation-tab.drag-ghost .tab-drag-handle {
+/* Keep the grip lit on the ghost — a clone is never hovered, so the pattern's
+   hover-reveal would otherwise hide it for the whole of the drag. Written against
+   the ghost class rather than against the tab, because a box is dragged by the
+   same gesture and carries the same grip. */
+conversation-bar .drag-ghost .drag-grip {
     opacity: 1;
 }
 
@@ -494,35 +513,26 @@ conversation-bar .drag-source {
     visibility: hidden;
 }
 
-conversation-bar .tab-drag-handle {
-    touch-action: none;
-    cursor: grab;
-    flex-shrink: 0;
+/* A grip's shape, and which pointers may use it, are patterns/drag-grip.css.
+   What belongs to the bar is the width of the column it occupies — the same for
+   a tab and for a box's top row, so the two line up down the left edge — and
+   that width is a variable because the "new workspace" row starts its text on
+   the same line. */
+conversation-bar .conversation-tab > .drag-grip,
+conversation-bar .conversation-box-top > .drag-grip {
     width: var(--tab-handle-width);
-    display: flex;
-    align-items: center;
-    justify-content: center;
     font-size: 0.75rem;
 }
 
-@media (hover: hover) {
-    conversation-bar .tab-drag-handle {
-        opacity: 0;
-    }
-
-    conversation-bar .conversation-tab:hover .tab-drag-handle {
-        opacity: 1;
-    }
-}
-
-/* Coarse pointers (touch) have no hover to reveal the handle and need a
-   larger target to grab reliably. */
+/* Coarse pointers (touch) have no hover to reveal a grip and need a larger
+   target to grab reliably. */
 @media (pointer: coarse) {
     conversation-bar {
         --tab-handle-width: 2.75rem;
     }
 
-    conversation-bar .tab-drag-handle {
+    conversation-bar .conversation-tab > .drag-grip,
+    conversation-bar .conversation-box-top > .drag-grip {
         font-size: 1.25rem;
     }
 }

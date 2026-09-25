@@ -162,6 +162,13 @@
 			]
 		},
 		{
+			"file": "patterns/drag-grip.css",
+			"layer": "patterns",
+			"owns": [
+				"drag-grip"
+			]
+		},
+		{
 			"file": "components/messages-1.css",
 			"layer": "components",
 			"owns": [
@@ -487,7 +494,6 @@
 				"pinboard-tab",
 				"pinboard-tab__badge",
 				"pinboard-tab__button",
-				"pinboard-tab__grip",
 				"pinboard-tab__label",
 				"pinboard-tab__remove",
 				"pinboard-tabbar",

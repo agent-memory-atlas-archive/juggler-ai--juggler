@@ -25,6 +25,7 @@
 
 import JugglerElement from './juggler-element.js';
 import { startReorderDrag } from '../utils/reorder-drag.js';
+import { createDragGrip, pointerMayGrab } from '../utils/drag-grip.js';
 
 /** The id the active tab labels — the one body the panel mounts into. */
 export const PINBOARD_BODY_ID = 'pinboard-body';
@@ -158,14 +159,12 @@ class PinboardTabbar extends JugglerElement {
     // stops its own click below.
     wrapper.addEventListener('click', () => this._emit('pinboard-select', { pinId }));
 
-    // The grip a finger drags by, on the conversation sidebar's pattern. A touch
-    // has no hover to reveal an affordance and no way to say "this is a drag and
-    // not a scroll" — which is what `touch-action: none` on this element does,
-    // and why a touch may only start a reorder from here.
-    const grip = document.createElement('span');
-    grip.className = 'pinboard-tab__grip';
-    grip.setAttribute('aria-hidden', 'true');
-    grip.textContent = '⠿';
+    // The grip a finger drags by — the shared one (utils/drag-grip.js), which
+    // the conversation sidebar's tabs and workspace boxes also carry. A touch has
+    // no hover to reveal an affordance and no way to say "this is a drag and not
+    // a scroll"; the grip's `touch-action: none` is what says it, and is why a
+    // touch may only start a reorder from here.
+    const grip = createDragGrip();
 
     const button = document.createElement('button');
     button.type = 'button';
@@ -305,7 +304,7 @@ class PinboardTabbar extends JugglerElement {
     // The bin removes the pin; grabbing the tab out from under that press would
     // take the click with it.
     if (target?.closest?.('.pinboard-tab__remove')) return;
-    if (start.pointerType !== 'mouse' && !target?.closest?.('.pinboard-tab__grip')) return;
+    if (!pointerMayGrab(start)) return;
     const pinId = /** @type {string} */ (wrapper.dataset.pinId);
     if (this._tabs.findIndex((t) => t.id === pinId) < 0 || this._tabs.length < 2) return;
     const list = this._list;

@@ -301,10 +301,15 @@ export async function runTests() {
         `an empty box says so rather than collapsing to a line, got ${JSON.stringify(empty?.textContent)} hidden=${empty?.hidden}`);
     });
 
-    await check('an empty box is a grip all over', () => {
+    await check('an empty box is a grip all over, to a mouse', () => {
       // There is nothing inside it to aim at, so the whole card answers the
-      // pointer the way its name does. A band of dead space around one short
+      // mouse the way its name does. A band of dead space around one short
       // line of text is a box that looks draggable and is not.
+      //
+      // To a mouse. A finger is held to the grip here as everywhere, because an
+      // empty box is a full-width card in a list that scrolls vertically, and a
+      // card that took a touch anywhere on itself would be a card you cannot
+      // scroll past.
       const box = /** @type {HTMLElement} */ (
         bar.querySelector('.conversation-box[data-workspace-id="ws_a"]'));
       const empty = /** @type {HTMLElement} */ (box.querySelector('.conversation-box-empty'));
@@ -317,19 +322,36 @@ export async function runTests() {
       const dragged = [];
       const dragWas = bar._startBoxDrag;
       bar._startBoxDrag = (/** @type {any} */ _event, /** @type {any} */ target) => { dragged.push(target); };
+      // A tab's own drag is stubbed out too. What is being checked here is which
+      // presses reach the box, and a real tab drag started by one of them would
+      // hold the strip open — a drag claims it from the press and only lets go on
+      // release, so the renders after this check would all be deferred.
+      const tabDragWas = bar._startDrag;
+      bar._startDrag = () => {};
       try {
         empty.dispatchEvent(new MouseEvent('click', { bubbles: true }));
         assert(selected.join(',') === 'ws_a',
           `clicking the line inside an empty box selects its workspace, got ${JSON.stringify(selected)}`);
 
-        empty.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }));
+        empty.dispatchEvent(new PointerEvent('pointerdown', {
+          bubbles: true, button: 0, pointerType: 'mouse'
+        }));
         assert(dragged.length === 1 && dragged[0] === box,
           `and pressing there takes hold of the box itself, got ${dragged.length} drag(s)`);
+
+        empty.dispatchEvent(new PointerEvent('pointerdown', {
+          bubbles: true, button: 0, pointerType: 'touch'
+        }));
+        assert(dragged.length === 1,
+          'but a finger there is scrolling the strip, not lifting the box out of it — the grip is '
+          + `the one place a touch may start a drag, got ${dragged.length} drag(s)`);
 
         // The "+" is a button, and a press on a button is a press on that
         // button — it must neither select the box nor start dragging it.
         const add = /** @type {HTMLElement} */ (box.querySelector('.conversation-box-add'));
-        add.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }));
+        add.dispatchEvent(new PointerEvent('pointerdown', {
+          bubbles: true, button: 0, pointerType: 'mouse'
+        }));
         assert(dragged.length === 1,
           `pressing the "+" does not drag the box, got ${dragged.length} drag(s)`);
 
@@ -340,7 +362,9 @@ export async function runTests() {
         bar.render();
         const tab = /** @type {HTMLElement} */ (
           box.querySelector('.conversation-tab[data-conversation-id="c9"]'));
-        tab.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }));
+        tab.dispatchEvent(new PointerEvent('pointerdown', {
+          bubbles: true, button: 0, pointerType: 'mouse'
+        }));
         assert(dragged.length === 1,
           `a press on a tab does not take hold of the box around it, got ${dragged.length} drag(s)`);
         tab.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -349,7 +373,9 @@ export async function runTests() {
 
         // The name is still a grip, whatever is in the box.
         const header = /** @type {HTMLElement} */ (box.querySelector('.conversation-box-header'));
-        header.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }));
+        header.dispatchEvent(new PointerEvent('pointerdown', {
+          bubbles: true, button: 0, pointerType: 'mouse'
+        }));
         assert(dragged.length === 2 && dragged[1] === box,
           `and the header still takes hold of it, got ${dragged.length} drag(s)`);
 
@@ -358,6 +384,7 @@ export async function runTests() {
       } finally {
         bar._session.selectWorkspace = selectWas;
         bar._startBoxDrag = dragWas;
+        bar._startDrag = tabDragWas;
       }
     });
 

@@ -167,6 +167,34 @@ function holdBoxAtY(bar, box, clientY) {
 }
 
 /**
+ * Press something the way a finger or a mouse would, and report whether the box
+ * took it for a grab.
+ *
+ * Through the real `pointerdown` listener, deliberately: the drags above call
+ * `_startBoxDrag` directly, so they say nothing about what is allowed to start
+ * one. That gate is the whole of what a touch runs into.
+ * @param {any} bar - The mounted bar.
+ * @param {HTMLElement} target - What the pointer goes down on.
+ * @param {string} pointerType - 'touch', 'pen' or 'mouse'.
+ * @returns {boolean} Whether a box drag was started.
+ */
+function pressStartsDrag(bar, target, pointerType) {
+  const started = [];
+  const real = bar._startBoxDrag;
+  bar._startBoxDrag = (/** @type {any} */ e, /** @type {any} */ box) => started.push(box);
+  try {
+    const rect = target.getBoundingClientRect();
+    target.dispatchEvent(new PointerEvent('pointerdown', {
+      pointerId: 1, button: 0, buttons: 1, pointerType, bubbles: true, composed: true,
+      clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2
+    }));
+  } finally {
+    bar._startBoxDrag = real;
+  }
+  return started.length > 0;
+}
+
+/**
  * Run the workspace box drag tests.
  * @returns {Promise<{passed: number, failed: number, errors: string[]}>} Aggregated test results.
  */
@@ -286,6 +314,48 @@ export async function runTests() {
         `a box's place is its own, so one with nothing in it is moved and kept like any other: ${JSON.stringify(calls)}`);
       assert(order() === 'c1',
         `and the conversation it was dragged past stays where it is, got ${order()}`);
+    } finally {
+      teardown();
+    }
+  });
+
+  check('a box carries the same grip a tab does', () => {
+    const { bar, teardown } = mountBar(
+      [workspace('ws_a')],
+      [['c1', 'ws_a']]
+    );
+    try {
+      const box = boxFor(bar, 'ws_a');
+      const grip = /** @type {HTMLElement|null} */ (box.querySelector('.drag-grip'));
+      assert(!!grip, 'a box is draggable, so it says so with a grip — the affordance a tab has');
+      assert(!!tabFor(bar, 'c1').querySelector('.drag-grip'),
+        'and it is the same grip, from the same place, not a second one that looks like it');
+      assert(getComputedStyle(/** @type {HTMLElement} */ (grip)).touchAction === 'none',
+        'which claims the gesture from the browser: without this the drawer keeps a finger for '
+        + `scrolling and the drag is cancelled as soon as it moves, got ${getComputedStyle(/** @type {HTMLElement} */ (grip)).touchAction}`);
+    } finally {
+      teardown();
+    }
+  });
+
+  check('a finger may drag a box by its grip, and may scroll from anywhere else', () => {
+    const { bar, teardown } = mountBar(
+      [workspace('ws_a')],
+      [['c1', 'ws_a']]
+    );
+    try {
+      const box = boxFor(bar, 'ws_a');
+      const grip = /** @type {HTMLElement} */ (box.querySelector('.drag-grip'));
+      const header = /** @type {HTMLElement} */ (box.querySelector('.conversation-box-header'));
+
+      assert(pressStartsDrag(bar, grip, 'touch'),
+        'a finger on the grip is reordering the strip');
+      assert(!pressStartsDrag(bar, header, 'touch'),
+        'a finger anywhere else on the box is scrolling the list it is in — a box header spans '
+        + 'the whole width, so taking a touch there would cost the sidebar its scroll');
+      assert(pressStartsDrag(bar, header, 'mouse'),
+        'a mouse still drags a box from anywhere on it: it has a hover to find the grip with, '
+        + 'and nothing else is competing for the press');
     } finally {
       teardown();
     }
