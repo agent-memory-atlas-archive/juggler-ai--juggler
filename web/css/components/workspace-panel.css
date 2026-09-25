@@ -89,42 +89,6 @@ workspace-panel[hidden] {
     line-height: var(--leading-normal);
 }
 
-/* Who is working here. Rows rather than a sentence, because each is a way back
-   to the conversation it names. */
-.workspace-panel-conversations {
-    display: flex;
-    flex-direction: column;
-    gap: 0.2rem;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-}
-
-.workspace-panel-conversation {
-    width: 100%;
-    padding: 0.3rem 0.4rem;
-    background: none;
-    border: 0;
-    border-radius: 0.4rem;
-    color: var(--text-primary);
-    font: inherit;
-    font-size: 0.875rem;
-    text-align: left;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    cursor: pointer;
-}
-
-.workspace-panel-conversation:hover {
-    background: var(--bg-raised);
-}
-
-.workspace-panel-conversation:focus-visible {
-    outline: 0.125rem solid var(--accent-blue);
-    outline-offset: 0.125rem;
-}
-
 .workspace-panel-section {
     display: flex;
     flex-direction: column;
@@ -229,7 +193,13 @@ workspace-panel[hidden] {
     outline-offset: 0.125rem;
 }
 
+/* A row that does something the app has an icon for carries it here, on the
+   first line, ahead of the name — the trashcan on the ones that end the place,
+   the plus on the one that starts a conversation in it. */
 .workspace-panel-action-name {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
     font-size: 0.9375rem;
     font-weight: 500;
 }
@@ -245,12 +215,4 @@ workspace-panel[hidden] {
 
 .workspace-panel-action.danger .workspace-panel-action-name {
     color: var(--accent-red);
-}
-
-/* The endings are ruled off from the rest. Everything above this line leaves
-   the workspace in use and everything below it does not, and that is worth
-   seeing before any label is read. */
-.workspace-panel-endings {
-    padding-top: 1.25rem;
-    border-top: 0.0625rem solid var(--border-color);
 }

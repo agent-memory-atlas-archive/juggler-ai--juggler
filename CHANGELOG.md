@@ -8,6 +8,7 @@ of changes; this project follows semantic versioning.
 - Fixes for conversation dragging order when workspaces are there, and for conversation flashing colours
 - A workspace box now carries the same drag grip its tabs do, so a finger can reorder one
 - Dragging a mid-turn conversation to another workspace now refuses at the drop, instead of after asking
+- Lots of workspace panel UX improvements and snagging
 
 ## [0.7.0] - 2026-09-24
 

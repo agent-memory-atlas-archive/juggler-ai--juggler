@@ -9,8 +9,9 @@
  * crammed into a box header three tabs wide and a menu you had to hold a
  * pointer inside. So the assertions here are mostly about room and separation:
  * the path is a path with the things one does to a path beside it, the endings
- * are ruled off from the actions that leave the workspace in use, and a row
- * that asks something before it does anything says so in its label.
+ * are kept apart from the actions that leave the workspace in use and wear the
+ * trashcan that says so, and a row that asks something before it does anything
+ * says so in its label.
  *
  * The last case is the one that costs nothing and would hurt: a workspace
  * finished with while its own panel is open leaves a selection naming nothing,
@@ -258,43 +259,21 @@ export async function runTests() {
     }
   });
 
-  check('the conversations working here are named, and each is a way back to itself', () => {
+  check('the panel does not list the conversations the tab strip is drawing', () => {
     const session = makeSession([workspace('ws_a')]);
     session.conversations = new Map([
       ['c_here', { id: 'c_here', name: 'in the tree', workspaceId: 'ws_a' }],
       ['c_elsewhere', { id: 'c_elsewhere', name: 'in the project', workspaceId: '' }]
     ]);
-    let switched = '';
-    session.switchConversation = (/** @type {string} */ id) => { switched = id; };
 
     const { panel, teardown } = mountPanel(session);
     try {
       session.selection = { kind: 'workspace', id: 'ws_a' };
       panel._refresh();
 
-      const named = /** @type {HTMLElement[]} */ (Array.from(panel.querySelectorAll('.workspace-panel-conversation')))
-        .map((row) => row.textContent).join(',');
-      assert(named === 'in the tree',
-        `the panel has replaced the box's own tabs on screen, so it is the one thing that can say who is working in the tree — and only who is, got "${named}"`);
-
-      /** @type {HTMLElement} */ (panel.querySelector('.workspace-panel-conversation')).click();
-      assert(switched === 'c_here',
-        `naming one and not going to it would be a list of places you cannot get to, got ${JSON.stringify(switched)}`);
-    } finally {
-      teardown();
-    }
-  });
-
-  check('a workspace nobody is working in says so', () => {
-    const session = makeSession([workspace('ws_a')]);
-    const { panel, teardown } = mountPanel(session);
-    try {
-      session.selection = { kind: 'workspace', id: 'ws_a' };
-      panel._refresh();
-
-      const said = panel.querySelector('.workspace-panel-who .workspace-panel-note')?.textContent;
-      assert(said === 'No conversations yet.',
-        `an empty tree is a place waiting to be used, not a panel with a section missing, got ${JSON.stringify(said)}`);
+      assert(!panel.textContent?.includes('in the tree'),
+        'the strip is drawing this workspace\'s conversations in the box the panel was opened from, and a '
+        + `second copy of the list is one to check against the other, got ${JSON.stringify(panel.textContent)}`);
     } finally {
       teardown();
     }
@@ -349,7 +328,7 @@ export async function runTests() {
     }
   });
 
-  check('the endings are ruled off from the things that keep the workspace', () => {
+  check('the endings are kept apart from the things that keep the workspace', () => {
     const session = makeSession([workspace('ws_a')]);
     const { panel, teardown } = mountPanel(session);
     try {
@@ -358,21 +337,43 @@ export async function runTests() {
 
       const working = actionsIn(panel, '.workspace-panel-doing');
       assert(working === 'note',
-        `an action that leaves the workspace in use sits above the rule, got "${working}"`);
+        `an action that leaves the workspace in use is in its own section, got "${working}"`);
 
       const endings = actionsIn(panel, '.workspace-panel-endings');
       assert(endings === 'done,leave',
-        `and every way of not working here any more sits below it, got "${endings}"`);
+        `and every way of not working here any more is in the last one, got "${endings}"`);
 
-      assert(!!panel.querySelector('.workspace-panel-who .workspace-panel-create'),
-        'starting a conversation is the first thing you do in a place you are keeping, and it belongs with '
-        + 'the conversations already here');
+      assert(!!panel.querySelector('.workspace-panel-starting .workspace-panel-create'),
+        'starting a conversation is the first thing you do in a place you are keeping, so it sits with what '
+        + 'this workspace is rather than among the ways of leaving it');
     } finally {
       teardown();
     }
   });
 
-  check('only the two sections a label tells you anything about have one', () => {
+  check('what a row does to the place is on it, as the icon the app uses for it', () => {
+    // A column of rows that all look alike is read by their labels alone, and
+    // the two that take the place away are the two nobody may press by mistake.
+    const session = makeSession([workspace('ws_a')]);
+    const { panel, teardown } = mountPanel(session);
+    try {
+      session.selection = { kind: 'workspace', id: 'ws_a' };
+      panel._refresh();
+
+      for (const id of ['done', 'leave']) {
+        assert(!!panel.querySelector(`[data-action="${id}"] .icon-trashcan`),
+          `an ending wears the trashcan this app puts on everything that takes something away, and "${id}" has none`);
+      }
+      assert(!panel.querySelector('[data-action="note"] .icon-trashcan'),
+        'while an action that leaves the workspace in use must not — nothing is being removed');
+      assert(!!panel.querySelector('.workspace-panel-create .icon-plus'),
+        'and the row that makes a new one of something wears the plus, as every other such row does');
+    } finally {
+      teardown();
+    }
+  });
+
+  check('only the section a label tells you anything about has one', () => {
     const session = makeSession([workspace('ws_a')]);
     const { panel, teardown } = mountPanel(session);
     try {
@@ -384,8 +385,8 @@ export async function runTests() {
       // A path with copy and reveal beside it is a path, and a button that says
       // what it does and what will happen needs nothing over the top of it. What
       // does need naming is a run of the provider's own words — a branch, a
-      // count, a divergence — and a column of conversation names.
-      assert(labelled === 'Status,Conversations',
+      // count, a divergence.
+      assert(labelled === 'Status',
         `a heading that only names what is plainly below it is a line to read and nothing to know, got ${JSON.stringify(labelled)}`);
       assert(!panel.querySelector('.workspace-panel-where .workspace-panel-heading')
         && !panel.querySelector('.workspace-panel-endings .workspace-panel-heading'),

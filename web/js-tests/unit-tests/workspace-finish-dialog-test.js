@@ -200,16 +200,44 @@ export async function runTests() {
     assert(root.textContent?.includes('Nothing has changed'),
       'the dialog should say why it will not commit');
 
+    const alternative = /** @type {HTMLButtonElement} */ (
+      root.querySelector('.workspace-finish-alternative'));
+    assert(alternative.disabled,
+      'and mean it: with nothing to commit there is nothing to hand to the conversation either, and a '
+      + 'refusal in red above a button that ignores it is not a refusal');
+
     press(root, '.workspace-finish-cancel');
     assert(await answer === null, 'cancelling a clean tree should answer with nothing');
   });
 
-  await check('what is about to be committed is on screen', async () => {
+  await check('it says what the ending does, and does not repeat the panel it came from', async () => {
     const { answer, root } = await open();
-    assert(root.textContent?.includes('branch onboarding · 3 changed'),
-      "the tree's own status belongs in the dialog — it names which of several checkouts this is");
     assert(root.textContent?.includes(COMMIT_OPTION.description),
       'the ending should still say what it does');
+    assert(!root.textContent?.includes('branch onboarding · 3 changed'),
+      "the tree's repository, branch and state are the lines the reader was looking at when they pressed "
+      + 'the button, and a dialog that opens by reciting them is one you learn to click past');
+    press(root, '.workspace-finish-cancel');
+    await answer;
+  });
+
+  await check('it is the same dialog as every other one in the app', async () => {
+    // Its own card, painted by hand, is how a dialog drifts from the rest of
+    // them one token at a time — and this one had drifted far enough to be
+    // unrecognisable: no header, a footer of three buttons at two heights.
+    const { answer, root } = await open();
+
+    assert(!!root.querySelector('modal-backdrop') && !!root.querySelector('modal-panel'),
+      'the house scrim and the house card, not a div painting its own');
+    const title = root.querySelector('.workspace-move-header .workspace-move-title')?.textContent;
+    assert(title === COMMIT_OPTION.label,
+      `with the question in a header above the hairline, got ${JSON.stringify(title)}`);
+
+    const footer = Array.from(root.querySelectorAll('.workspace-move-footer button'))
+      .map((button) => button.className.split(' ').pop()).join(',');
+    assert(footer === 'workspace-finish-cancel,workspace-finish-commit',
+      `and the footer holding the two answers to it and nothing else, got ${JSON.stringify(footer)}`);
+
     press(root, '.workspace-finish-cancel');
     await answer;
   });
@@ -266,12 +294,19 @@ export async function runTests() {
 
     const commit = /** @type {HTMLButtonElement} */ (root.querySelector('.workspace-finish-commit'));
     assert(commit.textContent?.trim() === 'Commit',
-      `three buttons in a row are read as a row, and "Commit the changes" beside "Let this `
-      + `conversation write it" is a wall, got ${JSON.stringify(commit.textContent)}`);
+      `a button in a row of buttons is read as one of a row, and "Commit the changes" is a sentence, `
+      + `got ${JSON.stringify(commit.textContent)}`);
 
     const alternative = /** @type {HTMLElement} */ (root.querySelector('.workspace-finish-alternative'));
     assert(alternative.textContent?.includes(COMMIT_OPTION.prompt.alternative.hint),
       'and what the alternative does is on the alternative, not stranded under the row of buttons');
+    assert(!alternative.closest('.workspace-move-footer'),
+      'which is why it is not in that row: a third button carrying two lines of its own stands twice the '
+      + 'height of the two beside it, and a row of buttons that cannot agree on a size reads as a mistake');
+    const field = /** @type {HTMLElement} */ (root.querySelector('.workspace-finish-field'));
+    assert(field.compareDocumentPosition(alternative) & Node.DOCUMENT_POSITION_FOLLOWING,
+      'it sits under the field instead, because the box it is an alternative to is what the reader who '
+      + 'wants it is looking at');
 
     press(root, '.workspace-finish-cancel');
     await answer;

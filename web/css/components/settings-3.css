@@ -912,89 +912,54 @@
 }
 
 /* What an ending asks for before it runs (web/js/components/workspace-finish-dialog.js).
-   The same shell as the move dialog above, because it is the same kind of thing:
-   a question about this workspace, asked over the top of the work.
+   The move dialog's shell, whole: same scrim, same card, same header and footer
+   rhythm, because the two are the same object asked two questions. Only what
+   goes between the hairlines is set here. */
 
-   The field inside it is the setup panel's own, with one change — the label goes
-   above the box rather than in a column beside it. The panel's fields hold a name
-   or a path and are read across; this one holds a commit message, which is prose,
-   wants the full width, and is several lines tall. */
-.workspace-finish-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: var(--z-modal, 1000);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 1.5rem;
-}
-
-.workspace-finish-backdrop {
-    position: absolute;
-    inset: 0;
-    background: var(--modal-scrim);
-}
-
-.workspace-finish-dialog {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    width: min(32rem, 100%);
-    max-height: 90vh;
-    padding: 0.9rem 1.1rem 1.1rem;
-    overflow-y: auto;
-    background: var(--bg-raised, #1c2128);
-    border: 1px solid var(--border-floating, var(--border-color));
-    border-radius: 0.6rem;
-    box-shadow: var(--popup-shadow);
-    font-size: 0.75rem;
-}
-
-.workspace-finish-title {
-    margin: 0;
-    font-size: 1.05rem;
+/* Tighter than the move dialog's, which stacks two blocks that must not be read
+   as one. This stacks a sentence, a list, a field and its alternative, all of
+   them about the same act. */
+.workspace-finish-body {
+    gap: 1rem;
 }
 
 .workspace-finish-about {
     margin: 0;
+    font-size: 0.875rem;
     color: var(--text-secondary);
     line-height: 1.5;
-}
-
-/* Which place this is and how much is in it. Ruled off below, like the move
-   dialog's "Now using": both are standing facts rather than anything to answer. */
-.workspace-finish-status {
-    padding-bottom: 0.5rem;
-    border-bottom: 1px dashed var(--border-divider, rgb(255 255 255 / 12%));
-    color: var(--text-secondary);
-    font-family: var(--font-mono);
 }
 
 /* One fact per line: who else is working here and what is unsaved are separate
    things to know, and the host writes them as separate lines. */
 .workspace-finish-warning {
+    font-size: 0.875rem;
     color: var(--warning-color, var(--error-color));
     line-height: 1.5;
     white-space: pre-line;
 }
 
+/* The setup panel's field furniture, without its grid: that one sets a label in
+   a narrow column beside a one-line box, for a name or a path read across. This
+   holds a commit message, which is prose — label above, box below, the whole
+   width, and tall enough to see a paragraph of it at once. */
 .workspace-finish-field {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
-    margin-top: 0.25rem;
+    gap: 0.35rem;
 }
 
-/* The note is in the second column of the panel's grid; here there is one column. */
-.workspace-finish-field .setup-field-note {
-    grid-column: auto;
+.workspace-finish-field .setup-field-input {
+    width: 100%;
+    padding: 0.5rem 0.625rem;
+    font-family: inherit;
+    font-size: 0.875rem;
 }
 
 .workspace-finish-field textarea.setup-field-input {
     resize: vertical;
-    min-height: 4.5rem;
-    line-height: 1.45;
+    min-height: 6.5rem;
+    line-height: 1.5;
 }
 
 /* What is about to be committed, path by path. A box of its own with its own
@@ -1008,6 +973,7 @@
 }
 
 .workspace-finish-work-count {
+    font-size: 0.8125rem;
     color: var(--text-secondary);
 }
 
@@ -1022,6 +988,7 @@
     border: 1px solid var(--border-color);
     border-radius: 0.4rem;
     font-family: var(--font-mono);
+    font-size: 0.75rem;
 }
 
 .workspace-finish-work-row {
@@ -1048,10 +1015,36 @@
     color: var(--text-secondary);
 }
 
+/* The way through that is not typing, under the box it is an alternative to.
+   Set like the workspace panel's own action rows — full width, its label over a
+   line saying what will happen — because that is what it is: one of the things
+   you can do to this place, offered where the deciding happens. It stays out of
+   the footer, which answers the title and holds two buttons the same size. */
+.workspace-finish-alternative {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    width: 100%;
+    padding: 0.6rem 0.75rem;
+    background: var(--bg-secondary);
+    border: 0.0625rem solid var(--border-color);
+    border-radius: 0.5rem;
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 0.875rem;
+    text-align: left;
+}
+
+.workspace-finish-alternative:hover {
+    background: var(--bg-raised);
+    border-color: var(--accent-blue);
+}
+
 /* What the other button does, on the button itself: a second line under its
    label, the way the panel's own rows carry theirs. */
 .workspace-finish-alternative-note {
     display: block;
+    font-size: 0.8125rem;
     color: var(--text-secondary);
     line-height: 1.45;
 }

@@ -18,9 +18,24 @@
  * by not typing, stated nowhere. Endings are buttons here, each one saying what
  * it does, and the field is only ever the thing it is labelled as.
  *
- * The field is built from the setup form's furniture (`.setup-field`,
- * `.setup-field-label`, `.setup-field-input`, `.setup-field-note`) so a field
- * looks like a field everywhere in the app. It is built here rather than by
+ * It wears the house modal chrome — the shared scrim on `<modal-backdrop>`, the
+ * shared card on `<modal-panel>`, header hairline, body, footer hairline — which
+ * is the move dialog's shell and the reconnect dialog's, because the three are
+ * the same object asked three questions. What is this dialog's own is what goes
+ * between the hairlines.
+ *
+ * The footer holds the two answers to the question in the title, and nothing
+ * else: cancel it, or do it. The alternative — handing the message to the
+ * conversation — sits under the field instead, because that is what it is an
+ * alternative to. In the footer it was a third button twice the height of the
+ * two beside it, and a row of buttons that cannot agree on a size is read as a
+ * mistake before it is read as a choice.
+ *
+ * The field's furniture is the setup form's (`.setup-field-label`,
+ * `.setup-field-input`, `.setup-field-note`) so a field looks like a field
+ * everywhere in the app — but not its `.setup-field` grid, which sets a label
+ * in a narrow column beside a one-line box. This one holds prose, wants the
+ * whole width, and is several lines tall. It is built here rather than by
  * `field()` in `extensions/juggler-core/lib/setup-fields.js`, which makes the
  * same DOM: that module is Apache-2.0 inside the extensions tree, and the host
  * does not reach into it. The CSS classes are the host's own.
@@ -144,56 +159,69 @@ export function openWorkspaceFinish(option, context = {}) {
 
   return new Promise((resolve) => {
     const modal = presentModal({
-      className: 'workspace-finish-overlay',
-      dismissSelectors: ['.workspace-finish-backdrop', '.workspace-finish-cancel'],
+      className: 'workspace-move-overlay workspace-finish-overlay',
+      dismissSelectors: [
+        '.workspace-move-backdrop', '.workspace-move-close', '.workspace-finish-cancel'
+      ],
       onClose: (result) => resolve(result ?? null)
     });
 
-    const backdrop = document.createElement('div');
-    backdrop.className = 'workspace-finish-backdrop';
+    const backdrop = document.createElement('modal-backdrop');
+    backdrop.className = 'workspace-move-backdrop';
     modal.root.appendChild(backdrop);
 
-    const dialog = document.createElement('div');
-    dialog.className = 'workspace-finish-dialog';
+    const dialog = document.createElement('modal-panel');
+    dialog.className = 'workspace-move-dialog';
     dialog.setAttribute('role', 'dialog');
     dialog.setAttribute('aria-modal', 'true');
     dialog.setAttribute('aria-label', text(option?.label) || 'Finish');
     modal.root.appendChild(dialog);
 
+    const header = document.createElement('div');
+    header.className = 'workspace-move-header';
     const title = document.createElement('h2');
-    title.className = 'workspace-finish-title';
+    title.className = 'workspace-move-title';
     title.textContent = text(option?.label);
-    dialog.appendChild(title);
+    header.appendChild(title);
+    const dismiss = setupButton('close-button workspace-move-close', '',
+      () => modal.close(undefined));
+    dismiss.setAttribute('aria-label', 'Close');
+    dismiss.title = 'Close';
+    const cross = document.createElement('span');
+    cross.className = 'icon-close';
+    dismiss.appendChild(cross);
+    header.appendChild(dismiss);
+    dialog.appendChild(header);
+
+    const body = document.createElement('div');
+    body.className = 'workspace-move-body workspace-finish-body';
+    dialog.appendChild(body);
 
     if (option?.description) {
       const about = document.createElement('p');
       about.className = 'workspace-finish-about';
       about.textContent = option.description;
-      dialog.appendChild(about);
+      body.appendChild(about);
     }
 
-    // Which of several checkouts this is, and how much is in it. A worktree named
-    // only by the branch it is on is not enough to commit into with confidence.
-    if (status?.detail) {
-      const where = document.createElement('div');
-      where.className = 'workspace-finish-status';
-      where.textContent = status.detail;
-      dialog.appendChild(where);
-    }
-
+    // Nothing here repeats the panel this was opened from. Which repository,
+    // which branch and whether it is clean are the three lines the reader was
+    // looking at when they pressed the button, and a dialog that opens by
+    // telling them what they just read is a dialog they learn to click past.
+    // What the panel could not say is below: the paths, one by one.
     const work = workList(status);
-    if (work) dialog.appendChild(work);
+    if (work) body.appendChild(work);
 
     if (context.warning) {
       const caution = document.createElement('div');
       caution.className = 'workspace-finish-warning';
       caution.textContent = context.warning;
-      dialog.appendChild(caution);
+      body.appendChild(caution);
     }
 
     const id = `workspace-finish-field-${++sequence}`;
     const row = document.createElement('div');
-    row.className = 'setup-field workspace-finish-field';
+    row.className = 'workspace-finish-field';
 
     const caption = document.createElement('label');
     caption.className = 'setup-field-label';
@@ -222,31 +250,36 @@ export function openWorkspaceFinish(option, context = {}) {
       : text(prompt.hint);
     if (idle) note.classList.add('setup-field-note-error');
     row.appendChild(note);
-    dialog.appendChild(row);
-
-    const actions = document.createElement('div');
-    actions.className = 'setup-actions';
-    actions.appendChild(setupButton('btn-secondary workspace-finish-cancel', 'Cancel',
-      () => modal.close(undefined)));
+    body.appendChild(row);
 
     // The alternative is the conversation's to carry out, so it is offered only
     // when there is one. Without it the field is the whole of the answer, which
     // is the shape this dialog was written for.
+    //
+    // Under the field, because that is what it is an alternative to: the reader
+    // who does not want to type a message is looking at the box they do not want
+    // to fill in. What it does goes ON it, under its own label — the button
+    // nobody presses without being told what it will do is the one that must
+    // carry the telling.
     if (prompt.alternative?.label && context.conversation) {
-      const other = setupButton('btn-secondary workspace-finish-alternative',
+      const other = setupButton('workspace-finish-alternative',
         text(prompt.alternative.label), () => modal.close({ message: '' }));
-      // What it does goes ON it, under its own label. It used to sit below the
-      // whole row, where it read as a footnote to all three buttons — and the
-      // button it explains is the one nobody presses without being told what it
-      // will do.
+      // A refusal in red above a button that ignores it is not a refusal. With
+      // nothing to commit there is nothing to hand to anybody either.
+      other.disabled = idle;
       if (prompt.alternative.hint) {
         const aside = document.createElement('span');
         aside.className = 'workspace-finish-alternative-note';
         aside.textContent = text(prompt.alternative.hint);
         other.appendChild(aside);
       }
-      actions.appendChild(other);
+      body.appendChild(other);
     }
+
+    const actions = document.createElement('div');
+    actions.className = 'workspace-move-footer';
+    actions.appendChild(setupButton('btn-secondary workspace-finish-cancel', 'Cancel',
+      () => modal.close(undefined)));
 
     const submit = () => {
       const typed = field.value.trim();

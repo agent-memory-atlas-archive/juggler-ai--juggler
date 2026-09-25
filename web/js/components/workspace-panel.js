@@ -86,14 +86,11 @@ class WorkspacePanel extends HTMLElement {
     if (!session) return;
 
     this._unsubscribe = session.subscribe(/** @param {{type: string}} event */ (event) => {
-      // The three conversation events are here for the list of who is working
-      // in this tree: a conversation created, binned or renamed changes what
-      // that list says, and nothing about the workspace has moved to say so.
+      // Nothing here is about a conversation except the selection: going to one
+      // is what takes this panel off screen. What the conversations are called
+      // and how many there are belongs to the tab strip, which is drawing them.
       if (event.type === 'workspace:selected'
         || event.type === 'conversation:switched'
-        || event.type === 'conversation:created'
-        || event.type === 'conversation:deleted'
-        || event.type === 'conversation:renamed'
         || event.type === 'session:workspaces-changed'
         || event.type === 'project:changed'
         || event.type === 'session:loaded') {
@@ -202,7 +199,7 @@ class WorkspacePanel extends HTMLElement {
     body.appendChild(this._head());
     body.appendChild(this._where());
     body.appendChild(this._state());
-    body.appendChild(this._who());
+    body.appendChild(this._starting());
 
     const { options, unavailableReason } = workspaceFinishOptions(this._session, workspace);
 
@@ -415,28 +412,18 @@ class WorkspacePanel extends HTMLElement {
   }
 
   /**
-   * Who is working here, and the button that adds one.
+   * The button that starts work here.
    *
-   * The list is something the strip cannot show from a selected box — the box's
-   * own tabs are behind the panel that replaced them — and it is what makes the
-   * endings below readable: they warn about the conversations working in a
-   * workspace, and this is where you see which ones those are.
-   *
-   * Named, because a column of conversation names under a path is a column of
-   * names: unlike the buttons, a list does not say what it is a list of.
+   * No list of who is working here already. The tab strip is drawing exactly
+   * that, a box away, in the boxes this panel was opened from — a second copy
+   * of it under a heading is a list you have to check against the one you can
+   * already see.
    * @returns {HTMLElement} The section.
    * @private
    */
-  _who() {
+  _starting() {
     const section = document.createElement('div');
-    section.className = 'workspace-panel-section workspace-panel-who';
-
-    const heading = document.createElement('h3');
-    heading.className = 'workspace-panel-heading';
-    heading.textContent = 'Conversations';
-    section.appendChild(heading);
-
-    section.appendChild(this._working());
+    section.className = 'workspace-panel-section workspace-panel-starting';
 
     const rows = document.createElement('div');
     rows.className = 'workspace-panel-actions';
@@ -445,8 +432,9 @@ class WorkspacePanel extends HTMLElement {
     create.type = 'button';
     create.className = 'workspace-panel-action workspace-panel-create';
     create.appendChild(this._actionLabel(
-      'New conversation in this workspace',
-      'Its files and commands happen in this root, not the project’s.'));
+      'Create a new conversation in this workspace',
+      'Its files and commands happen in this root, not the project’s.',
+      'icon-plus'));
     create.addEventListener('click', () => this._create());
     rows.appendChild(create);
     section.appendChild(rows);
@@ -490,12 +478,11 @@ class WorkspacePanel extends HTMLElement {
   }
 
   /**
-   * The ways of finishing with the place, ruled off from everything that keeps
-   * it.
+   * The ways of finishing with the place.
    *
-   * The rule is the heading: everything above it leaves the workspace in use and
-   * everything below it does not, and each of these labels says outright that it
-   * closes the workspace and what becomes of what is on disk.
+   * Nothing rules them off. Each of these carries the trashcan and says outright
+   * that it closes the workspace and what becomes of what is on disk, which is
+   * the whole of what a line between them was there to hint at.
    * @param {any[]} endings - The options that do not keep the workspace.
    * @returns {HTMLElement} The section.
    * @private
@@ -517,6 +504,11 @@ class WorkspacePanel extends HTMLElement {
    * The ellipsis is the promise the rest of the app makes: a label that ends in
    * one asks for something before it does anything. An ending that only wants
    * agreeing to does not get one — a confirmation is not a question.
+   *
+   * An option that does not keep the workspace wears the trashcan, which is what
+   * this app puts on everything that takes something away. Read down a column of
+   * rows that all look alike, it is what separates the two that end the place
+   * from the ones that carry on working in it.
    * @param {any} option - What the provider offered.
    * @returns {HTMLElement} The button.
    * @private
@@ -532,7 +524,8 @@ class WorkspacePanel extends HTMLElement {
     button.disabled = this._running !== '';
     button.appendChild(this._actionLabel(
       option.prompt ? `${option.label}…` : option.label,
-      option.description));
+      option.description,
+      option.keepsWorkspace ? '' : 'icon-trashcan'));
     button.addEventListener('click', () => { void this._finish(option); });
     return button;
   }
@@ -548,14 +541,21 @@ class WorkspacePanel extends HTMLElement {
    * deciding whether it is safe to press.
    * @param {string} text - What it is called.
    * @param {string} [note] - What happens if it is pressed.
+   * @param {string} [icon] - The class of the app's icon for what it does, on
+   *   the first line before the name.
    * @returns {DocumentFragment} The two lines.
    * @private
    */
-  _actionLabel(text, note = '') {
+  _actionLabel(text, note = '', icon = '') {
     const fragment = document.createDocumentFragment();
     const name = document.createElement('span');
     name.className = 'workspace-panel-action-name';
-    name.textContent = text;
+    if (icon) {
+      const glyph = document.createElement('span');
+      glyph.className = icon;
+      name.appendChild(glyph);
+    }
+    name.appendChild(document.createTextNode(text));
     fragment.appendChild(name);
     if (note) {
       const says = document.createElement('span');
@@ -564,44 +564,6 @@ class WorkspacePanel extends HTMLElement {
       fragment.appendChild(says);
     }
     return fragment;
-  }
-
-  /**
-   * The conversations working in this tree, each a way back to itself.
-   *
-   * A workspace outlives the conversations started in it and may hold several
-   * at once, so the count is never assumed: one, three, or none at all, and
-   * none is worth saying out loud — an empty tree is a place waiting to be used
-   * rather than a panel with a section missing.
-   * @returns {HTMLElement} The list, or the line that stands in for it.
-   * @private
-   */
-  _working() {
-    const id = this._workspace?.id ?? '';
-    const members = [...(this._session?.conversations?.values?.() ?? [])]
-      .filter(conversation => (conversation.workspaceId || '') === id);
-
-    if (!members.length) {
-      const none = document.createElement('p');
-      none.className = 'workspace-panel-note';
-      none.textContent = 'No conversations yet.';
-      return none;
-    }
-
-    const list = document.createElement('ul');
-    list.className = 'workspace-panel-conversations';
-    for (const conversation of members) {
-      const row = document.createElement('li');
-      const open = document.createElement('button');
-      open.type = 'button';
-      open.className = 'workspace-panel-conversation';
-      open.dataset.conversationId = conversation.id;
-      open.textContent = conversation.name || conversation.id;
-      open.addEventListener('click', () => this._session?.switchConversation?.(conversation.id));
-      row.appendChild(open);
-      list.appendChild(row);
-    }
-    return list;
   }
 
   /**

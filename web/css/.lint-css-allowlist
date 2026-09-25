@@ -117,7 +117,7 @@ layer-inversion patterns/menus.css > components/composer.css 66
 layer-inversion patterns/menus.css > components/diff-viewer.css 65
 layer-inversion patterns/menus.css > components/properties-panel.css 61
 layer-inversion patterns/icons.css > components/overlays-and-updates.css 45
-layer-inversion patterns/markdown.css > components/settings-3.css 45
+layer-inversion patterns/markdown.css > components/settings-3.css 41
 layer-inversion patterns/menus.css > components/plugin-catalog.css 32
 layer-inversion components/composer.css > vendor/prism-theme.css 31
 layer-inversion components/model-picker.css > vendor/prism-theme.css 31
@@ -140,8 +140,8 @@ layer-inversion patterns/markdown.css > components/settings-2.css 25
 layer-inversion patterns/markdown.css > components/onboarding.css 24
 layer-inversion patterns/menus.css > components/overlays-and-updates.css 23
 layer-inversion patterns/markdown.css > components/context-items.css 22
-layer-inversion patterns/markdown.css > components/workspace-panel.css 20
-layer-inversion layout/app-header.css > components/settings-3.css 21
+layer-inversion patterns/markdown.css > components/workspace-panel.css 18
+layer-inversion layout/app-header.css > components/settings-3.css 18
 layer-inversion layout/app-header.css > components/skills-marketplace.css 20
 layer-inversion layout/app-shell.css > patterns/menus.css 20
 layer-inversion patterns/markdown.css > components/approvals-2.css 20
@@ -162,7 +162,7 @@ layer-inversion patterns/icons.css > components/strategy-bar.css 15
 layer-inversion layout/app-header.css > components/conversation-bar.css 14
 layer-inversion layout/app-header.css > components/pinboard.css 14
 layer-inversion layout/app-shell.css > components/properties-panel.css 14
-layer-inversion layout/app-shell.css > components/settings-3.css 14
+layer-inversion layout/app-shell.css > components/settings-3.css 11
 layer-inversion base/elements.css > components/properties-panel.css 13
 layer-inversion layout/app-header.css > components/model-picker.css 13
 layer-inversion layout/app-header.css > components/settings-2.css 13
@@ -191,7 +191,7 @@ layer-inversion base/elements.css > components/plugin-catalog.css 8
 layer-inversion layout/app-shell.css > components/model-picker.css 8
 layer-inversion layout/app-shell.css > components/settings-2.css 8
 layer-inversion layout/window-chrome.css > components/diff-viewer.css 8
-layer-inversion patterns/buttons.css > components/settings-3.css 8
+layer-inversion patterns/buttons.css > components/settings-3.css 6
 layer-inversion base/elements.css > components/project-setup.css 7
 layer-inversion base/elements.css > components/skills-marketplace.css 7
 layer-inversion layout/app-header.css > components/composer.css 7
@@ -230,7 +230,7 @@ layer-inversion patterns/buttons.css > components/skills-marketplace.css 4
 layer-inversion patterns/code.css > components/settings-3.css 4
 layer-inversion patterns/popup-surface.css > components/composer.css 4
 layer-inversion patterns/popup-surface.css > components/properties-panel.css 4
-layer-inversion patterns/spinner.css > components/settings-3.css 4
+layer-inversion patterns/spinner.css > components/settings-3.css 3
 layer-inversion tokens/theme-dark.css > components/messages-3.css 4
 layer-inversion tokens/theme-dark.css > layout/app-shell.css 4
 layer-inversion base/elements.css > components/approvals-2.css 3
@@ -253,7 +253,7 @@ layer-inversion patterns/overlay-chrome.css > components/pinboard.css 3
 layer-inversion patterns/spinner.css > components/properties-panel.css 3
 layer-inversion base/elements.css > components/conversation-bar.css 2
 layer-inversion base/elements.css > components/messages-3.css 2
-layer-inversion base/elements.css > components/workspace-panel.css 2
+layer-inversion base/elements.css > components/workspace-panel.css 1
 layer-inversion base/elements.css > patterns/overlay-chrome.css 2
 layer-inversion base/elements.css > patterns/popup-surface.css 2
 layer-inversion layout/app-header.css > components/approvals-1.css 2
