@@ -35,31 +35,83 @@ export function isShellCommandPermitted(command, { messageThread, session, write
   return isCommandAutoApproved(command, {
     platform: session?.platform || 'darwin',
     home: session?.home || '',
-    allowedRoots: messageThread.getAllowedPaths(),
-    // The server runs every shell command at the project root (the bash op's
-    // scope root), so that is the directory a relative path — and a leading
-    // `cd` — is judged against.
-    cwd: session?.projectPath || '',
+    allowedRoots: shellRoots(messageThread, session),
+    // The server runs every shell command at the scope ROOT, which is the
+    // workspace root for a conversation bound to one and the project path for
+    // one that is not. That is the directory a relative path — and a leading
+    // `cd` — has to be judged against: named the project here, a bound
+    // conversation's commands would be approved against a tree they will not
+    // run in.
+    cwd: workingRootOf(messageThread, session),
     patterns,
     writeEnabled
   });
 }
 
 /**
- * Is this a recursive/forced delete of a catastrophic radius — the project
- * root, an ancestor of it, the home dir, or a filesystem root? Such a command
- * must never be silently auto-approved: not by the conversation auto-approve
- * toggle and not by a strategy's out-of-band reviewer. Every other command —
- * including a routine `rm -rf ./build` — stays auto-approvable.
+ * The directory the server will run this conversation's commands in.
+ * @param {any} messageThread - Owning message thread
+ * @param {any} session - Owning session
+ * @returns {string} The working root, or '' when nothing can say
+ */
+function workingRootOf(messageThread, session) {
+  return messageThread?.getWorkingRoot?.() || session?.projectPath || '';
+}
+
+/**
+ * The roots a command's paths are judged against, mirroring the scope the
+ * server builds for the same request: rooted at the workspace, with the read
+ * boundary widened by the project.
+ *
+ * The widening matters as much as the rooting. A conversation in a worktree
+ * goes on reading the tree it branched from — the server allows it explicitly —
+ * so leaving the project out would have it asking permission to read the main
+ * tree from the moment it moved.
+ * @param {any} messageThread - Owning message thread (source of allowed paths)
+ * @param {any} session - Owning session (source of the project path)
+ * @returns {string[]} Allowed roots
+ */
+function shellRoots(messageThread, session) {
+  const roots = messageThread.getAllowedPaths();
+  const projectPath = session?.projectPath || '';
+  if (!projectPath || roots.includes(projectPath)) return roots;
+  return [...roots, projectPath];
+}
+
+/**
+ * Is this a recursive/forced delete of a catastrophic radius — a tree the
+ * conversation works in, an ancestor of one, the home dir, or a filesystem
+ * root? Such a command must never be silently auto-approved: not by the
+ * conversation auto-approve toggle and not by a strategy's out-of-band
+ * reviewer. Every other command — including a routine `rm -rf ./build` — stays
+ * auto-approvable.
+ *
+ * TWO trees are protected for a conversation bound to a workspace, because it
+ * can reach both and losing either is the same kind of bad day. The workspace
+ * is where its commands run, so a delete aimed at the workspace root is the one
+ * the analyser is most likely to be asked to wave through; the project is the
+ * tree it branched from and every other conversation is still working in.
+ * Protecting only the tree it happens to stand in would make moving a
+ * conversation a way to make wiping the other one routine.
+ *
+ * The analyser guards one radius per call, so it is asked once per tree and the
+ * answers are OR-ed. Both calls resolve relative targets against the directory
+ * the command actually runs in.
  * @param {string} command - The shell command to judge
- * @param {any} session - Owning session (platform, home, project path)
+ * @param {object} opts - Conversation state
+ * @param {any} opts.messageThread - Owning message thread (source of the working root)
+ * @param {any} opts.session - Owning session (platform, home, project path)
  * @returns {boolean} True only for a catastrophic-radius recursive delete
  */
-export function isShellCommandCatastrophic(command, session) {
+export function isShellCommandCatastrophic(command, { messageThread, session }) {
   if (!command) return false;
-  return isCatastrophicDeletion(command, {
+  const cwd = workingRootOf(messageThread, session);
+  const base = {
     platform: session?.platform || 'darwin',
     home: session?.home || '',
-    projectRoot: session?.projectPath || ''
-  });
+    cwd
+  };
+  const projectPath = session?.projectPath || '';
+  const roots = cwd && cwd !== projectPath ? [cwd, projectPath] : [projectPath];
+  return roots.some(root => !!root && isCatastrophicDeletion(command, { ...base, projectRoot: root }));
 }

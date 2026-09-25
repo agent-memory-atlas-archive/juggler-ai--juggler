@@ -1621,6 +1621,15 @@ export default class MessageThread {
     return { allowedScopes: ['session', 'conversation'], defaultScope: 'conversation' };
   }
 
+  /**
+   * The directory this conversation works in — its workspace root when bound to
+   * one, the project path when not, and null when a binding cannot be honoured.
+   * What a relative path is resolved against, and the radius a destructive
+   * command is measured by.
+   * @returns {string|null} Working root
+   */
+  getWorkingRoot() { return permissionsHelpers.getWorkingRoot(this); }
+
   /** @returns {import('./message-thread-permissions.js').AllowedPathEntry[]} Allowed path entries */
   getAllowedPathEntries() { return permissionsHelpers.getAllowedPathEntries(this); }
 

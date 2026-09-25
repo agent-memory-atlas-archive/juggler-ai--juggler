@@ -18,11 +18,18 @@
  * stop a conversation being seeded from the wrong tree; a move is the one thing
  * that can put it back into that state.
  *
+ * The folder grants are frozen in the same way and for the same reason: "allow
+ * this folder" stores the absolute path it was given. Those have to be rewritten
+ * rather than re-read, and the move is the only moment that knows both trees.
+ *
  * So the write and the catch-up live in one function, and callers move a
  * conversation by calling it rather than by assigning the id. Doing half of this
  * is not a mistake a caller should be able to make.
  * @module services/workspace-rebinding
  */
+
+import { posixNormalize } from 'juggler/utils/path-containment';
+import { SCOPE_SESSION } from '../model/scoped-permission-store.js';
 
 /**
  * Why this move would be refused, or '' if nothing stands in its way.
@@ -83,9 +90,95 @@ export async function rebindConversation(conversation, workspaceId) {
   const target = workspaceId || '';
   if ((conversation.workspaceId || '') === target) return { done: true };
 
+  const leaving = conversation.rootMessageThread?.getWorkingRoot?.() ?? null;
   conversation.workspaceId = target;
+  reRootGrants(conversation, leaving);
   await refreshWorkspaceDerived(conversation);
   return { done: true };
+}
+
+/**
+ * Move the conversation's folder grants into the tree it now works in.
+ *
+ * A grant is an absolute path, frozen when the user gave it. Left alone by a
+ * move it describes the wrong tree twice over: the folder the conversation
+ * actually works in is no longer granted, so it asks again for work it was
+ * already trusted with, and the grant it still holds goes on authorising the
+ * tree it was moved out of — which is the one place the move said it had
+ * finished with. So a grant at or below the tree being left is rewritten to the
+ * same place in the tree being entered, and a grant that was never in that tree
+ * is left exactly as it is: it was granted for somewhere else, and somewhere
+ * else has not moved.
+ *
+ * The two scopes are treated differently because they belong to different
+ * things. A conversation-scoped grant is this conversation's and is rewritten in
+ * place. A SESSION-scoped one is the project's — every other conversation in it
+ * holds the same grant and none of them have moved — so it is copied down to
+ * this conversation re-rooted rather than edited, which leaves the others
+ * untouched.
+ * @param {any} conversation - The conversation that has just moved.
+ * @param {string|null} leaving - The root it worked in until a moment ago.
+ * @returns {void}
+ */
+function reRootGrants(conversation, leaving) {
+  const messageThread = conversation.rootMessageThread;
+  const entering = messageThread?.getWorkingRoot?.() ?? null;
+  if (!messageThread || !leaving || !entering || leaving === entering) return;
+
+  const from = trimSlash(leaving);
+  const to = trimSlash(entering);
+
+  for (const entry of messageThread.getAllowedPathEntries()) {
+    // The implicit root is the tree itself and is derived per call, so it has
+    // already moved; it is not stored and cannot be rewritten.
+    if (entry.implicit) continue;
+    const moved = underRoot(entry.path, from, to);
+    if (!moved) continue;
+
+    // Either the grant is already held — a move back to a tree this
+    // conversation has been in before — or it has collapsed into the implicit
+    // root. Both mean the rewrite has nothing to add, and adding it anyway is
+    // how a conversation moved back and forth accumulates copies of one grant.
+    const alreadyHeld = messageThread.getAllowedPaths().includes(moved);
+
+    if (entry.scope === SCOPE_SESSION) {
+      if (!alreadyHeld) messageThread.addAllowedPath(moved);
+      continue;
+    }
+    if (alreadyHeld) messageThread.removeAllowedPath(entry.id);
+    else messageThread.updateAllowedPath(entry.id, moved);
+  }
+}
+
+/**
+ * @param {string} p - A directory path.
+ * @returns {string} It, without a trailing separator.
+ */
+function trimSlash(p) {
+  const normalized = posixNormalize(p);
+  return normalized.endsWith('/') && normalized !== '/' ? normalized.slice(0, -1) : normalized;
+}
+
+/**
+ * The same place in another tree, for a path at or below the first one.
+ *
+ * Compared as written, after normalisation, rather than through the folding
+ * `isPathInsideAllowedRoots` does for matching. A grant whose spelling
+ * differs from the root's only in case — possible on Windows alone — is simply
+ * not recognised as being in the tree, and is then left alone. That is the
+ * behaviour a move had before any of this, so the cost of missing one is a
+ * grant that stays where it was, never a grant pointed somewhere nobody asked
+ * for.
+ * @param {string} path - The granted path.
+ * @param {string} from - The root being left, without a trailing separator.
+ * @param {string} to - The root being entered, without a trailing separator.
+ * @returns {string|null} Where the grant belongs now, or null if it was not in that tree.
+ */
+function underRoot(path, from, to) {
+  const target = trimSlash(path || '');
+  if (!target) return null;
+  if (target === from) return to;
+  return target.startsWith(from + '/') ? to + target.slice(from.length) : null;
 }
 
 /**

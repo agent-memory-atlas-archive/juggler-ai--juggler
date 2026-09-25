@@ -199,6 +199,30 @@ const pathsStore = createScopedStore({
 });
 
 /**
+ * The directory this conversation works in: its workspace root when it is bound
+ * to one, and the session's project path when it is not.
+ *
+ * Everything that must agree about where the conversation works asks here, so
+ * that it is answered once. A second copy of this expression is how a grant
+ * ends up describing one tree while the command it authorises runs in another:
+ * the server roots every operation at whatever the request's `workspaceId`
+ * resolves to, and a caller that reaches for `session.projectPath` instead is
+ * describing the tree a bound conversation left.
+ *
+ * Null when a binding cannot be honoured — never the project as a fallback, for
+ * the reason given on {@link getWorkspaceRootEntry}.
+ * @param {any} mt @returns {string|null}
+ */
+export function getWorkingRoot(mt) {
+  const conversation = mt?.conversation;
+  if (!conversation) return null;
+  const root = conversation.workspaceId
+    ? conversation.workspaceRoot
+    : conversation.session?.projectPath;
+  return root || null;
+}
+
+/**
  * Where this conversation works is implicitly allowed: an always-present entry
  * that is never persisted and cannot be toggled or removed.
  *
@@ -213,14 +237,17 @@ const pathsStore = createScopedStore({
  * falling back to the project. Every operation this conversation makes is going
  * to be refused by the server anyway, and quietly granting it the project root
  * meanwhile would describe a permission it does not have.
+ *
+ * This entry is the only one that moves by itself, because it is the only one
+ * derived rather than stored. The explicit grants beside it are absolute paths
+ * frozen when they were given, so they are rewritten when a conversation moves
+ * (`services/workspace-rebinding`): a conversation-scoped grant is re-rooted in
+ * place, while a session-scoped one belongs to the project rather than to the
+ * conversation and is copied down re-rooted instead of edited.
  * @param {any} mt @returns {AllowedPathEntry|null}
  */
 function getWorkspaceRootEntry(mt) {
-  const conversation = mt.conversation;
-  if (!conversation) return null;
-  const root = conversation.workspaceId
-    ? conversation.workspaceRoot
-    : conversation.session?.projectPath;
+  const root = getWorkingRoot(mt);
   if (!root) return null;
   return { id: defaultPathId(root), path: root, scope: SCOPE_SESSION, implicit: true };
 }

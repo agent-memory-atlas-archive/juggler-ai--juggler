@@ -27,6 +27,10 @@ import {
   isWorkspaceUsable
 } from '../../js/services/workspaces.js';
 import { rebindConversation } from '../../js/services/workspace-rebinding.js';
+import {
+  isShellCommandPermitted,
+  isShellCommandCatastrophic
+} from '../../extensions/juggler-core/context-items/execute/command-permission.js';
 import { setupRows } from '../../js/services/workspace-places.js';
 import { ensureWorkspaceBanner, removeAllElements } from '../../js/components/conversation-area-rendering.js';
 import { followSession, setGitWorkspace } from '../../js/services/git-workspace.js';
@@ -591,6 +595,45 @@ export async function runTests() {
         bound.workspaceId = 'ws_never_registered';
         assert(!bound.rootMessageThread.getAllowedPaths().includes(session.projectPath),
           `and a binding that cannot be honoured grants nothing, rather than quietly granting the project, got ${JSON.stringify(bound.rootMessageThread.getAllowedPaths())}`);
+      } finally {
+        session.workspaces = saved;
+      }
+    });
+
+    await run('a bound conversation\'s shell commands are judged in the tree they run in', async () => {
+      // The server runs a bound conversation's commands at the workspace root
+      // (ops.scope.Root()), so that is the radius a destructive one has to be
+      // measured by. Measured against the project instead, the guard protects a
+      // tree the command will not touch and leaves the one it will wide open:
+      // wiping the whole worktree reads as a routine subdirectory delete.
+      const saved = session.workspaces;
+      session.workspaces = [workspaceRow('ws_shell', '/tmp/shell-tree')];
+      try {
+        const bound = await makeConversation(session, 'commands-judged-where-they-run', { workspaceId: 'ws_shell' });
+        release(bound);
+        const messageThread = bound.rootMessageThread;
+
+        assert(isShellCommandCatastrophic('rm -rf /tmp/shell-tree', { messageThread, session }),
+          'deleting the worktree entire is catastrophic: it is the tree the conversation works in');
+        assert(isShellCommandCatastrophic('rm -rf .', { messageThread, session }),
+          'and so is deleting the directory the command runs in, named relatively');
+
+        // The project keeps its protection too. It is the tree the conversation
+        // came from and every other conversation is still working in, so moving
+        // into a worktree must not make wiping it an ordinary delete.
+        assert(isShellCommandCatastrophic(`rm -rf ${session.projectPath}`, { messageThread, session }),
+          'the project is still protected from a conversation working elsewhere');
+
+        // A genuine subdirectory of the tree it works in stays auto-approvable:
+        // the floor only ever adds a prompt, and `rm -rf ./build` is routine.
+        assert(!isShellCommandCatastrophic('rm -rf ./build', { messageThread, session }),
+          'a subdirectory delete inside the worktree is still ordinary');
+
+        // Reads of the main tree do not start asking. The server widens a bound
+        // request's read boundary with the project, so a command naming a path
+        // in it is as approvable from the worktree as it was from the project.
+        assert(isShellCommandPermitted(`cat ${session.projectPath}/package.json`, { messageThread, session }),
+          'a bound conversation can still read the tree it branched from without asking');
       } finally {
         session.workspaces = saved;
       }

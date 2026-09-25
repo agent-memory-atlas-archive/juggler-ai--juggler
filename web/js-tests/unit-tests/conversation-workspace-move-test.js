@@ -22,6 +22,7 @@ import {
   PROVIDER_UNAVAILABLE
 } from '../../js/services/workspace-provisioning.js';
 import { reconcileWorkspaces } from '../../js/services/workspace-reconcile.js';
+import { rebindConversation } from '../../js/services/workspace-rebinding.js';
 import {
   setupRows,
   probeSetupAdoptions,
@@ -689,6 +690,58 @@ export async function runTests() {
       } finally {
         session.workspaces = saved;
         await unregisterWorkspace(made.id).catch(() => {});
+      }
+    });
+
+    await run('the folders a conversation may write to move with it', async () => {
+      // A grant is an absolute path, frozen at the moment it was given. Left
+      // alone by a move, every one of them describes the tree the conversation
+      // has just left: the folders it works in daily start asking again, while
+      // the stale grants go on quietly authorising the tree it was moved out of.
+      const saved = session.workspaces;
+      session.workspaces = [...saved, workspaceRow('ws_grants', '/tmp/grants-tree')];
+      const moved = await makeConversation(session, 'grants-follow-the-move');
+      release(moved);
+      const messageThread = moved.rootMessageThread;
+      const projectWide = `${projectPath}/generated`;
+      try {
+        messageThread.addAllowedPath(`${projectPath}/vendor`);
+        messageThread.addAllowedPath(projectWide, { scope: 'session' });
+        messageThread.addAllowedPath('/tmp/somewhere-else');
+
+        await rebindConversation(moved, 'ws_grants');
+        const allowed = messageThread.getAllowedPaths();
+
+        assert(allowed.includes('/tmp/grants-tree/vendor'),
+          `the grant follows the conversation into the new tree, got ${JSON.stringify(allowed)}`);
+        assert(!allowed.includes(`${projectPath}/vendor`),
+          `and stops authorising the tree it left, got ${JSON.stringify(allowed)}`);
+
+        // A session grant belongs to the project and to every conversation in
+        // it, so a move copies it rather than editing it out from under them.
+        assert(allowed.includes('/tmp/grants-tree/generated'),
+          `a project-wide grant is re-rooted for the conversation that moved, got ${JSON.stringify(allowed)}`);
+        const entry = messageThread.getAllowedPathEntries().find(p => p.path === projectWide);
+        assert(entry && entry.scope === 'session',
+          `while the project-wide entry itself is left where it stands, got ${JSON.stringify(entry)}`);
+
+        assert(allowed.includes('/tmp/somewhere-else'),
+          `and a grant that was never in the old tree is untouched, got ${JSON.stringify(allowed)}`);
+
+        // Moving is something people do repeatedly, and a grant rewritten on
+        // every move must not leave a copy of itself behind each time.
+        await rebindConversation(moved, '');
+        assert(messageThread.getAllowedPaths().includes(`${projectPath}/vendor`),
+          `a move back re-roots the grant back, got ${JSON.stringify(messageThread.getAllowedPaths())}`);
+        await rebindConversation(moved, 'ws_grants');
+        const after = messageThread.getAllowedPaths();
+        assert(after.filter(p => p === '/tmp/grants-tree/vendor').length === 1,
+          `and a second move re-roots rather than accumulating, got ${JSON.stringify(after)}`);
+      } finally {
+        for (const p of messageThread.getAllowedPathEntries()) {
+          if (!p.implicit && p.scope === 'session') messageThread.removeAllowedPath(p.id);
+        }
+        session.workspaces = saved;
       }
     });
 

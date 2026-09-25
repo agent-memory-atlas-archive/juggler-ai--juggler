@@ -120,7 +120,7 @@ class MonitorContextItem extends ContextItem {
   /**
    * A monitored command is still a shell command, so it inherits the same
    * catastrophic-deletion floor as the bash tool: a recursive/forced delete of
-   * the project root, an ancestor, home, or a filesystem root is never silently
+   * a tree it works in, an ancestor, home, or a filesystem root is never silently
    * auto-approved (it parks for an explicit human decision or YOLO). Every
    * other command stays auto-approvable.
    * @override
@@ -130,7 +130,7 @@ class MonitorContextItem extends ContextItem {
   autoApprovable(toolInput) {
     return !isShellCommandCatastrophic(
       /** @type {string} */ (toolInput?.command || ''),
-      this.conversation.session
+      { messageThread: this.messageThread, session: this.conversation.session }
     );
   }
 

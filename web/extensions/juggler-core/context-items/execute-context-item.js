@@ -367,8 +367,9 @@ class ExecuteContextItem extends ContextItem {
   }
 
   /**
-   * A recursive/forced delete of a catastrophic radius — the project root, an
-   * ancestor of it, the home dir, or a filesystem root — must never be silently
+   * A recursive/forced delete of a catastrophic radius — a tree this
+   * conversation works in (its workspace, and the project it branched from), an
+   * ancestor of one, the home dir, or a filesystem root — must never be silently
    * auto-approved: not by the conversation auto-approve toggle and not by a
    * strategy's out-of-band reviewer. Such a command still parks for an explicit
    * human decision (or YOLO). Every other command — including a routine
@@ -382,7 +383,7 @@ class ExecuteContextItem extends ContextItem {
   autoApprovable(toolInput) {
     return !isShellCommandCatastrophic(
       /** @type {string} */ (toolInput?.command || ''),
-      this.conversation.session
+      { messageThread: this.messageThread, session: this.conversation.session }
     );
   }
 
