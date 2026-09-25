@@ -406,6 +406,63 @@ export async function runTests() {
     }
   });
 
+  await check('the tabs a drag shoves aside slide, inside a box as much as outside one', async () => {
+    const { bar, teardown } = mountBar(
+      [workspace('ws', 'head')],
+      [['m1', 'ws'], ['m2', 'ws'], ['a', ''], ['b', ''], ['c', '']]
+    );
+    // shiftTo pins each displaced item at its old position with an inline
+    // `transition: none`, then clears both a frame later so it travels to its
+    // new slot. That frame is the one being measured, and the test window is
+    // hidden, so rAF is put onto macrotasks the test can actually pump.
+    const realRaf = window.requestAnimationFrame;
+    window.requestAnimationFrame = (/** @type {FrameRequestCallback} */ cb) =>
+      /** @type {any} */ (setTimeout(() => cb(performance.now()), 0));
+    try {
+      assert(drawn(bar) === '[ws:m1,m2] a b c', `the strip starts with a box holding two, got "${drawn(bar)}"`);
+
+      /** @type {string[]} */
+      const snapped = [];
+      for (const [where, dragged, onto] of [['in the strip', 'a', 'c'], ['inside a box', 'm1', 'm2']]) {
+        const tab = tabFor(bar, dragged);
+        /** @type {any} */ (tab).setPointerCapture = () => {};
+        /** @type {any} */ (tab).releasePointerCapture = () => {};
+        const from = tab.getBoundingClientRect();
+        const x = from.left + 10;
+        const home = from.top + from.height / 2;
+        bar._startDrag({ clientX: x, clientY: home, pointerId: 1 }, tab);
+        movePointer(x, tabFor(bar, onto).getBoundingClientRect().bottom - 2);
+        // One turn for the inversion's frame, one for the transition to be what
+        // the element is left carrying.
+        await new Promise(resolve => setTimeout(resolve, 0));
+        await new Promise(resolve => setTimeout(resolve, 0));
+
+        for (const other of /** @type {HTMLElement[]} */ (Array.from(bar.querySelectorAll('.conversation-tab')))) {
+          if (other.classList.contains('drag-source') || other.classList.contains('drag-ghost')) continue;
+          const style = getComputedStyle(other);
+          const animates = parseFloat(style.transitionDuration) > 0
+            && /transform|all/.test(style.transitionProperty);
+          if (!animates) {
+            snapped.push(`  dragging ${dragged} ${where}: ${other.dataset.conversationId} sits under `
+              + `"${style.transitionProperty} ${style.transitionDuration}"`);
+          }
+        }
+
+        // Home again before letting go, so the measurement costs the strip
+        // nothing and the next drag starts from the arrangement this one did.
+        movePointer(x, home);
+        releasePointer();
+      }
+
+      assert(snapped.length === 0,
+        'a tab shoved aside by a drag travels to its new slot rather than jumping, and what gates that '
+        + `is a class the stylesheet looks for on the strip:\n${snapped.join('\n')}`);
+    } finally {
+      window.requestAnimationFrame = realRaf;
+      teardown();
+    }
+  });
+
   await check('a tab dragged above the tab above a box still lands there', () => {
     const { bar, teardown } = barWithBoxInTheMiddle();
     try {
@@ -489,6 +546,58 @@ export async function runTests() {
     } finally {
       teardown();
     }
+  });
+
+  // Beside a box and inside it are adjacent positions and different acts — one
+  // reorders a tab, the other asks to move a conversation to another tree. What
+  // separated them was the box's own edge, which put the whole of "beside" in
+  // the 0.375rem gap between one box and the next. A band below the top edge
+  // takes that to something a hand can hit, out of the header — and out of the
+  // header only, which is what the last two probes here are for: the band must
+  // not be paid for by any row inside the box.
+  await check('the strip above a box is wide enough to aim at', () => {
+    /**
+     * Pick a tab up and hold it at a height measured off the box, without
+     * letting go: what the strip draws under the pointer is the question here,
+     * and dropping it would raise the move dialog for every probe that lands
+     * inside. A mount each, so every measurement is taken before anything has
+     * been shifted out from under it.
+     * @param {(rect: DOMRect) => number} at - The height to hold it at.
+     * @returns {string} The strip as drawn under the pointer.
+     */
+    const holdingOverTheBox = (at) => {
+      const { bar, teardown } = mountBar(
+        [workspace('ws', 'b')],
+        [['a', ''], ['b', ''], ['m', 'ws'], ['c', '']]
+      );
+      try {
+        const rect = boxFor(bar, 'ws').getBoundingClientRect();
+        const tab = tabFor(bar, 'c');
+        const from = tab.getBoundingClientRect();
+        const x = from.left + 10;
+        bar._startDrag({ clientX: x, clientY: from.top + from.height / 2, pointerId: 1 }, tab);
+        movePointer(x, at(rect));
+        return drawn(bar);
+      } finally {
+        releasePointer();
+        teardown();
+      }
+    };
+
+    const onTheHeader = holdingOverTheBox(rect => rect.top + 4);
+    assert(onTheHeader === 'a b c [ws:m]',
+      'a few pixels inside the top edge is the box\'s frame and the top of its header — a title, '
+      + `never a slot — so it reads as the strip above the box, got "${onTheHeader}"`);
+
+    const atTheFoot = holdingOverTheBox(rect => rect.bottom - 4);
+    assert(atTheFoot === 'a b [ws:m,c]',
+      'while the padding below the last tab is the end of the box and stays the end of the box: '
+      + `the band comes out of the header, and is not paid for at this edge, got "${atTheFoot}"`);
+
+    const inside = holdingOverTheBox(rect => (rect.top + rect.bottom) / 2);
+    assert(inside === 'a b [ws:c,m]',
+      'and the middle of a box is still somewhere a tab can be dropped into — the band must widen '
+      + `the strip above the box, not eat the box, got "${inside}"`);
   });
 
   await check('a tab dropped past the end lands last, behind a box drawn there', () => {

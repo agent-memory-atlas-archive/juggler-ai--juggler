@@ -32,7 +32,7 @@ import { ensureUserPresetsLoaded, getDefaultPresetSeed } from '../services/syste
 import { isDefaultFileEditingOn, setFileEditingAllowed } from '../services/file-editing-permission.js';
 import { resolveDefaultStrategyId, BUILTIN_DEFAULT_STRATEGY_ID } from '../services/default-strategy.js';
 import { isWorkspaceUsable, patchWorkspace, reorderWorkspaces } from '../services/workspaces.js';
-import { workspaceInstructionRoots, placeForNewConversation, placementForNewConversation } from '../services/workspace-provisioning.js';
+import { workspaceInstructionRoots, placeForNewConversation, placementForNewConversation, takesTheHead } from '../services/workspace-provisioning.js';
 import { BUILTIN_DEFAULT_ID } from '../../sdk/lib/system-prompt-registry.js';
 
 
@@ -813,6 +813,52 @@ class Session {
     const ids = [...this.conversations.keys()].filter(existing => existing !== id);
     ids.splice(index, 0, id);
     this._setConversationOrder(ids, new Map([[id, conv]]));
+
+    // Stored from here rather than from the server's own create, which is told
+    // only that the conversation goes at the front of the order. Whether that
+    // also makes it the top of the *bar* turns on whether it is drawn inside a
+    // box, and the binding that decides it is this client's to know.
+    for (const workspace of this._takeTheHeadFromBoxes(id, workspaceId)) {
+      patchWorkspace(workspace, { place: id }).catch((error) => {
+        console.error("[Session] Couldn't store where the workspace box was pushed down to:", error);
+      });
+    }
+  }
+
+  /**
+   * Hand the head of the bar to a conversation that has just arrived at it.
+   *
+   * The head is one position and one thing holds it — the topmost tab, or a box
+   * whose row names it. A conversation created outside every box goes to the top
+   * of the flat order, which is the top of the bar, so the boxes that were at the
+   * head are behind it now and their rows are rewritten to say so. One started
+   * inside a box is drawn in it, never above it, and takes nothing.
+   *
+   * The arrival counterpart of {@link Session#_reanchorBoxesBeforeMove}: a box is
+   * placed by what is above it, so something new above it moves it exactly as
+   * something leaving does. Without this a box at the head stays pinned there and
+   * every new tab appears underneath it, which is not what "new tabs go to the
+   * top" means anywhere else in the bar.
+   *
+   * Rewritten locally so the strip redraws with the tab. Storing it is the
+   * caller's, because the rewrite is what a test can ask about on its own and a
+   * round trip is not.
+   * @param {string} id - The conversation that has taken the head.
+   * @param {string} [workspaceId] - The tree it will work in, if it is one.
+   * @returns {string[]} The workspaces whose place changed, for storing.
+   * @private
+   */
+  _takeTheHeadFromBoxes(id, workspaceId = '') {
+    if (!takesTheHead(this, workspaceId)) return [];
+
+    const displaced = (this.workspaces ?? []).filter(row => row.place === 'head');
+    if (displaced.length === 0) return [];
+
+    this.workspaces = this.workspaces.map(row =>
+      (row.place === 'head' ? { ...row, place: id } : row));
+    this._notify('session:workspaces-changed', this.workspaces);
+
+    return displaced.map(row => row.id);
   }
 
   /**

@@ -521,11 +521,13 @@ export async function runTests() {
       }
     });
 
-    await run('finishing names the others in the workspace, and is refused while one is mid-turn', async () => {
-      // The entire coordination story: nobody owns a workspace, so the only
-      // thing standing between one conversation and the tree another is working
-      // in is this warning — and the one case that actually loses work, a turn
-      // in flight, is refused outright rather than warned about.
+    await run('finishing bins everything working here, and is refused while one is mid-turn', async () => {
+      // Nobody owns a workspace, and who else is in one is already on screen in
+      // the tab strip — so the confirmation does not list them again. What it
+      // does instead is take them with it: the conversations were working in
+      // that tree, and they go to the bin when it goes. The one case that
+      // actually loses work, a turn in flight, is refused outright rather than
+      // warned about, and the refusal says whose turn it is.
       const name = `finish-peers-${Math.random().toString(36).slice(2, 8)}`;
       const dir = `${projectPath}/${name}`;
       const projectOps = createBoundOps(() => ({}));
@@ -543,25 +545,25 @@ export async function runTests() {
           `precondition: there is a workspace to finish with, got ${JSON.stringify(owner.workspaceId)}`);
 
         const workspace = (await listWorkspaces()).find((/** @type {any} */ w) => w.id === owner.workspaceId);
-        // Held separately: finishing moves the owner back to the project, so its
-        // binding is no longer the way to find the row this case has to clean up.
+        // Held separately: finishing bins the owner, so its binding is no longer
+        // the way to find the row this case has to clean up.
         workspaceId = workspace.id;
         session.workspaces = [...saved, workspace];
         peer = await makeConversation(session, 'also-working-here', { workspaceId: workspace.id });
         release(peer);
 
-        const quiet = workspaceFinishWarning(session, workspace, { conversation: owner });
-        assert(quiet.peers.includes('also-working-here'),
-          `the warning names every other conversation bound to it, got ${JSON.stringify(quiet.peers)}`);
-        assert(!quiet.peers.includes('finishes-with-it'),
-          `and not the one doing the finishing, got ${JSON.stringify(quiet.peers)}`);
+        const quiet = workspaceFinishWarning(session, workspace, {
+          action: { id: 'done', label: 'Done with it', danger: true }
+        });
+        assert(!/also-working-here|finishes-with-it/.test(quiet.warning),
+          `an idle peer is not worth a sentence, since the strip is drawing it, got ${JSON.stringify(quiet.warning)}`);
         assert(quiet.refusal === '',
           `with nothing to refuse while nobody is working, got ${JSON.stringify(quiet.refusal)}`);
 
         // Mid-turn: removing a tree under a running agent is the one case that
         // loses work rather than merely surprising someone.
         Object.defineProperty(peer, 'isProcessing', { get: () => true, configurable: true });
-        const busy = workspaceFinishWarning(session, workspace, { conversation: owner });
+        const busy = workspaceFinishWarning(session, workspace);
         assert(/also-working-here/.test(busy.refusal),
           `a peer mid-turn is a refusal, and it says whose, got ${JSON.stringify(busy.refusal)}`);
 
@@ -582,24 +584,37 @@ export async function runTests() {
         assert(row?.state === 'closed',
           `and the row is tombstoned rather than deleted, so the id still resolves to a reason, got ${JSON.stringify(row?.state)}`);
         assert(row?.meta?.closedBy === 'finishes-with-it',
-          `naming who closed it, for the banner the peer will show, got ${JSON.stringify(row?.meta)}`);
+          `naming who closed it, for the banner a restored conversation will show, got ${JSON.stringify(row?.meta)}`);
 
-        // The conversation that finished with it is put back in the project. It
-        // used to be left bound to the tombstone with a composer that still
-        // looked ready: nothing refused the next message, and the turn died in
-        // the server with "workspace … was closed".
-        assert((owner.workspaceId || '') === '',
-          `the conversation that finished with it is back in the project, got ${JSON.stringify(owner.workspaceId)}`);
-        // And so is every other conversation that was working here. The tree is
-        // gone for all of them, so leaving one bound to a tombstone is leaving
-        // it somewhere that no longer exists — and which of them pressed the
-        // button is not a difference the workspace has, least of all when it
-        // was pressed on the workspace's own box and nobody pressed it as
-        // themselves.
-        assert((peer.workspaceId || '') === '',
-          `everyone working here goes back to the project, not just whoever finished with it, got ${JSON.stringify(peer.workspaceId)}`);
+        // The conversations go with the place they were working in. Left behind
+        // in the project they are tabs about work that has nowhere to happen,
+        // and their bindings still read as ready — nothing refused the next
+        // message, and the turn died in the server with "workspace … was closed".
+        //
+        // Both of them, not just whoever pressed the button: the tree is gone
+        // for everyone working in it, least of all when the ending was pressed
+        // on the workspace's own box and nobody pressed it as themselves.
+        assert(!session.conversations.has(owner.id),
+          'the conversation that finished with it goes too, not only the ones that did not ask');
+        assert(!session.conversations.has(peer.id),
+          'and so does every other conversation that was working here');
+
+        // The bin, which is what makes this survivable: it never expires, so a
+        // conversation that turns out to have mattered is restored from there.
+        const binned = await session.listBinnedConversations();
+        const ids = binned.map((/** @type {any} */ entry) => entry.id);
+        assert(ids.includes(owner.id) && ids.includes(peer.id),
+          `both are in the bin rather than gone, got ${JSON.stringify(ids)}`);
+        assert(/in the bin/.test(String(finished.message ?? '')),
+          `and the ending says where they went, got ${JSON.stringify(finished.message)}`);
       } finally {
         session.workspaces = saved;
+        // Out of the bin rather than left in it: every lane loads this same
+        // project, and a suite that bins two conversations per run leaves them
+        // there for all of them (see `releaseTestConversation`).
+        for (const conv of [owner, peer]) {
+          if (conv?.id) await session.deleteBinnedConversation(conv.id).catch(() => {});
+        }
         if (workspaceId) await unregisterWorkspace(workspaceId).catch(() => {});
         await projectOps.shell({ command: `rm -rf ${name}` }).catch(() => {});
       }
@@ -713,13 +728,13 @@ export async function runTests() {
         `while a clean one does not invent a reason to hesitate, got ${JSON.stringify(clean.warning)}`);
     });
 
-    await run('the confirmation says one thing per line, and names who is working here', async () => {
-      // What is put in front of someone about to delete a tree is three separate
-      // facts — what the ending does, who else is in there, and what is in there
-      // unsaved — and run together into one paragraph they read as one muddled
-      // sentence: "Removes the copy and everything done in it. Worked in by
-      // Untitled 1." Each fact gets its own line, and the peers are a sentence
-      // about the people rather than a passive tail on a sentence about the tree.
+    await run('the confirmation says one thing per line, and nothing about who is in the tree', async () => {
+      // What is put in front of someone about to delete a tree is two facts —
+      // what the ending does, and what is in there unsaved — each on a line of
+      // its own, because run together they read as one muddled sentence. Who
+      // else is working in it is not one of them: the strip behind the dialog is
+      // drawing those conversations, and naming them here is a list to check
+      // against one already in view.
       const panel = /** @type {any} */ (document.createElement('workspace-panel'));
       panel._workspace = workspaceRow('ws_confirm_lines', '/tmp/confirm-lines', {
         providerId: FixtureProvider.MANIFEST.id
@@ -756,12 +771,12 @@ export async function runTests() {
       const lines = String(asked?.message ?? '').split('\n').map((/** @type {string} */ l) => l.trim()).filter(Boolean);
       assert(lines[0] === option.description,
         `what the ending does comes first, on a line of its own, got ${JSON.stringify(lines)}`);
-      assert(lines.length === 3,
-        `and the other two facts get a line each rather than being run together, got ${JSON.stringify(lines)}`);
-      assert(/^Untitled 1 is working here\b/.test(lines[1]),
-        `the peer line is a sentence about who is in there, got ${JSON.stringify(lines)}`);
-      assert(/uncommitted/i.test(lines[2]),
-        `and the unsaved work is said last, nearest the button, got ${JSON.stringify(lines)}`);
+      assert(lines.length === 2,
+        `with the unsaved work on a line of its own rather than run together, got ${JSON.stringify(lines)}`);
+      assert(/uncommitted/i.test(lines[1]),
+        `and said last, nearest the button, got ${JSON.stringify(lines)}`);
+      assert(!/Untitled 1/.test(String(asked?.message ?? '')),
+        `while the conversation working in it is left to the strip that is drawing it, got ${JSON.stringify(lines)}`);
     });
 
     await run('a form says what the place it makes is good and bad for', async () => {

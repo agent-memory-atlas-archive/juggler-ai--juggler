@@ -907,9 +907,9 @@ Three rules carry most of the weight.
 
 **Say what each option does to the conversation, not just to the files.** Every
 `finishOptions()` entry is shown with its `description` under it, and finishing
-sends the conversation that asked back to the project folder — so a description
-that stops at "removes the tree" leaves the reader guessing at the half they
-actually feel. An option that is *not* a way of being done — committing, pushing,
+bins every conversation that was working there — recoverably, but it takes them
+off the strip — so a description that stops at "removes the tree" leaves the
+reader guessing at the half they actually feel. An option that is *not* a way of being done — committing, pushing,
 reinstalling — sets `keepsWorkspace: true` and returns `done: false`; the host
 shows it apart from the endings, above the heading that warns what the rest of
 them are.

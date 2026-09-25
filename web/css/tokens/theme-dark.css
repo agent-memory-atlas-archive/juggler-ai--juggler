@@ -147,6 +147,31 @@
     --workspace-box-bg: #202935;
     --workspace-box-border: #404b5a;
 
+    /* What tells one box from another at a glance. A workspace picks a hue by
+       hashing its id (utils/workspace-colour.js), and the box mixes it into the
+       pair above rather than replacing them — so every hue lands in this theme's
+       own lightness range, and one palette serves both themes without a second
+       set of values tuned for each.
+
+       Eight, spread around the wheel far enough apart to be told apart at the
+       width of a border, and no signal colours: a box's hue says which place it
+       is, never how it is doing. The strengths are the whole of how loud this
+       gets, which is why they are three numbers here and not sixteen. */
+    --workspace-tint-1: #58a6ff;
+    --workspace-tint-2: #39c5cf;
+    --workspace-tint-3: #3fb950;
+    --workspace-tint-4: #9ecb5a;
+    --workspace-tint-5: #e3b341;
+    --workspace-tint-6: #ff8f6b;
+    --workspace-tint-7: #f778ba;
+    --workspace-tint-8: #b98cff;
+
+    /* Dark takes more of it: the tint has to clear a fill that is already dark
+       and already coloured, where light has white to spend. */
+    --workspace-tint-fill: 16%;
+    --workspace-tint-edge: 60%;
+    --workspace-tint-text: 45%;
+
     /* ANSI foreground palette (dark) — used by utils/ansi.js to colour bash
        output text in the properties panel. Tuned to read well on --bg-primary.
        Backgrounds use the theme-independent --ansi-bg-* palette (see :root). */
@@ -498,6 +523,23 @@
        edge is firmed up, enough to tell two adjacent boxes apart. */
     --workspace-box-bg: #fff;
     --workspace-box-border: #c2ccd6;
+
+    /* The same eight hues as the dark block, at this theme's depth: a workspace
+       keeps the hue it is known by when the theme is switched, and only the
+       lightness moves. Same order, so the hash keeps pointing at the same one. */
+    --workspace-tint-1: #0969da;
+    --workspace-tint-2: #1b7c83;
+    --workspace-tint-3: #1a7f37;
+    --workspace-tint-4: #5c7a1e;
+    --workspace-tint-5: #9a6700;
+    --workspace-tint-6: #bc4c00;
+    --workspace-tint-7: #bf3989;
+    --workspace-tint-8: #8250df;
+
+    /* Light needs far less, for the same reason the box itself does. */
+    --workspace-tint-fill: 7%;
+    --workspace-tint-edge: 45%;
+    --workspace-tint-text: 40%;
 
     /* ANSI foreground palette (light) — tuned to read well on the light
        --bg-primary. Mirrors GitHub's light ANSI colours. Backgrounds use the

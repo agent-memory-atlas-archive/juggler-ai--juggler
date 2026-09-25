@@ -242,8 +242,9 @@ rather than moving it silently.
 
 Finishing a workspace is the provider's business and the options are its own — a
 worktree offers to commit or to discard, and discarding deletes the tree and the
-branch. The conversations working there return to the project folder. Extensions
-can add providers of their own; see "Writing an extension".
+branch. Closing a workspace bins the conversations that were working in it: they
+go with the place they were working in, and the Bin restores them. Extensions can
+add providers of their own; see "Writing an extension".
 
 ## Keyboard shortcuts
 

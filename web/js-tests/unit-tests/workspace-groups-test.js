@@ -18,7 +18,7 @@
  */
 
 import { assert } from '../utilities/test-helpers.js';
-import { workspaceGroups, placeForNewConversation } from '../../js/services/workspace-provisioning.js';
+import { workspaceGroups, placeForNewConversation, takesTheHead } from '../../js/services/workspace-provisioning.js';
 import Session from '../../js/model/session.js';
 
 /**
@@ -248,6 +248,38 @@ export async function runTests() {
       `the head of the bar is named outright, never spelled as an absence, got "${shape(groups)}"`);
   });
 
+  check('only a conversation drawn flat is one the head is at stake for', () => {
+    const table = [workspace('ws_a', { place: 'head' }), workspace('ws_shut', { state: 'closed' })];
+    const bindings = /** @type {[string, string][]} */ ([['c0', ''], ['c1', 'ws_a']]);
+
+    assert(takesTheHead(session(table, bindings), '') === true,
+      'a conversation of the project\'s own is drawn flat, and the flat order starts at the head');
+    assert(takesTheHead(session(table, bindings), 'ws_a') === false,
+      'one started in a usable workspace is drawn inside its box, so the head is not where it lands and not its to take');
+    assert(takesTheHead(session(table, bindings), 'ws_shut') === true,
+      'a workspace nobody can work in has no box to be drawn inside, so its conversations go where every flat one goes');
+    assert(takesTheHead(session(table, bindings), 'ws_never_registered') === true,
+      'and so does a binding naming nothing at all');
+  });
+
+  check('a conversation created at the head takes it from the box that was there', () => {
+    const bindings = /** @type {[string, string][]} */ ([['c0', ''], ['c1', 'ws_a']]);
+    const before = workspaceGroups(session([workspace('ws_a', { place: 'head' })], bindings));
+    assert(shape(before) === 'ws_a:[c1] project:[c0]',
+      `the box holds the head, so it is drawn above every flat tab, got "${shape(before)}"`);
+
+    // The head is one position and one thing holds it. A tab arriving there
+    // takes it, and the box that had it is behind that tab now — which is the
+    // arrival counterpart of the rule that hands a box's place to a neighbour
+    // when the tab it was anchored to leaves.
+    const after = workspaceGroups(session(
+      [workspace('ws_a', { place: 'new' })],
+      insert(bindings, 0, ['new', ''])
+    ));
+    assert(shape(after) === 'project:[new] ws_a:[c1] project:[c0]',
+      `and once it has been handed over the new tab is the top one, with the box directly beneath it, got "${shape(after)}"`);
+  });
+
   check('an empty box holds the place its row names', () => {
     const groups = workspaceGroups(session(
       [workspace('ws_empty', { place: 'c0' })],
@@ -356,6 +388,55 @@ export async function runTests() {
     const order = [...folded.keys()].join(',');
     assert(order === 'plain,c0,new,c1',
       `the boxed arrival goes behind the conversation its box is anchored to, and the loose one to the head — neither is swept to an end by the refresh it landed in, got "${order}"`);
+  });
+
+  check('the session hands the head over when a tab is created into it', () => {
+    /** @type {any[]} */
+    const notified = [];
+    const stub = {
+      workspaces: [
+        workspace('ws_head', { place: 'head' }),
+        workspace('ws_also', { place: 'head' }),
+        workspace('ws_elsewhere', { place: 'c0' })
+      ],
+      /**
+       * @param {string} event - What happened.
+       * @param {any} payload - What it happened to.
+       * @returns {void}
+       */
+      _notify: (event, payload) => { notified.push([event, payload]); }
+    };
+
+    const displaced = Session.prototype._takeTheHeadFromBoxes.call(stub, 'new', '');
+    assert(displaced.join(',') === 'ws_head,ws_also',
+      `both boxes that were at the head are behind the new tab now, and they are what there is to store, got "${displaced.join(',')}"`);
+    assert(stub.workspaces.map((/** @type {any} */ row) => row.place).join(',') === 'new,new,c0',
+      `a box anchored anywhere else is not at the head and is not touched, got "${stub.workspaces.map((/** @type {any} */ r) => r.place).join(',')}"`);
+    assert(notified.length === 1 && notified[0][0] === 'session:workspaces-changed',
+      'the strip is told once, so it redraws with the tab rather than waiting on the round trip');
+
+    const again = Session.prototype._takeTheHeadFromBoxes.call(stub, 'newer', '');
+    assert(again.length === 0 && notified.length === 1,
+      'and running it a second time finds no box at the head, which is what makes the two placement passes over one conversation safe');
+  });
+
+  check('a tab created inside a box leaves the head alone', () => {
+    /** @type {any[]} */
+    const notified = [];
+    const stub = {
+      workspaces: [workspace('ws_head', { place: 'head' })],
+      conversations: new Map(),
+      /**
+       * @param {string} event - What happened.
+       * @param {any} payload - What it happened to.
+       * @returns {void}
+       */
+      _notify: (event, payload) => { notified.push([event, payload]); }
+    };
+
+    const displaced = Session.prototype._takeTheHeadFromBoxes.call(stub, 'new', 'ws_head');
+    assert(displaced.length === 0 && stub.workspaces[0].place === 'head' && notified.length === 0,
+      `a conversation started in a box is drawn inside it and never lands above it, so the box keeps the head, got "${stub.workspaces[0].place}"`);
   });
 
   check('a session that has not loaded yet groups nothing', () => {

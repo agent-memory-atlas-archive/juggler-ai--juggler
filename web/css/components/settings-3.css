@@ -930,13 +930,13 @@
     line-height: 1.5;
 }
 
-/* One fact per line: who else is working here and what is unsaved are separate
-   things to know, and the host writes them as separate lines. */
+/* What the host has to say about this tree before it goes — in practice the one
+   sentence about unsaved work — set apart from the provider's own description of
+   the ending. */
 .workspace-finish-warning {
     font-size: 0.875rem;
     color: var(--warning-color, var(--error-color));
     line-height: 1.5;
-    white-space: pre-line;
 }
 
 /* The setup panel's field furniture, without its grid: that one sets a label in

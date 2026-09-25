@@ -919,6 +919,30 @@ export async function runTests() {
       assert(placementForNewConversation(bar._session, 'ws_gone').where === 'head',
         'a workspace nobody can work in has no box to go to the top of, so its conversations go where the rest do');
     });
+
+    await check('every box carries the colour its workspace is known by', () => {
+      // Boxes are the same shape and near enough the same size, and the names
+      // in them are branches that ellipsise. The hue is what is read first, so
+      // it has to be on the element the frame is drawn from.
+      bar._session = stubSession(
+        [workspace('ws_one', 'feature/one'), workspace('ws_two', 'feature/two')],
+        [['c1', 'ws_one'], ['c2', 'ws_two']]
+      );
+      bar.render();
+
+      const tintOf = (/** @type {string} */ id) => /** @type {HTMLElement} */ (
+        bar.querySelector(`.conversation-box[data-workspace-id="${id}"]`)).style.getPropertyValue('--workspace-tint');
+
+      assert(/^var\(--workspace-tint-[1-8]\)$/.test(tintOf('ws_one')),
+        `a box names one of the theme's tints rather than a colour of its own, got "${tintOf('ws_one')}"`);
+      assert(tintOf('ws_one') !== tintOf('ws_two'),
+        `and these two ids land on different ones, which is the whole point of drawing them, got "${tintOf('ws_one')}" twice`);
+
+      const first = tintOf('ws_one');
+      bar.render();
+      assert(tintOf('ws_one') === first,
+        `the colour is derived from the id and nothing else, so a redraw cannot change it, got "${tintOf('ws_one')}" after "${first}"`);
+    });
   } finally {
     container.remove();
   }

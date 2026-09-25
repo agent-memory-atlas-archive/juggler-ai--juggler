@@ -436,7 +436,7 @@ class ScratchCopyWorkspaceProvider extends WorkspaceProvider {
       {
         id: 'keep',
         label: 'Close the workspace, keep the copy',
-        description: 'The copy and everything in it stays on disk, ready to be adopted again. Conversations here return to the project folder.'
+        description: 'The copy and everything in it stays on disk, ready to be adopted again. Conversations here go to the bin, which they can be restored from.'
       },
       {
         id: 'apply-anyway',
@@ -448,7 +448,7 @@ class ScratchCopyWorkspaceProvider extends WorkspaceProvider {
         id: 'discard',
         label: 'Close the workspace and delete the copy',
         danger: true,
-        description: 'Deletes the copy and everything done in it. Conversations here return to the project folder.'
+        description: 'Deletes the copy and everything done in it. Conversations here go to the bin, which they can be restored from.'
       }
     ];
   }

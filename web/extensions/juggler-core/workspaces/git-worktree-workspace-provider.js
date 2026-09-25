@@ -1103,7 +1103,10 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
    * conversation is a second answer, so it is a second button that says as much,
    * and the field means only what its label says it means.
    *
-   * Landing sits beside it, and is a fast-forward and nothing else. A worktree
+   * The fast-forward sits beside it, and is `git merge --ff-only` and nothing
+   * else. It is named in git's own words, down to the command it runs: anybody
+   * with a worktree has those words already, and a friendlier paraphrase only
+   * hides which of git's several ways of moving work this one is. A worktree
    * shares the repository's object store and refs, so a commit made here is
    * already in the repository — what is missing is that the main checkout's
    * branch does not point at it, and moving that pointer is an act with no
@@ -1125,12 +1128,13 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
   finishOptions(workspace) {
     const meta = workspace?.meta ?? {};
     const branch = String(meta?.branch ?? '');
+    const repo = baseName(String(meta?.repoDir ?? '')) || 'the repository';
     return [
       {
         id: 'commit',
         label: 'Commit the changes',
         keepsWorkspace: true,
-        description: `Commits everything here onto ${branch || 'its branch'}. You carry on working in this workspace either way.`,
+        description: `Commits everything here onto ${branch || 'its branch'}. You carry on working in this workspace.`,
         prompt: {
           label: 'Message',
           placeholder: 'What this work does',
@@ -1146,22 +1150,22 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
       },
       {
         id: 'land',
-        label: `Land the work in ${baseName(String(meta?.repoDir ?? '')) || 'the repository'}`,
+        label: `Fast-forward ${repo} to ${branch || 'this branch'}`,
         keepsWorkspace: true,
-        description: `Moves the branch the repository has checked out onto ${branch || 'this one'}, when it has not moved on itself. A fast-forward, so nothing can conflict. You carry on working here.`
+        description: `Runs git merge --ff-only ${branch || 'this branch'} in ${repo}, moving the branch it has checked out to this one. Git refuses it if that branch has diverged. The worktree is untouched.`
       },
       {
         id: 'unbind',
         label: 'Close the workspace, keep the worktree',
-        description: `The worktree and ${branch || 'its branch'} stay on disk, ready to be adopted again. Conversations here return to the project folder.`
+        description: `The worktree and ${branch || 'its branch'} stay on disk, ready to be adopted again. Conversations here go to the bin, which they can be restored from.`
       },
       {
         id: 'discard',
         label: 'Close the workspace and delete the worktree',
         danger: true,
         description: meta.branchCreatedByUs && branch
-          ? `Deletes the worktree and the branch ${branch}, with every commit on it. Conversations here return to the project folder.`
-          : 'Deletes the worktree and everything in it, committed or not. The branch was not ours to make, so it stays. Conversations here return to the project folder.'
+          ? `Deletes the worktree and the branch ${branch}, with every commit on it. Conversations here go to the bin, which they can be restored from.`
+          : 'Deletes the worktree and everything in it, committed or not. The branch was not ours to make, so it stays. Conversations here go to the bin, which they can be restored from.'
       }
     ];
   }
@@ -1310,10 +1314,10 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     const meta = workspace?.meta ?? {};
     const branch = String(meta?.branch ?? '');
     if (!branch) {
-      return { done: false, message: 'There is no record of which branch this worktree is on, so there is nothing to land.' };
+      return { done: false, message: 'There is no record of which branch this worktree is on, so there is nothing to merge.' };
     }
 
-    const where = this._repoFromBase(workspace, ctx, 'there is nowhere to land the work');
+    const where = this._repoFromBase(workspace, ctx, 'there is nowhere to merge it into');
     if (where.problem) return { done: false, message: where.problem };
 
     // Uncommitted work stays where it is — landing moves commits — so it is
@@ -1328,7 +1332,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     if (uncommitted.length) {
       return {
         done: false,
-        message: `This worktree is still holding ${uncommitted.length === 1 ? 'a change' : `${uncommitted.length} changes`} nobody has committed. Commit the changes first — landing moves commits, and these would be left behind.`
+        message: `This worktree has ${uncommitted.length === 1 ? 'an uncommitted change' : `${uncommitted.length} uncommitted changes`}. Commit them first — a fast-forward moves commits, and these would be left behind.`
       };
     }
 
@@ -1340,7 +1344,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     if (!into || into === 'HEAD') {
       return {
         done: false,
-        message: `${baseName(String(meta.repoDir))} is not on a branch, so there is no branch to land ${branch} on.`
+        message: `${baseName(String(meta.repoDir))} has a detached HEAD, so there is no branch to fast-forward to ${branch}.`
       };
     }
 
@@ -1348,11 +1352,11 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     if (!merged?.success) {
       return {
         done: false,
-        message: gitSaid(`${into} has moved on since this worktree was made, so ${branch} cannot be fast-forwarded onto it. Merging or rebasing it is a job for you and git.`, merged)
+        message: gitSaid(`${into} has moved on since this worktree was made, so it cannot be fast-forwarded to ${branch}. A merge or a rebase is a job for you and git.`, merged)
       };
     }
     if (/already up to date/i.test(String(merged?.stdout ?? ''))) {
-      return { done: false, message: `${into} already has everything on ${branch}.` };
+      return { done: false, message: `${into} is already up to date with ${branch}.` };
     }
     return { done: false, message: `Fast-forwarded ${into} to ${branch}.` };
   }

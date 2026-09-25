@@ -25,7 +25,7 @@ const COMMIT_OPTION = {
   id: 'commit',
   label: 'Commit the changes',
   keepsWorkspace: true,
-  description: 'Commits everything here onto onboarding. You carry on working in this workspace either way.',
+  description: 'Commits everything here onto onboarding. You carry on working in this workspace.',
   prompt: {
     label: 'Message',
     placeholder: 'What changed, in a line',

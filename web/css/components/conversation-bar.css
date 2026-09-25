@@ -65,6 +65,18 @@ conversation-bar .conversation-tabs {
    obvious place, and it stays on screen with nothing in it: the tree outlives
    the conversations started in it, and this is the only thing that shows it. */
 conversation-bar .conversation-box {
+    /* The workspace's own hue, mixed into the theme's tray colours rather than
+       replacing them: the strength is the theme's (--workspace-tint-*), so every
+       hue lands in the range that theme's fill and edge already occupy, and one
+       palette serves light and dark without a second set tuned for each.
+
+       --workspace-tint comes from the element, set per box by the bar. Each mix
+       falls back to the colour it is mixing into, which makes it a no-op — a box
+       with no hue is drawn exactly as it was before there were any. */
+    --workspace-box-surface: color-mix(in srgb,
+        var(--workspace-tint, var(--workspace-box-bg)) var(--workspace-tint-fill),
+        var(--workspace-box-bg));
+
     position: relative;
     display: flex;
     flex-direction: column;
@@ -72,9 +84,26 @@ conversation-bar .conversation-box {
     gap: 0.375rem;
     width: 100%;
     padding: 0.375rem;
-    background: var(--workspace-box-bg);
-    border: 0.0625rem solid var(--workspace-box-border);
+    background: var(--workspace-box-surface);
+    border: 0.0625rem solid color-mix(in srgb,
+        var(--workspace-tint, var(--workspace-box-border)) var(--workspace-tint-edge),
+        var(--workspace-box-border));
     border-radius: 0.9rem;
+}
+
+/* The air around a tray is about where it sits rather than what it is: a box
+   wants more room from its neighbours than two tabs want from each other, and
+   the strip's own gap is the tabs' rhythm. So the margins hang off the box's
+   place in the list, which is also why the floating clone of one goes without
+   them — it is positioned, not placed.
+
+   That selector is carrying weight too. The markdown pattern zeroes the margins
+   of whatever lands first and last inside it, from a layer below this one, and a
+   rule that loses that fight is a rule that stops working the day the sheets are
+   wrapped in layers. */
+conversation-bar .conversation-tabs > .conversation-box {
+    margin-top: 0.5rem;
+    margin-bottom: 0.5rem;
 }
 
 /* The box's top row: the grip it is dragged by, then the name. A row of its own
@@ -156,7 +185,7 @@ conversation-bar .conversation-box-add:hover {
    longer sits on that ramp, and --bg-raised is now darker than the box in dark
    mode, so borrowing it would make the hover read as a press. */
 conversation-bar .conversation-box:not(.active):hover {
-    background: color-mix(in srgb, var(--text-primary) 7%, var(--workspace-box-bg));
+    background: color-mix(in srgb, var(--text-primary) 7%, var(--workspace-box-surface));
 }
 
 /* A box is chosen the way a tab is chosen, in the same colours, because the
@@ -192,14 +221,21 @@ conversation-bar .conversation-box-title {
 
 /* The tray's title, and drawn like one: the name of the place is the most
    important thing in the box, not the quietest. Read at a glance against the
-   tabs below it, which are longer, lighter and more numerous. */
+   tabs below it, which are longer, lighter and more numerous.
+
+   Carrying the box's hue too, but only part of the way: the text colour stays
+   mostly --text-primary, which is what keeps a name legible whichever of the
+   eight it drew and whichever theme it is read in. Enough to tie the name to
+   the frame around it, not enough to make the name the colour's. */
 conversation-bar .conversation-box-label {
     flex: 1 1 auto;
     min-width: 0;
     overflow: hidden;
     font-size: 0.8125rem;
     font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
+    color: color-mix(in srgb,
+        var(--workspace-tint, var(--text-primary)) var(--workspace-tint-text),
+        var(--text-primary));
     white-space: nowrap;
     text-overflow: ellipsis;
 }
@@ -549,8 +585,15 @@ conversation-bar .conversation-box-top > .drag-grip {
     }
 }
 
+/* Everything a drag can shove aside travels to its new slot rather than
+   appearing in it. The gate is the mark on the menu, so the list covers what
+   the drag measures: its tabs wherever they are drawn — a tab inside a
+   workspace box is one of them — the boxes, and an empty box's "No
+   conversations" line, which is a slot a tab can land in front of and so moves
+   like one. */
 conversation-bar .conversation-tabs.is-dragging .conversation-tab:not(.drag-source),
-conversation-bar .conversation-tabs.is-dragging .conversation-box:not(.drag-source) {
+conversation-bar .conversation-tabs.is-dragging .conversation-box:not(.drag-source),
+conversation-bar .conversation-tabs.is-dragging .conversation-box-empty {
     transition: transform 150ms ease;
 }
 

@@ -81,7 +81,7 @@ export function settledRect(element) {
  * @property {HTMLElement} item - The element being dragged.
  * @property {() => HTMLElement[]} items - The reorderable items, in strip order. Called live, and must exclude the floating clone. They need not share a parent: a strip built from nested lists is read as one sequence, and the item lands in the list its new neighbour is in.
  * @property {HTMLElement} [captureTarget] - Which element takes the pointer. Must be the one carrying the click handler. Defaults to the item.
- * @property {HTMLElement} [strip] - The element holding the items, marked while a drag is live so a stylesheet can gate its transitions. Defaults to the item's parent.
+ * @property {HTMLElement|null} [strip] - The element holding the items, marked while a drag is live so a stylesheet can gate its transitions. Defaults to the item's parent, which is only right for a flat strip: where the items live in nested lists, name the element the stylesheet looks for.
  * @property {HTMLElement} [ghostHost] - Where the clone is parked. Defaults to the item's parent; give a host outside any clipping scroll box.
  * @property {HTMLElement|null} [scrollContainer] - The strip's scroll box, for edge auto-scrolling. Omit for a strip that does not scroll.
  * @property {'x'|'y'|'xy'} [axis] - Which way the clone follows the pointer, and which distance arms the threshold. Default `'y'`.

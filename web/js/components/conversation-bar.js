@@ -26,6 +26,7 @@ import { BIN_LARGE_BYTES, MAX_CONVERSATION_NAME_LENGTH } from '../utils/constant
 import { setupColumnResize, applyColumnWidthPx } from '../utils/column-resize.js';
 import { startReorderDrag, settledRect } from '../utils/reorder-drag.js';
 import { DRAG_GRIP_HTML, pointerMayGrab } from '../utils/drag-grip.js';
+import { workspaceTint } from '../utils/workspace-colour.js';
 import { formatBytes } from '../utils/format.js';
 import { registerContextMenuProvider } from '../services/context-menu-service.js';
 import scheduledSendService, { SCHEDULED_SEND_ARMED_EVENT } from '../services/scheduled-send-service.js';
@@ -49,6 +50,18 @@ import './workspace-box-header.js';
 // button, where the second click lands before the async create resolves and
 // would spawn a second tab.
 const NEW_CONVERSATION_DEBOUNCE_MS = 500;
+
+// How far below a workspace box's top edge still counts as the strip above it
+// rather than the inside of it, while a drag is looking for somewhere to land
+// (see `_dropPlaceAt`). It is taken out of the header, which is a title and is
+// not somewhere a tab is ever dropped — so no slot in the box loses any of its
+// own height, and the slot above the box's first tab keeps most of the header
+// besides.
+//
+// The top edge alone. Below the last tab there is only the box's padding, and
+// that padding is the end of the box: a tab let go there belongs to the box, so
+// there is nothing at that edge to take.
+const BOX_TOP_BAND_PX = 14;
 
 // Material "delete" (trash can) icon — the per-tab "move to bin" affordance.
 const BIN_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" height="1rem" viewBox="0 -960 960 960" width="1rem" fill="currentColor" aria-hidden="true"><path d="M280-120q-33 0-56.5-23.5T200-200v-520h-40v-80h200v-40h240v40h200v80h-40v520q0 33-23.5 56.5T680-120H280Zm400-600H280v520h400v-520ZM360-280h80v-360h-80v360Zm160 0h80v-360h-80v360ZM280-720v520-520Z"/></svg>`;
@@ -958,6 +971,10 @@ class ConversationBar extends JugglerElement {
       box.className = 'conversation-box';
       box.dataset.workspaceId = workspace.id;
       box.setAttribute('role', 'group');
+      // The hue the box is drawn in, set once: it comes from the id, and the
+      // element is kept for as long as the workspace is. What the tint is worth
+      // in this theme is the stylesheet's business; this only says which.
+      box.style.setProperty('--workspace-tint', workspaceTint(workspace.id));
       // The line that says the box is empty lives in the list the tabs go in,
       // and is the last thing in it. That is where it reads from, and it is
       // also what makes an empty box a place a tab can be dropped: a drag lands
@@ -1182,6 +1199,17 @@ class ConversationBar extends JugglerElement {
    * So containment decides, and nothing else: a drop is in a box when the
    * pointer is within that box, and is in the strip the rest of the time.
    *
+   * Within, less a band below the top edge. Taken at the box's own outline, the
+   * whole of "beside this box" was the gap between it and the next one — a few
+   * pixels, for a position that is a different act from the ones either side of
+   * it and the one an ordinary reorder wants. The band moves that outline down
+   * through the header, which is not a row and is not somewhere a tab lands, so
+   * the strip between two boxes is three times the width it was and no slot
+   * inside a box loses any of its own height.
+   *
+   * Capped for a box shorter than the band assumes — an empty one is mostly
+   * header, and has to stay somewhere a conversation can be dropped.
+   *
    * Every rect here is a {@link settledRect}: a gesture asks this again while
    * the last shift it caused is still animating, and where a tab is on its way
    * to is the only thing worth asking about.
@@ -1202,8 +1230,9 @@ class ConversationBar extends JugglerElement {
       Array.from(this.querySelectorAll('.conversation-box:not(.drag-ghost)')))
       .find((candidate) => {
         const rect = settledRect(candidate);
-        return clientX >= rect.left && clientX <= rect.right
-          && clientY >= rect.top && clientY <= rect.bottom;
+        if (clientX < rect.left || clientX > rect.right) return false;
+        const band = Math.min(BOX_TOP_BAND_PX, rect.height / 4);
+        return clientY >= rect.top + band && clientY <= rect.bottom;
       });
 
     const list = box
@@ -2071,7 +2100,13 @@ class ConversationBar extends JugglerElement {
    * @private
    */
   _startDrag(e, tab) {
-    const scrollContainer = /** @type {HTMLElement|null} */ (this.querySelector('.conversation-tabs'));
+    // The menu is both the box the drag auto-scrolls and the strip the
+    // stylesheet gates the shift animation on. It has to be named rather than
+    // left to default to the tab's parent, because a tab drawn inside a
+    // workspace box has that box's list for a parent: the mark would land on
+    // something no rule mentions, and the tabs shoved aside would jump to their
+    // new slots instead of travelling to them.
+    const tabsMenu = /** @type {HTMLElement|null} */ (this.querySelector('.conversation-tabs'));
     // Every place a tab can land, top to bottom. The floating clone lives on
     // the host yet still carries the tab class, so it has to be kept out.
     //
@@ -2099,8 +2134,9 @@ class ConversationBar extends JugglerElement {
     startReorderDrag(e, {
       item: tab,
       items: listTabs,
+      strip: tabsMenu,
       ghostHost: this,
-      scrollContainer,
+      scrollContainer: tabsMenu,
       axis: 'y',
       dropPlaceAt: (clientX, clientY) => this._dropPlaceAt(clientX, clientY, tab),
       prepareGhost: (clone) => {
@@ -2197,6 +2233,7 @@ class ConversationBar extends JugglerElement {
     startReorderDrag(e, {
       item: box,
       items: () => this._dropSlots(tabsMenu, null),
+      strip: tabsMenu,
       ghostHost: this,
       scrollContainer,
       axis: 'y',

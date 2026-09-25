@@ -686,7 +686,7 @@ class WorkspacePanel extends HTMLElement {
     } else {
       // What the ending does, then what the host has to add about this tree,
       // as separate paragraphs: one is the provider's sentence and the other
-      // is the coordination story, and a reader about to press a red button
+      // is what this tree holds, and a reader about to press a red button
       // takes them in faster apart than run together.
       const agreed = await showConfirm(
         [option.description, warning.warning].filter(Boolean).join('\n\n'),
