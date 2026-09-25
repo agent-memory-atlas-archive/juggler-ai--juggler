@@ -527,6 +527,24 @@
                  belongs to the project session. -->
             <pinboard-shell hidden></pinboard-shell>
         </main>
+
+        <!-- Startup: a blank window with the clubs in the middle of it, and —
+             only if starting up drags on — a line naming what is being waited
+             for. Written here rather than created by JS so that it is what the
+             FIRST frame shows: everything above is laid out but has nothing in
+             it yet, and this covers it (opaquely — see
+             components/overlays-and-updates.css) until it does. The spinner is
+             inert until its own module upgrades it, so the first moments are a
+             plain blank window. components/startup-overlay.js adopts this
+             element and removes it once the session is loaded. -->
+        <div class="loading-overlay" data-loading-overlay="startup">
+            <div class="loading-overlay__content">
+                <juggler-spinner style="--size: 3rem"></juggler-spinner>
+                <div class="loading-overlay__info">
+                    <div class="loading-overlay__message"></div>
+                </div>
+            </div>
+        </div>
     </app-container>
 
     <!-- Load utilities first -->

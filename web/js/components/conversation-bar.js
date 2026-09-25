@@ -852,7 +852,7 @@ class ConversationBar extends JugglerElement {
       newWorkspace.className = 'conversation-box-new';
       newWorkspace.innerHTML = `
         <button class="conversation-box-new-button" type="button"
-                title="Make a workspace: a separate place to work"
+                title="Create a new workspace"
                 aria-label="New workspace">${ADD_ICON_SVG}<span class="conversation-box-new-label">New workspace</span></button>
       `;
       this._cachedElements.set('new-workspace', newWorkspace);

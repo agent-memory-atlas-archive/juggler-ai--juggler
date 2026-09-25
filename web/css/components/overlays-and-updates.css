@@ -4,17 +4,33 @@
  *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
  */
 
-.disconnection-overlay {
+/* The two waits that take the whole window — starting up, and getting the
+   connection back — are one overlay in two configurations
+   (components/loading-overlay.js), so they are styled once here and differ by
+   the `data-loading-overlay` attribute naming which wait it is. */
+.loading-overlay {
     position: fixed;
     inset: 0;
     background: color-mix(in srgb, var(--bg-primary) 88%, transparent);
-    z-index: 10000;
+    z-index: var(--z-modal);
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
-.disconnection-overlay__content {
+/* A dropped connection leaves the work faintly visible behind the scrim above —
+   it is still there, and being shown it is reassuring. Startup has nothing
+   behind it worth showing: an empty sidebar, an empty tab column, and the line
+   the sidebar renders when it has no session, which is the right thing to say
+   about a session that failed to arrive and the wrong thing to greet a launch
+   with. So this one is solid, and the window is simply blank until there is
+   something in it. It is also why nothing has to be hidden element by element
+   for the duration. */
+.loading-overlay[data-loading-overlay="startup"] {
+    background: var(--bg-primary);
+}
+
+.loading-overlay__content {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -25,29 +41,29 @@
 
 /* Always laid out so the spinner and lines never shift; only the
    visibility flips once the spinner-only grace period ends. */
-.disconnection-overlay__info {
+.loading-overlay__info {
     visibility: hidden;
 }
 
-.disconnection-overlay__info--visible {
+.loading-overlay__info--visible {
     visibility: visible;
 }
 
-.disconnection-overlay__message {
+.loading-overlay__message {
     font-size: 1.25rem;
     color: var(--text-primary);
 }
 
-/* Its own line below the message, so the retry timer and the wording never
+/* Its own line below the message, so a retry timer and the wording never
    overwrite one another. Height is reserved so blanking it shifts nothing. */
-.disconnection-overlay__countdown {
+.loading-overlay__detail {
     margin-top: 0.5rem;
     min-height: 1.25em;
     font-size: 0.875rem;
     color: var(--text-secondary);
 }
 
-.disconnection-overlay__url {
+.loading-overlay__host {
     margin-top: 0.5rem;
     font-size: 0.875rem;
     color: var(--text-tertiary);

@@ -10,6 +10,8 @@
 import LLMState from './services/llm-state.js';
 import ConnectionManager from './services/connection-manager.js';
 import DisconnectionOverlay from './components/disconnection-overlay.js';
+import StartupOverlay from './components/startup-overlay.js';
+import { setAppPhase } from './services/app-phase.js';
 import UIEventManager from './services/ui-event-manager.js';
 import StrategySwitcher from './services/strategy-switcher.js';
 import { ModelCycler, ThinkingCycler } from './services/model-cycler.js';
@@ -129,6 +131,8 @@ class JugglerApp {
     this._modelCycler = null;
     /** @type {ThinkingCycler|null} @private */
     this._thinkingCycler = null;
+    /** @type {StartupOverlay|null} @private */
+    this._startupOverlay = null;
 
     this.init();
   }
@@ -231,18 +235,29 @@ class JugglerApp {
       void this._flushDraftsForClose(token);
     });
 
+    // Take over the overlay index.html painted before the first frame, and keep
+    // it until the session is loaded. It follows the phase itself, so the rest
+    // of this method only has to say where it has got to.
+    this._startupOverlay = new StartupOverlay();
+    this._startupOverlay.show();
+
     // Get component references. contextPanel, conversationArea, and
     // conversationControls are per-tab, not global.
     this.conversationBar = document.querySelector('conversation-bar');
 
     if (!this.conversationBar) {
       console.error('[Juggler] Failed to find required components');
+      // Nothing below will run, so nothing below will take the overlay down.
+      // Whatever is wrong here, a window dimmed for good is not the way to
+      // report it.
+      setAppPhase('ready');
       return;
     }
 
     // Boot all capability registries in dependency order and signal
     // registries-ready once the attempt settles — even on failure, so the
     // system-prompt gate can never permanently hang a turn.
+    setAppPhase('extensions');
     await initAllRegistries();
     // Baseline for the reload notices below: whatever is already broken at boot
     // is the user's status quo, not news.
@@ -338,7 +353,12 @@ class JugglerApp {
 
     // Setup WebSocket connection and initialize session
     if (this._connectionManager) {
+      setAppPhase('connecting');
       await this._connectionManager.setup();
+    } else {
+      // No connection manager means no session load, and so nothing that would
+      // ever declare the app started.
+      setAppPhase('ready');
     }
   }
 

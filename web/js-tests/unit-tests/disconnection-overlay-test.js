@@ -78,7 +78,7 @@ function lineOn(overlay) {
  */
 function revealed(overlay) {
   const el = /** @type {any} */ (overlay)._infoElement;
-  return !!el && el.classList.contains('disconnection-overlay__info--visible');
+  return !!el && el.classList.contains('loading-overlay__info--visible');
 }
 
 /**

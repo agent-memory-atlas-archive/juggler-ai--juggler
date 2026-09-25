@@ -10,6 +10,7 @@ import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
 import { isEngine } from '../../sdk/lib/client-role.js';
 import { followSession } from './git-workspace.js';
 import { reconcileWorkspaces } from './workspace-reconcile.js';
+import { setAppPhase } from './app-phase.js';
 
 /**
  * @typedef {object} ConnectionManagerOptions
@@ -302,6 +303,8 @@ class ConnectionManager {
    * @private
    */
   async _loadSession() {
+    setAppPhase('session');
+
     // Create session instance
     this._session = new Session(apiService);
 
@@ -374,6 +377,14 @@ class ConnectionManager {
     if (this._conversationBar) {
       /** @type {any} */ (this._conversationBar).setSession(this._session);
     }
+
+    // Startup is over: there is something real on screen, so the overlay that
+    // was standing in for it goes. Said here rather than on the success path
+    // above because a load that FAILED has also finished starting up — the
+    // project picker wired in just now is the recovery, and it is no use behind
+    // a spinner. (The 404 branch is the exception, and it returned already: that
+    // page is being reloaded, so it stays as it is until the new one paints.)
+    setAppPhase('ready');
 
     if (loadError && typeof window !== 'undefined') {
       // Surface the failure now that the picker overlay (wired above) is

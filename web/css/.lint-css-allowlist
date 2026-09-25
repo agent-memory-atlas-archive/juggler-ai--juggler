@@ -70,7 +70,6 @@ ownership patterns/overlay-chrome.css:modal-panel
 ownership tokens/theme-dark.css:pre
 
 # The rest: a component reaching into another's root, one at a time.
-ownership components/overlays-and-updates.css:disconnection-overlay
 ownership components/overlays-and-updates.css:juggler-context-menu
 ownership components/overlays-and-updates.css:pp-panel
 ownership components/pinboard.css:button

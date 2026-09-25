@@ -260,6 +260,7 @@ import { runTests as runFindTests } from '../unit-tests/find-test.js';
 import { runTests as runContextMenuTests } from '../unit-tests/context-menu-test.js';
 import { runTests as runComposerSelectionQuoteTests } from '../unit-tests/composer-selection-quote-test.js';
 import { runTests as runDisconnectionOverlayTests } from '../unit-tests/disconnection-overlay-test.js';
+import { runTests as runStartupOverlayTests } from '../unit-tests/startup-overlay-test.js';
 import { runTests as runExtensionRegistryTests } from '../unit-tests/extension-registry-test.js';
 import { runTests as runFileViewerRegistryTests } from '../unit-tests/file-viewer-registry-test.js';
 import { runTests as runPdfViewerTests } from '../unit-tests/pdf-viewer-test.js';
@@ -639,6 +640,7 @@ const UNIT_TEST_SUITES = [
   // Drives the document's one live Selection, which every other suite shares.
   { name: 'unit:composer-selection-quote', run: runComposerSelectionQuoteTests, needsExclusiveRun: true },
   { name: 'unit:disconnection-overlay', run: runDisconnectionOverlayTests },
+  { name: 'unit:startup-overlay', run: runStartupOverlayTests },
   { name: 'unit:extension-registry', run: runExtensionRegistryTests },
   { name: 'unit:file-viewer-registry', run: runFileViewerRegistryTests },
   { name: 'unit:pdf-viewer', run: runPdfViewerTests },
