@@ -29,7 +29,7 @@
 
 import WorkspaceProvider from 'juggler/workspace-provider';
 import api from '../../../js/services/api.js';
-import { branchPhrase, countsPhrase, divergencePhrase } from '../lib/git-status.js';
+import { branchPhrase, countsPhrase, divergencePhrase, fileStatusWords } from '../lib/git-status.js';
 import { baseName, join, parentOf, relativePath } from '../lib/workspace-paths.js';
 import { choice, field, nextFormSequence, showNote } from '../lib/setup-fields.js';
 
@@ -50,6 +50,18 @@ const HOOK_TIMEOUT_MS = 20 * 60 * 1000;
  * @type {string}
  */
 const SETUP_HOOK = '.juggler/worktree-setup';
+
+/**
+ * How long a commit may take.
+ *
+ * Not the operations' thirty-second default, which is a figure for a command
+ * somebody is watching. A commit runs the repository's hooks, and a pre-commit
+ * hook that formats and lints the staged files is ordinary and routinely slower
+ * than that — and the deadline does not fail the commit politely, it kills
+ * git's process group with everything already staged.
+ * @type {number}
+ */
+const COMMIT_TIMEOUT_MS = 5 * 60 * 1000;
 
 /**
  * How long to let a branch name settle before asking git what it makes of it.
@@ -161,6 +173,27 @@ function parseWorktrees(text) {
  */
 function singleQuoted(value) {
   return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+/**
+ * A plain lead, and under it whatever git said about it.
+ *
+ * Above rather than instead of: the lead says which command refused, which is
+ * the part a reader needs to know what they are being told, and git's own text
+ * is the part that says what to do about it. Dropping either leaves a message
+ * that cannot be acted on.
+ *
+ * The shell operation merges both streams into `stdout` and answers with an
+ * empty `stderr`, so `stdout` is read first — a message built from `stderr`
+ * alone reaches for a field that is always empty and reports the lead by itself
+ * every time.
+ * @param {string} lead - What could not be done, in plain words.
+ * @param {any} result - What the shell answered with.
+ * @returns {string} The two, or the lead alone when git said nothing at all.
+ */
+function gitSaid(lead, result) {
+  const said = String(result?.stdout || result?.stderr || '').trim();
+  return said ? `${lead}\n\n${said}` : lead;
 }
 
 /**
@@ -1003,6 +1036,15 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
 
     return {
       kind,
+      // What the commit is about to take, for the dialog that asks for a message
+      // to put on it. The same filter as the counts above, so the list and the
+      // number over it are one answer — and free, because the round trip that
+      // produced the counts brought the paths with it. The server caps how many
+      // it names, which is what `fileCount` is for.
+      files: (repo.files ?? [])
+        .filter((/** @type {any} */ file) => !isOurs(file.path))
+        .map((/** @type {any} */ file) => ({ path: file.path, state: fileStatusWords(file) })),
+      fileCount: Math.max(0, total),
       // "branch feat/x · clean" rather than "feat/x · clean": read on its own,
       // in a chip's menu or a row of a list, a bare name is a word with no job.
       // A detached head or no branch at all is already a phrase and says itself.
@@ -1055,10 +1097,14 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
    * conversation is a second answer, so it is a second button that says as much,
    * and the field means only what its label says it means.
    *
-   * Merging, rebasing and opening a pull request are deliberately absent. The
-   * common ending is a bare commit or nothing at all — one commit is often
-   * several tasks — and an ending that lands work is a flow with conflicts in
-   * it, which is its own feature rather than a fourth line in a menu.
+   * Landing sits beside it, and is a fast-forward and nothing else. A worktree
+   * shares the repository's object store and refs, so a commit made here is
+   * already in the repository — what is missing is that the main checkout's
+   * branch does not point at it, and moving that pointer is an act with no
+   * failure mode: it works, or git says the branch has moved on and nothing has
+   * happened. Rebasing and opening a pull request are still absent, and so is a
+   * real merge: resolving a conflict is a flow, and a flow is its own feature
+   * rather than a fourth line in a menu.
    *
    * The two endings say "close the workspace" in the same words because that
    * half is the same act, and differ only in the tree's fate, which is the
@@ -1082,6 +1128,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
         prompt: {
           label: 'Message',
           placeholder: 'What this work does',
+          confirmLabel: 'Commit',
           multiline: true,
           requiresWork: true,
           hint: 'What changed and why, in the words you would use to someone who has not read it.',
@@ -1090,6 +1137,12 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
             hint: 'It has read the work; the commit happens on its next turn.'
           }
         }
+      },
+      {
+        id: 'land',
+        label: `Land the work in ${baseName(String(meta?.repoDir ?? '')) || 'the repository'}`,
+        keepsWorkspace: true,
+        description: `Moves the branch the repository has checked out onto ${branch || 'this one'}, when it has not moved on itself. A fast-forward, so nothing can conflict. You carry on working here.`
       },
       {
         id: 'unbind',
@@ -1131,6 +1184,7 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
       };
     }
     if (actionId === 'commit') return this._commit(workspace, ctx);
+    if (actionId === 'land') return this._land(workspace, ctx);
     if (actionId === 'discard') return this._discard(workspace, ctx);
     return { done: false, message: `${this.getManifest().name} has no action "${actionId}".` };
   }
@@ -1168,25 +1222,133 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
     // No identity of ours is passed: this is the user's commit, in the user's
     // repository, and git's own complaint about an unconfigured one is a better
     // thing to read than a commit authored by a tool they did not choose.
-    const staged = await ctx.ops.shell({ command: 'git add -A' }, ctx.signal);
+    const staged = await ctx.ops.shell(
+      { command: 'git add -A', timeout: COMMIT_TIMEOUT_MS }, ctx.signal);
     if (!staged?.success) {
-      return {
-        done: false,
-        message: String(staged?.stderr || staged?.stdout || '').trim() || 'Nothing could be staged.'
-      };
+      return { done: false, message: gitSaid('Couldn’t stage the changes.', staged) };
     }
+
     const committed = await ctx.ops.shell(
-      { command: `git commit -q -m ${singleQuoted(message)}` }, ctx.signal);
+      { command: `git commit -q -m ${singleQuoted(message)}`, timeout: COMMIT_TIMEOUT_MS }, ctx.signal);
     if (!committed?.success) {
-      return {
-        done: false,
-        message: String(committed?.stderr || committed?.stdout || '').trim() || 'The commit did not go through.'
-      };
+      const said = String(committed?.stdout || committed?.stderr || '');
+      // Not a failure: it is what a second press lands on, and what a tree
+      // already committed from a terminal answers. Told as the fact it is.
+      if (/nothing to commit/i.test(said)) {
+        return { done: false, message: 'Nothing had changed here, so nothing was committed.' };
+      }
+      return { done: false, message: gitSaid('Couldn’t make the commit.', committed) };
     }
     // Never `done`: a commit is not a way of being finished with the place it
     // was made in. The workspace stays in use, which is what the menu promised
     // when it put this row outside the endings.
     return { done: false, message: `Committed on ${branch || 'its branch'}.` };
+  }
+
+  /**
+   * The repository, named the way the BASE operations can reach it.
+   *
+   * Everything that acts on the repository rather than on the tree goes through
+   * here: the workspace's own operations are pinned to the tree and refuse a
+   * path outside it, so the repository is named relative to the base workspace,
+   * exactly as the provision named it when it made the tree.
+   * @param {any} workspace - The row being acted on.
+   * @param {any} ctx - The context, for the session and the base workspace.
+   * @param {string} why - What cannot be done from here, for the refusal.
+   * @returns {{repoRel: string, problem: string}} Where it is, or why not.
+   */
+  _repoFromBase(workspace, ctx, why) {
+    const meta = workspace?.meta ?? {};
+    const baseRoot = String(ctx?.session?.workspaceRoot?.(ctx?.baseWorkspaceId ?? '') ?? '');
+    const repoRel = meta.repoDir && baseRoot ? relativePath(baseRoot, String(meta.repoDir)) : null;
+    if (!repoRel) {
+      return {
+        repoRel: '',
+        problem: `${meta.repoDir || 'The repository'} cannot be reached from ${baseRoot || 'the base workspace'}, so ${why}.`
+      };
+    }
+    return { repoRel, problem: '' };
+  }
+
+  /**
+   * Run a command in the repository, through the base operations.
+   * @param {any} ctx - The context, for `baseOps` and `signal`.
+   * @param {string} repoRel - The repository, relative to the base workspace.
+   * @param {string} command - What to run there.
+   * @returns {Promise<any>} The shell result, success or not.
+   */
+  _inRepoFromBase(ctx, repoRel, command) {
+    const full = repoRel && repoRel !== '.' ? `cd "${repoRel}" && ${command}` : command;
+    return ctx.baseOps.shell({ command: full }, ctx.signal);
+  }
+
+  /**
+   * Put the work onto the branch the repository itself has checked out.
+   *
+   * This is what "get it back into the repository" actually means for a
+   * worktree. Nothing is pushed: a worktree shares the repository's object store
+   * and its refs, so the commit is in the repository the instant it is made, and
+   * what is missing is only that the main checkout's branch does not point at
+   * it. Moving that pointer is the whole act.
+   *
+   * Fast-forward only, and that is the feature rather than a limitation. A
+   * fast-forward cannot conflict, cannot lose a commit, and cannot leave the
+   * repository in a state anybody has to be walked out of: either the branch has
+   * not moved and it lands, or it has and git declines. A real merge is a flow
+   * with conflict resolution in it, which is its own feature and not a button.
+   * @param {any} workspace - The row being landed from.
+   * @param {any} ctx - Operations pinned to the tree, the base's beside them.
+   * @returns {Promise<any>} What happened. Never `done`: the workspace stays in use.
+   */
+  async _land(workspace, ctx) {
+    const meta = workspace?.meta ?? {};
+    const branch = String(meta?.branch ?? '');
+    if (!branch) {
+      return { done: false, message: 'There is no record of which branch this tree is on, so there is nothing to land.' };
+    }
+
+    const where = this._repoFromBase(workspace, ctx, 'there is nowhere to land the work');
+    if (where.problem) return { done: false, message: where.problem };
+
+    // Uncommitted work stays where it is — landing moves commits — so it is
+    // said up front rather than discovered afterwards by a reader wondering
+    // where their changes went. Ours is not theirs, the same distinction the
+    // status makes.
+    const held = await ctx.ops.shell({ command: 'git status --porcelain' }, ctx.signal);
+    const uncommitted = String(held?.stdout ?? '')
+      .split(/\r?\n/)
+      .map(line => line.slice(3).trim())
+      .filter(path => path && !isOurs(path));
+    if (uncommitted.length) {
+      return {
+        done: false,
+        message: `This tree is still holding ${uncommitted.length === 1 ? 'a change' : `${uncommitted.length} changes`} nobody has committed. Commit the changes first — landing moves commits, and these would be left behind.`
+      };
+    }
+
+    const head = await this._inRepoFromBase(ctx, where.repoRel, 'git rev-parse --abbrev-ref HEAD');
+    if (!head?.success) {
+      return { done: false, message: gitSaid('Couldn’t ask the repository which branch it has out.', head) };
+    }
+    const into = String(head?.stdout ?? '').trim();
+    if (!into || into === 'HEAD') {
+      return {
+        done: false,
+        message: `${baseName(String(meta.repoDir))} is not on a branch, so there is no branch to land ${branch} on.`
+      };
+    }
+
+    const merged = await this._inRepoFromBase(ctx, where.repoRel, `git merge --ff-only "${branch}"`);
+    if (!merged?.success) {
+      return {
+        done: false,
+        message: gitSaid(`${into} has moved on since this tree was made, so ${branch} cannot be fast-forwarded onto it. Merging or rebasing it is a job for you and git.`, merged)
+      };
+    }
+    if (/already up to date/i.test(String(merged?.stdout ?? ''))) {
+      return { done: false, message: `${into} already has everything on ${branch}.` };
+    }
+    return { done: false, message: `Fast-forwarded ${into} to ${branch}.` };
   }
 
   /**
@@ -1222,16 +1384,9 @@ class GitWorktreeWorkspaceProvider extends WorkspaceProvider {
       };
     }
 
-    // The repository as the base operations can name it, which is how the
-    // provision named it when it made the tree.
-    const baseRoot = String(ctx?.session?.workspaceRoot?.(ctx?.baseWorkspaceId ?? '') ?? '');
-    const repoRel = baseRoot ? relativePath(baseRoot, String(meta.repoDir)) : null;
-    if (!repoRel) {
-      return {
-        done: false,
-        message: `${meta.repoDir} cannot be reached from ${baseRoot || 'the base workspace'}, so the tree is not ours to remove from here.`
-      };
-    }
+    const where = this._repoFromBase(workspace, ctx, 'the tree is not ours to remove from here');
+    if (where.problem) return { done: false, message: where.problem };
+    const repoRel = where.repoRel;
 
     const steps = [
       repoRel === '.' ? '' : `cd "${repoRel}" || exit 1`,

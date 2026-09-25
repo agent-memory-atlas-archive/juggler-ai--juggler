@@ -997,11 +997,62 @@
     line-height: 1.45;
 }
 
-/* What the other button does, under the buttons rather than beside the field —
-   it is about an ending, not about what is being typed. */
-.workspace-finish-alternative-note {
+/* What is about to be committed, path by path. A box of its own with its own
+   scroll: it is the longest thing in the dialog and the only part whose length
+   is the user's rather than ours, so it is the part that gives way — everything
+   below it, the field and the buttons, stays where it was. */
+.workspace-finish-work {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.workspace-finish-work-count {
     color: var(--text-secondary);
-    text-align: right;
+}
+
+.workspace-finish-work-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    max-height: 9rem;
+    padding: 0.4rem 0.5rem;
+    overflow-y: auto;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.4rem;
+    font-family: var(--font-mono);
+}
+
+.workspace-finish-work-row {
+    display: flex;
+    gap: 0.5rem;
+    min-width: 0;
+}
+
+/* One column wide whatever the word is, so the paths line up and the eye can
+   run down them. */
+.workspace-finish-work-state {
+    flex: 0 0 5rem;
+    color: var(--text-tertiary);
+}
+
+.workspace-finish-work-path {
+    min-width: 0;
+    color: var(--text-primary);
+    overflow-wrap: anywhere;
+}
+
+.workspace-finish-work-rest {
+    padding-top: 0.15rem;
+    color: var(--text-secondary);
+}
+
+/* What the other button does, on the button itself: a second line under its
+   label, the way the panel's own rows carry theirs. */
+.workspace-finish-alternative-note {
+    display: block;
+    color: var(--text-secondary);
     line-height: 1.45;
 }
 

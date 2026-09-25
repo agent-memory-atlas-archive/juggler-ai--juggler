@@ -487,6 +487,202 @@ export async function runTests() {
       }
     });
 
+    await run('landing moves the repository’s own branch onto the work', async () => {
+      // What "push it back to the repository" really is for a worktree. The
+      // commit is already IN the repository the moment it exists — a worktree
+      // shares the object store and the refs — so nothing is pushed anywhere.
+      // What is missing is the branch the main checkout has out, and moving it
+      // is a fast-forward: the one way of landing work that cannot conflict and
+      // therefore needs no flow around it.
+      const tag = uniqueTag();
+      const repo = `wt-repo-${tag}`;
+      const location = defaultLocation(`${projectPath}${separator}${repo}`, BRANCH);
+      const tree = `${repo}-feat-tunnels`;
+      /** @type {any} */
+      let outcome = null;
+      try {
+        await buildRepo(ops, repo, `hello-${tag}`);
+        outcome = await provisionWorkspace({
+          session,
+          providerId: PROVIDER_ID,
+          values: { repo, branch: BRANCH, base: 'main', location }
+        });
+        await mustRun(ops, `echo the-work > ${tree}/done.txt`);
+
+        // Uncommitted work stays where it is: landing moves commits, and a tree
+        // that quietly left its changes behind would be the worst kind of
+        // success.
+        const early = await finishWorkspace({ session, workspace: outcome.workspace, actionId: 'land' });
+        assert(early.done === false && /commit/i.test(String(early.message)),
+          `a tree still holding work is told to commit it first, got ${JSON.stringify(early.message)}`);
+        const untouched = await mustRun(ops, `git -C ${repo} log -1 --pretty=%s`);
+        assert(!untouched.stdout.includes('the-work'),
+          'and nothing was landed while it said so');
+
+        await finishWorkspace({
+          session,
+          workspace: outcome.workspace,
+          actionId: 'commit',
+          input: { message: 'Did the thing' }
+        });
+
+        const landed = await finishWorkspace({ session, workspace: outcome.workspace, actionId: 'land' });
+        assert(landed.done === false,
+          `landing is something you do while working here, not a way of being finished with it, got ${JSON.stringify(landed)}`);
+        assert(/main/.test(String(landed.message)) && /fast-forward/i.test(String(landed.message)),
+          `and it says which branch moved, and how, got ${JSON.stringify(landed.message)}`);
+
+        const onMain = await mustRun(ops, `git -C ${repo} log -1 --pretty=%s`);
+        assert(onMain.stdout.trim() === 'Did the thing',
+          `the repository's own branch now has the work, which is the whole point, got ${JSON.stringify(onMain.stdout)}`);
+        const here = await mustRun(ops, `git -C ${repo} rev-parse main`);
+        const there = await mustRun(ops, `git -C ${tree} rev-parse HEAD`);
+        assert(here.stdout.trim() === there.stdout.trim(),
+          'with the two exactly level, because a fast-forward is all this does');
+
+        // Nothing left to move, and that is not a failure either.
+        const again = await finishWorkspace({ session, workspace: outcome.workspace, actionId: 'land' });
+        assert(/already/i.test(String(again.message)),
+          `landing what is already landed says so plainly, got ${JSON.stringify(again.message)}`);
+      } finally {
+        if (outcome) await unregisterWorkspace(outcome.workspace.id).catch(() => {});
+        await ops.shell({ command: `git -C ${repo} worktree remove --force ../${tree}` }).catch(() => {});
+        await ops.shell({ command: `rm -rf ${tree} ${repo}` }).catch(() => {});
+      }
+    });
+
+    await run('landing refuses what a fast-forward cannot do, and says what git said', async () => {
+      // The two refusals worth having. A main checkout that has moved on cannot
+      // be fast-forwarded at all — that is a merge, with conflicts in it, which
+      // is a flow rather than a button — and a main checkout on no branch has
+      // nothing to move.
+      const tag = uniqueTag();
+      const repo = `wt-repo-${tag}`;
+      const location = defaultLocation(`${projectPath}${separator}${repo}`, BRANCH);
+      const tree = `${repo}-feat-tunnels`;
+      /** @type {any} */
+      let outcome = null;
+      try {
+        await buildRepo(ops, repo, `hello-${tag}`);
+        outcome = await provisionWorkspace({
+          session,
+          providerId: PROVIDER_ID,
+          values: { repo, branch: BRANCH, base: 'main', location }
+        });
+        await mustRun(ops, `echo the-work > ${tree}/done.txt`);
+        await finishWorkspace({
+          session,
+          workspace: outcome.workspace,
+          actionId: 'commit',
+          input: { message: 'Did the thing' }
+        });
+
+        // The repository carries on while the worktree works, which is what
+        // having a worktree is for — and it is what makes a fast-forward
+        // impossible.
+        await mustRun(ops, `echo meanwhile > ${repo}/other.txt`);
+        await mustRun(ops, `git -C ${repo} add -A`);
+        await mustRun(ops, `git -C ${repo} commit -q -m "Meanwhile, on main"`);
+
+        const diverged = await finishWorkspace({ session, workspace: outcome.workspace, actionId: 'land' });
+        assert(diverged.done === false,
+          `a land that could not happen is not reported as one that did, got ${JSON.stringify(diverged)}`);
+        assert(/moved on/i.test(String(diverged.message)),
+          `it says why in words before git's own, got ${JSON.stringify(diverged.message)}`);
+        assert(/fast-forward/i.test(String(diverged.message)),
+          `and keeps git's text under them, got ${JSON.stringify(diverged.message)}`);
+        const stillThere = await mustRun(ops, `git -C ${repo} log -1 --pretty=%s`);
+        assert(stillThere.stdout.trim() === 'Meanwhile, on main',
+          `with the repository exactly as it was, got ${JSON.stringify(stillThere.stdout)}`);
+
+        // On no branch at all: there is nothing to land onto, and a merge here
+        // would move a detached HEAD, which is nobody's idea of landing work.
+        await mustRun(ops, `git -C ${repo} checkout -q --detach`);
+        const detached = await finishWorkspace({ session, workspace: outcome.workspace, actionId: 'land' });
+        assert(/branch/i.test(String(detached.message)) && detached.done === false,
+          `a repository on no branch is told as that, got ${JSON.stringify(detached.message)}`);
+      } finally {
+        if (outcome) await unregisterWorkspace(outcome.workspace.id).catch(() => {});
+        await ops.shell({ command: `git -C ${repo} worktree remove --force ../${tree}` }).catch(() => {});
+        await ops.shell({ command: `rm -rf ${tree} ${repo}` }).catch(() => {});
+      }
+    });
+
+    await run('a commit that will not go through says which half refused, in git’s own words', async () => {
+      // Every one of these is ordinary — a lock left by a crashed git, a
+      // pre-commit hook that fails the lint, a tree somebody already committed
+      // from a terminal — and the only thing the user gets is the sentence this
+      // returns. Two things it must do: keep git's own text, which is the half
+      // that says what to do about it, and put a plain lead above it saying
+      // which of the two commands refused, because `git add` failing and `git
+      // commit` failing want opposite reactions.
+      const provider = new GitWorktreeWorkspaceProvider({ session });
+      /** @type {any[]} */
+      const asked = [];
+      /**
+       * @param {(command: string) => any} answer - What git says to each command.
+       * @returns {any} Operations that record what they were asked and answer for git.
+       */
+      const recorder = (answer) => ({
+        /**
+         * @param {any} request - What the provider wants run.
+         * @returns {Promise<any>} What git said about it.
+         */
+        shell: async (request) => {
+          asked.push(request);
+          // Both streams merged into `stdout` with an empty `stderr`, which is
+          // what the shell operation really answers with.
+          return { stderr: '', exitCode: 1, ...answer(String(request.command)) };
+        }
+      });
+      /**
+       * @param {(command: string) => any} answer - What git says.
+       * @returns {Promise<any>} What the commit reported.
+       */
+      const commit = (answer) => provider.finish(
+        { meta: { branch: BRANCH, dir: 'the-tree' } },
+        'commit',
+        {
+          session,
+          ops: recorder(answer),
+          baseOps: recorder(answer),
+          input: { message: 'Did the thing' },
+          signal: new AbortController().signal
+        });
+
+      const locked = await commit((command) => (command.startsWith('git add')
+        ? { success: false, stdout: 'fatal: Unable to create \'.git/index.lock\': File exists.', exitCode: 128 }
+        : { success: true, stdout: '', exitCode: 0 }));
+      assert(locked.done === false && /Couldn’t stage/.test(String(locked.message)),
+        `staging refused is said as staging refused, got ${JSON.stringify(locked.message)}`);
+      assert(/index\.lock/.test(String(locked.message)),
+        `with git's own reason under it rather than in place of it, got ${JSON.stringify(locked.message)}`);
+
+      const hooked = await commit((command) => (command.startsWith('git commit')
+        ? { success: false, stdout: '.husky/pre-commit: 3 problems (3 errors)', exitCode: 1 }
+        : { success: true, stdout: '', exitCode: 0 }));
+      assert(/Couldn’t make the commit/.test(String(hooked.message)),
+        `and a commit refused is said as the commit refusing, which is a different thing to go and fix, got ${JSON.stringify(hooked.message)}`);
+      assert(/pre-commit/.test(String(hooked.message)),
+        `carrying what the hook printed, got ${JSON.stringify(hooked.message)}`);
+
+      // Not a failure at all, and reported as the fact it is. It is what a
+      // second press lands on, and what a tree somebody committed from a
+      // terminal answers — neither of them is anything gone wrong.
+      const idle = await commit((command) => (command.startsWith('git commit')
+        ? { success: false, stdout: 'nothing to commit, working tree clean', exitCode: 1 }
+        : { success: true, stdout: '', exitCode: 0 }));
+      assert(/nothing/i.test(String(idle.message)) && !/Couldn’t/.test(String(idle.message)),
+        `a tree with nothing in it to commit is told plainly, not reported as a failure, got ${JSON.stringify(idle.message)}`);
+
+      // The deadline. A repository whose pre-commit hook runs the linter takes
+      // longer than the operations' 30s default, and what that default does is
+      // kill git's process group with everything already staged and nothing on
+      // screen to say so.
+      assert(asked.length > 0 && asked.every((request) => Number(request.timeout) > 30000),
+        `every command a commit runs outlives the default deadline, got ${JSON.stringify(asked.map((r) => r.timeout))}`);
+    });
+
     await run('a new tree reports itself clean, and says so again once it is not', async () => {
       // What the chip and the panel both read. The tree is asked through the
       // host's own `workspaceStatus`, which is how a surface asks — so a provider

@@ -158,10 +158,32 @@ workspace-panel[hidden] {
 .workspace-panel-detail,
 .workspace-panel-dirty,
 .workspace-panel-problem,
-.workspace-panel-note {
+.workspace-panel-note,
+.workspace-panel-pending {
     margin: 0;
     font-size: 0.875rem;
+    line-height: var(--leading-normal);
     color: var(--text-secondary);
+}
+
+/* The room the status answer lands in, held open from the first draw.
+
+   Two lines, because that is what a tree with work in it says — the detail and
+   the line that it is holding something — and the answer is a round trip away
+   while the buttons underneath are one click away. Reserving it here is what
+   keeps the explicit line-height above honest: the height of two lines is only
+   knowable if a line has a height. */
+.workspace-panel-state-lines {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    min-height: calc(2 * 0.875rem * var(--leading-normal) + 0.35rem);
+}
+
+/* Not an answer yet. Quieter than everything it may turn into, so a panel
+   halfway through opening does not read as a panel reporting something. */
+.workspace-panel-pending {
+    color: var(--text-tertiary);
 }
 
 /* Uncommitted work gets the same yellow it has in the strip: it is what makes

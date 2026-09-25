@@ -429,6 +429,31 @@ export class FixtureProvider extends WorkspaceProvider {
   static lastFinish = null;
 
   /**
+   * How many times it has been asked, for the cases about a second press.
+   * @type {number}
+   */
+  static finishCalls = 0;
+
+  /**
+   * What the case under way wants an ending to fall over with.
+   *
+   * The failure a real provider has no say in: `ctx.ops.shell` REJECTS when the
+   * command could not be run at all — a root that has gone, a backend that
+   * answered with an error, the deadline — as opposed to resolving `success:
+   * false` for a command that ran and failed. Both are ordinary, and only one of
+   * them used to reach the user.
+   * @type {string|null}
+   */
+  static finishError = null;
+
+  /**
+   * How long an ending should take, so a case can press the button twice while
+   * the first press is still in flight.
+   * @type {number}
+   */
+  static finishDelayMs = 0;
+
+  /**
    * @param {any} workspace - The row being finished with
    * @param {string} actionId - Which ending
    * @param {any} ctx - Operations pinned to the workspace, and a signal
@@ -436,6 +461,11 @@ export class FixtureProvider extends WorkspaceProvider {
    */
   async finish(workspace, actionId, ctx) {
     FixtureProvider.lastFinish = { actionId, input: ctx?.input };
+    FixtureProvider.finishCalls++;
+    if (FixtureProvider.finishDelayMs) {
+      await new Promise(resolve => setTimeout(resolve, FixtureProvider.finishDelayMs));
+    }
+    if (FixtureProvider.finishError) throw new Error(FixtureProvider.finishError);
     if (actionId === 'note') return { done: false, message: `noted: ${ctx?.input?.message ?? ''}` };
     if (actionId === 'leave') return { done: false, message: 'left it be' };
     if (actionId !== 'done') return { done: false, message: `no such ending: ${actionId}` };

@@ -558,6 +558,37 @@ export function workspaceFinishActor(session, workspace) {
 }
 
 /**
+ * Ask a provider to carry an ending out, and turn a thrown failure into an
+ * answer.
+ *
+ * Both halves of it are ordinary. A command that runs and fails resolves
+ * `success: false` and the provider reports it in its own words; a command that
+ * could not be run at all — a root that has gone, a backend that answered with
+ * an error, an abort, the deadline on a commit whose pre-commit hook is slow —
+ * REJECTS, and every provider written against the first shape lets that through.
+ * Unhandled, it reached the user as nothing whatsoever: the button was pressed,
+ * the tree did not change, and the panel said not one word about why.
+ *
+ * So it becomes a `message`, which is the channel an ending already has for bad
+ * news, and the reason travels verbatim. This is the same degradation
+ * {@link workspaceStatus} makes for a provider that throws while merely
+ * reporting, and for the same reason: our failure to run something must be
+ * describable to the person who asked for it.
+ * @param {any} provider - The workspace's provider.
+ * @param {any} workspace - The row being finished with.
+ * @param {string} actionId - Which ending.
+ * @param {any} ctx - Everything the provider is handed.
+ * @returns {Promise<any>} What happened, never a rejection.
+ */
+async function runFinish(provider, workspace, actionId, ctx) {
+  try {
+    return await provider.finish(workspace, actionId, ctx);
+  } catch (error) {
+    return { done: false, message: extractErrorMessage(error) };
+  }
+}
+
+/**
  * Carry out one of a workspace's endings, and tombstone it if that ended it.
  *
  * The refusal is checked here rather than only in the dialog that asked: a
@@ -583,7 +614,7 @@ export async function finishWorkspace(request) {
   const { refusal } = workspaceFinishWarning(session, workspace, { conversation });
   if (refusal) return { done: false, message: refusal };
 
-  const result = await provider.finish(workspace, actionId, {
+  const result = await runFinish(provider, workspace, actionId, {
     session,
     conversation,
     ops: createBoundOps(() => ({ workspaceId: workspace.id })),

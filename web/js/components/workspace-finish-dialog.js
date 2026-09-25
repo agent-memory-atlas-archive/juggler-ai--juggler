@@ -43,6 +43,74 @@ function text(value) {
 }
 
 /**
+ * How many files to draw before saying how many are left.
+ *
+ * A vendored dependency bump is thousands of paths, and nobody scrolls a
+ * thousand rows in a modal to decide anything. The count above the list is the
+ * fact that matters; the rows are there to be recognised, and a few dozen is as
+ * many as anyone recognises.
+ * @type {number}
+ */
+const FILES_SHOWN = 50;
+
+/**
+ * What the ending is about to act on, file by file.
+ *
+ * A commit takes the whole tree — `git add -A` — and a message box over a count
+ * is not something a reader can consent to: what they are agreeing to is a
+ * number, and the surprise in it is always a file they had forgotten or never
+ * made. So the paths are on screen where the decision is.
+ * @param {any} status - What the place last said about itself.
+ * @returns {HTMLElement|null} The list, or null when nothing declared one.
+ */
+function workList(status) {
+  const files = Array.isArray(status?.files) ? status.files : [];
+  if (!files.length) return null;
+
+  const total = Number.isFinite(status?.fileCount) && status.fileCount > files.length
+    ? Number(status.fileCount)
+    : files.length;
+
+  const box = document.createElement('div');
+  box.className = 'workspace-finish-work';
+
+  const count = document.createElement('div');
+  count.className = 'workspace-finish-work-count';
+  count.textContent = total === 1 ? '1 file will be committed' : `${total} files will be committed`;
+  box.appendChild(count);
+
+  const list = document.createElement('div');
+  list.className = 'workspace-finish-work-list';
+  for (const file of files.slice(0, FILES_SHOWN)) {
+    const row = document.createElement('div');
+    row.className = 'workspace-finish-work-row';
+
+    const state = document.createElement('span');
+    state.className = 'workspace-finish-work-state';
+    state.textContent = text(file?.state);
+    row.appendChild(state);
+
+    const path = document.createElement('span');
+    path.className = 'workspace-finish-work-path';
+    path.textContent = text(file?.path);
+    row.appendChild(path);
+
+    list.appendChild(row);
+  }
+
+  const hidden = total - Math.min(files.length, FILES_SHOWN);
+  if (hidden > 0) {
+    const rest = document.createElement('div');
+    rest.className = 'workspace-finish-work-rest';
+    rest.textContent = `…and ${hidden} more.`;
+    list.appendChild(rest);
+  }
+
+  box.appendChild(list);
+  return box;
+}
+
+/**
  * What the host knows about the place, for the dialog to say back.
  * @typedef {object} FinishContext
  * @property {any} [status] - The workspace's status as the chip last read it:
@@ -113,6 +181,9 @@ export function openWorkspaceFinish(option, context = {}) {
       dialog.appendChild(where);
     }
 
+    const work = workList(status);
+    if (work) dialog.appendChild(work);
+
     if (context.warning) {
       const caution = document.createElement('div');
       caution.className = 'workspace-finish-warning';
@@ -162,8 +233,19 @@ export function openWorkspaceFinish(option, context = {}) {
     // when there is one. Without it the field is the whole of the answer, which
     // is the shape this dialog was written for.
     if (prompt.alternative?.label && context.conversation) {
-      actions.appendChild(setupButton('btn-secondary workspace-finish-alternative',
-        text(prompt.alternative.label), () => modal.close({ message: '' })));
+      const other = setupButton('btn-secondary workspace-finish-alternative',
+        text(prompt.alternative.label), () => modal.close({ message: '' }));
+      // What it does goes ON it, under its own label. It used to sit below the
+      // whole row, where it read as a footnote to all three buttons — and the
+      // button it explains is the one nobody presses without being told what it
+      // will do.
+      if (prompt.alternative.hint) {
+        const aside = document.createElement('span');
+        aside.className = 'workspace-finish-alternative-note';
+        aside.textContent = text(prompt.alternative.hint);
+        other.appendChild(aside);
+      }
+      actions.appendChild(other);
     }
 
     const submit = () => {
@@ -171,17 +253,12 @@ export function openWorkspaceFinish(option, context = {}) {
       if (!typed || idle) return;
       modal.close({ message: typed });
     };
+    // The act, not the sentence: the ending's own label names a row in a menu
+    // beside other rows, and this is a button in a row of buttons.
     const commit = setupButton('btn-primary workspace-finish-commit',
-      text(option?.label) || 'Continue', submit);
+      text(prompt.confirmLabel) || text(option?.label) || 'Continue', submit);
     actions.appendChild(commit);
     dialog.appendChild(actions);
-
-    if (prompt.alternative?.hint && context.conversation) {
-      const aside = document.createElement('div');
-      aside.className = 'workspace-finish-alternative-note';
-      aside.textContent = text(prompt.alternative.hint);
-      dialog.appendChild(aside);
-    }
 
     /** The primary is pressable only when the field holds what it asked for. */
     const sync = () => { commit.disabled = idle || field.value.trim() === ''; };

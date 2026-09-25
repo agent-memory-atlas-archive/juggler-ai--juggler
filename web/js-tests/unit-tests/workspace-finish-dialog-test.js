@@ -39,8 +39,17 @@ const COMMIT_OPTION = {
   }
 };
 
-/** A tree with work in it. */
-const DIRTY = { label: 'onboarding', detail: 'branch onboarding · 3 changed', dirty: true };
+/** A tree with work in it, and what that work is. */
+const DIRTY = {
+  label: 'onboarding',
+  detail: 'branch onboarding · 3 changed',
+  dirty: true,
+  files: [
+    { path: 'src/auth.js', state: 'Modified' },
+    { path: 'src/session.js', state: 'Modified' },
+    { path: 'notes.md', state: 'Untracked' }
+  ]
+};
 
 /**
  * Stands in for the conversation an ending is carried out for. Only its
@@ -201,6 +210,69 @@ export async function runTests() {
       "the tree's own status belongs in the dialog — it names which of several checkouts this is");
     assert(root.textContent?.includes(COMMIT_OPTION.description),
       'the ending should still say what it does');
+    press(root, '.workspace-finish-cancel');
+    await answer;
+  });
+
+  await check('every file the commit will take is listed', async () => {
+    // The commit is `git add -A`: it takes the whole tree, including whatever
+    // the agent left lying about while nobody was reading. A message box over a
+    // count is not consent to that — the reader is agreeing to a number.
+    const { answer, root } = await open();
+
+    const rows = Array.from(root.querySelectorAll('.workspace-finish-work-row'));
+    assert(rows.length === 3,
+      `one row per file that is about to be committed, got ${rows.length}`);
+    const said = rows.map((row) => row.textContent ?? '').join('|');
+    assert(said.includes('src/auth.js') && said.includes('notes.md'),
+      `naming them, got ${JSON.stringify(said)}`);
+    assert(said.includes('Untracked'),
+      `and saying what is happening to each — a file git has never seen is the one most worth `
+      + `spotting in this list, got ${JSON.stringify(said)}`);
+
+    const count = root.querySelector('.workspace-finish-work-count')?.textContent ?? '';
+    assert(count.includes('3 files'),
+      `with the total said in words above them, got ${JSON.stringify(count)}`);
+
+    press(root, '.workspace-finish-cancel');
+    await answer;
+  });
+
+  await check('a list that is only the beginning of it says so', async () => {
+    // The server caps how many files it will name, and a list that quietly
+    // stopped would be read as the whole of what is about to be committed.
+    const many = {
+      ...DIRTY,
+      detail: 'branch onboarding · 312 changed',
+      fileCount: 312
+    };
+    const { answer, root } = await open(many);
+
+    const count = root.querySelector('.workspace-finish-work-count')?.textContent ?? '';
+    assert(count.includes('312'),
+      `the count is what is really being committed, not the length of the list, got ${JSON.stringify(count)}`);
+    assert((root.textContent ?? '').includes('309 more'),
+      'and the list says how much of it is not on screen');
+
+    press(root, '.workspace-finish-cancel');
+    await answer;
+  });
+
+  await check('the primary button says the act, not the sentence', async () => {
+    const { answer, root } = await open(DIRTY, {
+      ...COMMIT_OPTION,
+      prompt: { ...COMMIT_OPTION.prompt, confirmLabel: 'Commit' }
+    });
+
+    const commit = /** @type {HTMLButtonElement} */ (root.querySelector('.workspace-finish-commit'));
+    assert(commit.textContent?.trim() === 'Commit',
+      `three buttons in a row are read as a row, and "Commit the changes" beside "Let this `
+      + `conversation write it" is a wall, got ${JSON.stringify(commit.textContent)}`);
+
+    const alternative = /** @type {HTMLElement} */ (root.querySelector('.workspace-finish-alternative'));
+    assert(alternative.textContent?.includes(COMMIT_OPTION.prompt.alternative.hint),
+      'and what the alternative does is on the alternative, not stranded under the row of buttons');
+
     press(root, '.workspace-finish-cancel');
     await answer;
   });

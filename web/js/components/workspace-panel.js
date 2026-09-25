@@ -32,6 +32,7 @@ import {
   workspaceFinishActor,
   finishWorkspace
 } from '../services/workspace-provisioning.js';
+import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
 import { createFileActions } from '../utils/properties-panel-helpers.js';
 import { setupColumnResize } from '../utils/column-resize.js';
 import { showConfirm, showNotice } from './modal-dialog.js';
@@ -61,6 +62,9 @@ class WorkspacePanel extends HTMLElement {
 
     /** @type {HTMLElement|null} The column's right-edge resize grip. */
     this._resizeHandle = null;
+
+    /** @type {string} The ending being carried out, while one is. */
+    this._running = '';
   }
 
   disconnectedCallback() {
@@ -196,9 +200,7 @@ class WorkspacePanel extends HTMLElement {
 
     body.appendChild(this._head());
     body.appendChild(this._where());
-
-    const state = this._state();
-    if (state) body.appendChild(state);
+    body.appendChild(this._state());
 
     const { options, unavailableReason } = workspaceFinishOptions(this._session, workspace);
 
@@ -342,44 +344,59 @@ class WorkspacePanel extends HTMLElement {
   }
 
   /**
-   * How the tree is doing. The problem is kept apart from the detail: a
-   * workspace that answered and one nobody could reach must never read alike.
-   * @returns {HTMLElement|null} The state section, or null when there is
-   *   nothing yet to say.
+   * How the tree is doing, in a section that is there from the first draw.
+   *
+   * Drawn empty and filled in, rather than appended when the answer arrives.
+   * The answer is a round trip away and this section sits ABOVE the buttons, so
+   * a section that appeared with it shoved every row of the panel down a second
+   * after it opened — which is exactly when a pointer is on its way to one of
+   * them. The heading and the room are immediate; only the words are late.
+   *
+   * How much room is the sheet's business: the answer is one line or two, and
+   * nothing here knows how tall a line is (`.workspace-panel-state-lines`).
+   *
+   * The problem is kept apart from the detail: a workspace that answered and one
+   * nobody could reach must never read alike.
+   * @returns {HTMLElement} The state section.
    * @private
    */
   _state() {
-    const detail = this._status?.detail || '';
-    const problem = this._status?.problem || '';
-    const dirty = this._status?.dirty === true;
-    if (!detail && !problem && !dirty) return null;
-
     const section = document.createElement('div');
-    section.className = 'workspace-panel-section';
+    section.className = 'workspace-panel-section workspace-panel-state';
 
     const heading = document.createElement('h3');
     heading.className = 'workspace-panel-heading';
     heading.textContent = 'How it is doing';
     section.appendChild(heading);
 
-    if (detail) {
+    const lines = document.createElement('div');
+    lines.className = 'workspace-panel-state-lines';
+    section.appendChild(lines);
+
+    /**
+     * @param {string} className - Which kind of line it is.
+     * @param {string} text - What it says.
+     */
+    const say = (className, text) => {
       const line = document.createElement('p');
-      line.className = 'workspace-panel-detail';
-      line.textContent = detail;
-      section.appendChild(line);
+      line.className = className;
+      line.textContent = text;
+      lines.appendChild(line);
+    };
+
+    if (!this._status) {
+      say('workspace-panel-pending', 'Reading the tree…');
+      return section;
     }
-    if (dirty) {
-      const line = document.createElement('p');
-      line.className = 'workspace-panel-dirty';
-      line.textContent = 'Holding uncommitted work.';
-      section.appendChild(line);
-    }
-    if (problem) {
-      const line = document.createElement('p');
-      line.className = 'workspace-panel-problem';
-      line.textContent = problem;
-      section.appendChild(line);
-    }
+
+    const detail = this._status.detail || '';
+    const problem = this._status.problem || '';
+    if (detail) say('workspace-panel-detail', detail);
+    if (this._status.dirty === true) say('workspace-panel-dirty', 'Holding uncommitted work.');
+    if (problem) say('workspace-panel-problem', problem);
+    // A provider that answers with no opinion has still answered, and the
+    // heading is already on screen by then. Saying so beats a heading over a gap.
+    if (!lines.children.length) say('workspace-panel-note', 'Nothing to report.');
     return section;
   }
 
@@ -476,6 +493,10 @@ class WorkspacePanel extends HTMLElement {
     button.type = 'button';
     button.className = `workspace-panel-action${option.danger ? ' danger' : ''}`;
     button.dataset.action = option.id;
+    // A redraw in the middle of an ending must not hand back a pressable row:
+    // the panel asks the tree how it is doing before a dialog opens, and that
+    // answer arrives while the ending it belongs to is still running.
+    button.disabled = this._running !== '';
     button.appendChild(this._actionLabel(
       option.prompt ? `${option.label}…` : option.label,
       option.description));
@@ -582,11 +603,57 @@ class WorkspacePanel extends HTMLElement {
    * {@link workspaceFinishActor}'s answer, and it may be nobody: a workspace
    * with three conversations names none of them, and an empty one has none to
    * name.
+   *
+   * The rows stand down for as long as one of them is running, which is as long
+   * as git takes. It is the guard as well as the signal: an ending is several
+   * seconds of nothing visible happening, and a second press in that window used
+   * to be a second `git add -A` and a second commit — or, worse, a discard
+   * arriving on top of a commit.
+   *
+   * Held on the panel rather than on the button that was pressed, because the
+   * panel redraws while an ending is in flight: it asks the tree how it is doing
+   * before the dialog opens, and the button pressed a moment ago is gone by the
+   * time the answer comes back.
    * @param {any} option - The ending that was chosen.
    * @returns {Promise<void>} When it has run, or been called off.
    * @private
    */
   async _finish(option) {
+    if (this._running) return;
+    this._running = option.id;
+    this._standDown();
+    try {
+      await this._carryOut(option);
+    } catch (error) {
+      // Nothing here is allowed to end as an unhandled rejection: the whole
+      // point of this row is that the user learns what happened, and a failure
+      // they are not told about is indistinguishable from a button that does
+      // nothing.
+      showNotice(extractErrorMessage(error));
+    } finally {
+      this._running = '';
+      this._standDown();
+    }
+  }
+
+  /**
+   * Reflect the ending in flight into the rows that are on screen now.
+   * @returns {void}
+   * @private
+   */
+  _standDown() {
+    const rows = /** @type {HTMLButtonElement[]} */ (
+      Array.from(this.querySelectorAll('.workspace-panel-action[data-action]')));
+    for (const row of rows) row.disabled = this._running !== '';
+  }
+
+  /**
+   * The ending itself: ask, then do it.
+   * @param {any} option - The ending that was chosen.
+   * @returns {Promise<void>} When it has run, or been called off.
+   * @private
+   */
+  async _carryOut(option) {
     const workspace = this._workspace;
     const session = this._session;
     if (!workspace || !session) return;
@@ -604,6 +671,13 @@ class WorkspacePanel extends HTMLElement {
     /** @type {object} */
     let input = {};
     if (option.prompt) {
+      // Asked again first. The panel's reading is as old as the panel, and this
+      // dialog acts on it twice over: it refuses an ending that needs work when
+      // the tree read clean, and it lists the files the commit is about to take.
+      // Deciding either from a reading taken when the panel opened is deciding
+      // from what the tree used to hold.
+      await this.refreshStatus();
+
       // Its own dialog, because what it asks for has a name and the answer is
       // not always typed: an ending that offers an alternative is two endings,
       // and a generic box with one OK button can only state the one.

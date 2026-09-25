@@ -83,6 +83,23 @@ import { validateManifest } from './lib/manifest.js';
  * @property {string} [badge] - A very short state word ('idle', 'dirty', 'unreachable')
  * @property {boolean} [dirty] - Whether it holds uncommitted work of the user's
  * @property {boolean} [available] - Whether it can be reached at all right now
+ * @property {WorkspaceFile[]} [files] - That work, file by file, as far as it
+ *   could be listed. What `dirty` reports as a yes or no, an ending is about to
+ *   act on in bulk: a commit takes the whole tree, and a count is not something
+ *   a reader can consent to. Costs nothing where the status read already had the
+ *   list in its hands; leave it alone where it would be a second round trip
+ * @property {number} [fileCount] - How many there really are, when `files` is
+ *   only the first of them. A list that quietly stopped reads as the whole of
+ *   what is about to happen, which is the one way this can mislead
+ */
+
+/**
+ * One file of uncommitted work.
+ * @typedef {object} WorkspaceFile
+ * @property {string} path - Relative to the workspace root, which is how git
+ *   names it and how an operation takes it
+ * @property {string} [state] - What is happening to it, in a word the reader
+ *   does not have to already know: 'Modified', 'Untracked', 'Deleted'
  */
 
 /**
@@ -138,6 +155,10 @@ import { validateManifest } from './lib/manifest.js';
  *   none is captioned by the ending's own label, which names the act rather than
  *   the thing being typed
  * @property {string} [placeholder] - What the empty field shows, e.g. an example
+ * @property {string} [confirmLabel] - What the button that does it says, when the
+ *   ending's own label is too long to sit in a row of buttons: `Commit the
+ *   changes` names the row in a menu, and `Commit` is what the button beside
+ *   `Cancel` wants. The ending's label is used when there is none
  * @property {string} [hint] - A line under the field: what belongs there, or what
  *   it is for. Under the field, where it is read while typing
  * @property {string} [value] - What to put in the field to begin with

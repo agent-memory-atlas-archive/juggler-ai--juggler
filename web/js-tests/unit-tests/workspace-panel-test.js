@@ -18,7 +18,7 @@
  * @module unit-tests/workspace-panel-test
  */
 
-import { assert, initializeRegistries } from '../utilities/test-helpers.js';
+import { assert, initializeRegistries, neutralizeStrayOverlays, waitFor } from '../utilities/test-helpers.js';
 import { FixtureProvider, ensureFixtureProvider } from '../utilities/conversation-workspace-helpers.js';
 import '../../js/components/workspace-panel.js';
 // For the width comparison: the column a workspace panel stands in place of.
@@ -110,6 +110,29 @@ function actionsIn(panel, selector) {
 }
 
 /**
+ * Press an ending, agree to it, and hand back what the panel said afterwards.
+ *
+ * Through the real dialogs rather than around them: an ending that keeps its
+ * bad news inside an unhandled rejection passes every test that stubs the
+ * presenter, because the press and the notice are the two ends of exactly the
+ * path under test.
+ * @param {any} panel - The mounted panel.
+ * @param {string} actionId - Which ending to press.
+ * @returns {Promise<string>} What the notice said.
+ */
+async function pressAndAgree(panel, actionId) {
+  /** @type {HTMLElement} */ (panel.querySelector(`[data-action="${actionId}"]`)).click();
+
+  const confirmed = 'modal-dialog.show:not(.is-notice) .modal-button.primary, modal-dialog.show:not(.is-notice) .modal-button.danger';
+  await waitFor(() => !!document.querySelector(confirmed), { description: 'the confirmation to appear' });
+  /** @type {HTMLElement} */ (document.querySelector(confirmed)).click();
+
+  await waitFor(() => !!document.querySelector('modal-dialog.is-notice.show .modal-message'),
+    { description: 'the panel to say what happened' });
+  return document.querySelector('modal-dialog.is-notice.show .modal-message')?.textContent ?? '';
+}
+
+/**
  * Run the workspace panel tests.
  * @returns {Promise<{passed: number, failed: number, errors: string[]}>} Aggregated test results.
  */
@@ -129,6 +152,22 @@ export async function runTests() {
   const check = (name, body) => {
     try {
       body();
+      passed++;
+    } catch (e) {
+      failed++;
+      errors.push(`${name}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
+  /**
+   * The same, for a case that has to wait for the status probe.
+   * @param {string} name - What is being checked.
+   * @param {() => Promise<void>} body - The check.
+   * @returns {Promise<void>} When it has run.
+   */
+  const checkAsync = async (name, body) => {
+    try {
+      await body();
       passed++;
     } catch (e) {
       failed++;
@@ -318,6 +357,100 @@ export async function runTests() {
       assert(note?.textContent === 'Removes the directory.',
         'what a press will do is written under it, where someone deciding whether it is safe will read it');
     } finally {
+      teardown();
+    }
+  });
+
+  await checkAsync('the status arriving moves nothing that can be clicked', async () => {
+    const session = makeSession([workspace('ws_a')]);
+    const { panel, teardown } = mountPanel(session);
+    FixtureProvider.reported = { detail: 'branch feat/x · clean', dirty: true };
+    try {
+      session.selection = { kind: 'workspace', id: 'ws_a' };
+      panel._refresh();
+
+      /**
+       * Where the buttons are, both ways: which child of the body they are, and
+       * where that lands on screen.
+       * @returns {{index: number, top: number}} The two.
+       */
+      const buttons = () => {
+        const body = /** @type {HTMLElement} */ (panel.querySelector('.workspace-panel-body'));
+        const doing = /** @type {HTMLElement} */ (panel.querySelector('.workspace-panel-doing'));
+        return {
+          index: Array.from(body.children).indexOf(doing),
+          top: doing.getBoundingClientRect().top
+        };
+      };
+
+      const before = buttons();
+      assert(before.top > 0,
+        `the panel is laid out at all, or the measurement below is two zeroes agreeing, got ${before.top}px`);
+      assert(!!panel.querySelector('.workspace-panel-state'),
+        'the section the answer will go in is there before the answer is, or there is nothing to fill in');
+
+      // What the panel does a second or so after it opens, and the moment this
+      // case is about: a button under the pointer must not move out from under it.
+      await panel.refreshStatus();
+
+      const after = buttons();
+      assert(panel.textContent?.includes('branch feat/x · clean'),
+        'the answer arrived and was drawn, so this is measuring the redraw that matters');
+      assert(after.index === before.index,
+        `the answer fills the section that was already there rather than inserting one above the buttons, got child ${after.index} where it was ${before.index}`);
+      assert(after.top === before.top,
+        `so nothing below it moves at the moment someone is reaching for it, got ${after.top}px where it was ${before.top}px`);
+    } finally {
+      FixtureProvider.reported = null;
+      teardown();
+    }
+  });
+
+  await checkAsync('an ending that falls over says so, rather than nothing at all', async () => {
+    const session = makeSession([workspace('ws_a')]);
+    const { panel, teardown } = mountPanel(session);
+    // What the tree can never answer for: the op could not be run at all, so
+    // the provider throws instead of reporting a command that failed.
+    FixtureProvider.finishError = 'workspace ws_a is missing its root: /tmp/ws_a/work';
+    try {
+      session.selection = { kind: 'workspace', id: 'ws_a' };
+      panel._refresh();
+
+      const said = await pressAndAgree(panel, 'leave');
+      assert(said.includes('missing its root'),
+        `git's own reason survives the trip to the screen instead of the press doing nothing visible at all, got ${JSON.stringify(said)}`);
+    } finally {
+      FixtureProvider.finishError = null;
+      neutralizeStrayOverlays();
+      teardown();
+    }
+  });
+
+  await checkAsync('an ending in flight cannot be started a second time', async () => {
+    const session = makeSession([workspace('ws_a')]);
+    const { panel, teardown } = mountPanel(session);
+    // Long enough that the second press lands inside the first, which is the
+    // window a commit spends waiting on git.
+    FixtureProvider.finishDelayMs = 150;
+    FixtureProvider.finishCalls = 0;
+    try {
+      session.selection = { kind: 'workspace', id: 'ws_a' };
+      panel._refresh();
+
+      const pressing = pressAndAgree(panel, 'leave');
+      const button = /** @type {HTMLButtonElement} */ (panel.querySelector('[data-action="leave"]'));
+      await waitFor(() => button.disabled,
+        'the button to stand down while the ending it started is running');
+      button.click();
+      await pressing;
+
+      assert(FixtureProvider.finishCalls === 1,
+        `a second press while the first is in flight is not a second ending — for a commit it would be a second commit, got ${FixtureProvider.finishCalls}`);
+      assert(!/** @type {HTMLButtonElement} */ (panel.querySelector('[data-action="leave"]')).disabled,
+        'and the button comes back once it is over, whatever the answer was');
+    } finally {
+      FixtureProvider.finishDelayMs = 0;
+      neutralizeStrayOverlays();
       teardown();
     }
   });
