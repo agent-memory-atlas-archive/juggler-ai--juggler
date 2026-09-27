@@ -5,6 +5,8 @@ of changes; this project follows semantic versioning.
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-09-27
+
 - Fixes for conversation dragging order when workspaces are there, and for conversation flashing colours
 - Lots of workspace panel UX improvements and snagging
 - A diff can now be shown side by side, wherever there is room for two columns
