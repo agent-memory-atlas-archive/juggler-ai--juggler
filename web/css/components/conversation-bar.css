@@ -305,12 +305,15 @@ conversation-bar .conversation-box.active .conversation-box-empty {
    corner and the same border colour as a real box, with the fill left out and
    the edge dashed: it is the shape of the thing, stated as not yet being one.
    Height comes from the single line inside it, so it costs one box header's
-   worth of the strip and not an empty rectangle's. */
+   worth of the strip and not an empty rectangle's. The gap that sets it apart
+   from the boxes above belongs to the outline, not to the button inside it: one
+   wrapper carrying the whole space keeps the button's own box flush with the
+   shape it is drawn as. */
 conversation-bar .conversation-box-new {
     display: flex;
     flex-shrink: 0;
     width: 100%;
-    margin-top: 0.125rem;
+    margin-top: 1.125rem;
 }
 
 conversation-bar .conversation-box-new-button {
