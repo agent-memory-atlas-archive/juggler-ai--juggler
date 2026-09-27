@@ -92,7 +92,7 @@ const FEATURE_TIPS = [
     id: 'workspaces',
     kind: 'feature',
     title: 'Workspaces',
-    body: 'A workspace is a separate place to work — a branch in its own tree, or a copy to try '
+    body: 'A workspace is a custom environment for the LLM to work in — e.g. a git worktree, or a copy to try '
       + 'something risky in. Make one at the foot of the conversation list, then start '
       + 'conversations in it or drag them across.',
   },

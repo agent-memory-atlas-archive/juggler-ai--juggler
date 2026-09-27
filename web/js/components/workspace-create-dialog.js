@@ -283,7 +283,7 @@ export function openWorkspaceCreate(session) {
       // to make one carries the definition.
       const lead = document.createElement('p');
       lead.className = 'workspace-create-lead';
-      lead.textContent = 'A separate place to work, so the project folder is left as it is.';
+      lead.textContent = 'Workspace plugins provide different environments for the LLM to work inside.';
       dialog.appendChild(lead);
 
       const body = document.createElement('div');
