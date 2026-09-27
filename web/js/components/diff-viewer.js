@@ -601,7 +601,7 @@ class DiffViewer extends HTMLElement {
     }).join('');
 
     /**
-     * @param {'inline'|'split'} which - The layout the button chooses.
+     * @param {'inline'|'split'} which - The layout the button stands for.
      * @param {string} label - What it says.
      * @returns {string} The button as HTML.
      */
@@ -1067,7 +1067,11 @@ class DiffViewer extends HTMLElement {
 
     const layout = target.closest('.diff-view-btn');
     if (layout instanceof HTMLElement) {
-      this.setView(layout.dataset.view === 'split' ? 'split' : 'inline');
+      // Either button switches layout. Clicking the one already in force means
+      // the other one — nobody clicks a control to be left where they are.
+      const chosen = layout.dataset.view === 'split' ? 'split' : 'inline';
+      const current = this.effectiveView();
+      this.setView(chosen === current ? (current === 'split' ? 'inline' : 'split') : chosen);
       return;
     }
 

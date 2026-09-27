@@ -202,6 +202,25 @@ export async function runTests(_ctx) {
       'nothing needs explaining when nothing is being refused');
   });
 
+  // Nobody clicks a control to be left where they are, so the button already in
+  // force is a way back rather than a no-op.
+  run('either button switches the layout, including the one in force', () => {
+    const wide = mountedViewer(wideEnough);
+    wide.setDiff('a\nX', 'a\nY', '/src/main.js');
+
+    wide.querySelector('.diff-view-btn[data-view="split"]').click();
+    assert(wide.dataset.view === 'split',
+      `clicking the other layout takes it, got ${wide.dataset.view}`);
+
+    wide.querySelector('.diff-view-btn[data-view="split"]').click();
+    assert(wide.dataset.view === 'inline',
+      `clicking the layout in force goes back to the other one, got ${wide.dataset.view}`);
+
+    wide.querySelector('.diff-view-btn[data-view="inline"]').click();
+    assert(wide.dataset.view === 'split',
+      `and it toggles from either button, got ${wide.dataset.view}`);
+  });
+
   // The switch stays where it is when it cannot be used. Hiding it would leave a
   // reader who only ever opens diffs in a narrow panel with no way of learning
   // that the other layout exists, and a control that vanishes is indistinguishable

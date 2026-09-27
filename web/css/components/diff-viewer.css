@@ -173,7 +173,7 @@ diff-viewer .diff-view-btn {
     transition: background 0.12s ease, color 0.12s ease;
 }
 
-diff-viewer .diff-view-btn:hover:not(:disabled) {
+diff-viewer .diff-view-btn:hover:not(:disabled, [aria-pressed="true"]) {
     background: var(--bg-tertiary, rgb(127 127 127 / 16%));
     color: var(--text-primary);
 }
@@ -181,6 +181,15 @@ diff-viewer .diff-view-btn:hover:not(:disabled) {
 diff-viewer .diff-view-btn[aria-pressed="true"] {
     background: var(--accent-blue);
     color: #fff;
+}
+
+/* The chosen button keeps its accent under the pointer and lifts, rather than
+   falling back to the unchosen hover — which outranked the accent on specificity
+   and made hovering the layout in force look like leaving it. Both buttons switch
+   layout, so the chosen one is hoverable, and what a hover says here is "this is
+   still the one", not "this would be". */
+diff-viewer .diff-view-btn[aria-pressed="true"]:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--accent-blue) 85%, var(--text-primary));
 }
 
 /* Too narrow for two columns. The switch stays visible so the layout can still be
