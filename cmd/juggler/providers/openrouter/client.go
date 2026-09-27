@@ -57,7 +57,9 @@ type openRouterModelsResponse struct {
 
 // listModels fetches the model catalog directly from OpenRouter. The OpenAI
 // SDK's Models.List does not surface context_length, so we hit the REST
-// endpoint to get authoritative context windows for each model.
+// endpoint to get authoritative context windows for each model. The account's
+// presets are then appended (see presets.go), since OpenRouter accepts one in
+// place of a model id.
 func listModels(ctx context.Context, apiKey string, headers map[string]string) ([]provider.ModelInfo, error) {
 	var parsed openRouterModelsResponse
 	if err := utils.GetJSON(ctx, baseURL+"/models", utils.JSONGetOptions{
@@ -119,5 +121,8 @@ func listModels(ctx context.Context, apiKey string, headers map[string]string) (
 		})
 	}
 
-	return infos, nil
+	// The account's presets, appended as "@preset/<slug>" entries whose limits are
+	// resolved against the catalog just fetched. Never fatal: a preset list that
+	// cannot be read costs the user the presets, not the models.
+	return append(infos, listPresets(ctx, apiKey, headers, infos)...), nil
 }

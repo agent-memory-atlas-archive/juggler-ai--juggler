@@ -13,12 +13,12 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"juggler/cmd/juggler/core"
 	"juggler/cmd/juggler/providers/openaibase"
 	"juggler/cmd/juggler/providers/provider"
+	"juggler/cmd/juggler/providers/utils"
 )
 
 // DefaultHost is the URL used when no explicit host is configured.
@@ -62,8 +62,13 @@ var daemon = openaibase.LocalHost{
 // answer in milliseconds, and listModels only runs after the health probe has
 // already proven the host reachable, so a short timeout is safe — it caps the
 // per-probe wait so a slow model can't stall the whole refresh (probes also run
-// pooled; see probeModelfileNumCtxBatch).
+// pooled; see maxConcurrentProbes).
 var daemonHTTPClient = &http.Client{Timeout: 3 * time.Second}
+
+// maxConcurrentProbes bounds the per-model /api/show fan-out in listModels: a
+// local daemon serves one model at a time, so hitting it with the whole list at
+// once buys nothing and competes with the request the user is waiting on.
+const maxConcurrentProbes = 4
 
 // Register adds this provider to the global registry. Called explicitly from
 // main; no init()-time side effects.
@@ -161,10 +166,16 @@ func listModels(ctx context.Context, _ string, headers map[string]string) ([]pro
 		return nil, err
 	}
 	// Resolve the user override once (not per model — it opens the credentials
-	// store and reads the env), and probe every model's Modelfile num_ctx with a
-	// bounded worker pool so a long list doesn't serialize N slow /api/show calls.
+	// store and reads the env), and probe every model's Modelfile num_ctx through
+	// the shared bounded pool so a long list doesn't serialize N slow /api/show
+	// calls. A failed or timed-out probe degrades to 0 (the conservative window),
+	// identical to the single-probe path; the short daemon timeout plus the pool
+	// bound total refresh time to roughly ceil(len/maxConcurrentProbes) probe
+	// intervals.
 	override := userNumCtxOverride()
-	numCtx := probeModelfileNumCtxBatch(ctx, names, headers)
+	numCtx := utils.MapConcurrent(ctx, names, maxConcurrentProbes, func(ctx context.Context, name string) int {
+		return probeModelfileNumCtx(ctx, name, headers)
+	})
 	models := make([]provider.ModelInfo, 0, len(names))
 	for i, name := range names {
 		window := servingContextWindow(numCtx[i], override)
@@ -176,29 +187,6 @@ func listModels(ctx context.Context, _ string, headers map[string]string) ([]pro
 		})
 	}
 	return models, nil
-}
-
-// probeModelfileNumCtxBatch probes each model's Modelfile num_ctx concurrently
-// with a small worker pool, returning results index-aligned with names. A
-// failed or timed-out probe degrades to 0 (the conservative window), identical
-// to the single-probe path; the short daemon timeout plus the pool bound total
-// refresh time to roughly ceil(len/maxConcurrent) probe intervals.
-func probeModelfileNumCtxBatch(ctx context.Context, names []string, headers map[string]string) []int {
-	const maxConcurrent = 4
-	results := make([]int, len(names))
-	sem := make(chan struct{}, maxConcurrent)
-	var wg sync.WaitGroup
-	for i, name := range names {
-		wg.Add(1)
-		sem <- struct{}{}
-		go func(i int, name string) {
-			defer wg.Done()
-			defer func() { <-sem }()
-			results[i] = probeModelfileNumCtx(ctx, name, headers)
-		}(i, name)
-	}
-	wg.Wait()
-	return results
 }
 
 func listModelNames(ctx context.Context, headers map[string]string) ([]string, error) {

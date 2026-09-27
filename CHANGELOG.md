@@ -11,6 +11,7 @@ of changes; this project follows semantic versioning.
 - Lots of workspace panel UX improvements and snagging
 - A workspace can now be renamed from its box, the way a conversation tab is
 - The "+" and New workspace rows now fade aside for a drag, so neither is left lit by a tab passing over
+- OpenRouter presets now appear in the model list, carrying the context window of the model they route to
 
 ## [0.7.0] - 2026-09-24
 
