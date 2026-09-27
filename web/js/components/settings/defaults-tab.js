@@ -19,6 +19,7 @@ import '../model-picker/model-chip.js';
 import { MODEL_PICKER_OFF } from '../model-picker/model-picker.js';
 import { isDefaultFileEditingOn, setDefaultFileEditingOn } from '../../services/file-editing-permission.js';
 import { setAutoNameEnabledCached } from '../../services/auto-name-setting.js';
+import defaultModelCache from '../../services/default-model-cache.js';
 import { setReplySuggestionsEnabledCached } from '../../services/reply-suggestions-setting.js';
 import strategyRegistry from '../../registries/strategy-registry.js';
 import { getDefaultStrategyId, setDefaultStrategyId, BUILTIN_DEFAULT_STRATEGY_ID } from '../../services/default-strategy.js';
@@ -955,6 +956,9 @@ export class DefaultsTab {
     this.renderDefaultModelField();
     try {
       await fetchJson('/api/default-model', { method: 'PUT', body });
+      // Displays that fall back to the default (the sidebar's Usage card, when
+      // no conversation is on screen) read a cached copy of the server's answer.
+      defaultModelCache.invalidate();
     } catch (err) {
       console.error('[SettingsPanel] Failed to save default model:', err);
       this.defaultModel = previous;

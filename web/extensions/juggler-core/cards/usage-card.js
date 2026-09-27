@@ -5,7 +5,7 @@
 
 /**
  * The Usage info card — a quiet, live summary of quota windows for the provider
- * configured on the active conversation. It renders cache data immediately, keeps
+ * the user is working with. It renders cache data immediately, keeps
  * the countdowns ticking whether or not the window is focused, and fetches fresh
  * data silently — on every tick while focused, on a slow beat and at the end of
  * each turn while not — preserving the existing meter nodes whenever their
@@ -17,6 +17,7 @@
  */
 
 import InfoCardType from 'juggler/info-card-type';
+import defaultModelCache from '../../../js/services/default-model-cache.js';
 import providersCache from '../../../js/services/providers-cache.js';
 import usageStatsCache from '../../../js/services/usage-stats-cache.js';
 import { escapeHtml } from '../../../sdk/lib/html.js';
@@ -41,12 +42,23 @@ const BACKGROUND_BUSY_MS = 2 * 60 * 1000;
 const BACKGROUND_IDLE_MS = 10 * 60 * 1000;
 
 /**
- * Return the configured provider name for the session's active conversation.
+ * The provider whose quota the card should be reporting.
+ *
+ * The card sits in the sidebar chrome rather than in a conversation panel, so it
+ * is on screen in states no conversation is: selecting a workspace shows its
+ * panel and leaves nothing visible to name a provider. Quota is an account-level
+ * number, not a property of what happens to be on screen, so the card keeps
+ * answering — with the conversation behind the panel, then with the provider a
+ * new conversation would be seeded with. '' only when the account has none.
  * @param {import('../../../js/model/session.js').default|undefined} session
  * @returns {string} Provider name, or ''.
  */
 function activeProvider(session) {
-  return session?.getVisibleConversation?.()?.modelConfig?.provider || '';
+  const visible = session?.getVisibleConversation?.()?.modelConfig?.provider;
+  if (visible) return visible;
+  const behind = session?.conversations?.get?.(session?.loadedConversationId ?? '')?.modelConfig?.provider;
+  if (behind) return behind;
+  return defaultModelCache.get()?.provider || '';
 }
 
 /**
@@ -136,9 +148,16 @@ export default class UsageCard extends InfoCardType {
       // drains whether or not anyone is watching, so the countdown keeps moving
       // in an unfocused window, and the numbers behind it are still refreshed —
       // just on a much slower beat, slower again when nothing is running.
-      // Only the active conversation's provider is ever shown, so fetch just that
-      // one — never poll providers the user isn't looking at.
-      const providerName = activeProvider(session);
+      // Only one provider is ever shown, so fetch just that one — never poll
+      // providers the user isn't looking at.
+      let providerName = activeProvider(session);
+      if (!providerName) {
+        // Nothing on screen or behind it names a provider — a session opened
+        // straight onto a workspace panel, or one with no conversations at all.
+        // Both are answered by the default, which the server resolves.
+        await defaultModelCache.refresh();
+        providerName = activeProvider(session);
+      }
       if (providerName) {
         const now = Date.now();
         const gap = focused() ? 0 : (busy() ? BACKGROUND_BUSY_MS : BACKGROUND_IDLE_MS);

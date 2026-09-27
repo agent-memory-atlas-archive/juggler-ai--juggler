@@ -7,8 +7,8 @@
  *
  * Unlike the provider/model list, usage is pull-based: there is no WS push, so
  * this module owns a debounced GET of `/api/providers/usage?provider=<name>`.
- * Callers only ever display the active conversation's provider, so `refresh()`
- * fetches ONE provider at a time — never a fan-out across providers the user
+ * Callers only ever display one provider — the one the user is working with — so
+ * `refresh()` fetches ONE provider at a time — never a fan-out across providers the user
  * isn't looking at (fetching an inactive provider's usage is wasted work and, for
  * CLI-backed providers, can even provoke a login). The cache is
  * keyed by provider so the model selector and the usage sidebar card can track
