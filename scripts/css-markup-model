@@ -45,6 +45,13 @@
  *                                          replaceChildren
  *   el.innerHTML = `<p class=…>`           the fragment's tree, under el
  *   any `<tag class=…>` in a literal       the fragment's tree, free-standing
+ *   this, in a registered component        the element customElements.define
+ *                                          registered the class as
+ *   { className: 'a b' }                   classes for the element a factory
+ *                                          builds from the options object; when
+ *                                          the call is Object.assign(el, …) the
+ *                                          tag is el's, named in the same
+ *                                          expression
  *
  * Variables are resolved through eslint-scope, so two `const row`s in different
  * functions stay different elements. Fields on `this` are keyed per file, which
@@ -285,6 +292,16 @@ function memberName(node) {
 	return node.property.type === 'Identifier' ? node.property.name : null;
 }
 
+/** What an object literal says at one key, or null if it is not one or says nothing. */
+function propertyValue(node, key) {
+	if (!node || node.type !== 'ObjectExpression') return null;
+	for (const property of node.properties) {
+		if (property.type !== 'Property' || property.computed) continue;
+		if ((property.key.name ?? property.key.value) === key) return property.value;
+	}
+	return null;
+}
+
 /**
  * Harvest one JavaScript file into the shared evidence.
  *
@@ -293,7 +310,7 @@ function memberName(node) {
  * Anything else is anonymous, and facts about it are kept on a throwaway
  * element so they still count as "seen" without being attributed.
  */
-function harvestJS(source, file, espree, eslintScope, evidence) {
+function harvestJS(source, file, espree, eslintScope, evidence, extended = new Set()) {
 	let ast;
 	try {
 		ast = espree.parse(source, { ecmaVersion: 'latest', sourceType: 'module', loc: true, range: true });
@@ -316,6 +333,43 @@ function harvestJS(source, file, espree, eslintScope, evidence) {
 	const parents = new Map();
 	for (const [node, parent] of walkAST(ast)) parents.set(node, parent);
 
+	// `customElements.define('composer-box', Composer)` says what `this` is
+	// inside Composer: a composer-box, as surely as createElement would. Every
+	// define in the tree names a class declared in the same file, so the class
+	// node is found without leaving it — and a class from elsewhere, whose name
+	// is all this file has of it, is left unresolved rather than guessed at.
+	const hostTags = new Map();
+	for (const [node] of walkAST(ast)) {
+		if (node.type !== 'CallExpression' || memberName(node.callee) !== 'define') continue;
+		const object = node.callee.object;
+		if (!object || object.type !== 'Identifier' || object.name !== 'customElements') continue;
+		const tag = literalString(node.arguments[0]);
+		const target = node.arguments[1];
+		if (!tag || !target) continue;
+		if (target.type === 'ClassExpression') { hostTags.set(target, tag); continue; }
+		if (target.type !== 'Identifier' || extended.has(target.name)) continue;
+		const declaration = resolved.get(target)?.defs?.[0]?.node;
+		if (declaration?.type === 'ClassDeclaration') hostTags.set(declaration, tag);
+	}
+
+	/**
+	 * The custom element `this` stands for, or null when it stands for something
+	 * else: a plain function's `this`, an object literal's method, or a class
+	 * nobody registered as an element.
+	 */
+	const hostTag = (node) => {
+		let current = node;
+		for (let parent = parents.get(current); parent; parent = parents.get(current)) {
+			// A method's `this` is the instance. A plain function's is its own,
+			// and an object literal's method belongs to the literal.
+			if (parent.type === 'FunctionDeclaration') return null;
+			if (parent.type === 'FunctionExpression' && parents.get(parent)?.type !== 'MethodDefinition') return null;
+			if (parent.type === 'ClassDeclaration' || parent.type === 'ClassExpression') return hostTags.get(parent) ?? null;
+			current = parent;
+		}
+		return null;
+	};
+
 	/** The name a function is called by, or null if it has none to speak of. */
 	const functionName = (fn) => {
 		if (fn.id && fn.id.name) return fn.id.name;
@@ -334,15 +388,23 @@ function harvestJS(source, file, espree, eslintScope, evidence) {
 	 * being used as a class is a parameter, note which parameter of which
 	 * function it is; the model pairs that with every literal the call sites
 	 * pass, so the class lands on the tag the factory builds.
+	 *
+	 * `options.className`, where `options` is the parameter, is the same fact one
+	 * level in: the slot is named for the property as well as the position, and
+	 * the call sites contribute what their options objects say at that key.
 	 */
 	const classFromParameter = (node, element) => {
-		if (!node || node.type !== 'Identifier') return;
+		if (!node) return;
+		const property = node.type === 'MemberExpression' && !node.computed && node.object.type === 'Identifier'
+			? memberName(node) : null;
+		const identifier = property === null ? node : node.object;
+		if (identifier.type !== 'Identifier') return;
 		// Only worth recording when we know what the factory builds. A helper
 		// whose tag is ALSO a parameter — `_createElement(tag, className)` —
 		// would otherwise report every class it is ever passed as sitting on an
 		// element of unknown tag, throwing away what its call sites plainly say.
 		if (!element.tag) return;
-		const variable = resolved.get(node);
+		const variable = resolved.get(identifier);
 		const def = variable?.defs?.[0];
 		if (!def || def.type !== 'Parameter') return;
 		const name = functionName(def.node);
@@ -350,15 +412,33 @@ function harvestJS(source, file, espree, eslintScope, evidence) {
 		// `className = 'x'` makes the parameter an AssignmentPattern, so match
 		// through it — and take the default as a value the callers get too.
 		const bare = (p) => (p && p.type === 'AssignmentPattern' ? p.left : p);
-		const index = def.node.params.findIndex((p) => bare(p) === def.name
-			|| (bare(p)?.type === 'Identifier' && bare(p).name === variable.name));
-		if (index < 0) return;
-		evidence.addClassParameter(name, index, element.tag);
-		const fallback = def.node.params[index];
-		if (fallback && fallback.type === 'AssignmentPattern') {
-			const value = literalString(fallback.right);
-			if (value) evidence.addCallSite(name, index, value);
-		}
+		const isThis = (p) => p === def.name || (p?.type === 'Identifier' && p.name === variable.name);
+		let slot = null;
+		let fallback = null;
+		def.node.params.forEach((param, index) => {
+			if (slot !== null) return;
+			const pattern = bare(param);
+			if (isThis(pattern)) {
+				slot = property === null ? `${index}` : `${index}.${property}`;
+				fallback = param.type === 'AssignmentPattern'
+					? (property === null ? param.right : propertyValue(param.right, property))
+					: null;
+				return;
+			}
+			// `presentModal({ className })` — the options object is taken apart in
+			// the signature, so the parameter itself is the key.
+			if (property !== null || pattern?.type !== 'ObjectPattern') return;
+			for (const entry of pattern.properties) {
+				if (entry.type !== 'Property' || entry.computed || !isThis(bare(entry.value))) continue;
+				slot = `${index}.${entry.key.name ?? entry.key.value}`;
+				fallback = entry.value.type === 'AssignmentPattern' ? entry.value.right : null;
+				return;
+			}
+		});
+		if (slot === null) return;
+		evidence.addClassParameter(name, slot, element.tag);
+		const value = literalString(fallback);
+		if (value) evidence.addCallSite(name, slot, value);
 	};
 
 	// Class names a function hands back: `return 'ci-section';`. Collected up
@@ -451,6 +531,10 @@ function harvestJS(source, file, espree, eslintScope, evidence) {
 	const keyOf = (node) => {
 		if (!node) return null;
 		if (node.type === 'Identifier') return resolved.get(node) ?? `${file}#${node.name}`;
+		if (node.type === 'ThisExpression') {
+			const tag = hostTag(node);
+			return tag ? `custom-element#${tag}` : null;
+		}
 		if (node.type === 'MemberExpression' && !node.computed && node.object.type === 'ThisExpression') {
 			return `${file}#this.${memberName(node)}`;
 		}
@@ -459,7 +543,9 @@ function harvestJS(source, file, espree, eslintScope, evidence) {
 	const elementFor = (node) => {
 		const key = keyOf(node);
 		if (key === null) return new Element(null); // anonymous: facts still count
-		if (!elements.has(key)) elements.set(key, new Element(null));
+		// A key for `this` only exists when the element it stands for is known,
+		// so the tag comes with it.
+		if (!elements.has(key)) elements.set(key, new Element(node.type === 'ThisExpression' ? hostTag(node) : null));
 		return elements.get(key);
 	};
 	const note = (element) => evidence.add(element);
@@ -490,6 +576,33 @@ function harvestJS(source, file, espree, eslintScope, evidence) {
 			return element;
 		}
 		return null;
+	};
+
+	/** The call an options object is an argument of, and which argument it is. */
+	const optionsCall = (property) => {
+		const options = parents.get(property);
+		if (!options || options.type !== 'ObjectExpression') return null;
+		const call = parents.get(options);
+		if (!call || call.type !== 'CallExpression') return null;
+		const index = call.arguments.indexOf(options);
+		if (index < 0) return null;
+		const name = memberName(call.callee) ?? (call.callee.type === 'Identifier' ? call.callee.name : null);
+		return { call, index, name };
+	};
+
+	/**
+	 * The element an options object is being written onto, when the call doing the
+	 * writing says which one — `Object.assign(document.createElement('span'),
+	 * { className: 'icon-trashcan' })` builds an element as plainly as two
+	 * statements would, and its tag sits in the same expression as its classes.
+	 * Null for every other options object, whose factory keeps the tag to itself.
+	 */
+	const assignTarget = (property) => {
+		const site = optionsCall(property);
+		if (!site || site.name !== 'assign' || site.index < 1) return null;
+		if (site.call.callee.object?.type !== 'Identifier' || site.call.callee.object.name !== 'Object') return null;
+		const target = site.call.arguments[0];
+		return created(target) ?? (keyOf(target) === null ? null : elementFor(target));
 	};
 
 	for (const [node] of walkAST(ast)) {
@@ -546,17 +659,26 @@ function harvestJS(source, file, espree, eslintScope, evidence) {
 			}
 		}
 
-		// { className: 'image-lightbox' } — an options object handed to a
-		// factory. Which tag it builds is the factory's business, but the class
-		// list is this element's, whole.
+		// { className: 'image-lightbox' } — an options object handed to a factory.
+		// The class list is this element's, whole. The tag is the factory's
+		// business, and there are three ways that goes: the call names the element
+		// itself (Object.assign), the call has a name and the slot machinery pairs
+		// this key with whatever tag the factory puts it on, or the call is
+		// anonymous and the tag is genuinely unknown.
 		if (node.type === 'Property' && !node.computed
 			&& ['className', 'class'].includes(node.key.name ?? node.key.value)) {
 			const text = staticText(node.value, resolveText);
 			if (text !== null) {
-				const element = new Element(null);
-				element.tagOpen = true;
-				element.addClasses(classesIn(text));
-				note(element);
+				const target = assignTarget(node);
+				if (target) {
+					target.addClasses(classesIn(text));
+					note(target);
+				} else if (!optionsCall(node)?.name) {
+					const element = new Element(null);
+					element.tagOpen = true;
+					element.addClasses(classesIn(text));
+					note(element);
+				}
 			}
 			continue;
 		}
@@ -575,6 +697,14 @@ function harvestJS(source, file, espree, eslintScope, evidence) {
 				// (extra ? ' ' + extra : '')` still names a class.
 				const value = staticText(node.arguments[i], resolveText);
 				if (value) evidence.addCallSite(calleeName, i, value);
+				// An options object says what it says at each key, for the
+				// factory that reads one of them as a class.
+				if (node.arguments[i].type !== 'ObjectExpression') continue;
+				for (const property of node.arguments[i].properties) {
+					if (property.type !== 'Property' || property.computed) continue;
+					const text = staticText(property.value, resolveText);
+					if (text) evidence.addCallSite(calleeName, `${i}.${property.key.name ?? property.key.value}`, text);
+				}
 			}
 		}
 
@@ -582,7 +712,11 @@ function harvestJS(source, file, espree, eslintScope, evidence) {
 		if (name && callee.type === 'MemberExpression' && memberName(callee.object) === 'classList') {
 			if (['add', 'toggle', 'replace', 'remove'].includes(name)) {
 				const element = elementFor(callee.object.object);
-				for (const arg of node.arguments) {
+				// toggle takes one class and a force flag. Reading the flag as a
+				// class would call the element's class list unreadable on the
+				// strength of a boolean, and every class on it stays open.
+				const args = name === 'toggle' ? node.arguments.slice(0, 1) : node.arguments;
+				for (const arg of args) {
 					const value = literalString(arg);
 					if (value) element.addClasses(classesIn(value));
 					else {
@@ -853,11 +987,19 @@ function buildMarkupModel({ repoRoot, espree, eslintScope }) {
 		...walkFiles(path.join(repoRoot, 'web', 'sdk'), (n) => n.endsWith('.js')),
 		...walkFiles(path.join(repoRoot, 'web', 'extensions'), (n) => n.endsWith('.js')),
 	];
+	const sources = [];
 	for (const file of jsFiles) {
-		let source;
-		try { source = fs.readFileSync(file, 'utf8'); } catch { continue; }
-		harvestJS(source, path.relative(repoRoot, file), espree, eslintScope, model);
+		try { sources.push([path.relative(repoRoot, file), fs.readFileSync(file, 'utf8')]); } catch { /* its markup goes unseen */ }
 	}
+	// A class somebody extends is registered under as many tags as it has
+	// subclasses, so `this` inside it is not one element and must not be read as
+	// one. Collected by name across the whole tree, and over-collected on
+	// purpose: any mention after `extends`, anywhere, is enough to stand down.
+	const extended = new Set();
+	for (const [, source] of sources) {
+		for (const match of source.matchAll(/\bextends\s+([A-Za-z_$][\w$]*)/g)) extended.add(match[1]);
+	}
+	for (const [file, source] of sources) harvestJS(source, file, espree, eslintScope, model, extended);
 	for (const name of ['index.html', 'engine.html', 'sandbox.html']) {
 		let html;
 		try { html = fs.readFileSync(path.join(repoRoot, 'web', name), 'utf8'); } catch { continue; }
