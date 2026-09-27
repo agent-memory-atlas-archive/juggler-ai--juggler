@@ -49,7 +49,7 @@ function revealInScroller(scroller, target) {
  * @property {string} [oldPath] - Where it was, for a rename
  * @property {string} [code] - A short status code, drawn in the gutter of the rail
  * @property {'added'|'removed'|'modified'|'renamed'|'conflicted'} [tone] - What
- *   kind of change it is, which colours the code. Named rather than styled by the
+ *   kind of change it is, which colours the row. Named rather than styled by the
  *   host: the panel owns its palette, and an unknown tone is simply not coloured.
  * @property {string} [status] - The same thing in words, for the accessible label
  * @property {number} [added] - Lines added
@@ -391,16 +391,16 @@ class ReviewPanel {
     const button = el('button', 'review-panel__file');
     /** @type {HTMLButtonElement} */ (button).type = 'button';
     button.dataset.key = fileKey(file.repo, file.path);
+    // An attribute rather than a modifier class, and allow-listed: the tone
+    // comes from a host, and the palette is the panel's to name. It sits on the
+    // row because both the code and the name are coloured from it.
+    if (TONES.has(file.tone || '')) button.dataset.tone = /** @type {string} */ (file.tone);
     button.tabIndex = -1;
     button.title = file.oldPath ? `${file.oldPath} → ${file.path}` : file.path;
     // The same right-click menu as every other surface naming a file, so a row
     // that is not the one being read is still a row you can act on.
     if (file.filePath) button.dataset.filePath = file.filePath;
-    const code = el('span', 'review-panel__code', file.code || '');
-    // An attribute rather than a modifier class, and allow-listed: the tone
-    // comes from a host, and the palette is the panel's to name.
-    if (TONES.has(file.tone || '')) code.dataset.tone = /** @type {string} */ (file.tone);
-    button.append(code);
+    button.append(el('span', 'review-panel__code', file.code || ''));
     const cut = file.path.lastIndexOf('/');
     const address = el('span', 'review-panel__path');
     address.append(el('span', 'review-panel__name', file.path.slice(cut + 1)));

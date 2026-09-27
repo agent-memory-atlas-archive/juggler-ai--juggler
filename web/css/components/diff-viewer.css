@@ -122,9 +122,14 @@ diff-viewer diff-body {
 
 /* How the diff is drawn, offered to whoever is reading it. Pinned left at the
    width of the panel — the same reason the notices are — so it stays put while
-   the code scrolls sideways underneath. Quiet until the pointer is in the diff:
-   a transcript can hold a hundred of these, and the reader who wants the control
-   is looking at the diff when they want it. */
+   the code scrolls sideways underneath.
+
+   It is quiet through size and colour, and it does not change as the pointer
+   crosses the diff. A bar that faded up on hover read as the diff twitching every
+   time the mouse passed over it, and the dimmed state it faded from was a hair
+   from the opacity that means disabled below — so the one thing the bar has to be
+   able to say clearly was the thing it said most faintly. The buttons still
+   answer the pointer individually, which is where a hover belongs. */
 diff-viewer .diff-controls {
     display: flex;
     position: sticky;
@@ -142,19 +147,6 @@ diff-viewer .diff-controls {
     color: var(--text-tertiary);
     font-family: var(--font-sans);
     font-size: 0.75rem;
-    opacity: 0.55;
-    transition: opacity 0.12s ease-out;
-}
-
-diff-viewer:hover .diff-controls,
-diff-viewer:focus-within .diff-controls {
-    opacity: 1;
-}
-
-@media (hover: none) {
-    diff-viewer .diff-controls {
-        opacity: 1;
-    }
 }
 
 /* The picker's dial idiom at chrome scale, as the command editor's run-mode
@@ -655,6 +647,44 @@ diff-viewer .diff-file-comment-list.stale .diff-comment {
     color: var(--text-tertiary);
     font-family: var(--font-mono);
     white-space: pre;
+}
+
+/* What happened to a file, as one colour per row, named once here and read by
+   both the parts that show it. A row is still legible with the colour ignored:
+   the letters say it, the label says it in words. */
+.review-panel__file[data-tone="added"] {
+    --review-tone: var(--diff-added-text);
+}
+
+.review-panel__file[data-tone="removed"] {
+    --review-tone: var(--diff-removed-text);
+}
+
+.review-panel__file[data-tone="modified"] {
+    --review-tone: var(--diff-warning-text);
+}
+
+.review-panel__file[data-tone="renamed"] {
+    --review-tone: var(--accent-blue);
+}
+
+.review-panel__file[data-tone="conflicted"] {
+    --review-tone: var(--accent-red);
+}
+
+/* The code is the row's legend, so it takes the colour at full strength. */
+.review-panel__file[data-tone] .review-panel__code {
+    color: var(--review-tone, var(--text-tertiary));
+}
+
+.review-panel__file[data-tone="conflicted"] .review-panel__code {
+    font-weight: 600;
+}
+
+/* The name carries the same hue mixed back towards ordinary text: enough to
+   scan a rail by, not so much that a path stops reading as one. */
+.review-panel__file[data-tone] .review-panel__name {
+    color: color-mix(in srgb, var(--review-tone, var(--text-primary)) 60%, var(--text-primary));
 }
 
 /* A path is longer than the rail is wide, so the row is not one string that

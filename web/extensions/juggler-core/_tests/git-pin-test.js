@@ -908,6 +908,34 @@ export async function runTests(_ctx) {
     m.teardown();
   });
 
+  await test('each row is coloured by what happened to the file', async () => {
+    const m = await mounted({
+      manifest: manifestOf([
+        { path: 'src/kept.js', index: 'M', worktree: '.' },
+        { path: 'src/new.js', index: 'A', worktree: '.' },
+        { path: 'src/gone.js', index: 'D', worktree: '.' },
+        { path: 'src/loose.js', index: '.', worktree: '?' },
+        { path: 'src/moved.js', oldPath: 'src/was.js', index: 'R', worktree: '.' },
+        { path: 'src/clash.js', index: 'U', worktree: 'U', conflicted: true },
+      ]),
+    });
+    const tones = m.rows().map((/** @type {any} */ row) => row.dataset.tone || '');
+    assert(JSON.stringify(tones) === JSON.stringify(
+      ['modified', 'added', 'removed', 'added', 'renamed', 'conflicted']),
+    `each kind of change is marked as its own: ${JSON.stringify(tones)}`);
+    // Two tones, two colours, in both the places a row shows one: the marks are
+    // painted, not merely recorded.
+    const colour = (/** @type {number} */ at, /** @type {string} */ part) =>
+      getComputedStyle(m.rows()[at].querySelector(`.review-panel__${part}`)).color;
+    assert(colour(1, 'code') !== colour(2, 'code'),
+      `added and removed letters must not read alike: ${colour(1, 'code')}`);
+    assert(colour(1, 'name') !== colour(2, 'name'),
+      `nor their names: ${colour(1, 'name')}`);
+    assert(colour(1, 'name') !== colour(1, 'dir'),
+      `and the tint is on the name, the directory staying quiet: ${colour(1, 'name')}`);
+    m.teardown();
+  });
+
   await test('a renamed file is read under its new name and says where it came from', async () => {
     const m = await mounted({
       manifest: manifestOf([{

@@ -115,6 +115,24 @@ export function fileStatusWords(file) {
 }
 
 /**
+ * Which of the five things happened to a file, for the surfaces that colour its
+ * status letters. A file carries two letters and they can disagree — staged one
+ * way, changed another — so this answers with the most consequential of them: a
+ * conflict first, then a file that has left the tree, then one that has just
+ * joined it, then a move, with plain modification as the ordinary case.
+ * @param {GitFile} file - The file to classify.
+ * @returns {'conflicted'|'removed'|'added'|'renamed'|'modified'} What happened to it.
+ */
+export function fileTone(file) {
+  if (file.conflicted || file.index === 'U' || file.worktree === 'U') return 'conflicted';
+  const sides = [file.index, file.worktree];
+  if (sides.includes('D')) return 'removed';
+  if (file.worktree === '?' || sides.includes('A')) return 'added';
+  if (sides.includes('R') || sides.includes('C')) return 'renamed';
+  return 'modified';
+}
+
+/**
  * What to say when the server listed only some of the changed files. It knows
  * the real total, so this counts rather than trailing off.
  * @param {GitRepo} repo - The repo whose list was cut short.

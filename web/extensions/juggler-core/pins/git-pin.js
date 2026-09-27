@@ -11,6 +11,7 @@ import {
   divergencePhrase,
   fileCode,
   fileStatusWords,
+  fileTone,
   repoLabel,
   truncationNote,
 } from '../lib/git-status.js';
@@ -115,6 +116,7 @@ function toManifest(review) {
           path: file.path,
           oldPath: file.oldPath,
           code: fileCode(file),
+          tone: fileTone(file),
           status: file.conflicted ? 'Conflicted' : fileStatusWords(file),
           added: file.added,
           removed: file.removed,
