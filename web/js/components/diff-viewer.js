@@ -2,7 +2,11 @@
 //     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
-import { computeDiff } from '../lib/diff-utils.js';
+import { computeDiff, regroupHunks } from '../lib/diff-utils.js';
+import {
+  DIFF_VIEW_PREFS_EVENT, CONTEXT_CHOICES, WHOLE_FILE,
+  contextLabel, contextToRender, defaultDiffView, defaultDiffContext,
+} from '../utils/diff-view-prefs.js';
 import { escapeHtml, escapeAttr } from '../../sdk/lib/html.js';
 import { highlightCodeLines } from '../../sdk/lib/syntax-highlight.js';
 import { languageForPath } from '../../sdk/lib/languages.js';
@@ -24,6 +28,46 @@ import { isAbsolutePath } from '../utils/code-selection.js';
  * this the diff stays plain rather than stalling the panel it renders into.
  */
 const MAX_HIGHLIGHT_CHARS = 200_000;
+
+/**
+ * How wide the viewer must be before it will draw two columns, in rem.
+ *
+ * Measured rather than assumed: this component is mounted in a properties panel,
+ * a docked Pinboard and a detached window, and only the last of those is reliably
+ * wide. Two columns in 20rem is two columns of nothing — every line wrapped to
+ * four, which is harder to read than the one column it replaced. Below this the
+ * split preference is honoured by ignoring it.
+ *
+ * Each half spends about 4.25rem of its share on the line-number gutter and the
+ * +/- column, so this leaves roughly thirty characters a side before wrapping
+ * begins — which is narrow, but narrow and side by side is still the comparison
+ * the reader asked for.
+ *
+ * In rem, so it moves with the zoom preference: what matters is how many
+ * characters fit, and zoom changes that without changing any pixel count.
+ *
+ * Exported because it is a fact about the component that a host laying one out
+ * may want: it is the width at which a panel starts being able to offer the
+ * two-column layout at all.
+ */
+export const SPLIT_MIN_REM = 40;
+
+/**
+ * Why the layout switch is refusing, for the reader hovering the control it
+ * refused. Said as what would make it work rather than as what went wrong: the
+ * panel is theirs to widen, and a diff in the Pinboard docked at 20rem is the
+ * common way to meet this.
+ */
+const SPLIT_TOO_NARROW = 'Two columns need a wider panel.';
+
+/**
+ * The root font size, which the zoom preference sets.
+ * @returns {number} Pixels per rem.
+ */
+function remInPx() {
+  const size = parseFloat(getComputedStyle(document.documentElement).fontSize);
+  return Number.isFinite(size) && size > 0 ? size : 16;
+}
 
 /** How a file with no text patch to show says so, by the status git gave it. */
 const STATUS_NOTICES = {
@@ -59,6 +103,70 @@ function hunkFromPatch(hunk) {
 }
 
 /**
+ * Pair a hunk's lines into rows, for drawing the two sides beside each other.
+ *
+ * An unchanged line is one row holding itself twice — it is the same line in both
+ * files. A block of change is a run of removals followed by a run of additions
+ * (the order both `computeDiff` and git write), and its rows pair the two runs off
+ * one for one: the first removal beside the first addition, so a line and the line
+ * that replaced it are read across rather than down. Whichever run is shorter
+ * leaves the rows past its end with nothing on that side, which is what says the
+ * change was not a replacement but an insertion or a deletion.
+ *
+ * Pairing by position claims nothing about the lines themselves. It is the whole
+ * of what a two-column diff asserts, and it is why this is a rendering decision
+ * and not a diffing one.
+ * @param {DiffLine[]} lines - The hunk's lines, in file order.
+ * @returns {{old: DiffLine|null, new: DiffLine|null}[]} The rows to draw.
+ */
+function splitRows(lines) {
+  /** @type {{old: DiffLine|null, new: DiffLine|null}[]} */
+  const rows = [];
+  let at = 0;
+  while (at < lines.length) {
+    const line = /** @type {DiffLine} */ (lines[at]);
+    if (line.type === 'equal') {
+      rows.push({ old: line, new: line });
+      at++;
+      continue;
+    }
+    /** @type {DiffLine[]} */
+    const removed = [];
+    /** @type {DiffLine[]} */
+    const added = [];
+    while (at < lines.length && /** @type {DiffLine} */ (lines[at]).type === 'remove') {
+      removed.push(/** @type {DiffLine} */ (lines[at]));
+      at++;
+    }
+    while (at < lines.length && /** @type {DiffLine} */ (lines[at]).type === 'add') {
+      added.push(/** @type {DiffLine} */ (lines[at]));
+      at++;
+    }
+    for (let k = 0; k < Math.max(removed.length, added.length); k++) {
+      rows.push({ old: removed[k] ?? null, new: added[k] ?? null });
+    }
+  }
+  return rows;
+}
+
+/**
+ * One line-number gutter cell.
+ *
+ * The two sides are written out rather than interpolated so the class list stays
+ * a literal: `scripts/css-markup-model` reads these template literals to learn
+ * which tag a class lands on, and a class it can only see as `${…}` is one it has
+ * to treat as able to land on anything.
+ * @param {'old'|'new'} side - Which file's numbering.
+ * @param {number|null} number - The line's number there, if it has one.
+ * @returns {string} The gutter cell as HTML.
+ */
+function lineNumberCell(side, number) {
+  return side === 'old'
+    ? `<span class="line-num old">${number ?? ''}</span>`
+    : `<span class="line-num new">${number ?? ''}</span>`;
+}
+
+/**
  * How one side of a hunk reads aloud.
  * @param {string} label - "Old" or "new".
  * @param {number} start - First line covered.
@@ -72,7 +180,15 @@ function sideRange(label, start, count) {
 }
 
 /**
- * DiffViewer — one file, drawn as a unified diff with both line-number gutters.
+ * DiffViewer — one file, drawn either as a unified diff with both line-number
+ * gutters or as the two sides beside each other.
+ *
+ * Which layout, and how many unchanged lines it shows around each change, start
+ * from the reader's defaults (utils/diff-view-prefs.js) and can then be set on
+ * this viewer alone. An override lives as long as the element and no longer: a
+ * diff the reader has set for themselves stops following the default, and one
+ * they have not follows it the moment it moves. Two columns are refused outright
+ * where there is not the width for them, however the preference reads.
  *
  * Two inputs feed it and one renderer draws them. `setDiff` takes the whole of
  * each side, as a tool action persists them, and computes the hunks here.
@@ -114,11 +230,135 @@ class DiffViewer extends HTMLElement {
     this._rows = [];
     /** @type {{side: 'old'|'new', line: number}|null} @private */
     this._anchor = null;
+    // This viewer's own layout and context width, each null while it is still
+    // following the reader's default.
+    /** @type {'inline'|'split'|null} @private */
+    this._view = null;
+    /** @type {number|null} @private */
+    this._context = null;
+    // Whether there is room here for two columns.
+    /** @type {boolean} @private */
+    this._wide = false;
+    // Whether anything has been drawn yet. A width that changes before a diff has
+    // been given is a width nothing was decided from.
+    /** @type {boolean} @private */
+    this._drawn = false;
+    /** @type {ResizeObserver|null} @private */
+    this._observer = null;
+    /** @private */
+    this._onPrefsChanged = () => {
+      // A viewer the reader has set for themselves has stopped following the
+      // default, so a change to the default is not news to it.
+      if (this._view === null || this._context === null) this.render();
+    };
     this.addEventListener('click', (event) => this._onClick(event));
+    this.addEventListener('change', (event) => this._onChange(event));
   }
 
   connectedCallback() {
-    // wait for setDiff/setPatch to be called
+    // Two columns need room, and how much room there is is not knowable until the
+    // element is in a document. Every host of this component fills it BEFORE
+    // mounting it — see addDiffViewer in utils/properties-panel-helpers.js — so
+    // the first render routinely happens at a width of zero, and mounting is the
+    // moment that answer changes. Re-rendering here is therefore the normal path
+    // and not a correction: leave it to the observer and its first callback finds
+    // the measurement already taken and nothing to report, so a diff drawn while
+    // detached stays as it was drawn — offering no layout at all, in a panel with
+    // room for both.
+    //
+    // Only a CROSSING of the threshold re-renders, and only once something has
+    // been drawn. The first is what keeps an observer from writing to the element
+    // it is measuring on every frame of a column drag — the "ResizeObserver loop
+    // completed with undelivered notifications" everyone meets once. The second is
+    // what stops a viewer that has been given no diff yet from drawing the empty
+    // one it does not have.
+    const roomChanged = this._measure();
+    if (typeof ResizeObserver !== 'undefined' && !this._observer) {
+      this._observer = new ResizeObserver(() => {
+        if (this._measure() && this._drawn) this.render();
+      });
+      this._observer.observe(this);
+    }
+    window.addEventListener(DIFF_VIEW_PREFS_EVENT, this._onPrefsChanged);
+    if (roomChanged && this._drawn) this.render();
+  }
+
+  disconnectedCallback() {
+    this._observer?.disconnect();
+    this._observer = null;
+    window.removeEventListener(DIFF_VIEW_PREFS_EVENT, this._onPrefsChanged);
+  }
+
+  /**
+   * Note whether there is room for two columns.
+   * @returns {boolean} True when the answer changed.
+   * @private
+   */
+  _measure() {
+    const wide = this.clientWidth >= SPLIT_MIN_REM * remInPx();
+    if (wide === this._wide) return false;
+    this._wide = wide;
+    return true;
+  }
+
+  /**
+   * How this viewer is drawing the diff: its own choice, or the default, and
+   * never two columns where they will not fit.
+   * @returns {'inline'|'split'} The layout in force.
+   * @private
+   */
+  effectiveView() {
+    const wanted = this._view ?? defaultDiffView();
+    return wanted === 'split' && this._wide ? 'split' : 'inline';
+  }
+
+  /**
+   * How many unchanged lines this viewer shows around each change: its own
+   * choice, or the default. Stored the way the preference stores it, with -1 for
+   * the whole file.
+   * @returns {number} The context width.
+   * @private
+   */
+  effectiveContext() {
+    return this._context ?? defaultDiffContext();
+  }
+
+  /**
+   * How much of the file around each change this viewer wants, for whoever
+   * fetches the patch it draws. A host asks the viewer rather than the preference
+   * so there is one answer and not two — this viewer may have been set on its own.
+   * @returns {number} The context width, -1 for the whole file.
+   */
+  get contextLines() {
+    return this.effectiveContext();
+  }
+
+  /**
+   * Draw this diff in a layout of its own, whatever the default is. Null gives it
+   * back to the default.
+   * @param {'inline'|'split'|null} view - The layout, or null to follow the default.
+   * @returns {void}
+   */
+  setView(view) {
+    this._view = view === 'inline' || view === 'split' ? view : null;
+    this.render();
+  }
+
+  /**
+   * Show this many unchanged lines around each change, whatever the default is.
+   *
+   * A snapshot diff is recomputed at the new width. A server patch can only be
+   * narrowed here — the lines to widen it with were never sent — so the request
+   * also goes out as a `diff-context-change` event, for a host that is able to ask
+   * again. What is drawn in the meantime is the patch in hand, narrowed.
+   * @param {number|null} lines - A width, -1 for the whole file, or null to follow
+   *   the default.
+   * @returns {void}
+   */
+  setContextLines(lines) {
+    this._context = typeof lines === 'number' ? lines : null;
+    this.render();
+    this._emit('diff-context-change', { contextLines: this.effectiveContext() });
   }
 
   /**
@@ -180,6 +420,11 @@ class DiffViewer extends HTMLElement {
       added: Number(patch?.added) || 0,
       removed: Number(patch?.removed) || 0,
       revision: typeof patch?.revision === 'string' ? patch.revision : '',
+      // The context width this patch was produced at, which is what says whether a
+      // narrower view can be had from it alone. A patch from before the server
+      // reported it is read as holding everything, which is the assumption that
+      // regroups rather than the one that silently shows the wrong width.
+      context: Number.isFinite(patch?.context) ? Number(patch.context) : Infinity,
       hunks: (Array.isArray(patch?.hunks) ? patch.hunks : []).map(hunkFromPatch),
     });
     this.render();
@@ -267,14 +512,24 @@ class DiffViewer extends HTMLElement {
       if (patch.binary) notices.push({ kind: 'binary', text: STATUS_NOTICES.binary });
       if (patch.conflicted) notices.push({ kind: 'conflicted', text: STATUS_NOTICES.conflicted });
       if (patch.truncated) notices.push({ kind: 'truncated', text: STATUS_NOTICES.truncated });
-      return { hunks: patch.hunks, notices, added: patch.added, removed: patch.removed, drawable: !patch.binary };
+      // The patch was produced at some context width, and the reader may have
+      // asked for a narrower one since. Regrouping gives them that immediately
+      // and exactly; a wider one has to come from whoever fetched this, and until
+      // it does, what is drawn is what we have. The counts are the patch's own
+      // either way — narrowing the view of a change does not change the change.
+      const context = contextToRender(this.effectiveContext());
+      const hunks = context < (patch.context ?? Infinity)
+        ? regroupHunks(patch.hunks, context)
+        : patch.hunks;
+      return { hunks, notices, added: patch.added, removed: patch.removed, drawable: !patch.binary };
     }
 
     // A snapshot is diffed here and now, in the only thread there is, so the
     // line diff refuses a changed region past its own budget rather than stall
     // the panel. A server patch arrives already hunked and never meets this:
     // nothing is computed to draw it, however large the file it came from.
-    const hunks = computeDiff(this.oldContent, this.newContent, this.startLineNumber);
+    const hunks = computeDiff(this.oldContent, this.newContent, this.startLineNumber,
+      contextToRender(this.effectiveContext()));
     if (hunks === null) {
       notices.push({ kind: 'large', text: STATUS_NOTICES.large });
       return { hunks: [], notices, added: 0, removed: 0, drawable: false };
@@ -289,19 +544,27 @@ class DiffViewer extends HTMLElement {
     this.indexRows(model.hunks);
     this.highlighted = this.highlightSides();
 
-    const body = this.renderInlineView(model.hunks, model.drawable);
+    const view = this.effectiveView();
+    const body = view === 'split'
+      ? this.renderSplitView(model.hunks, model.drawable)
+      : this.renderInlineView(model.hunks, model.drawable);
     const fileComments = this.renderFileComments();
     const label = this.diffLabel();
+
+    // The layout in force is on the element itself, so the stylesheet reads the
+    // renderer's decision rather than making a second one of its own.
+    this.dataset.view = view;
 
     this.innerHTML = `
       <diff-content>
         <diff-header>
           ${escapeHtml(this.filePath || 'File diff')}
         </diff-header>
+        ${this.renderControls(view)}
         ${model.notices.map((notice) => this.renderNotice(notice)).join('')}
-        <diff-inline-view role="group" aria-label="${escapeAttr(label)}">
+        <diff-body role="group" aria-label="${escapeAttr(label)}">
           ${body}
-        </diff-inline-view>
+        </diff-body>
         ${fileComments}
         <diff-stats>
           <span class="add-count">+${model.added}</span>
@@ -309,6 +572,55 @@ class DiffViewer extends HTMLElement {
         </diff-stats>
       </diff-content>
     `;
+    this._drawn = true;
+  }
+
+  /**
+   * How this diff is drawn, offered to the reader.
+   *
+   * Drawn quiet and brought forward on hover, the way the comment anchors are: a
+   * transcript can hold a hundred of these, and a control shouting from every one
+   * of them would cost more than it is worth to the reader who wants it.
+   *
+   * Where there is no room for two columns the layout switch is disabled rather
+   * than removed, and says why. Removing it would leave somebody who only ever
+   * reads diffs in a narrow panel with no way of finding out the other layout
+   * exists — a control that is absent and one that was never built look the same
+   * from the outside.
+   * @param {'inline'|'split'} view - The layout in force.
+   * @returns {string} The controls as HTML.
+   * @private
+   */
+  renderControls(view) {
+    if (this.mode === 'loading' || this.mode === 'error') return '';
+
+    const context = this.effectiveContext();
+    const options = CONTEXT_CHOICES.map((lines) => {
+      const selected = lines === context ? ' selected' : '';
+      return `<option value="${lines}"${selected}>${escapeHtml(contextLabel(lines))}</option>`;
+    }).join('');
+
+    /**
+     * @param {'inline'|'split'} which - The layout the button chooses.
+     * @param {string} label - What it says.
+     * @returns {string} The button as HTML.
+     */
+    const button = (which, label) => `<button type="button" class="diff-view-btn"`
+      + ` data-view="${which}" aria-pressed="${view === which}"`
+      + `${this._wide ? '' : ' disabled'}>${escapeHtml(label)}</button>`;
+
+    // On the group rather than on the buttons: a disabled button does not
+    // reliably answer the pointer, so a title on one is a title nobody reads.
+    const why = this._wide ? '' : ` title="${escapeAttr(SPLIT_TOO_NARROW)}"`;
+
+    return '<div class="diff-controls">'
+      + `<span class="diff-view-switch" role="group" aria-label="Diff layout"${why}>`
+      + button('inline', 'Unified') + button('split', 'Split')
+      + '</span>'
+      + '<label class="diff-context-picker">Context'
+      + `<select class="diff-context-select" aria-label="Unchanged lines to show around each change">${options}</select>`
+      + '</label>'
+      + '</div>';
   }
 
   /**
@@ -382,6 +694,87 @@ class DiffViewer extends HTMLElement {
   }
 
   /**
+   * Render the two sides beside each other.
+   *
+   * The same hunks and the same headers as the unified view; only the rows differ,
+   * and each half of a row is the same `.diff-line` the unified view draws, so
+   * every other part of the component — the comment anchors, the line the right
+   * button menu reports, which side a selection is in — goes on reading them the
+   * way it already does.
+   * @param {DiffHunk[]} hunks - What to draw.
+   * @param {boolean} drawable - Whether a file with no hunks has nothing to show.
+   * @returns {string} HTML string representing the two-column diff.
+   * @private
+   */
+  renderSplitView(hunks, drawable) {
+    if (!hunks || hunks.length === 0) {
+      return drawable ? '<diff-no-changes>No changes</diff-no-changes>' : '';
+    }
+
+    let html = '';
+    for (const hunk of hunks) {
+      const label = `${sideRange('old', hunk.oldStart, hunk.oldCount)}, ${sideRange('new', hunk.newStart, hunk.newCount)}`;
+      const heading = hunk.heading ? ` ${hunk.heading}` : '';
+      html += `<diff-hunk role="group" aria-label="${escapeAttr(label)}">`;
+      html += `<diff-hunk-header>${escapeHtml(`@@ -${hunk.oldStart},${hunk.oldCount} +${hunk.newStart},${hunk.newCount} @@${heading}`)}</diff-hunk-header>`;
+      for (const row of splitRows(hunk.lines)) html += this.renderSplitRow(row);
+      html += '</diff-hunk>';
+    }
+    return html;
+  }
+
+  /**
+   * One row of the two-column view: the old line, the new line, and whatever is
+   * anchored under either of them.
+   * @param {{old: DiffLine|null, new: DiffLine|null}} row - The paired lines.
+   * @returns {string} The row as HTML.
+   * @private
+   */
+  renderSplitRow(row) {
+    const html = '<div class="diff-row">'
+      + this.renderSplitCell(row.old, 'old')
+      + this.renderSplitCell(row.new, 'new')
+      + '</div>';
+    // Comments hang from the row, not from a column: one written on a replaced
+    // line is about the replacement, and splitting it between the two halves would
+    // put half a conversation in each.
+    return html + this.renderLineComments(/** @type {DiffLine} */ ({
+      oldLineNum: row.old?.oldLineNum ?? null,
+      newLineNum: row.new?.newLineNum ?? null,
+    }));
+  }
+
+  /**
+   * One half of a row. A side with no line for this row is a filler: it carries no
+   * line number, no content and no anchor, because there is no line there to
+   * number, read or comment on.
+   * @param {DiffLine|null} line - The line on this side, if there is one.
+   * @param {'old'|'new'} side - Which file this half is.
+   * @returns {string} The cell as HTML.
+   * @private
+   */
+  renderSplitCell(line, side) {
+    if (!line) {
+      return side === 'old'
+        ? '<div class="diff-cell-filler old" aria-hidden="true"></div>'
+        : '<div class="diff-cell-filler new" aria-hidden="true"></div>';
+    }
+
+    const kind = line.type === 'equal' ? 'equal' : line.type;
+    const prefix = line.type === 'remove' ? '-' : (line.type === 'add' ? '+' : ' ');
+    const number = side === 'old' ? line.oldLineNum : line.newLineNum;
+    const data = number !== null ? ` data-${side}-line="${number}"` : '';
+
+    let html = `<div class="diff-line ${kind} ${side}"${data}>`;
+    html += lineNumberCell(side, number);
+    html += this.renderAnchor(side, number);
+    html += `<span class="line-prefix">${prefix}</span>`;
+    html += `<span class="line-content">${this.renderLineWithCharChanges(line)}</span>`;
+    html += '</div>';
+    return html;
+  }
+
+  /**
    * One line of the diff, and whatever is anchored under it.
    * @param {DiffLine} line - The line.
    * @returns {string} The row as HTML.
@@ -393,10 +786,7 @@ class DiffViewer extends HTMLElement {
     const side = /** @type {'old'|'new'} */ (
       line.type === 'remove' || line.newLineNum === null ? 'old' : 'new');
 
-    const numbers = [
-      `<span class="line-num old">${line.oldLineNum ?? ''}</span>`,
-      `<span class="line-num new">${line.newLineNum ?? ''}</span>`,
-    ].join('');
+    const numbers = lineNumberCell('old', line.oldLineNum) + lineNumberCell('new', line.newLineNum);
     const data = [
       line.oldLineNum !== null ? ` data-old-line="${line.oldLineNum}"` : '',
       line.newLineNum !== null ? ` data-new-line="${line.newLineNum}"` : '',
@@ -675,6 +1065,12 @@ class DiffViewer extends HTMLElement {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
 
+    const layout = target.closest('.diff-view-btn');
+    if (layout instanceof HTMLElement) {
+      this.setView(layout.dataset.view === 'split' ? 'split' : 'inline');
+      return;
+    }
+
     const anchor = target.closest('.diff-comment-btn');
     if (anchor instanceof HTMLElement) {
       this._requestComment(anchor, event.shiftKey === true);
@@ -686,6 +1082,20 @@ class DiffViewer extends HTMLElement {
     const id = comment.dataset.id || '';
     if (target.closest('.diff-comment-edit')) this._emit('diff-annotation-edit', { id });
     else if (target.closest('.diff-comment-delete')) this._emit('diff-annotation-delete', { id });
+  }
+
+  /**
+   * The context picker moved. Delegated like the clicks, for the same reason: the
+   * select the reader used is replaced by the re-render their choice causes.
+   * @param {Event} event - The change.
+   * @private
+   */
+  _onChange(event) {
+    const target = event.target instanceof Element ? event.target : null;
+    const select = target?.closest('.diff-context-select');
+    if (!(select instanceof HTMLElement)) return;
+    const lines = Number(/** @type {any} */ (select).value);
+    this.setContextLines(Number.isFinite(lines) ? lines : WHOLE_FILE);
   }
 
   /**

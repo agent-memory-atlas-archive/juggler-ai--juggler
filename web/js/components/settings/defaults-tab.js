@@ -22,6 +22,10 @@ import { setAutoNameEnabledCached } from '../../services/auto-name-setting.js';
 import { setReplySuggestionsEnabledCached } from '../../services/reply-suggestions-setting.js';
 import strategyRegistry from '../../registries/strategy-registry.js';
 import { getDefaultStrategyId, setDefaultStrategyId, BUILTIN_DEFAULT_STRATEGY_ID } from '../../services/default-strategy.js';
+import {
+  CONTEXT_CHOICES, contextLabel, defaultDiffView, setDefaultDiffView,
+  defaultDiffContext, setDefaultDiffContext,
+} from '../../utils/diff-view-prefs.js';
 import { fetchJson } from '../../services/http.js';
 import { showAlert } from '../modal-dialog.js';
 
@@ -34,10 +38,16 @@ const MODEL_PICKER_POPUP_ID = 'settings-model-picker';
 /**
  * "Defaults" tab (id `defaults`): the default-model picker and new-conversation
  * defaults, the cheap-model section (the picker plus a row per background job
- * that spends it — naming conversations, suggesting replies), and the global
- * stream-idle-timeout field. Seeded from the shared loadConfig() fetch; the
- * pickers persist immediately via PUT /api/default-model and PUT
- * /api/cheap-model, the rest via PUT /api/config.
+ * that spends it — naming conversations, suggesting replies), the global
+ * stream-idle-timeout field, and how diffs are drawn. Seeded from the shared
+ * loadConfig() fetch; the pickers persist immediately via PUT /api/default-model
+ * and PUT /api/cheap-model, the rest via PUT /api/config.
+ *
+ * The diff rows are the exception to that last clause: they are display
+ * preferences nothing on the server reads, so they persist through
+ * utils/diff-view-prefs.js (the `user` realm) rather than to credentials.json,
+ * and they take effect in every diff already on screen rather than on the next
+ * turn.
  */
 export class DefaultsTab {
   /**
@@ -454,6 +464,76 @@ export class DefaultsTab {
       },
       failureLog: 'spend ceiling',
     });
+
+    this._appendDiffSettings(container);
+  }
+
+  /**
+   * How diffs are drawn, everywhere one is shown: the two-column layout, and how
+   * much of the file to show around each change.
+   *
+   * These are what a NEW diff starts on. Any diff can be set on its own from the
+   * controls on it, and while it is, it stops following these — so changing one
+   * here moves every diff the reader has not already had an opinion about.
+   *
+   * Unlike everything above, they persist through the `user` preference realm
+   * rather than PUT /api/config: nothing on the server reads them, and a display
+   * choice belongs with the tips you have seen and the bell, not in
+   * credentials.json beside the spend ceiling.
+   * @param {Element} container - The form to append to.
+   * @private
+   */
+  _appendDiffSettings(container) {
+    const heading = document.createElement('div');
+    heading.className = 'settings-section-heading';
+    heading.textContent = 'Diffs';
+    container.appendChild(heading);
+
+    const { row: splitRow } = buildToggleRow(
+      'Side-by-side diffs',
+      'Show the old and new file in two columns instead of one combined list. ' +
+      'Needs a wide enough panel — a diff with no room for two columns shows the ' +
+      'combined list whatever this says.',
+      defaultDiffView() === 'split',
+      (on) => setDefaultDiffView(on ? 'split' : 'inline'),
+    );
+    container.appendChild(splitRow);
+
+    const contextRow = document.createElement('div');
+    contextRow.className = 'settings-group provider-field';
+
+    const info = document.createElement('div');
+    info.className = 'provider-info';
+    const name = document.createElement('div');
+    name.className = 'provider-name';
+    name.textContent = 'Lines of context';
+    const description = document.createElement('div');
+    description.className = 'provider-description';
+    description.textContent =
+      'Unchanged lines shown above and below each change, so you can see what it ' +
+      'sits in. More is more to read; the whole file is every line of it.';
+    info.appendChild(name);
+    info.appendChild(description);
+
+    const control = document.createElement('div');
+    control.className = 'provider-control';
+    const select = document.createElement('select');
+    select.className = 'settings-select';
+    select.id = 'diff-context-select';
+    const current = defaultDiffContext();
+    for (const lines of CONTEXT_CHOICES) {
+      const option = document.createElement('option');
+      option.value = String(lines);
+      option.textContent = contextLabel(lines);
+      if (lines === current) option.selected = true;
+      select.appendChild(option);
+    }
+    select.addEventListener('change', () => setDefaultDiffContext(Number(select.value)));
+    control.appendChild(select);
+
+    contextRow.appendChild(info);
+    contextRow.appendChild(control);
+    container.appendChild(contextRow);
   }
 
   /**

@@ -336,6 +336,9 @@ import { validateManifest } from './lib/manifest.js';
  * @property {number} added - Added lines
  * @property {number} removed - Removed lines
  * @property {string} revision - Fingerprint of the change this describes
+ * @property {number} context - Unchanged lines carried around each change, as the
+ *   request asked for or the default. You can show less of the file than this from
+ *   the patch alone; showing more takes another `diff()`.
  * @property {string} [oldMode] - Git's six-digit mode on the old side, when it moved
  * @property {string} [newMode] - Git's six-digit mode on the new side, when it moved
  * @property {PinGitDiffHunk[]} hunks - The patch, hunk by hunk. Empty for a pure
@@ -377,7 +380,7 @@ import { validateManifest } from './lib/manifest.js';
  *   surface costs nothing, but a loop here runs git in a loop. Rejects if the read
  *   failed, if you cancelled it, or if the project changed while it was out: an
  *   answer about a project nobody is looking at is not an answer.
- * @property {(repo: string, path: string, options?: {signal?: AbortSignal}) => Promise<PinGitDiff>} diff -
+ * @property {(repo: string, path: string, options?: {signal?: AbortSignal, contextLines?: number}) => Promise<PinGitDiff>} diff -
  *   One file's change, named the way the manifest names it: `repo` is the
  *   repository's path within the project ('' for the root repo) and `path` is the
  *   file's path within that repository. Asked for one file at a time, when
@@ -385,6 +388,9 @@ import { validateManifest } from './lib/manifest.js';
  *   and cancelling actually cancels the read, which is what keeps a user clicking
  *   down a file list from leaving a queue of patches behind them. The host also
  *   cancels everything this pin has out when the pin goes away.
+ *   `contextLines` is how many unchanged lines to carry around each change, -1 for
+ *   the whole file; omit it for the default. The patch reports the width it came
+ *   back at, because you can draw less of it than that but not more.
  */
 
 /**

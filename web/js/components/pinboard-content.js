@@ -1249,7 +1249,10 @@ class PinboardContent extends JugglerElement {
             signal, options?.signal, (linked) => gitReviewService.review({ signal: linked })
           ),
           diff: (repo, path, options) => this._gitRequest(
-            signal, options?.signal, (linked) => gitReviewService.diff(repo, path, { signal: linked })
+            signal, options?.signal,
+            (linked) => gitReviewService.diff(repo, path, {
+              signal: linked, contextLines: options?.contextLines,
+            })
           ),
         },
         tasks: {

@@ -48,6 +48,9 @@ function revealInScroller(scroller, target) {
  * @property {string} path - The file's path within that group
  * @property {string} [oldPath] - Where it was, for a rename
  * @property {string} [code] - A short status code, drawn in the gutter of the rail
+ * @property {'added'|'removed'|'modified'|'renamed'|'conflicted'} [tone] - What
+ *   kind of change it is, which colours the code. Named rather than styled by the
+ *   host: the panel owns its palette, and an unknown tone is simply not coloured.
  * @property {string} [status] - The same thing in words, for the accessible label
  * @property {number} [added] - Lines added
  * @property {number} [removed] - Lines removed
@@ -79,6 +82,9 @@ function revealInScroller(scroller, target) {
 
 /** How wide a quoted line may be before the editor's label stops naming it. */
 const LABEL_PATH_MAX = 80;
+
+/** The kinds of change a row's code is coloured for; anything else is not. */
+const TONES = new Set(['added', 'removed', 'modified', 'renamed', 'conflicted']);
 
 /**
  * A file's address, as one string. Two `src/main.go` in two repositories are two
@@ -148,7 +154,7 @@ class ReviewPanel {
   constructor({ scopeLabel, loadPatch, review }) {
     /** @type {string} @private */
     this._scopeLabel = scopeLabel || '';
-    /** @type {(file: ReviewFile, options: {signal: AbortSignal}) => Promise<any>} @private */
+    /** @type {(file: ReviewFile, options: {signal: AbortSignal, contextLines?: number}) => Promise<any>} @private */
     this._loadPatch = loadPatch;
     /** @type {any} @private */
     this._review = review;
@@ -168,6 +174,13 @@ class ReviewPanel {
      * @type {number} @private
      */
     this._generation = 0;
+    /**
+     * The context width every patch the panel holds was fetched at. Null until a
+     * viewer has said what it wants; a change to it retires the lot, since each of
+     * them was produced at the old width and only the server can widen one.
+     * @type {number|null} @private
+     */
+    this._contextLines = null;
     /** @type {any} @private */
     this._editor = null;
     /** @type {string} @private */
@@ -204,6 +217,11 @@ class ReviewPanel {
     this._diffEl.addEventListener('diff-annotation-delete', (event) => {
       void this._deleteComment(/** @type {CustomEvent} */ (event).detail?.id);
     });
+    // The reader asked for more or less of the file around each change. The viewer
+    // has already narrowed what it holds if it could, which is instant; this is
+    // what fetches the lines it could not have, and _loadActive decides whether
+    // anything actually needs asking for.
+    this._diffEl.addEventListener('diff-context-change', () => this._loadActive());
 
     /** @type {() => void} @private */
     this._stopWatching = typeof review?.onChange === 'function'
@@ -378,7 +396,11 @@ class ReviewPanel {
     // The same right-click menu as every other surface naming a file, so a row
     // that is not the one being read is still a row you can act on.
     if (file.filePath) button.dataset.filePath = file.filePath;
-    button.append(el('span', 'review-panel__code', file.code || ''));
+    const code = el('span', 'review-panel__code', file.code || '');
+    // An attribute rather than a modifier class, and allow-listed: the tone
+    // comes from a host, and the palette is the panel's to name.
+    if (TONES.has(file.tone || '')) code.dataset.tone = /** @type {string} */ (file.tone);
+    button.append(code);
     const cut = file.path.lastIndexOf('/');
     const address = el('span', 'review-panel__path');
     address.append(el('span', 'review-panel__name', file.path.slice(cut + 1)));
@@ -487,6 +509,16 @@ class ReviewPanel {
       return;
     }
 
+    const viewer = this._mountDiff(file);
+    // How much of the file around each change to ask git for. The viewer is asked
+    // rather than the preference, because a viewer the reader has set for
+    // themselves is not following the preference any more.
+    const contextLines = viewer.contextLines;
+    if (contextLines !== this._contextLines) {
+      this._contextLines = contextLines;
+      this._patches.clear();
+    }
+
     const key = fileKey(file.repo, file.path);
     const cached = this._patches.get(key);
     if (cached) {
@@ -494,11 +526,10 @@ class ReviewPanel {
       return;
     }
 
-    const viewer = this._mountDiff(file);
     viewer.setLoading();
     const request = new AbortController();
     this._request = request;
-    void Promise.resolve(this._loadPatch(file, { signal: request.signal })).then((patch) => {
+    void Promise.resolve(this._loadPatch(file, { signal: request.signal, contextLines })).then((patch) => {
       if (generation !== this._generation) return;
       this._patches.set(key, patch);
       this._showPatch(file, patch);

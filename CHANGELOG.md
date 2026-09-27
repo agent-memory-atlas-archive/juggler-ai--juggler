@@ -6,12 +6,14 @@ of changes; this project follows semantic versioning.
 ## [Unreleased]
 
 - Fixes for conversation dragging order when workspaces are there, and for conversation flashing colours
+- Lots of workspace panel UX improvements and snagging
+- A diff can now be shown side by side, wherever there is room for two columns
+- A diff can now show more or less of the file around each change, up to all of it
+- Both diff choices can be changed on a specific diff, or as a default in Settings → Defaults
+- OpenRouter presets now appear in the model list, carrying the context window of the model they route to
 - A workspace box now carries the same drag grip its tabs do, so a finger can reorder one
 - Dragging a mid-turn conversation to another workspace now refuses at the drop, instead of after asking
-- Lots of workspace panel UX improvements and snagging
-- A workspace can now be renamed from its box, the way a conversation tab is
 - The "+" and New workspace rows now fade aside for a drag, so neither is left lit by a tab passing over
-- OpenRouter presets now appear in the model list, carrying the context window of the model they route to
 
 ## [0.7.0] - 2026-09-24
 

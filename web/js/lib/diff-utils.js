@@ -159,6 +159,13 @@ function buildDiffLines(oldText, newText, startLineNumber = 1) {
 
 /**
  * Group diff lines into hunks with context.
+ *
+ * `contextLines` is the reader's to choose, so both ends of its range are part of
+ * the contract. At 0 a hunk holds its changes and nothing else, and two changes
+ * with any unchanged line between them are separate hunks. At `Infinity` nothing
+ * is ever far enough from a change to close a hunk, so the whole file arrives as
+ * one — which is what the viewer's "whole file" choice asks for, and needs no
+ * separate path to serve.
  * @param {DiffLine[]} lines
  * @param {number} [startLineNumber=1]
  * @param {number} [contextLines=3]
@@ -184,6 +191,8 @@ function groupIntoHunks(lines, startLineNumber = 1, contextLines = 3) {
   let currentHunk = null;
   /** @type {DiffLine[]} */
   let contextBuffer = [];
+  /** The lines the open hunk follows, for a side it holds none of. */
+  let follows = { oldLine: 0, newLine: 0 };
 
   for (let idx = 0; idx < lines.length; idx++) {
     const line = /** @type {DiffLine} */ (lines[idx]); // bounded by idx < lines.length
@@ -203,7 +212,7 @@ function groupIntoHunks(lines, startLineNumber = 1, contextLines = 3) {
           if (!hasMore) {
             const ctx = contextBuffer.slice(0, contextLines);
             currentHunk.lines.push(...ctx);
-            finalizeHunkStarts(currentHunk, startLineNumber);
+            finalizeHunkStarts(currentHunk, startLineNumber, follows);
             hunks.push(currentHunk);
             currentHunk = null;
             contextBuffer = [];
@@ -218,6 +227,7 @@ function groupIntoHunks(lines, startLineNumber = 1, contextLines = 3) {
       }
     } else {
       if (!currentHunk) {
+        follows = linesBefore(lines, idx - contextBuffer.length);
         currentHunk = /** @type {DiffHunk} */ ({ oldStart: startLineNumber, oldCount: 0, newStart: startLineNumber, newCount: 0, lines: [...contextBuffer] });
       } else {
         // Context held back as a possible hunk tail turned out to be interior:
@@ -232,7 +242,7 @@ function groupIntoHunks(lines, startLineNumber = 1, contextLines = 3) {
   if (currentHunk) {
     // Whatever context is left at end of input is this hunk's tail.
     if (contextBuffer.length > 0) currentHunk.lines.push(...contextBuffer.slice(0, contextLines));
-    finalizeHunkStarts(currentHunk, startLineNumber);
+    finalizeHunkStarts(currentHunk, startLineNumber, follows);
     hunks.push(currentHunk);
   }
 
@@ -248,15 +258,47 @@ function groupIntoHunks(lines, startLineNumber = 1, contextLines = 3) {
 }
 
 /**
- * Calculates and sets the correct start line numbers for a diff hunk.
- * @param {DiffHunk} hunk - The diff hunk to finalize.
- * @param {number} fallbackStart - The fallback start line number if no old/new lines are found.
+ * The last line each side had before a point in the sequence — the lines a hunk
+ * starting there follows. Zero for a side that had none.
+ * @param {DiffLine[]} lines - The whole sequence.
+ * @param {number} at - Index the hunk starts at.
+ * @returns {{oldLine: number, newLine: number}} The preceding line on each side.
  */
-function finalizeHunkStarts(hunk, fallbackStart) {
+function linesBefore(lines, at) {
+  let oldLine = 0;
+  let newLine = 0;
+  for (let k = at - 1; k >= 0 && (oldLine === 0 || newLine === 0); k--) {
+    const line = /** @type {DiffLine} */ (lines[k]);
+    if (oldLine === 0 && line.oldLineNum !== null) oldLine = line.oldLineNum;
+    if (newLine === 0 && line.newLineNum !== null) newLine = line.newLineNum;
+  }
+  return { oldLine, newLine };
+}
+
+/**
+ * Calculates and sets the correct start line numbers for a diff hunk.
+ *
+ * A hunk holding no line at all from one side — a pure insertion has no old
+ * lines, a pure deletion no new ones — names the line it FOLLOWS there, which is
+ * what a unified header means by `-6,0`. Claiming the hunk's own first line on
+ * the other side instead would point at a line the change never touched. The case
+ * only arises once the context is narrow enough for a hunk to hold no unchanged
+ * line at all, or at the very start of a file.
+ * @param {DiffHunk} hunk - The diff hunk to finalize.
+ * @param {number} fallbackStart - Where the diffed region itself starts, so a
+ *   hunk at the very top of a partial diff follows the line above that region.
+ * @param {{oldLine: number, newLine: number}} follows - The last line each side
+ *   had before this hunk.
+ */
+function finalizeHunkStarts(hunk, fallbackStart, follows) {
   const firstOld = hunk.lines.find(l => l.oldLineNum !== null);
   const firstNew = hunk.lines.find(l => l.newLineNum !== null);
-  hunk.oldStart = (firstOld && firstOld.oldLineNum !== null) ? /** @type {number} */ (firstOld.oldLineNum) : fallbackStart;
-  hunk.newStart = (firstNew && firstNew.newLineNum !== null) ? /** @type {number} */ (firstNew.newLineNum) : fallbackStart;
+  hunk.oldStart = (firstOld && firstOld.oldLineNum !== null)
+    ? /** @type {number} */ (firstOld.oldLineNum)
+    : (follows.oldLine || fallbackStart - 1);
+  hunk.newStart = (firstNew && firstNew.newLineNum !== null)
+    ? /** @type {number} */ (firstNew.newLineNum)
+    : (follows.newLine || fallbackStart - 1);
 }
 
 /**
@@ -273,4 +315,37 @@ export function computeDiff(oldText, newText, startLineNumber = 1, contextLines 
   if (diffLines === null) return null;
   const hunks = groupIntoHunks(diffLines, startLineNumber, contextLines);
   return hunks;
+}
+
+/**
+ * Regroup hunks that are already hunked, at a different context width.
+ *
+ * For a patch produced somewhere else — git, at whatever `--unified` it was asked
+ * for — where the two whole files are not to hand and the diff therefore cannot
+ * be recomputed. Each hunk is regrouped over its OWN lines and the results are
+ * concatenated, which is exact: a hunk's lines are contiguous in both files, so
+ * the same rule that grouped them can regroup them. Lines either side of the gap
+ * between two hunks are not contiguous, and regrouping across the gap would
+ * invent a hunk spanning lines the patch never carried.
+ *
+ * It can only ever narrow. Asking for more context than the patch holds returns
+ * what it holds, because the lines to widen with are the ones that were left out
+ * — those have to come from another request.
+ * @param {DiffHunk[]} hunks - The hunks as they arrived.
+ * @param {number} [contextLines=3] - The context width to regroup at.
+ * @returns {DiffHunk[]} The regrouped hunks, in the order they were given.
+ */
+export function regroupHunks(hunks, contextLines = 3) {
+  /** @type {DiffHunk[]} */
+  const out = [];
+  for (const hunk of hunks || []) {
+    const parts = groupIntoHunks(hunk.lines, hunk.oldStart, contextLines);
+    // Whatever git said this hunk was about, the first of the pieces it became is
+    // still about: the heading names the enclosing function, and the pieces are
+    // all inside it.
+    const first = parts[0];
+    if (first && hunk.heading) first.heading = hunk.heading;
+    out.push(...parts);
+  }
+  return out;
 }

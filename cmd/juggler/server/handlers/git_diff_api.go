@@ -29,11 +29,22 @@ import (
 // better answered with the first few thousand lines and a note than with a
 // megabyte nobody reads.
 const (
-	gitDiffContext  = 3       // lines of context git is asked for around each hunk
+	gitDiffContext  = 3       // lines of context git is asked for when none is asked of us
 	gitDiffMaxLines = 20000   // diff lines returned before the rest is dropped
 	gitDiffMaxMeta  = 8 << 20 // bytes kept from git's metadata passes
 	gitDiffSniff    = 8000    // bytes of an untracked file read to judge it binary
 )
+
+// gitDiffMaxContext is the widest context a request may ask for, and what "the
+// whole file" is asked for as.
+//
+// It does not need to be the length of the longest file anyone has: the two
+// ceilings above already bound what comes back, so a whole-file request for
+// something enormous returns the first several thousand lines and says it was cut
+// short — the same answer, and the same notice, as an ordinary diff that big.
+// What this bounds is the argument handed to git, so that a number arriving from
+// a query string cannot become one.
+const gitDiffMaxContext = 1 << 20
 
 // gitDiffMaxBytes is the patch bytes kept before the rest is dropped.
 //
@@ -106,6 +117,11 @@ type gitDiffHunk struct {
 // commented on. HEAD cannot answer that, because almost every edit under review
 // happens without HEAD moving at all.
 //
+// Context is how many unchanged lines the patch carries around each change —
+// what the request asked for, clamped, or the default when it asked for nothing.
+// It is reported rather than assumed because a client can narrow a patch it
+// already holds but cannot widen one, and telling the two apart needs this.
+//
 // OldMode and NewMode are git's six-digit modes, carried whenever they differ: a
 // file can change without a line of it changing, and an empty patch with no
 // modes reads as nothing having happened. An untracked symbolic link carries a
@@ -122,6 +138,7 @@ type gitDiffResponse struct {
 	Added      int           `json:"added"`
 	Removed    int           `json:"removed"`
 	Revision   string        `json:"revision"`
+	Context    int           `json:"context"`
 	OldMode    string        `json:"oldMode,omitempty"`
 	NewMode    string        `json:"newMode,omitempty"`
 	Hunks      []gitDiffHunk `json:"hunks"`
@@ -136,6 +153,10 @@ type gitDiffResponse struct {
 // `path` locates the file within that repository. Both are relative and are
 // refused if they climb out of where they belong: this endpoint reads whatever
 // it is pointed at, so where it may be pointed is the whole of its security.
+//
+// `context` is how many unchanged lines to carry around each change, -1 for the
+// whole file, and the shipped default when it is absent or unusable. The answer
+// reports the width it was produced at.
 func (a *GitStatusAPI) HandleGitDiff(w http.ResponseWriter, r *http.Request) {
 	root, err := a.gitRoot(r)
 	if err != nil {
@@ -179,7 +200,11 @@ func (a *GitStatusAPI) HandleGitDiff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := gitDiffResponse{Repo: repoRel, Path: fileRel, Status: "unchanged", Hunks: []gitDiffHunk{}}
+	unified := diffContextFrom(r.URL.Query().Get("context"))
+	resp := gitDiffResponse{
+		Repo: repoRel, Path: fileRel, Status: "unchanged",
+		Context: unified, Hunks: []gitDiffHunk{},
+	}
 
 	base, err := gitDiffBase(ctx, dir, gitDiffPerCmd)
 	if err != nil {
@@ -206,7 +231,7 @@ func (a *GitStatusAPI) HandleGitDiff(w http.ResponseWriter, r *http.Request) {
 		paths = append(paths, file.OldPath)
 	}
 
-	patch, err := gitFilePatch(ctx, dir, base, paths)
+	patch, err := gitFilePatch(ctx, dir, base, paths, unified)
 	if err != nil {
 		WriteError(w, r, http.StatusBadGateway, "Couldn't read the diff. "+err.Error())
 		return
@@ -679,13 +704,36 @@ func gitNumstatCounts(ctx context.Context, dir, base string, paths []string) (gi
 	return stat, ok
 }
 
+// diffContextFrom reads the context width a request asked for.
+//
+// Anything it cannot use — absent, blank, not a whole number, negative for any
+// reason other than meaning "all of it" — yields the shipped default rather than
+// an error. The width decides how much of the file around a change is shown and
+// nothing else, so refusing the request over it would cost the reader the patch
+// they asked for on account of a query string they never typed. -1 means the
+// whole file; anything larger than the ceiling is the whole file too, since at
+// that point it is asking for more lines than the response may carry.
+func diffContextFrom(raw string) int {
+	n, err := strconv.Atoi(strings.TrimSpace(raw))
+	switch {
+	case err != nil:
+		return gitDiffContext
+	case n == -1 || n > gitDiffMaxContext:
+		return gitDiffMaxContext
+	case n < 0:
+		return gitDiffContext
+	default:
+		return n
+	}
+}
+
 // gitFilePatch runs the diff for one file and returns its patch text, empty when
 // the file is unchanged or untracked. Both sides of a rename are passed as the
 // pathspec so that git pairs them; --no-color keeps the output parseable.
-func gitFilePatch(ctx context.Context, dir, base string, paths []string) (boundedOutput, error) {
+func gitFilePatch(ctx context.Context, dir, base string, paths []string, unified int) (boundedOutput, error) {
 	args := append([]string{
 		"diff-index", "--no-color", "--no-ext-diff", "--no-textconv", "--find-renames",
-		"--patch", "--unified=" + strconv.Itoa(gitDiffContext), base, "--",
+		"--patch", "--unified=" + strconv.Itoa(unified), base, "--",
 	}, paths...)
 	return gitRead(ctx, dir, gitDiffPerCmd, gitDiffMaxBytes, args...)
 }

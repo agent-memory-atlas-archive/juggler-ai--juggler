@@ -144,13 +144,16 @@ const gitReviewService = {
    * a queue of patches nobody will look at behind them.
    * @param {string} repo - Repository relative to the project root, '' for the root repo.
    * @param {string} path - File relative to that repository.
-   * @param {{signal?: AbortSignal}} [options] - Cancellation.
+   * @param {{signal?: AbortSignal, contextLines?: number}} [options] - Cancellation,
+   *   and how much of the file around each change to ask for (-1 for the whole
+   *   file). The reader chooses that, so it belongs to the request and not to the
+   *   endpoint; the patch says which width it came back at.
    * @returns {Promise<GitFileDiff>} The patch and what happened to the file.
    */
   async diff(repo, path, options = {}) {
     const generation = _generation;
     const data = await api.getGitDiff(repo, path, {
-      signal: options.signal, workspaceId: gitWorkspaceId()
+      signal: options.signal, workspaceId: gitWorkspaceId(), contextLines: options.contextLines
     });
     if (generation !== _generation) throw staleError();
     return asDiff(data);

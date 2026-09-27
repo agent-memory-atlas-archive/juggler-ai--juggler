@@ -137,6 +137,9 @@ import { fetchJson } from './http.js';
  * @property {number} removed - Removed lines.
  * @property {string} revision - Fingerprint of every byte this response describes,
  *   including the bytes past a ceiling that were never returned.
+ * @property {number} context - Unchanged lines carried around each change. What the
+ *   request asked for, or the server's default; a reader can be shown less than
+ *   this from the patch alone, but more takes another request.
  * @property {string} [oldMode] - Git's six-digit mode on the old side, when it differs.
  * @property {string} [newMode] - Git's six-digit mode on the new side, when it differs.
  * @property {GitDiffHunk[]} hunks - The patch, hunk by hunk.
@@ -576,12 +579,16 @@ class APIService {
    * come from.
    * @param {string} repo - Repository relative to the project root, "" for the root repo.
    * @param {string} path - File relative to that repository.
-   * @param {{signal?: AbortSignal, workspaceId?: string}} [options] - Cancellation, and which tree to read.
+   * @param {{signal?: AbortSignal, workspaceId?: string, contextLines?: number}} [options] -
+   *   Cancellation, which tree to read, and how many unchanged lines to carry
+   *   around each change (-1 for the whole file; omitted takes the server's
+   *   default). The answer reports the width it was produced at.
    * @returns {Promise<GitFileDiff>} The file's patch and what happened to it.
    */
   async getGitDiff(repo, path, options = {}) {
     const query = new URLSearchParams({ repo, path });
     if (options.workspaceId) query.set('workspace', options.workspaceId);
+    if (typeof options.contextLines === 'number') query.set('context', String(options.contextLines));
     return await this.request(`/git/diff?${query.toString()}`, { signal: options.signal });
   }
 

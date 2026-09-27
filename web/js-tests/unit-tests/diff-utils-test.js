@@ -14,7 +14,7 @@
  * @module unit-tests/diff-utils-test
  */
 
-import { computeDiff } from '../../js/lib/diff-utils.js';
+import { computeDiff, regroupHunks } from '../../js/lib/diff-utils.js';
 import { assert } from '../utilities/test-helpers.js';
 
 /** @typedef {import('../../js/lib/diff-types.js').DiffHunk} DiffHunk */
@@ -85,16 +85,31 @@ function lines(count) {
  * @param {string} oldText - Old file content.
  * @param {string} newText - New file content.
  * @param {string} why - Case description, used in failure messages.
+ * @param {number} [contextLines=3] - Context width to diff at.
  * @returns {void}
  */
-function checkHunks(oldText, newText, why) {
+function checkHunks(oldText, newText, why, contextLines = 3) {
   const oldLines = oldText === '' ? [] : oldText.split('\n');
   const newLines = newText === '' ? [] : newText.split('\n');
-  const computed = computeDiff(oldText, newText, 1);
+  const computed = computeDiff(oldText, newText, 1, contextLines);
   assert(computed !== null, `${why}: the diff was refused, and these cases are all well inside the budget`);
   const hunks = /** @type {DiffHunk[]} */ (computed);
 
   for (const hunk of hunks) {
+    // A hunk shows at most `contextLines` unchanged lines either side of what it
+    // is about. Interior context — lines between two changes close enough to
+    // share a hunk — is exempt, since dropping those would split the hunk.
+    if (hunk.lines.some((line) => line.type !== 'equal')) {
+      const lead = hunk.lines.findIndex((line) => line.type !== 'equal');
+      const lastChange = hunk.lines.reduce(
+        (at, line, k) => (line.type === 'equal' ? at : k), -1);
+      const trail = hunk.lines.length - 1 - lastChange;
+      assert(lead <= contextLines,
+        `${why}: hunk at ${hunk.oldStart} opens with ${lead} unchanged lines, more than the ${contextLines} asked for`);
+      assert(trail <= contextLines,
+        `${why}: hunk at ${hunk.oldStart} ends with ${trail} unchanged lines, more than the ${contextLines} asked for`);
+    }
+
     for (const [side, source, start, count, dropped] of /** @type {Array<[string, string[], number, number, string]>} */ ([
       ['old', oldLines, hunk.oldStart, hunk.oldCount, 'add'],
       ['new', newLines, hunk.newStart, hunk.newCount, 'remove']
@@ -252,6 +267,75 @@ export async function runTests(_ctx) {
     check(why, () => checkHunks(oldText, newText, why));
     check(`${why} (reversed)`, () => checkHunks(newText, oldText, `${why} (reversed)`));
   }
+
+  // Every invariant above holds at every context width the viewer offers, and
+  // the width is now the reader's to choose: a diff drawn at 0 or at whole-file
+  // has to reproduce both sides as faithfully as one drawn at 3.
+  for (const contextLines of [0, 1, 10, Infinity]) {
+    for (const [why, oldText, newText] of cases) {
+      const at = `${why} at context ${contextLines}`;
+      check(at, () => checkHunks(oldText, newText, at, contextLines));
+    }
+  }
+
+  check('context 0 shows the changes and nothing around them', () => {
+    const hunks = /** @type {DiffHunk[]} */ (computeDiff(OLD_TEXT, NEW_TEXT, 1, 0));
+    assert(hunks.length === 3, `the three insertions should stand as three hunks, got ${hunks.length}`);
+    const equal = hunks.flatMap(h => h.lines).filter(line => line.type === 'equal');
+    assert(equal.length === 0, `expected no unchanged lines, got ${equal.length}`);
+    const added = hunks.flatMap(h => h.lines).filter(line => line.type === 'add');
+    assert(added.length === 5, `all five added lines must still be shown, got ${added.length}`);
+  });
+
+  // A hunk holding only insertions has no old lines to start at, and git names
+  // the old line it was inserted after — 0 when there is none. Reporting the
+  // hunk's own first new line there instead would claim an old line the change
+  // never touched, which only shows up once the context is narrow enough for a
+  // hunk to hold no unchanged line at all.
+  check('a pure insertion names the old line it follows', () => {
+    const hunks = /** @type {DiffHunk[]} */ (computeDiff(OLD_TEXT, NEW_TEXT, 1, 0));
+    const first = /** @type {DiffHunk} */ (hunks[0]);
+    assert(first.oldCount === 0, `an insertion covers no old lines, got ${first.oldCount}`);
+    assert(first.oldStart === 6, `expected the old line it follows (6), got ${first.oldStart}`);
+    const fromNothing = /** @type {DiffHunk[]} */ (computeDiff('', 'one\ntwo', 1, 0));
+    assert(/** @type {DiffHunk} */ (fromNothing[0]).oldStart === 0,
+      `a file that did not exist has no old line to follow, got ${/** @type {DiffHunk} */ (fromNothing[0]).oldStart}`);
+  });
+
+  check('whole-file context draws the file as one hunk', () => {
+    const hunks = /** @type {DiffHunk[]} */ (computeDiff(OLD_TEXT, NEW_TEXT, 1, Infinity));
+    assert(hunks.length === 1, `expected one hunk, got ${hunks.length}`);
+    const hunk = /** @type {DiffHunk} */ (hunks[0]);
+    assert(hunk.oldStart === 1 && hunk.newStart === 1, `the hunk must open at line 1, got ${hunk.oldStart}/${hunk.newStart}`);
+    assert(hunk.oldCount === 15 && hunk.newCount === 20,
+      `expected the whole of both sides (15/20), got ${hunk.oldCount}/${hunk.newCount}`);
+  });
+
+  // Narrowing a patch the server already hunked. Each hunk is regrouped over its
+  // own lines, which is exact because those lines are contiguous; lines either
+  // side of the gap between two hunks are not, and regrouping across a gap would
+  // invent a hunk spanning lines the patch never held.
+  check('regroupHunks narrows a hunk it is given', () => {
+    const wide = /** @type {DiffHunk[]} */ (computeDiff(OLD_TEXT, NEW_TEXT, 1, 3));
+    assert(wide.length === 1, `the fixture should arrive as one hunk, got ${wide.length}`);
+    const narrow = regroupHunks(wide, 0);
+    assert(narrow.length === 3, `expected the hunk to split into three, got ${narrow.length}`);
+    assert(narrow.flatMap(h => h.lines).every(line => line.type !== 'equal'),
+      'no unchanged line survives a regroup at context 0');
+    assert(narrow.flatMap(h => h.lines).filter(line => line.type === 'add').length === 5,
+      'every added line survives a regroup');
+  });
+
+  check('regroupHunks keeps the heading and never widens', () => {
+    const wide = /** @type {DiffHunk[]} */ (computeDiff(OLD_TEXT, NEW_TEXT, 1, 3));
+    /** @type {DiffHunk} */ (wide[0]).heading = 'def test_playable';
+    assert(/** @type {DiffHunk} */ (regroupHunks(wide, 1)[0]).heading === 'def test_playable',
+      'the heading git gave the hunk belongs to the first of whatever it becomes');
+    const asked = regroupHunks(wide, 99).flatMap(h => h.lines).length;
+    assert(asked === /** @type {DiffHunk} */ (wide[0]).lines.length,
+      'asking for more context than the patch holds cannot conjure lines it does not have');
+    assert(regroupHunks([], 3).length === 0, 'nothing regroups to nothing');
+  });
 
   return { passed, failed, errors };
 }

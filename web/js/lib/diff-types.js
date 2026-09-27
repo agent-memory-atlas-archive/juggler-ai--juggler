@@ -49,6 +49,7 @@
  *   added: number,
  *   removed: number,
  *   revision: string,
+ *   context: number,
  *   hunks: DiffHunk[]
  * }} DiffPatch
  */

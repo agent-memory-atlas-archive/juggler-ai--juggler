@@ -112,9 +112,156 @@ diff-viewer diff-header {
     width: 100%;
 }
 
-diff-viewer diff-inline-view {
+/* The rows, in whichever layout. One element for both, because what it is — the
+   labelled group holding the hunks — is the same either way; which layout is in
+   force is on the host, as `data-view`. */
+diff-viewer diff-body {
     display: block;
     min-width: max-content;
+}
+
+/* How the diff is drawn, offered to whoever is reading it. Pinned left at the
+   width of the panel — the same reason the notices are — so it stays put while
+   the code scrolls sideways underneath. Quiet until the pointer is in the diff:
+   a transcript can hold a hundred of these, and the reader who wants the control
+   is looking at the diff when they want it. */
+diff-viewer .diff-controls {
+    display: flex;
+    position: sticky;
+    top: 0;
+    left: 0;
+    z-index: 2;
+    width: 100cqi;
+    box-sizing: border-box;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.1875rem 0.5rem;
+    background: var(--bg-secondary);
+    border-bottom: 0.0625rem solid var(--border-divider);
+    color: var(--text-tertiary);
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+    opacity: 0.55;
+    transition: opacity 0.12s ease-out;
+}
+
+diff-viewer:hover .diff-controls,
+diff-viewer:focus-within .diff-controls {
+    opacity: 1;
+}
+
+@media (hover: none) {
+    diff-viewer .diff-controls {
+        opacity: 1;
+    }
+}
+
+/* The picker's dial idiom at chrome scale, as the command editor's run-mode
+   control is: same accent for the chosen value, same hover. `aria-pressed` does
+   the styling as well as the announcing — the choice is stated once. */
+diff-viewer .diff-view-switch {
+    display: inline-flex;
+    gap: 0.125rem;
+    padding: 0.0625rem;
+    background: var(--bg-primary);
+    border: 0.0625rem solid var(--border-color);
+    border-radius: 0.3125rem;
+}
+
+diff-viewer .diff-view-btn {
+    padding: 0.0625rem 0.375rem;
+    border: 0;
+    border-radius: 0.25rem;
+    background: transparent;
+    color: var(--text-tertiary);
+    font-family: inherit;
+    font-size: inherit;
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+}
+
+diff-viewer .diff-view-btn:hover:not(:disabled) {
+    background: var(--bg-tertiary, rgb(127 127 127 / 16%));
+    color: var(--text-primary);
+}
+
+diff-viewer .diff-view-btn[aria-pressed="true"] {
+    background: var(--accent-blue);
+    color: #fff;
+}
+
+/* Too narrow for two columns. The switch stays visible so the layout can still be
+   discovered here, and the group carries the reason as its title. */
+diff-viewer .diff-view-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+diff-viewer .diff-context-picker {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+}
+
+diff-viewer .diff-context-select {
+    padding: 0.0625rem 0.25rem;
+    border: 0.0625rem solid var(--border-color);
+    border-radius: 0.25rem;
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: inherit;
+    cursor: pointer;
+}
+
+/* Two columns.
+
+   Each half is half the panel and the lines inside it WRAP, which is the one
+   place this component departs from the unified view's "one long line, scroll
+   sideways". Two halves that scrolled sideways independently would defeat the
+   point of putting them beside each other — you would be reading the left of one
+   file and the middle of the other — and two that scrolled together would still
+   carry the right-hand column off the edge as soon as either file held a long
+   line. Wrapping keeps both halves on screen, and because the pair are cells of
+   one grid row, a line that wraps to four takes its counterpart's height with it
+   and the two stay level.
+
+   Nothing scrolls sideways here, so nothing is sized to its content. */
+diff-viewer[data-view="split"] diff-content,
+diff-viewer[data-view="split"] diff-body {
+    min-width: 0;
+}
+
+/* Qualified by the layout that produces them rather than named alone: these rows
+   exist only in the two-column view, and saying so is also what keeps them from
+   being outranked by a `patterns` class that could land on the same element —
+   see the layer-inversion contract in web/css/README.md. */
+diff-viewer[data-view="split"] .diff-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: stretch;
+}
+
+diff-viewer[data-view="split"] .diff-row > .diff-line,
+diff-viewer[data-view="split"] .diff-row > .diff-cell-filler {
+    min-width: 0;
+    border-bottom: 0.0625rem solid var(--bg-dark-alt);
+}
+
+diff-viewer[data-view="split"] .diff-row > .new {
+    border-left: 0.0625rem solid var(--border-divider);
+}
+
+/* A side this row has no line for. It is not an empty line — there is no line —
+   so it carries no number, no prefix and nothing to select. */
+diff-viewer[data-view="split"] .diff-cell-filler {
+    background: var(--bg-secondary);
+}
+
+diff-viewer[data-view="split"] .line-content {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
 }
 
 diff-viewer diff-no-changes {

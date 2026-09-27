@@ -170,6 +170,40 @@ func (p *gitProject) diff(fileRel string) gitDiffResponse {
 	return resp
 }
 
+// diffAt is diff with a context width asked for, as the viewer's control sends
+// it: the raw query value, so a test can send something that is not a number.
+func (p *gitProject) diffAt(fileRel, context string) gitDiffResponse {
+	p.t.Helper()
+	api := NewGitStatusAPI(func() string { return p.root }, nil)
+	target := "/api/git/diff?repo=" + url.QueryEscape(p.rel) +
+		"&path=" + url.QueryEscape(fileRel) + "&context=" + url.QueryEscape(context)
+	req := httptest.NewRequest(http.MethodGet, target, nil).WithContext(p.t.Context())
+	rec := httptest.NewRecorder()
+	api.HandleGitDiff(rec, req)
+	if rec.Code != http.StatusOK {
+		p.t.Fatalf("GET diff %q context=%q = %d, want 200\n%s", fileRel, context, rec.Code, rec.Body.String())
+	}
+	var resp gitDiffResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		p.t.Fatalf("decoding the response: %v\n%s", err, rec.Body.String())
+	}
+	return resp
+}
+
+// unchangedLines counts the context a response carries — what the width asked
+// for is a request for.
+func unchangedLines(resp gitDiffResponse) int {
+	n := 0
+	for _, hunk := range resp.Hunks {
+		for _, line := range hunk.Lines {
+			if line.Kind != "add" && line.Kind != "remove" {
+				n++
+			}
+		}
+	}
+	return n
+}
+
 // lineText renders a response's lines as "+added"/"-removed"/" context", which is
 // how a failure reads as the patch it is.
 func lineText(resp gitDiffResponse) string {
@@ -841,5 +875,89 @@ func TestGitDiffReportsCancellationRatherThanAnEmptyDiff(t *testing.T) {
 	}
 	if rec.Code != http.StatusBadGateway {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusBadGateway)
+	}
+}
+
+// How much of the file around a change comes back is the reader's to choose, so
+// it is a parameter of the request rather than a constant of the endpoint. The
+// answer says which width it was produced at, because a client that narrows a
+// patch it already holds has to know whether it holds enough to do it.
+func TestGitDiffReturnsTheContextWidthAskedFor(t *testing.T) {
+	p := newGitProject(t)
+	var before []string
+	for i := 1; i <= 40; i++ {
+		before = append(before, fmt.Sprintf("line %d", i))
+	}
+	p.write("f.txt", strings.Join(before, "\n")+"\n")
+	p.commit("init")
+	after := append([]string(nil), before...)
+	after[19] = "CHANGED"
+	p.write("f.txt", strings.Join(after, "\n")+"\n")
+
+	wide := p.diffAt("f.txt", "10")
+	narrow := p.diffAt("f.txt", "0")
+	fallback := p.diff("f.txt")
+
+	if got := unchangedLines(narrow); got != 0 {
+		t.Errorf("context=0 returned %d unchanged lines, want none:\n%s", got, lineText(narrow))
+	}
+	if got := unchangedLines(fallback); got != 6 {
+		t.Errorf("no context asked for returned %d unchanged lines, want the default 6:\n%s", got, lineText(fallback))
+	}
+	if got := unchangedLines(wide); got != 20 {
+		t.Errorf("context=10 returned %d unchanged lines, want 20:\n%s", got, lineText(wide))
+	}
+	if narrow.Context != 0 || wide.Context != 10 || fallback.Context != gitDiffContext {
+		t.Errorf("the width each patch was produced at came back as %d/%d/%d, want 0/10/%d",
+			narrow.Context, wide.Context, fallback.Context, gitDiffContext)
+	}
+	// The change itself is the one thing no width may alter.
+	for _, resp := range []gitDiffResponse{narrow, wide, fallback} {
+		if resp.Added != 1 || resp.Removed != 1 {
+			t.Errorf("at context %d the change itself read as +%d -%d, want +1 -1", resp.Context, resp.Added, resp.Removed)
+		}
+	}
+}
+
+// A width that is not a number, or is absurd, is a request we cannot honour as
+// asked. Refusing the whole diff over it would lose the reader their patch for a
+// query string they never typed, so the shipped default is used instead.
+func TestGitDiffIgnoresAContextWidthItCannotUse(t *testing.T) {
+	p := newGitProject(t)
+	p.write("f.txt", "one\ntwo\nthree\nfour\nfive\n")
+	p.commit("init")
+	p.write("f.txt", "one\ntwo\nTHREE\nfour\nfive\n")
+
+	for _, asked := range []string{"", "abc", "1e3", "-4", "  "} {
+		resp := p.diffAt("f.txt", asked)
+		if resp.Context != gitDiffContext {
+			t.Errorf("context=%q was produced at %d, want the default %d", asked, resp.Context, gitDiffContext)
+		}
+	}
+}
+
+// "The whole file" has to mean the whole file however long it is, so it travels
+// as -1 rather than as a number someone once thought was big enough.
+func TestGitDiffWholeFileContextReturnsEveryLine(t *testing.T) {
+	p := newGitProject(t)
+	var before []string
+	for i := 1; i <= 60; i++ {
+		before = append(before, fmt.Sprintf("line %d", i))
+	}
+	p.write("f.txt", strings.Join(before, "\n")+"\n")
+	p.commit("init")
+	after := append([]string(nil), before...)
+	after[29] = "CHANGED"
+	p.write("f.txt", strings.Join(after, "\n")+"\n")
+
+	resp := p.diffAt("f.txt", "-1")
+	if got := unchangedLines(resp); got != 59 {
+		t.Errorf("whole-file context returned %d unchanged lines, want all 59:\n%s", got, lineText(resp))
+	}
+	if len(resp.Hunks) != 1 {
+		t.Errorf("whole-file context returned %d hunks, want one", len(resp.Hunks))
+	}
+	if resp.Context != gitDiffMaxContext {
+		t.Errorf("whole-file context came back as %d, want the ceiling %d", resp.Context, gitDiffMaxContext)
 	}
 }
