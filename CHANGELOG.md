@@ -5,6 +5,8 @@ of changes; this project follows semantic versioning.
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-09-28
+
 - A first launch with no provider now walks you through setup, finding what is already installed
 - Setup says when Claude Code needs its separate CLI, and that Codex works on a free ChatGPT account
 - An empty window now offers to create a project folder, so there is no trip to the Finder
