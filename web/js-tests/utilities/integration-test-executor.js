@@ -152,6 +152,7 @@ import { runTests as runStreamingMarkdownTests } from '../unit-tests/streaming-m
 import { runTests as runMarkdownSanitizerTests } from '../unit-tests/markdown-sanitizer-test.js';
 import { runTests as runMarkdownScopedCssTests } from '../unit-tests/markdown-scoped-css-test.js';
 import { runTests as runSelectionColourTests } from '../unit-tests/selection-colour-test.js';
+import { runTests as runSelectionContainmentTests } from '../unit-tests/selection-containment-test.js';
 import { runTests as runMarkdownTaskListTests } from '../unit-tests/markdown-task-list-test.js';
 import { runTests as runUserMessageMarkdownTests } from '../unit-tests/user-message-markdown-test.js';
 import { runTests as runLanguageCoverageTests } from '../unit-tests/language-coverage-test.js';
@@ -553,6 +554,7 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:markdown-sanitizer', run: runMarkdownSanitizerTests },
   { name: 'unit:markdown-scoped-css', run: runMarkdownScopedCssTests },
   { name: 'unit:selection-colour', run: runSelectionColourTests },
+  { name: 'unit:selection-containment', run: runSelectionContainmentTests },
   { name: 'unit:markdown-task-list', run: runMarkdownTaskListTests },
   { name: 'unit:user-message-markdown', run: runUserMessageMarkdownTests },
   { name: 'unit:language-coverage', run: runLanguageCoverageTests },

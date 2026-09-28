@@ -37,6 +37,7 @@ import scheduledSendService from './services/scheduled-send-service.js';
 import { initViewportFit } from './utils/viewport-fit.js';
 import { reportDraftsFlushed } from '../sdk/lib/window-control.js';
 import { installLinkGuard } from './services/link-guard.js';
+import { installSelectionContainment } from './services/selection-containment.js';
 import { isPinboardView } from './utils/view-mode.js';
 import './services/tooltip-manager.js'; // styled hover/focus tooltips (self-installs on import)
 import { MAX_CONVERSATIONS, CONVERSATION_LIMIT_MESSAGE } from './model/session.js';
@@ -309,6 +310,11 @@ class JugglerApp {
     // Safety net for anchors in rendered markdown: without it a click on one
     // navigates the app's window off its own page. See services/link-guard.js.
     installLinkGuard(document);
+
+    // Keep a mis-aimed swipe from highlighting the whole window: a drag begun on
+    // chrome selects nothing, and one begun in a column stays in that column.
+    // See services/selection-containment.js.
+    installSelectionContainment(document);
 
     if (!isPinboardView()) {
       document.addEventListener('duplicate-conversation', () => {

@@ -11,6 +11,7 @@ of changes; this project follows semantic versioning.
 - Improvements to the way windows and property panels are sized and scrolled, to make them more discoverable and navigable
 - The skill button now stays put with no skills installed, its menu pointing at the Skills page
 - Notification sounds are now on by default, with six new chime voices, six new patterns and a Random button
+- A stray drag no longer highlights the whole page: a selection stays in the column it began in
 
 ## [0.7.1] - 2026-09-27
 
