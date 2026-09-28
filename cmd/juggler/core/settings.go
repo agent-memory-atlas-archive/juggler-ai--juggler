@@ -305,6 +305,10 @@ func globalSettingsPath() string {
 	return filepath.Join(userpaths.ConfigDir(), "settings.json")
 }
 
+// GlobalSettingsPath is the on-disk location of the settings document, for a
+// caller that must watch the file rather than read it through this package.
+func GlobalSettingsPath() string { return globalSettingsPath() }
+
 // LoadGlobalSettings reads the global settings, tolerating a missing or corrupt
 // file by returning defaults (a hand-edit typo must never brick startup). The
 // returned pointer is always non-nil and fully normalised, so callers can use
@@ -342,27 +346,37 @@ func settingsLockPath() string {
 const settingsLockTimeout = 5 * time.Second
 
 // withSettingsLock runs fn holding an exclusive lock on the settings document.
-// A machine runs one juggler server per open project, so "load, change one
-// field, write it back" is genuinely concurrent across processes and has to be
-// serialised or one writer silently reverts another.
 func withSettingsLock(fn func() error) error {
+	return withFileLock(settingsLockPath(), "settings", fn)
+}
+
+// withFileLock runs fn holding an exclusive lock on lockPath.
+//
+// A machine runs one juggler server per open project, so "load, change one field,
+// write it back" on a file in the shared config directory is genuinely concurrent
+// ACROSS PROCESSES and has to be serialised or one writer silently reverts
+// another. An in-process lock cannot see the other servers; this can.
+//
+// `what` names the thing being locked, for the error a caller shows and the log
+// line a failed release leaves.
+func withFileLock(lockPath, what string, fn func() error) error {
 	dir := userpaths.ConfigDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
-	l := flock.New(settingsLockPath())
+	l := flock.New(lockPath)
 	ctx, cancel := context.WithTimeout(context.Background(), settingsLockTimeout)
 	defer cancel()
 	locked, err := l.TryLockContext(ctx, 20*time.Millisecond)
 	if err != nil {
-		return fmt.Errorf("failed to lock settings: %w", err)
+		return fmt.Errorf("failed to lock %s: %w", what, err)
 	}
 	if !locked {
-		return fmt.Errorf("timed out waiting for the settings lock")
+		return fmt.Errorf("timed out waiting for the %s lock", what)
 	}
 	defer func() {
 		if err := l.Unlock(); err != nil {
-			jlog.Error("[settings] failed to release the settings lock: %v", err)
+			jlog.Error("[%s] failed to release the %s lock: %v", what, what, err)
 		}
 	}()
 	return fn()

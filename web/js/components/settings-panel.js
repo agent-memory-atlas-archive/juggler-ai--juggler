@@ -11,6 +11,7 @@
 
 import { markPopupOpen } from '../utils/popup-manager.js';
 import { fetchJson } from '../services/http.js';
+import { getGlobalSettings, onGlobalSettings, offGlobalSettings } from '../services/prefs.js';
 import { registerSettingsOpener } from '../services/settings-launcher.js';
 import { showAlert } from './modal-dialog.js';
 import providersCache from '../services/providers-cache.js';
@@ -55,6 +56,7 @@ const PROVIDERS_READY_TIMEOUT_MS = 5000;
  * @property {() => void} [hide] - Tab hidden: stop pollers.
  * @property {() => void} [close] - Panel closed: stop pollers, drop transient form state.
  * @property {() => void} [dispose] - Element disconnected: remove global/ws listeners.
+ * @property {(settings: any) => void} [onSettingsChanged] - The global settings document changed (here or in another window): adopt the sections this tab owns.
  */
 
 /**
@@ -79,6 +81,25 @@ class SettingsPanel extends HTMLElement {
     this._onTabScroll = null;
     /** @type {ResizeObserver|null} @private */
     this._tabResizeObserver = null;
+    /**
+     * Adoption of the global settings document, from the prefs store. A machine
+     * runs one server per open project and they all share settings.json, so a
+     * change made in another window — or by another project's server — has to
+     * reach the controls here. Every tab is constructed and live whether or not it
+     * is the visible one, so the document goes to all of them; each decides what
+     * to write and what to leave under the user's hands.
+     *
+     * ProvidersTab implements nothing here on purpose: the settings it cares
+     * about (hidden models, per-model limits) reach it pre-folded into the
+     * provider catalogue, and its model rows keep their state in a closure, so the
+     * only way to refresh them is to rebuild the fields — which would close every
+     * open model list, clear its filter, and empty an API-key field mid-typing.
+     * That change arrives through providers-update instead.
+     * @type {((settings: any) => void)|null} @private
+     */
+    this._onSettingsChanged = (settings) => {
+      this._dispatchSettings(settings || {});
+    };
 
     // The tab registry: one controller per tab (Extensions gets none — its
     // section just hosts <plugin-catalog>). switchTab / loadConfig / close /
@@ -102,9 +123,32 @@ class SettingsPanel extends HTMLElement {
   connectedCallback() {
     this.render();
     this.setupListeners();
+    // The settings document comes from the prefs store, which reads it once for
+    // the page and keeps it current: the panel neither fetches it nor watches the
+    // socket for it. A tab cannot tell — and has no reason to care — whether a
+    // document arrived because this window asked or because another window changed
+    // it, so both arrive by the same call.
+    if (this._onSettingsChanged) {
+      onGlobalSettings(this._onSettingsChanged);
+      void getGlobalSettings().then(this._onSettingsChanged);
+    }
+  }
+
+  /**
+   * Hand one settings document to every tab that reads one.
+   * @param {any} settings - The whole document.
+   * @private
+   */
+  _dispatchSettings(settings) {
+    for (const tab of Object.values(this._tabs)) {
+      if (tab.onSettingsChanged) tab.onSettingsChanged(settings);
+    }
   }
 
   disconnectedCallback() {
+    if (this._onSettingsChanged) {
+      offGlobalSettings(this._onSettingsChanged);
+    }
     if (this._releasePopupOpen) {
       this._releasePopupOpen();
       this._releasePopupOpen = null;

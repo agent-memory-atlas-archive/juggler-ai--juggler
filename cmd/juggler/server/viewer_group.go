@@ -301,7 +301,17 @@ func (s *Server) unregisterClient(client RealtimeClient) {
 }
 
 // broadcastToAll sends a message to every connected WebSocket client.
-func (s *Server) broadcastToAll(msg any) { s.hub.broadcast(msg) }
+//
+// A Server assembled without a hub — a bare one built to exercise a single
+// handler — has no clients, so there is nothing to send. A handler that publishes
+// its change is then exercised for what it returns and what it stored, and the
+// publishing itself is covered where it can be observed: over real sockets.
+func (s *Server) broadcastToAll(msg any) {
+	if s.hub == nil {
+		return
+	}
+	s.hub.broadcast(msg)
+}
 
 // serverBroadcaster adapts *Server to the handlers.Broadcaster interface so
 // HTTP handlers can publish session-changed without depending on the full

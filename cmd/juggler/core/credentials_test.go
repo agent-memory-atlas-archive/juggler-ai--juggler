@@ -15,9 +15,61 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gofrs/flock"
+
 	"juggler/cmd/juggler/providers/provider"
 	"juggler/internal/userpaths/userpathstest"
 )
+
+// TestCredentialWriteWaitsForAnotherProcessesLock: a machine runs one juggler
+// server per open project, and they all write ~/.juggler/credentials.json. A write
+// is load-modify-save, so two of them overlapping means the second reloads before
+// the first has saved and then writes a document missing the first's change —
+// silently reverting it. The in-process semaphore cannot see another process, so
+// the serialisation has to be a file lock.
+//
+// The lock is taken here directly, which is exactly what another server process
+// looks like from in here.
+func TestCredentialWriteWaitsForAnotherProcessesLock(t *testing.T) {
+	userpathstest.Isolate(t)
+	store, err := NewCredentialsStore()
+	if err != nil {
+		t.Fatalf("new credentials store: %v", err)
+	}
+
+	other := flock.New(credentialsLockPath())
+	if err := os.MkdirAll(filepath.Dir(credentialsLockPath()), 0o700); err != nil {
+		t.Fatalf("create config dir: %v", err)
+	}
+	if locked, err := other.TryLock(); err != nil || !locked {
+		t.Fatalf("could not stand in for another process holding the lock: locked=%v err=%v", locked, err)
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- store.SetRawKey("ollama_host", "http://written-second:11434") }()
+
+	select {
+	case err := <-done:
+		t.Fatalf("the write went ahead while another process held the lock (err=%v), so two servers can overwrite each other", err)
+	case <-time.After(250 * time.Millisecond):
+		// Still waiting, which is the point.
+	}
+
+	if err := other.Unlock(); err != nil {
+		t.Fatalf("release the stand-in lock: %v", err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("the write failed once the lock was free: %v", err)
+		}
+	case <-time.After(settingsLockTimeout):
+		t.Fatal("the write never completed after the lock was released")
+	}
+	if got := store.GetRawKey("ollama_host"); got != "http://written-second:11434" {
+		t.Errorf("stored host = %q, want the value written after the wait", got)
+	}
+}
 
 func TestLoadCodexCLIAccessTokenReadsCodexHome(t *testing.T) {
 	dir := t.TempDir()

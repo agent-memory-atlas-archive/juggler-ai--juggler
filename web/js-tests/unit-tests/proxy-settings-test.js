@@ -12,10 +12,17 @@
  * select reflects the loaded mode, switching to a plain mode PUTs it, Manual
  * persists only once a valid URL is committed, and an invalid URL surfaces an
  * error without a PUT.
+ *
+ * Also pinned here: a proxy set in another window arrives on a settings-changed
+ * broadcast and lands on these controls, but never over a URL the user is part-way
+ * through typing — the field commits on blur, so an uncommitted value is still
+ * theirs.
  * @module unit-tests/proxy-settings-test
  */
 
 import { assert } from '../utilities/test-helpers.js';
+import wsService from '../../js/services/websocket.js';
+import { __resetPrefsForTests } from '../../js/services/prefs.js';
 import '../../js/components/settings-panel.js';
 
 /**
@@ -124,6 +131,10 @@ export async function runTests(_ctx) {
    */
   const withPanel = async (opts, body) => {
     const backend = installFetch(opts);
+    // The prefs store owns the settings document and reads it once per page —
+    // already done at boot, against the real server. Forget that read so this
+    // case's backend is the one the panel sees.
+    __resetPrefsForTests();
     const el = /** @type {any} */ (document.createElement('settings-panel'));
     document.body.appendChild(el);
     try {
@@ -217,6 +228,47 @@ export async function runTests(_ctx) {
       assert(!put, 'no PUT for an invalid URL');
       const statusText = el.querySelector('#proxy-status').textContent || '';
       assert(/invalid/i.test(statusText), `an error is shown; got ${JSON.stringify(statusText)}`);
+    });
+  });
+
+  /**
+   * A settings document as the server broadcasts it.
+   * @param {{mode: string, url?: string}} proxy
+   * @returns {void}
+   */
+  const broadcastProxy = (proxy) => {
+    wsService._emit('settings-changed', { network: { proxy } });
+  };
+
+  await run('a proxy set in another window reaches the controls', async () => {
+    await withPanel({ mode: 'system' }, async (el) => {
+      broadcastProxy({ mode: 'manual', url: 'http://elsewhere.example:3128' });
+      assert(modeSelect(el).value === 'manual', `manual is selected; got ${modeSelect(el).value}`);
+      const urlInput = el.querySelector('#proxy-url');
+      assert(urlInput.value === 'http://elsewhere.example:3128', `URL field shows it; got ${urlInput.value}`);
+      const urlRow = el.querySelector('#proxy-url-row');
+      assert(urlRow && !urlRow.hidden, 'and the URL row is revealed for manual');
+    });
+  });
+
+  await run('a broadcast does not take a half-typed URL out of the field', async () => {
+    await withPanel({ mode: 'manual', url: 'http://127.0.0.1:7890' }, async (el) => {
+      // The panel is display:none until opened, and an unfocusable field cannot
+      // set this case up. open() is avoided: it loads the shared config this fake
+      // backend does not serve, and a failed load raises a modal.
+      el.classList.add('show', 'loaded');
+      el.switchTab('connectivity');
+      await settle();
+      const urlInput = el.querySelector('#proxy-url');
+      urlInput.focus();
+      assert(document.activeElement === urlInput, 'the URL field took focus (the case needs it to)');
+      // Mid-edit: typed, not yet committed — the field commits on blur and Enter.
+      urlInput.value = 'http://half-typed';
+
+      broadcastProxy({ mode: 'manual', url: 'http://someone-else.example:3128' });
+
+      assert(urlInput.value === 'http://half-typed',
+        `what the user was typing survives; got ${urlInput.value}`);
     });
   });
 

@@ -118,11 +118,47 @@ func credFileLock(path string) chan struct{} {
 	return lock
 }
 
+// CredentialsPath is the on-disk location of the credentials file, for a caller
+// that must watch the file rather than read it through this package.
+func CredentialsPath() string {
+	return filepath.Join(userpaths.ConfigDir(), "credentials.json")
+}
+
+// credentialsLockPath is the cross-process lock guarding writes to the
+// credentials file. Reads are unlocked: a write lands by rename, so a reader sees
+// either the whole old document or the whole new one, never a mix.
+func credentialsLockPath() string {
+	return filepath.Join(userpaths.ConfigDir(), "credentials.lock")
+}
+
+// update runs a read-modify-write on the credentials file, serialised against
+// every other writer: the goroutines of this process (credFileLock) and the other
+// juggler servers on this machine (the file lock). Without the second of those,
+// two servers writing different keys at the same moment each save a document built
+// from what they read, and the later save drops the earlier one's change.
+//
+// mutate is handed the credentials as they are on disk right now, never a copy the
+// caller has been holding.
+func (s *CredentialsStore) update(mutate func(Credentials)) error {
+	lock := credFileLock(s.filePath)
+	lock <- struct{}{}
+	defer func() { <-lock }()
+
+	return withFileLock(credentialsLockPath(), "credentials", func() error {
+		creds, err := s.loadForWrite()
+		if err != nil {
+			return err
+		}
+		mutate(creds)
+		return s.Save(creds)
+	})
+}
+
 // NewCredentialsStore creates a new credentials store
 // Credentials are stored in ~/.juggler/credentials.json
 func NewCredentialsStore() (*CredentialsStore, error) {
 	return &CredentialsStore{
-		filePath: filepath.Join(userpaths.ConfigDir(), "credentials.json"),
+		filePath: CredentialsPath(),
 	}, nil
 }
 
@@ -300,26 +336,14 @@ func (s *CredentialsStore) SetAPIKey(providerName string, apiKey string) error {
 
 	configKeyName := info.ConfigKeyName
 
-	lock := credFileLock(s.filePath)
-	lock <- struct{}{}
-	defer func() { <-lock }()
-
-	// Load current credentials
-	creds, err := s.loadForWrite()
-	if err != nil {
-		return err
-	}
-
-	// Update key in map
-	if apiKey == "" {
-		// Empty string means delete the key
-		delete(creds, configKeyName)
-	} else {
-		creds[configKeyName] = apiKey
-	}
-
-	// Save updated credentials
-	return s.Save(creds)
+	return s.update(func(creds Credentials) {
+		if apiKey == "" {
+			// Empty string means delete the key
+			delete(creds, configKeyName)
+		} else {
+			creds[configKeyName] = apiKey
+		}
+	})
 }
 
 // HasKey returns whether a provider has an API key configured
@@ -436,23 +460,14 @@ func (s *CredentialsStore) IsProviderEnabled(providerName string) bool {
 
 // SetProviderEnabled enables or disables a keyless provider
 func (s *CredentialsStore) SetProviderEnabled(providerName string, enabled bool) error {
-	lock := credFileLock(s.filePath)
-	lock <- struct{}{}
-	defer func() { <-lock }()
-
-	creds, err := s.loadForWrite()
-	if err != nil {
-		return err
-	}
-
-	key := "enabled_" + providerName
-	if enabled {
-		creds[key] = "true"
-	} else {
-		creds[key] = "false"
-	}
-
-	return s.Save(creds)
+	return s.update(func(creds Credentials) {
+		key := "enabled_" + providerName
+		if enabled {
+			creds[key] = "true"
+		} else {
+			creds[key] = "false"
+		}
+	})
 }
 
 // HasProviderFlag returns whether a provider has an enabled/disabled flag set.
@@ -479,20 +494,13 @@ func (s *CredentialsStore) GetRawKey(key string) string {
 // SetRawKey stores an arbitrary key-value pair in the credentials file.
 // An empty value deletes the key.
 func (s *CredentialsStore) SetRawKey(key, value string) error {
-	lock := credFileLock(s.filePath)
-	lock <- struct{}{}
-	defer func() { <-lock }()
-
-	creds, err := s.loadForWrite()
-	if err != nil {
-		return err
-	}
-	if value == "" {
-		delete(creds, key)
-	} else {
-		creds[key] = value
-	}
-	return s.Save(creds)
+	return s.update(func(creds Credentials) {
+		if value == "" {
+			delete(creds, key)
+		} else {
+			creds[key] = value
+		}
+	})
 }
 
 // GetProviderCredential returns the resolved credential for a provider if available.

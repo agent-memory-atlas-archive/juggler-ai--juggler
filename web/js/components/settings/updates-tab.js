@@ -147,23 +147,13 @@ export class UpdatesTab {
     container.appendChild(actions);
   }
 
-  /** Tab became visible: fetch settings + version info. */
-  show() {
-    void this._loadSettings();
-    void this._loadVersion();
-  }
-
   /**
-   * Load the persisted update mode and reflect it in the radios.
-   * @private
+   * Tab became visible: fetch the version info. The update mode is not read here
+   * — the panel hands the settings document to every tab, so the radios are
+   * already showing it.
    */
-  async _loadSettings() {
-    // Offline — leave the radios as they are.
-    const data = await fetchJson('/api/settings', { fallback: null });
-    if (!data) return;
-    const mode = (data.updates && data.updates.mode) || 'automatic';
-    this._mode = mode;
-    this._reflectMode(mode);
+  show() {
+    void this._loadVersion();
   }
 
   /**
@@ -213,6 +203,24 @@ export class UpdatesTab {
         + ` updating the app won't update a server started outside it.`);
     }
     el.textContent = parts.join(' ');
+  }
+
+  /**
+   * The settings document changed, here or in another window. The radios are one
+   * focusable group, so they are left alone while the user is inside it — writing
+   * `.checked` across them mid-arrow-key would move the selection under them, and
+   * the choice they are making is the one that should win.
+   * @param {any} settings - The whole settings document.
+   */
+  onSettingsChanged(settings) {
+    const mode = (settings.updates && settings.updates.mode) || 'automatic';
+    this._mode = mode;
+    // activeElement rather than a `:focus` match: `:focus` only matches while the
+    // DOCUMENT itself has focus, so it reports nothing in a window sitting behind
+    // another — or under a test runner — and the guard would quietly never hold.
+    const radios = Array.from(this.host.querySelectorAll('.updates-mode-radio'));
+    if (radios.some((radio) => radio === document.activeElement)) return;
+    this._reflectMode(mode);
   }
 
   /**

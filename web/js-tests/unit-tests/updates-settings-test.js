@@ -11,10 +11,17 @@
  * against a stubbed backend (no real server) to pin: the radio reflects the
  * loaded mode, changing it PUTs the new value, and the manual button hits the
  * check endpoint and surfaces the result.
+ *
+ * Also pinned here: a mode chosen in another window arrives on a settings-changed
+ * broadcast and moves these radios — one machine runs a server per open project
+ * and they all share settings.json — but never while the user is inside the radio
+ * group, where it would move the selection under them mid-choice.
  * @module unit-tests/updates-settings-test
  */
 
 import { assert } from '../utilities/test-helpers.js';
+import wsService from '../../js/services/websocket.js';
+import { __resetPrefsForTests } from '../../js/services/prefs.js';
 import '../../js/components/settings-panel.js';
 
 /**
@@ -94,6 +101,10 @@ export async function runTests(_ctx) {
    */
   const withPanel = async (opts, body) => {
     const backend = installFetch(opts);
+    // The prefs store owns the settings document and reads it once per page —
+    // already done at boot, against the real server. Forget that read so this
+    // case's backend is the one the panel sees.
+    __resetPrefsForTests();
     const el = /** @type {any} */ (document.createElement('settings-panel'));
     document.body.appendChild(el);
     try {
@@ -165,6 +176,54 @@ export async function runTests(_ctx) {
       const checked = el.querySelector('#updates-check-status').textContent || '';
       assert(checked.includes('v1.2.0'), `manual check names the latest release; got ${JSON.stringify(checked)}`);
       assert(!/latest version/i.test(checked), `manual check makes no "latest version" claim; got ${JSON.stringify(checked)}`);
+    });
+  });
+
+  /**
+   * A settings document as the server broadcasts it.
+   * @param {string} mode
+   * @returns {void}
+   */
+  const broadcastMode = (mode) => {
+    wsService._emit('settings-changed', { updates: { mode } });
+  };
+
+  await run('a mode set in another window reaches the radios', async () => {
+    await withPanel({ mode: 'automatic' }, async (el, backend) => {
+      el.switchTab('updates');
+      await settle();
+      const before = backend.calls.filter((c) => c.url === '/api/settings' && c.method === 'GET').length;
+
+      broadcastMode('off');
+
+      const checked = [...el.querySelectorAll('.updates-mode-radio')].find((r) => r.checked);
+      assert(checked && checked.value === 'off', `off is selected; got ${checked && checked.value}`);
+      // The document rides the broadcast, so converging costs no request.
+      const after = backend.calls.filter((c) => c.url === '/api/settings' && c.method === 'GET').length;
+      assert(after === before, `no refetch was needed; ${after - before} GET(s) were made`);
+    });
+  });
+
+  await run('a broadcast leaves the radio group the user is inside alone', async () => {
+    await withPanel({ mode: 'automatic' }, async (el) => {
+      // A radio in a hidden panel cannot take focus, and the panel is
+      // display:none until it is opened — so this case needs it on screen.
+      // open() is not used for it: that also loads the shared config, which this
+      // fake backend does not serve, and a failed load raises a modal.
+      el.classList.add('show', 'loaded');
+      el.switchTab('updates');
+      await settle();
+      const radios = [...el.querySelectorAll('.updates-mode-radio')];
+      const notify = radios.find((r) => r.value === 'notify');
+      assert(notify, 'notify radio present');
+      notify.focus();
+      assert(document.activeElement === notify, 'the radio took focus (the case needs it to)');
+
+      broadcastMode('off');
+
+      const checked = radios.find((r) => r.checked);
+      assert(checked && checked.value === 'automatic',
+        `the selection under the user is untouched; got ${checked && checked.value}`);
     });
   });
 

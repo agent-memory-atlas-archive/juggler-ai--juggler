@@ -37,13 +37,20 @@ type settingsStore struct {
 
 // newSettingsStore seeds from disk (tolerant of a missing/corrupt file) and
 // starts the owner goroutine.
+//
+// The read happens here rather than inside the goroutine so that the store a
+// caller is handed has already loaded. Seeding asynchronously left a window in
+// which the file could be written after construction but before the load, and the
+// store would then seed with the newer document and report no change when asked to
+// adopt it — an ordering nobody could see from the outside, since every other
+// request blocks until the goroutine is in its loop anyway.
 func newSettingsStore() *settingsStore {
 	s := &settingsStore{reqs: make(chan func(*core.GlobalSettings) *core.GlobalSettings)}
+	cur, err := core.LoadGlobalSettings()
+	if err != nil {
+		jlog.Info("settings: load failed, using defaults: %v", err)
+	}
 	go func() {
-		cur, err := core.LoadGlobalSettings()
-		if err != nil {
-			jlog.Info("settings: load failed, using defaults: %v", err)
-		}
 		for fn := range s.reqs {
 			if next := fn(cur); next != nil {
 				cur = next
@@ -103,6 +110,43 @@ func (s *settingsStore) set(next core.GlobalSettings, uiPrefs map[string]json.Ra
 		return stored
 	}
 	return <-resp
+}
+
+// reloadFromDisk re-seeds the in-memory document from the file, returning the
+// document it replaced, the one it now holds, and whether the two differ.
+//
+// The read happens inside the owner goroutine, so it cannot interleave with a
+// write: a set() landing in the middle would otherwise have this adopt the
+// document from before it. Re-seeding matters as much as the comparison — a
+// broadcast that left the in-memory copy stale would tell clients the truth and
+// then serve them the old document on their next GET. The previous document comes
+// back with it because what has to happen next depends on WHICH section moved.
+func (s *settingsStore) reloadFromDisk() (core.GlobalSettings, core.GlobalSettings, bool) {
+	type reload struct {
+		prev    core.GlobalSettings
+		next    core.GlobalSettings
+		changed bool
+	}
+	resp := make(chan reload, 1)
+	s.reqs <- func(cur *core.GlobalSettings) *core.GlobalSettings {
+		next, err := core.LoadGlobalSettings()
+		if err != nil {
+			// Keep what we have: the file is mid-write or has been hand-edited into
+			// something unparseable, and defaults would be a change we then
+			// announced as if someone had asked for it.
+			jlog.Info("settings: reload failed, keeping the loaded document: %v", err)
+			resp <- reload{*cur, *cur, false}
+			return nil
+		}
+		if settingsRevision(*next) == settingsRevision(*cur) {
+			resp <- reload{*cur, *cur, false}
+			return nil
+		}
+		resp <- reload{*cur, *next, true}
+		return next
+	}
+	r := <-resp
+	return r.prev, r.next, r.changed
 }
 
 // updateMode returns the effective, normalised update mode. Defaults to
@@ -336,6 +380,15 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	// Apply the proxy policy live so a change takes effect without a restart; the
 	// atomic resolver makes already-built clients pick it up on their next request.
 	httpx.SetConfig(httpx.Config{Mode: incoming.Network.Proxy.Mode, URL: incoming.Network.Proxy.URL})
+	// Every window renders these settings, so the change is published rather than
+	// left for whatever makes the next GET. The comparison is against the document
+	// as it stood: a PUT rewrites the file whether or not it changed anything, and
+	// waking every client to re-render a value it already has is worse than saying
+	// nothing. The watcher stays quiet about this write for the same reason — the
+	// in-memory copy already matches the file it is about to see change.
+	if settingsRevision(prevSettings) != settingsRevision(incoming) {
+		s.broadcastSettingsChanged(incoming)
+	}
 	if prevMode == core.UpdateModeOff && incoming.Updates.Mode != core.UpdateModeOff {
 		s.kickUpdateCheck()
 	}

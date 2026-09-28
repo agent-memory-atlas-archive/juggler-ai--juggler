@@ -11,11 +11,16 @@
  * empty list and then latch `_hasLoadedOnce`, leaving the Provider API Keys page
  * blank for as long as the window stayed open. These tests pin both halves: the
  * unsettled snapshot must not be rendered, and a failed load must not latch.
+ *
+ * It also pins where the global settings document comes from: one fetch for the
+ * panel, dispatched to every tab, rather than one fetch per tab reading its own
+ * section out of the same bytes.
  * @module unit-tests/settings-first-load-test
  */
 
 import { assert } from '../utilities/test-helpers.js';
 import wsService from '../../js/services/websocket.js';
+import { __resetPrefsForTests, getGlobalSettings } from '../../js/services/prefs.js';
 import providersCache from '../../js/services/providers-cache.js';
 import '../../js/components/settings-panel.js';
 
@@ -73,10 +78,25 @@ function installFetch(opts = {}) {
         tunnelURL: '', tunnelMode: '', tunnelRelay: false, wanModes: [],
       });
     }
+    // The global settings document, with a distinguishable value in each of the
+    // sections a different tab reads.
+    if (u === '/api/settings') {
+      return ok({
+        updates: { mode: 'notify' },
+        network: { proxy: { mode: 'none' } },
+        connectivity: { lanOnLaunch: true, wanOnLaunch: '' },
+        models: {},
+      });
+    }
     return { ok: false, status: 404, statusText: 'Not Found', text: async () => '', json: async () => ({}) };
   });
   return { restore: () => { window.fetch = orig; }, calls, state };
 }
+
+/** Let non-awaitable async chains (fetch → json) settle. */
+const settle = async () => {
+  for (let i = 0; i < 4; i++) await new Promise((r) => setTimeout(r, 0));
+};
 
 /**
  * @param {object} _ctx - Test context (unused).
@@ -174,6 +194,45 @@ export async function runTests(_ctx) {
       assert(el._hasLoadedOnce === true, 'the retry latched after a successful load');
       const retried = el.querySelectorAll('#provider-fields-container .provider-field');
       assert(retried.length === 1, `the retry rendered the provider field; got ${retried.length}`);
+    });
+  });
+
+  // The settings document is one document, and every tab reads a different
+  // section of it. Fetched per tab, opening Settings asked for the same bytes
+  // three times and each tab held its own copy — so a tab was stale between the
+  // moments it happened to be shown, and every new tab quietly added a fourth
+  // request. One read, owned by the prefs store and dispatched to every tab, is
+  // also what the settings-changed broadcast arrives through, so there is one path
+  // into the panel rather than two.
+  await run('the settings document is read once, for the prefs store and every tab', async () => {
+    seedSettledProviders();
+    // The prefs store memoises its read for the life of the page, so an earlier
+    // case here would otherwise have paid for it and this one would count none.
+    __resetPrefsForTests();
+    await withPanel({ providersPayload: { providers: [FAKE_PROVIDER], ready: true } }, async (el, backend) => {
+      await el.open();
+      // Visiting a tab must not re-fetch: every tab is live from construction
+      // and was handed the document already.
+      el.switchTab('updates');
+      el.switchTab('connectivity');
+      await settle();
+
+      const gets = backend.calls.filter((u) => u === '/api/settings');
+      assert(gets.length === 1, `exactly one GET /api/settings; got ${gets.length}`);
+
+      // Localise a failure: did the store read the document, or did the panel fail
+      // to receive what it read?
+      const doc = await getGlobalSettings();
+      assert(doc && doc.updates && doc.updates.mode === 'notify',
+        `the store holds the document; got ${JSON.stringify(doc)}`);
+
+      // The one fetch still reached every section that reads it.
+      const mode = [...el.querySelectorAll('.updates-mode-radio')].find((r) => r.checked);
+      assert(mode && mode.value === 'notify', `Updates read its section; got ${mode && mode.value}`);
+      const proxy = el.querySelector('#proxy-mode');
+      assert(proxy && proxy.value === 'none', `the proxy box read its section; got ${proxy && proxy.value}`);
+      const lan = el.querySelector('.connectivity-launch-checkbox[data-launch="lan"]');
+      assert(lan && lan.checked === true, 'Connectivity read its section');
     });
   });
 

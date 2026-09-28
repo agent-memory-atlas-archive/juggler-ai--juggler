@@ -16,10 +16,15 @@
  * server replaces a named provider's set wholesale rather than merging into it),
  * clearing a field removes just that one, and a rejected save puts the field
  * back rather than leaving a number on screen that was never stored.
+ *
+ * Also pinned: a catalogue republished because another window changed these
+ * settings lands on the controls without rebuilding them — the open list, its
+ * filter and a half-typed number all survive.
  * @module unit-tests/model-limits-test
  */
 
 import { assert } from '../utilities/test-helpers.js';
+import wsService from '../../js/services/websocket.js';
 import { ProvidersTab } from '../../js/components/settings/providers-tab.js';
 
 /**
@@ -176,6 +181,60 @@ export async function runTests(_ctx) {
     assert(puts.length > 0, 'a PUT /api/settings was issued');
     return puts[puts.length - 1].body.models.limits[PROVIDER];
   };
+
+  // Hidden models and limits are global settings, so another window can change
+  // them. The server folds them into the published catalogue and republishes it,
+  // which is how this tab hears: it holds no copy of the settings document.
+  //
+  // Rebuilding the rows on that would close the model list, clear its filter and
+  // throw away the scroll position — for a change that only ever moves a checkbox
+  // or a number. So the catalogue is written onto the controls in place.
+  await run('a catalogue republished elsewhere lands on the controls in place', async () => {
+    await withTab({}, async (host) => {
+      const details = host.querySelector('details.model-visibility');
+      assert(details, 'the model list exists');
+      details.open = true;
+      const filter = host.querySelector('.model-visibility-filter');
+      filter.value = 'model';
+
+      // Another window hid one model and overrode the other's context window.
+      const next = providerFixture();
+      next.modelsWithContext[0].hidden = true;
+      next.modelsWithContext[2].providerContextWindow = 262144;
+      next.modelsWithContext[2].contextWindow = 99000;
+      wsService._emit('providers-update', [next]);
+      await settle();
+
+      const box = host.querySelector('[data-model="plain-model"] .model-visibility-check');
+      assert(box && box.checked === false, 'the hidden model unticked');
+      const row = host.querySelector('[data-model="plain-model"]');
+      assert(row.classList.contains('is-hidden'), 'and reads as hidden');
+      const measured = limitInput(host, 'measured-model', 'contextWindow');
+      assert(measured.value === '99000', `the override arrived; got ${JSON.stringify(measured.value)}`);
+
+      // What the user had open and typed is still theirs.
+      assert(details.open === true, 'the model list stayed open');
+      assert(filter.value === 'model', `the filter query survived; got ${JSON.stringify(filter.value)}`);
+    });
+  });
+
+  await run('a republished catalogue does not take a number out from under the user', async () => {
+    await withTab({}, async (host) => {
+      host.querySelector('details.model-visibility').open = true;
+      const field = limitInput(host, 'plain-model', 'contextWindow');
+      field.focus();
+      assert(document.activeElement === field, 'the field took focus (the case needs it to)');
+      field.value = '4096';
+
+      const next = providerFixture();
+      next.modelsWithContext[0].providerContextWindow = 128000;
+      next.modelsWithContext[0].contextWindow = 200000;
+      wsService._emit('providers-update', [next]);
+      await settle();
+
+      assert(field.value === '4096', `the half-typed number survived; got ${JSON.stringify(field.value)}`);
+    });
+  });
 
   await run('fields seed blank with the provider numbers as placeholders', async () => {
     await withTab({}, async (host) => {

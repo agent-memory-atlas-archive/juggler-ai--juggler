@@ -153,22 +153,23 @@ export class ProxySettings {
     container.appendChild(box);
   }
 
-  /** Box became visible: fetch the persisted proxy settings. */
-  load() {
-    void this._loadSettings();
-  }
-
   /**
-   * Load the persisted proxy mode/URL and reflect them.
-   * @private
+   * The settings document arrived — from the panel's fetch, or because it changed
+   * here or in another window. Adopt the proxy section and show it, unless the
+   * user is in the middle of one of these two controls: the URL field commits on
+   * blur and Enter, so writing to it mid-edit would take a half-typed URL away,
+   * and the picker is left alone for as long as it is the thing being used. The
+   * cached values are updated either way, so the next reflect — a reopen, or a
+   * failed write reverting — uses the truth.
+   * @param {any} settings - The whole settings document.
    */
-  async _loadSettings() {
-    // Offline — leave the controls as they are.
-    const data = await fetchJson('/api/settings', { fallback: null });
-    if (!data) return;
-    const proxy = (data.network && data.network.proxy) || {};
+  onSettingsChanged(settings) {
+    const proxy = (settings.network && settings.network.proxy) || {};
     this._mode = proxy.mode || 'system';
     this._url = proxy.url || '';
+    const active = document.activeElement;
+    if (active === this.host.querySelector('#proxy-mode')
+      || active === this.host.querySelector('#proxy-url')) return;
     this._reflect();
   }
 

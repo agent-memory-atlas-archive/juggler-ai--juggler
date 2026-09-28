@@ -93,7 +93,7 @@ const RECONNECT_JITTER = 0.25;
 const LINK_STABLE_AFTER_MS = 10000;
 
 /**
- * @typedef {'open'|'close'|'error'|'message'|'session'|'file-change'|'project-changed'|'plugin-changed'|'retry'|'streaming-error'|'providers-update'|'providers-ready'|'shell-output'|'reconnect-attempt'|'engine-bridge'|'update-status'|'clients-changed'|'pinboard-changed'|'pinboard-reveal'|'viewer-relay'|'workspaces-changed'} WSEventType
+ * @typedef {'open'|'close'|'error'|'message'|'session'|'file-change'|'project-changed'|'plugin-changed'|'retry'|'streaming-error'|'providers-update'|'providers-ready'|'shell-output'|'reconnect-attempt'|'engine-bridge'|'update-status'|'clients-changed'|'pinboard-changed'|'pinboard-reveal'|'viewer-relay'|'workspaces-changed'|'settings-changed'} WSEventType
  */
 
 /**
@@ -263,7 +263,8 @@ class WebSocketService {
       'pinboard-changed': [],
       'pinboard-reveal': [],
       'viewer-relay': [],
-      'workspaces-changed': []
+      'workspaces-changed': [],
+      'settings-changed': []
     };
   }
 
@@ -675,6 +676,14 @@ class WebSocketService {
     // Plugin file changes (hot reload)
     'plugin-changed': (ws, data) => {
       ws._emit('plugin-changed', data.path);
+    },
+
+    // The global settings document, after this or any other project's server
+    // wrote it — they all share one file. The whole document rides the event, so
+    // every window converges on one broadcast instead of answering it with a GET
+    // apiece.
+    'settings-changed': (ws, data) => {
+      ws._emit('settings-changed', data.settings && typeof data.settings === 'object' ? data.settings : {});
     },
 
     // One board's composition after a viewer edited it. The whole board rides

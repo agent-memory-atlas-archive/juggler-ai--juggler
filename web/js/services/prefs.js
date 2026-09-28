@@ -56,6 +56,7 @@
  */
 
 import { fetchJson } from './http.js';
+import wsService from './websocket.js';
 import { windowRole, WINDOW_ROLE_MAIN } from '../utils/view-mode.js';
 import { isDesktopWindow } from '../../sdk/lib/window-control.js';
 
@@ -116,6 +117,33 @@ const reachable = new Map();
  * @type {Map<ServerRealm, {patch: Record<string, any>, timer: any, promise: Promise<void>, resolve: () => void}>}
  */
 const writes = new Map();
+/**
+ * The whole global settings document, as last read or broadcast.
+ *
+ * The `user` realm's URL *is* the settings document, of which this module owns one
+ * section (`ui`). Keeping the rest of it rather than discarding it is what lets
+ * the settings panel — which reads the other sections — share this module's single
+ * fetch instead of making its own.
+ * @type {Record<string, any>|null}
+ */
+let settingsDoc = null;
+/**
+ * Who to tell when the whole document changes.
+ * @type {Set<(settings: Record<string, any>) => void>}
+ */
+const settingsWatchers = new Set();
+
+/**
+ * Which CustomEvent announces each realm preference, keyed `realm:name`.
+ *
+ * Nothing registers here on purpose: the entries are learned from the
+ * {@link reconcilePref} call every manager already makes at boot, which names its
+ * preference and its event in one breath. That is what lets
+ * {@link adoptUserRealmDocument} announce a preference changed in another window
+ * without this module knowing what any of them are for.
+ * @type {Map<string, string>}
+ */
+const announcements = new Map();
 
 /**
  * This project's storage key, as the server injected it into the page.
@@ -317,6 +345,9 @@ function readRealm(realm) {
   if (!pending) {
     pending = fetchJson(REALMS[realm].url(), { fallback: null }).then((doc) => {
       reachable.set(realm, !!doc);
+      // The user realm reads the settings document, and this module owns only its
+      // `ui` section; the rest is kept for whoever asks via getGlobalSettings.
+      if (realm === 'user' && doc) settingsDoc = doc;
       const stored = doc && typeof doc.ui === 'object' && doc.ui ? doc.ui : {};
       // Anything written while the read was in flight is newer than what came
       // back, so it stays on top.
@@ -438,6 +469,31 @@ function flushAll() {
   for (const realm of [...writes.keys()]) void flushRealm(/** @type {ServerRealm} */ (realm));
 }
 
+// The global settings document enters this window here, and only here. Every
+// project's server shares one settings.json, so a change made in another window —
+// or by another project's server — arrives as a broadcast carrying the whole
+// document; a reconnect re-reads it, because nothing could have been delivered
+// while the socket was down. Owning the subscription next to the cache is what
+// keeps "what are the settings now" a question with one answer.
+if (typeof window !== 'undefined') {
+  wsService.on('settings-changed', (/** @type {any} */ settings) => {
+    adoptGlobalSettings(settings || {});
+  });
+  // Only a RE-connect re-reads. The first open is this page connecting, when the
+  // document is either just-read or about to be: re-reading then is a second
+  // request for bytes we have, and its reply can land on top of a newer one and
+  // put the window back in the past. A later open means the socket was down, and
+  // anything that changed during that gap was never delivered.
+  let socketHasOpened = false;
+  wsService.on('open', () => {
+    if (!socketHasOpened) {
+      socketHasOpened = true;
+      return;
+    }
+    void resyncGlobalSettings();
+  });
+}
+
 // A page being hidden or torn down may not come back, so anything still waiting
 // on its timer goes now. This is best-effort by nature: a request started as the
 // page closes is not guaranteed to finish, which is the reason the delay is
@@ -556,11 +612,150 @@ export function cachedUserPref(name, fallback = null) {
  * @returns {Promise<any>} The realm's value.
  */
 export function reconcilePref(realm, name, eventName) {
+  announcements.set(`${realm}:${name}`, eventName);
   const before = JSON.stringify(cachedRealmPref(realm, name, null) ?? null);
   return getRealmPref(realm, name, null).then((value) => {
     if (JSON.stringify(value ?? null) !== before) notifyPrefChanged(eventName);
     return value;
   });
+}
+
+/**
+ * The whole global settings document, fetched once for this page.
+ *
+ * Every window shares one settings.json, so the document is read once and then
+ * kept current by {@link adoptGlobalSettings} rather than refetched: a reader gets
+ * this module's cache, and a change made anywhere arrives over the socket. Callers
+ * that want to follow it add themselves with {@link onGlobalSettings}.
+ * @returns {Promise<Record<string, any>>} The document, or {} if unreachable.
+ */
+export async function getGlobalSettings() {
+  await readRealm('user');
+  return settingsDoc || {};
+}
+
+/**
+ * Follow the global settings document: `cb` is called with the whole of it every
+ * time it changes.
+ * @param {(settings: Record<string, any>) => void} cb
+ * @returns {void}
+ */
+export function onGlobalSettings(cb) {
+  settingsWatchers.add(cb);
+}
+
+/**
+ * Stop following the global settings document.
+ * @param {(settings: Record<string, any>) => void} cb
+ * @returns {void}
+ */
+export function offGlobalSettings(cb) {
+  settingsWatchers.delete(cb);
+}
+
+/**
+ * Adopt a settings document the server has published: fold its `ui` section into
+ * this module's cache and hand the whole of it to everything following it.
+ *
+ * The one place a new document enters this window, whichever section of it moved.
+ * Before this existed the `ui` prefs and the settings panel each subscribed to the
+ * same broadcast and kept their own copy, which is two answers to "what are the
+ * settings now" and no guarantee they agreed.
+ * @param {Record<string, any>} doc - The whole settings document.
+ * @returns {string[]} The `ui` preference names whose value changed here.
+ */
+export function adoptGlobalSettings(doc) {
+  const settings = doc && typeof doc === 'object' ? doc : {};
+  settingsDoc = settings;
+  const changed = adoptUserPrefs(settings.ui || {});
+  for (const cb of settingsWatchers) {
+    try {
+      cb(settings);
+    } catch (err) {
+      // One bad follower must not stop the others being told.
+      console.error('[Juggler] a settings watcher threw:', err);
+    }
+  }
+  return changed;
+}
+
+/**
+ * Re-read the settings document from the server and adopt it.
+ *
+ * For a reconnect: while the socket was down no broadcast could arrive, so what
+ * this window holds may be old — and the read is memoised for the life of the
+ * page, which is what makes asking again a deliberate act rather than a refetch.
+ * @returns {Promise<void>} Resolves once the document has been adopted.
+ */
+export async function resyncGlobalSettings() {
+  reads.delete('user');
+  const doc = await fetchJson(REALMS.user.url(), { fallback: null });
+  if (!doc) return; // unreachable — keep what we have
+  reachable.set('user', true);
+  reads.set('user', Promise.resolve(documents.get('user') || {}));
+  adoptGlobalSettings(doc);
+}
+
+/**
+ * Adopt the `ui` section of a settings document the server has published, and
+ * announce every preference whose value it changes.
+ *
+ * settings.json is one file for every project's server, and this module reads it
+ * exactly once per page: the read is memoised for the life of the window, because
+ * a preference store that refetched would be answering render-path reads over the
+ * network. That memo is correct for the window that did the writing and wrong for
+ * every other one — so instead of invalidating it, the new document is folded into
+ * the cache it already resolved. A window therefore converges on a change made
+ * somewhere else without a single extra request.
+ *
+ * Preferences still waiting on their write timer are left alone: they are newer
+ * than anything the server can have broadcast, and this is the same precedence
+ * {@link readRealm} gives them when a read lands mid-write. A key the document no
+ * longer carries was forgotten by whoever wrote it, so it is cleared here too —
+ * including the mirror, which would otherwise keep answering with it.
+ * @param {Record<string, any>} ui - The document's `ui` section, whole.
+ * @returns {string[]} The preference names whose value changed in this window.
+ * @private
+ */
+function adoptUserPrefs(ui) {
+  /** @type {ServerRealm} */
+  const realm = 'user';
+  const incoming = ui && typeof ui === 'object' ? ui : {};
+  const pending = writes.get(realm)?.patch || {};
+  // Mutated in place rather than replaced: readRealm's memoised promise resolved
+  // with this very object, so a fresh one would leave getUserPref answering from
+  // the document as it was when the page loaded.
+  let doc = documents.get(realm);
+  if (!doc) {
+    doc = {};
+    documents.set(realm, doc);
+  }
+  /**
+   * @param {any} a
+   * @param {any} b
+   * @returns {boolean} Whether the two are the same stored value.
+   */
+  const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  /** @type {string[]} */
+  const changed = [];
+  const names = new Set([...Object.keys(incoming), ...Object.keys(doc)]);
+  for (const name of names) {
+    if (name in pending) continue;
+    const value = name in incoming ? incoming[name] : null;
+    if (same(doc[name], value)) continue;
+    doc[name] = value;
+    writeMirror(realm, name, value);
+    changed.push(name);
+  }
+  // One event can speak for several preferences (diff-view-prefs has two), so it
+  // is fired once however many of its keys moved.
+  const events = new Set();
+  for (const name of changed) {
+    const eventName = announcements.get(`${realm}:${name}`);
+    if (eventName) events.add(eventName);
+  }
+  for (const eventName of events) notifyPrefChanged(eventName);
+  return changed;
 }
 
 /**
@@ -580,4 +775,5 @@ export function __resetPrefsForTests() {
   documents.clear();
   reads.clear();
   reachable.clear();
+  settingsDoc = null;
 }

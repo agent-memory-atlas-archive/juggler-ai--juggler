@@ -64,6 +64,25 @@ export class ProvidersTab {
     this.endpointCards = new Map();
     /** @type {HTMLElement|null} @private */
     this.endpointSection = null;
+    // One per provider whose model list is drawn: writes a freshly published
+    // catalogue onto the controls that are already on screen. Keyed by provider
+    // name and dropped whenever the fields are rebuilt.
+    /** @type {Map<string, (models: any[]) => void>} @private */
+    this._modelRowUpdaters = new Map();
+
+    // Hidden models and per-model limits are global settings, so another window
+    // can change them — and this tab holds no copy of the settings document. What
+    // it reads is the published catalogue, into which the server folds both before
+    // republishing it, so that republication is how the change arrives.
+    /** @type {((providers: any) => void)|null} @private */
+    this._onProvidersUpdate = (providers) => {
+      if (!Array.isArray(providers)) return;
+      for (const provider of providers) {
+        const update = this._modelRowUpdaters.get(provider && provider.name);
+        if (update) update(Array.isArray(provider.modelsWithContext) ? provider.modelsWithContext : []);
+      }
+    };
+    wsService.on('providers-update', this._onProvidersUpdate);
   }
 
   /** Tab became visible: pick up endpoints added or removed since it was last drawn. */
@@ -74,6 +93,14 @@ export class ProvidersTab {
   /** Panel closed: an abandoned add form must not be there on reopen. */
   close() {
     if (this.addingEndpoint) this._closeAddForm();
+  }
+
+  /** Element disconnected: drop the providers-update subscription. */
+  dispose() {
+    if (this._onProvidersUpdate) {
+      wsService.off('providers-update', this._onProvidersUpdate);
+      this._onProvidersUpdate = null;
+    }
   }
 
   /**
@@ -101,8 +128,10 @@ export class ProvidersTab {
     const container = this.host.querySelector('#provider-fields-container');
     if (!container) return;
 
-    // Clear existing fields
+    // Clear existing fields. The model-row updaters go with them: they close over
+    // controls that are about to stop existing.
     container.innerHTML = '';
+    this._modelRowUpdaters.clear();
 
     // A custom endpoint is in this list too, since it registers as a provider.
     // Its card is built from its definition instead, in the section below, so it
@@ -1089,7 +1118,7 @@ export class ProvidersTab {
       return input;
     };
 
-    /** @type {Array<{row: HTMLElement, haystack: string}>} */
+    /** @type {Array<{row: HTMLElement, haystack: string, id: string, box: HTMLInputElement, applyRowState: () => void, fields: Record<string, HTMLInputElement>}>} */
     const rows = [];
     // Same lineage grouping the model menu uses, so the two lists read alike.
     for (const model of sortModelsByVersion(models)) {
@@ -1151,12 +1180,21 @@ export class ProvidersTab {
 
       const limitFields = document.createElement('span');
       limitFields.className = 'model-limit-fields';
-      limitFields.appendChild(buildLimitInput(model, 'contextWindow', 'Context window'));
-      limitFields.appendChild(buildLimitInput(model, 'maxOutputTokens', 'Max output tokens'));
+      const contextInput = buildLimitInput(model, 'contextWindow', 'Context window');
+      const outputInput = buildLimitInput(model, 'maxOutputTokens', 'Max output tokens');
+      limitFields.appendChild(contextInput);
+      limitFields.appendChild(outputInput);
       row.appendChild(limitFields);
 
       list.appendChild(row);
-      rows.push({ row, haystack: `${model.id} ${model.displayName || ''}`.toLowerCase() });
+      rows.push({
+        row,
+        haystack: `${model.id} ${model.displayName || ''}`.toLowerCase(),
+        id: model.id,
+        box,
+        applyRowState,
+        fields: { contextWindow: contextInput, maxOutputTokens: outputInput },
+      });
     }
 
     filter.addEventListener('input', () => {
@@ -1168,6 +1206,47 @@ export class ProvidersTab {
         if (hit) matches++;
       }
       empty.style.display = matches === 0 ? '' : 'none';
+    });
+
+    // Write a freshly published catalogue onto these controls, in place.
+    //
+    // Not a rebuild: that would close the list, clear the filter and lose the
+    // scroll position, for a change that can only ever move a checkbox or a
+    // number. A number field the user is inside keeps what they typed — it commits
+    // on change, so an uncommitted value is still theirs — while a checkbox is
+    // written either way, since clicking one commits immediately and there is no
+    // half-made edit to protect. The local state is re-seeded alongside the DOM,
+    // because it is what the next save sends.
+    this._modelRowUpdaters.set(provider.name, (nextModels) => {
+      const byID = new Map(nextModels.map((m) => [m.id, m]));
+      for (const entry of rows) {
+        const next = byID.get(entry.id);
+        if (!next) continue;
+
+        if (next.hidden) hidden.add(entry.id);
+        else hidden.delete(entry.id);
+        entry.box.checked = !next.hidden;
+        entry.applyRowState();
+
+        /** @type {{contextWindow?: number, maxOutputTokens?: number}} */
+        const overrides = {};
+        if (next.providerContextWindow !== undefined && next.providerContextWindow !== null) {
+          overrides.contextWindow = next.contextWindow;
+        }
+        if (next.providerMaxOutputTokens !== undefined && next.providerMaxOutputTokens !== null) {
+          overrides.maxOutputTokens = next.maxOutputTokens;
+        }
+        if (Object.keys(overrides).length > 0) limits[entry.id] = overrides;
+        else delete limits[entry.id];
+
+        for (const field of ['contextWindow', 'maxOutputTokens']) {
+          const input = entry.fields[field];
+          if (!input || document.activeElement === input) continue;
+          const value = /** @type {any} */ (overrides)[field];
+          input.value = value ? String(value) : '';
+        }
+      }
+      updateSummary();
     });
 
     // The empty state lives inside the scroller so a filter that matches nothing

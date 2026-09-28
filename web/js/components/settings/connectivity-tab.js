@@ -126,19 +126,15 @@ export class ConnectivityTab {
     /** @type {{lanEnabled: boolean, lanURLs: string[], tunnelEnabled: boolean, tunnelURL: string, tunnelMode: string, tunnelRelay: boolean, wanModes: WANMode[], clientCount: number, clients: ClientDescriptor[]}} @private */
     this.connectivity = { lanEnabled: false, lanURLs: [], tunnelEnabled: false, tunnelURL: '', tunnelMode: '', tunnelRelay: false, wanModes: [], clientCount: 1, clients: [] };
     /**
-     * Persisted "Start on launch" preferences (GET/PUT /api/settings
-     * `connectivity`). Fetched once and cached so the 2 s runtime poll — which
-     * rebuilds the form from /api/connectivity — never flickers or refetches
-     * these controls. `wanOnLaunch` is a single mode id ('' = none): only one
-     * WAN tunnel can be armed, so the per-mode toggles are mutually exclusive by
-     * construction.
+     * Persisted "Start on launch" preferences, from the `connectivity` section of
+     * the settings document the panel hands over. Held here so the 2 s runtime
+     * poll — which rebuilds the form from /api/connectivity — renders these
+     * controls from the cache rather than flickering or refetching them.
+     * `wanOnLaunch` is a single mode id ('' = none): only one WAN tunnel can be
+     * armed, so the per-mode toggles are mutually exclusive by construction.
      * @type {{lanOnLaunch: boolean, wanOnLaunch: string}} @private
      */
     this._launchPrefs = { lanOnLaunch: false, wanOnLaunch: '' };
-    /** @type {boolean} @private - True once GET /api/settings has seeded _launchPrefs. */
-    this._launchPrefsLoaded = false;
-    /** @type {boolean} @private - True while a _loadLaunchPrefs fetch is in flight (dedupes concurrent loads). */
-    this._launchPrefsFetching = false;
     /** @type {string} @private - Inline error from the most recent WAN action, set at the action site and cleared at the start of the next one. */
     this._wanError = '';
     /** @type {boolean} @private - True once the shared loadConfig() has seeded this tab (gates the poll/live-update like the panel's first-load flag did). */
@@ -175,46 +171,51 @@ export class ConnectivityTab {
   onConfigLoaded(data, renderFields) {
     this.connectivity = /** @type {any} */ (data.connectivity);
     this._loaded = true;
-    // Launch prefs live in the global settings document, not the connectivity
-    // payload — fetch them once, out of band. Re-renders when they arrive.
-    void this._loadLaunchPrefs();
     if (renderFields) this.renderConnectivityFields();
   }
 
   /** Tab became visible: refresh and arm the background poll (once loaded). */
   show() {
     this._visible = true;
-    // The proxy box fetches its own settings and doesn't depend on the shared
-    // loadConfig(), so load it regardless of whether this tab has been seeded.
-    this._proxy.load();
     if (!this._loaded) return;
-    void this._loadLaunchPrefs();
     this.refreshConnectivity();
     this._connectivityPollId = setInterval(() => this.refreshConnectivity(), CONNECTIVITY_POLL_MS);
   }
 
   /**
-   * Fetch the persisted "Start on launch" preferences (GET /api/settings) once
-   * and cache them in _launchPrefs, re-rendering so the controls reflect them.
-   * Renders from the cache thereafter so the connectivity poll never refetches
-   * them. On failure the flag stays clear so a later show() retries; defaults
-   * (all off) render meanwhile.
+   * The settings document arrived — from the panel's fetch, or because it changed
+   * here or in another window, which share the one file. The proxy box owns its
+   * own section of it; this tab owns the "Start on launch" preferences.
+   * @param {any} settings - The whole settings document.
+   */
+  onSettingsChanged(settings) {
+    this._proxy.onSettingsChanged(settings);
+    const conn = settings.connectivity || {};
+    const next = { lanOnLaunch: !!conn.lanOnLaunch, wanOnLaunch: conn.wanOnLaunch || '' };
+    const unchanged = next.lanOnLaunch === this._launchPrefs.lanOnLaunch
+      && next.wanOnLaunch === this._launchPrefs.wanOnLaunch;
+    this._launchPrefs = next;
+    if (unchanged) return;
+    this._reflectLaunchToggles();
+  }
+
+  /**
+   * Write the cached launch preferences onto the toggles, in place.
+   *
+   * Deliberately not a re-render: renderConnectivityFields() empties the whole
+   * form, which kills focus and refetches every QR image — for a change that can
+   * only ever move a checkbox. A toggle the user is on keeps what they see, since
+   * the value they are about to send is the one that matters.
    * @private
    */
-  async _loadLaunchPrefs() {
-    if (this._launchPrefsLoaded || this._launchPrefsFetching) return;
-    this._launchPrefsFetching = true;
-    try {
-      // Offline — leave defaults; a later show() retries.
-      const data = await fetchJson('/api/settings', { fallback: null });
-      if (!data) return;
-      const conn = data.connectivity || {};
-      this._launchPrefs = { lanOnLaunch: !!conn.lanOnLaunch, wanOnLaunch: conn.wanOnLaunch || '' };
-      this._launchPrefsLoaded = true;
-      if (this._loaded) this.renderConnectivityFields();
-    } finally {
-      this._launchPrefsFetching = false;
-    }
+  _reflectLaunchToggles() {
+    this.host.querySelectorAll('.connectivity-launch-checkbox').forEach((el) => {
+      const input = /** @type {HTMLInputElement} */ (el);
+      if (document.activeElement === input) return;
+      input.checked = input.dataset.launch === 'wan'
+        ? this._launchPrefs.wanOnLaunch === input.dataset.wanMode
+        : this._launchPrefs.lanOnLaunch;
+    });
   }
 
   /** Tab hidden: stop the background poll. */
@@ -466,7 +467,10 @@ export class ConnectivityTab {
    * radio-style (only one WAN mode can be armed, since they all write the single
    * wanOnLaunch preference). Applies to desktop-app launches only — a terminal
    * launch uses CLI flags.
-   * @param {{checked: boolean, onChange: (checked: boolean) => void}} opts
+   * Each toggle carries which preference it stands for, so a document arriving
+   * from another window can be written onto the checkboxes without rebuilding the
+   * form around them (see {@link ConnectivityTab#_reflectLaunchToggles}).
+   * @param {{checked: boolean, onChange: (checked: boolean) => void, wanMode?: string}} opts
    * @returns {HTMLElement} The toggle label element.
    * @private
    */
@@ -476,6 +480,12 @@ export class ConnectivityTab {
     const input = document.createElement('input');
     input.type = 'checkbox';
     input.className = 'connectivity-launch-checkbox';
+    if (opts.wanMode === undefined) {
+      input.dataset.launch = 'lan';
+    } else {
+      input.dataset.launch = 'wan';
+      input.dataset.wanMode = opts.wanMode;
+    }
     input.checked = !!opts.checked;
     input.addEventListener('change', () => opts.onChange(input.checked));
     const text = document.createElement('span');
@@ -679,6 +689,7 @@ export class ConnectivityTab {
     ctrl.appendChild(this._buildLaunchToggle({
       checked: this._launchPrefs.wanOnLaunch === opts.mode,
       onChange: () => this._setWANOnLaunch(opts.mode),
+      wanMode: opts.mode,
     }));
 
     row.appendChild(info);

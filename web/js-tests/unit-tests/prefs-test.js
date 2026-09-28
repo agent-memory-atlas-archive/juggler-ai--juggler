@@ -18,6 +18,11 @@
  * value left behind in localStorage by an older build is adopted and promoted
  * exactly once, that a drag's worth of writes makes ONE request, and that a
  * remote viewer's refused write still leaves it its own copy.
+ *
+ * The user realm has a second rule of its own: settings.json is one file for
+ * every project's server, so a change made in another window has to reach a
+ * window that read the document once at boot — without refetching it, and without
+ * overtaking a write that is still on its way out.
  * @module unit-tests/prefs-test
  */
 
@@ -48,6 +53,7 @@ export async function runTests(_ctx) {
     getDevicePref, setDevicePref,
     getWindowPref, setWindowPref, cachedWindowPref,
     getUserPref, setUserPref, cachedUserPref,
+    adoptGlobalSettings,
     __resetPrefsForTests,
   } = prefs;
 
@@ -296,6 +302,120 @@ export async function runTests(_ctx) {
       const name = uniqueName();
       await setUserPref(name, true);
       eq(localStorage.getItem(name), 'true', 'cached under the bare name');
+    });
+
+    // --- a document written in another window ------------------------------
+    //
+    // settings.json is one file for every project's server, and the user realm is
+    // read once per page — so without adoption a second window would hold its
+    // boot-time copy for as long as it stayed open.
+
+    await run('a document from another window reaches a preference already read', async () => {
+      reset();
+      const name = uniqueName();
+      respond = () => ({ status: 200, body: { ui: { [name]: 'as it was' } } });
+      eq(await getUserPref(name, null), 'as it was', 'the value this window loaded');
+
+      const changed = adoptGlobalSettings({ ui: { [name]: 'as another window left it' } });
+      eq(changed, [name], 'the names reported as changed');
+      eq(cachedUserPref(name, null), 'as another window left it', 'the synchronous read');
+      // The once-per-page read is memoised, so this is the assertion that the
+      // adoption reached the resolved document rather than a copy beside it.
+      eq(await getUserPref(name, null), 'as another window left it', 'the awaited read');
+      eq(calls.filter((c) => c.method === 'GET').length, 1, 'and no refetch was needed');
+    });
+
+    await run('adopting reports only what moved', async () => {
+      reset();
+      const [stays, moves] = [uniqueName(), uniqueName()];
+      respond = () => ({ status: 200, body: { ui: { [stays]: 1, [moves]: 1 } } });
+      await getUserPref(stays, null);
+      eq(adoptGlobalSettings({ ui: { [stays]: 1, [moves]: 2 } }), [moves], 'only the changed name');
+      eq(adoptGlobalSettings({ ui: { [stays]: 1, [moves]: 2 } }), [], 'and a redundant document moves nothing');
+    });
+
+    await run('a preference the document has dropped is forgotten, mirror included', async () => {
+      reset();
+      const name = uniqueName();
+      respond = () => ({ status: 200, body: { ui: { [name]: 'forgotten elsewhere' } } });
+      await getUserPref(name, null);
+      eq(localStorage.getItem(name), '"forgotten elsewhere"', 'mirrored while it was stored');
+      adoptGlobalSettings({ ui: {} });
+      // The mirror has to be cleared with the document: a cached read falls back
+      // to it, so a stale mirror would keep answering with the forgotten value.
+      eq(cachedUserPref(name, 'gone'), 'gone', 'forgotten');
+    });
+
+    await run('a write still waiting outranks the document it crosses', async () => {
+      reset();
+      const name = uniqueName();
+      // Not awaited: the write is sitting on its batch timer, which is exactly
+      // the window in which another window's document can arrive.
+      const pending = setUserPref(name, 'mine, still going out');
+      adoptGlobalSettings({ ui: { [name]: 'the older document' } });
+      eq(cachedUserPref(name, null), 'mine, still going out', 'the newer local write survives');
+      await pending;
+    });
+
+    await run('adopting announces the preference, so a live view re-syncs', async () => {
+      reset();
+      const name = uniqueName();
+      const eventName = `juggler-test-pref-event-${seq++}`;
+      let announced = 0;
+      const onAnnounced = () => { announced++; };
+      window.addEventListener(eventName, onAnnounced);
+      try {
+        // How every manager registers: the boot-time reconcile names the
+        // preference and the event in one call, and that is the only thing that
+        // teaches prefs.js what to fire.
+        respond = () => ({ status: 200, body: { ui: { [name]: 'boot' } } });
+        await prefs.reconcilePref('user', name, eventName);
+        announced = 0;
+        adoptGlobalSettings({ ui: { [name]: 'changed elsewhere' } });
+        eq(announced, 1, 'announcements for a changed preference');
+        adoptGlobalSettings({ ui: { [name]: 'changed elsewhere' } });
+        eq(announced, 1, 'and none for a document that changed nothing');
+      } finally {
+        window.removeEventListener(eventName, onAnnounced);
+      }
+    });
+
+    // While the socket is down no broadcast can arrive, and the document is read
+    // once for the life of the page — so without an explicit re-read a window that
+    // reconnected would hold whatever it had before the drop, indefinitely.
+    await run('a reconnect re-reads the document and adopts what changed meanwhile', async () => {
+      reset();
+      const name = uniqueName();
+      respond = () => ({ status: 200, body: { ui: { [name]: 'before the drop' } } });
+      eq(await prefs.getGlobalSettings(), { ui: { [name]: 'before the drop' } }, 'the document as read');
+
+      // The change nothing could tell this window about.
+      respond = () => ({ status: 200, body: { ui: { [name]: 'changed while offline' } } });
+      await prefs.resyncGlobalSettings();
+
+      eq(cachedUserPref(name, null), 'changed while offline', 'the re-read was adopted');
+      const doc = await prefs.getGlobalSettings();
+      eq(doc.ui[name], 'changed while offline', 'and the document followers see');
+    });
+
+    await run('a follower is handed the whole document, not just its ui section', async () => {
+      reset();
+      respond = () => ({ status: 200, body: { ui: {}, network: { proxy: { mode: 'none' } } } });
+      await prefs.getGlobalSettings();
+      /** @type {any[]} */
+      const seen = [];
+      /** @param {any} s */
+      const follower = (s) => { seen.push(s); };
+      prefs.onGlobalSettings(follower);
+      try {
+        prefs.adoptGlobalSettings({ ui: {}, network: { proxy: { mode: 'manual', url: 'http://p:1' } } });
+        eq(seen.length, 1, 'the follower was told once');
+        eq(seen[0].network.proxy.mode, 'manual', 'and got the section it cares about');
+      } finally {
+        prefs.offGlobalSettings(follower);
+      }
+      prefs.adoptGlobalSettings({ ui: {} });
+      eq(seen.length, 1, 'a removed follower is not told again');
     });
 
     await run('a realm that cannot be reached falls back rather than throwing', async () => {

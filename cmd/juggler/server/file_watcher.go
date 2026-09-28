@@ -56,6 +56,7 @@ func (s *Server) StartBackgroundServices() {
 		}
 	}
 	s.startPluginWatcher()
+	s.startConfigWatcher()
 	s.RefreshProviders()
 	s.startUpdateChecker()
 	s.startEngineSupervisor()
