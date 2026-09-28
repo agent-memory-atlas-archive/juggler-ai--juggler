@@ -79,3 +79,147 @@ no-project-overlay .onboarding-link {
 no-project-overlay .onboarding-link:hover {
     text-decoration: underline;
 }
+
+/* The three ways into a project, given as buttons rather than as links inside a
+   sentence: this is the one screen where the reader may not yet know that the
+   coloured words are clickable. */
+
+/* Vertical rhythm here is padding, not margin: the markdown pattern layer
+   resets the margins of a scope's first and last child, and it sits below this
+   one, so a margin set here is a margin that stops working the day one of these
+   panels renders inside a markdown scope. Padding is not part of that reset. */
+no-project-overlay .np-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 1.5rem 0 0.75rem;
+}
+
+no-project-overlay .np-action {
+    border: none;
+    border-radius: 0.375rem;
+    background: var(--bg-raised, rgb(255 255 255 / 8%));
+    color: var(--text-primary);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.875rem;
+    padding: 0.5rem 1rem;
+    transition: background 150ms ease, opacity 150ms ease;
+}
+
+no-project-overlay .np-action:hover {
+    background: var(--bg-tertiary, rgb(255 255 255 / 12%));
+}
+
+no-project-overlay .np-action--primary {
+    background: var(--accent-blue);
+    color: #fff;
+}
+
+no-project-overlay .np-action--primary:hover {
+    background: var(--accent-blue-light, #79c0ff);
+}
+
+/* Shown only while a folder is actually over the window, which the native side
+   reports to the host element (see _setDropActive in no-project-overlay.js).
+   Anywhere in the window accepts the drop, so the outline answers for the window
+   and is merely drawn on the panel, which is the thing worth pointing at. A
+   permanent dashed box would shout at everyone to announce something almost
+   nobody is doing. */
+no-project-overlay.folder-drop-active .onboarding-panel {
+    outline: 0.125rem dashed var(--accent-blue);
+    outline-offset: 1rem;
+    border-radius: 0.375rem;
+}
+
+no-project-overlay .np-drop-hint {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+}
+
+no-project-overlay .np-recents {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    max-width: 100%;
+    padding: 1.25rem 0;
+    text-align: left;
+}
+
+no-project-overlay .np-recents[hidden] {
+    display: none;
+}
+
+no-project-overlay .np-recents-label {
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    padding: 0.25rem 0.125rem;
+}
+
+no-project-overlay .np-recent {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: none;
+    border-radius: 0.25rem;
+    color: var(--text-primary);
+    cursor: pointer;
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 0.8125rem;
+    overflow: hidden;
+    padding: 0.3125rem 0.5rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    transition: background 100ms ease;
+}
+
+no-project-overlay .np-recent:hover {
+    background: var(--bg-raised, rgb(255 255 255 / 6%));
+}
+
+no-project-overlay .np-explainer[hidden],
+no-project-overlay .np-lead[hidden] {
+    display: none;
+}
+
+/* The prerequisite that otherwise fails silently at the first message, so it
+   gets a light that is on or off rather than a sentence to read past. */
+no-project-overlay .np-provider {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+    padding: 1.25rem 0 0;
+    font-size: 0.8125rem;
+}
+
+no-project-overlay .np-provider:empty {
+    display: none;
+}
+
+no-project-overlay .np-provider-dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: var(--accent-green);
+    flex: none;
+}
+
+no-project-overlay .np-provider--none .np-provider-dot {
+    background: var(--accent-yellow);
+}
+
+no-project-overlay .np-provider-text {
+    color: var(--text-secondary);
+}
+
+no-project-overlay .np-footnote {
+    padding-top: 1.5rem;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+}

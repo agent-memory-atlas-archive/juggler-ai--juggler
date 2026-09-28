@@ -273,6 +273,7 @@ func (s *Server) setupProjectRoutes() {
 	api.HandleFunc("/project", projectAPI.HandleGetProject).Methods("GET")
 	api.HandleFunc("/project", projectAPI.HandlePostProject).Methods("POST")
 	api.HandleFunc("/project", projectAPI.HandleDeleteProject).Methods("DELETE")
+	api.HandleFunc("/project/new", projectAPI.HandleNewProject).Methods("POST")
 	api.HandleFunc("/project/check", projectAPI.HandleCheckProject).Methods("GET")
 	api.HandleFunc("/recents", projectAPI.HandleGetRecents).Methods("GET")
 	api.HandleFunc("/recents", projectAPI.HandleDeleteRecent).Methods("DELETE")

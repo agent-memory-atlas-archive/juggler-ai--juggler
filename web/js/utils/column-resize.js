@@ -28,6 +28,69 @@ export const COL_MIN_WIDTH_REM = 12.5;
 export const COL_MAX_WIDTH_REM = 100;
 
 /**
+ * Widest a conversation column starts at. Past this it stops being a column of
+ * prose and becomes a page, so extra room goes to whatever stands beside it.
+ * @type {number}
+ */
+const START_WIDTH_MAX_REM = 50;
+
+/**
+ * Narrowest a conversation column starts at — the flex basis the CSS gives one
+ * that has no inline width (`column-container conversation-area` in
+ * layout/app-shell.css).
+ * @type {number}
+ */
+const START_WIDTH_MIN_REM = 30;
+
+/**
+ * Room the properties panel needs beside it, mirroring the `min-width` of
+ * `column-container properties-panel` in layout/app-shell.css. It is a floor,
+ * not a preference: a panel cannot be squeezed below it, so a conversation
+ * column that leaves less than this is not narrowing the panel but pushing it
+ * off the right-hand edge — `column-container` scrolls rather than reflows.
+ * @type {number}
+ */
+const PROPERTIES_MIN_REM = 30;
+
+/**
+ * Room the tab sidebar takes out of the window before any column gets any,
+ * mirroring `conversation-bar`'s width in components/conversation-bar.css.
+ *
+ * Taken off the window rather than measured, because the columns that share
+ * this width are wired at different moments — one during a render, one when a
+ * workspace first opens — and a measurement taken mid-layout gives them
+ * different answers to a question that has one answer.
+ * @type {number}
+ */
+const SIDEBAR_REM = 15;
+
+/**
+ * The width a conversation column takes on a window that has never had one
+ * resized: as wide as it can be while still leaving the properties panel whole.
+ *
+ * A fixed default cannot do that, because whether it fits is a fact about the
+ * window it opens in. Too wide and the first properties panel the user opens
+ * arrives part-way off-screen — a state they have no reason to read as "scroll
+ * right", since nothing else in the app scrolls sideways.
+ * @param {number} windowPx - Width of the window the columns are opening in.
+ * @param {number} [remPx] - Root font size, for converting the budget to rem.
+ * @returns {number} Starting width in rem, within [30, 50].
+ */
+export function startingColumnWidthRem(windowPx, remPx = _remPx()) {
+  const room = windowPx / remPx - SIDEBAR_REM - PROPERTIES_MIN_REM;
+  return Math.max(START_WIDTH_MIN_REM, Math.min(START_WIDTH_MAX_REM, room));
+}
+
+/**
+ * `startingColumnWidthRem` for this window — the one number every column that
+ * shares the width has to agree on, so it is read from the window itself.
+ * @returns {number} Starting width in rem.
+ */
+export function startingColumnWidth() {
+  return startingColumnWidthRem(window.innerWidth);
+}
+
+/**
  * @returns {number} Current root font-size in CSS pixels.
  */
 function _remPx() {

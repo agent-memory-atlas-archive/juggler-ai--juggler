@@ -471,6 +471,7 @@
 				"pp-footer",
 				"pp-header",
 				"pp-input-row",
+				"pp-name-input",
 				"pp-overlay",
 				"pp-panel-popup",
 				"pp-path-input",
@@ -665,6 +666,7 @@
 	"$enumerates": "A sheet whose job is to state ONE policy across every surface it applies to, rather than to own a group of its own: base/text-selection.css (what a mouse drag may select) and patterns/popup-surface.css (the outer card every transient surface wears). Their selectors name roots other sheets own, and that is the point — the alternative is the same declaration copied into a dozen component files, where nobody can see it is one decision. The ownership check skips them. They earn it by being small, by holding one policy each, and by sitting in the lowest layer that can state it, so any component can still override its own case.",
 	"$dynamicClasses": "Class names assembled in JS, so no literal exists to find. Each pattern below was proven by locating the composing expression (e.g. `color-${…}`) in web/js. Keep them tight: a pattern broad enough to cover a whole family stops the dead-selector check from seeing anything in it.",
 	"dynamicClasses": [
+		"file-drop-target-active",
 		"color-*",
 		"status-*",
 		"origin-*",

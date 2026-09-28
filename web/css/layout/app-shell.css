@@ -277,10 +277,36 @@ column-container workspace-panel {
     overflow: hidden;
 }
 
-/* When an explicit width is set via resize handle, respect it */
+/* When an explicit width is set via resize handle, respect it — unless the rule
+   below hands back the right to shrink. Carried on a custom property so the
+   decision stays here in the layout layer: setting flex-shrink directly from a
+   selector specific enough to express "only this arrangement" would out-specify
+   every component sheet that sets it on something of its own. */
 column-container conversation-area[style*="width"],
 column-container workspace-panel[style*="width"] {
-    flex: 0 0 auto;
+    flex: 0 var(--column-shrink, 0) auto;
+}
+
+/* Unless it is the only thing between the window and a properties panel sliced
+   in half by the edge of it.
+
+   A column carries a width in rem that was decided somewhere else: on a wider
+   window, before this one was made smaller, or at a zoom that has since made
+   every rem bigger. The panel beside it has a floor it cannot go below, so when
+   the two no longer fit, column-container scrolls — and a panel that is read by
+   scrolling sideways to reach it is one most people will never know is there.
+
+   So the conversation gives up the difference instead. It is the column that
+   can: prose reads at any width, while a panel below its floor is unusable. The
+   inline width is untouched and comes back the moment the window has room for
+   it again.
+
+   Exactly two columns, and only with the panel second — a longer chain is read
+   by scrolling, which is the whole of what a Miller column is, and squeezing
+   one would narrow every column in it the further the user drilled. */
+column-container > conversation-area:nth-child(1):nth-last-child(2):has(+ properties-panel),
+column-container > workspace-panel:nth-child(1):nth-last-child(2):has(+ properties-panel) {
+    --column-shrink: 1;
 }
 
 /* Selected item in inactive columns — muted/gray highlight (Finder-style) */
@@ -303,10 +329,10 @@ column-container properties-panel {
 }
 
 /* When an explicit width is set via the resize handle AND the panel is not
-   the rightmost column, honor that width instead of flex-growing — and let
-   the user drag below the 40rem default (the JS clamp at COL_MIN_WIDTH_PX
-   still applies). The last panel keeps the flex:1 above so it always fills
-   remaining space. */
+   the rightmost column, honor that width instead of flex-growing — and let the
+   user drag below the 30rem floor above (COL_MIN_WIDTH_REM in
+   js/utils/column-resize.js still applies). The last panel keeps the flex:1
+   above so it always fills remaining space. */
 column-container properties-panel[style*="width"]:not(:last-child) {
     flex: 0 0 auto;
     min-width: 12.5rem;

@@ -165,6 +165,7 @@ import { runTests as runLinkGuardTests } from '../unit-tests/link-guard-test.js'
 import { runTests as runAnsiTests } from '../unit-tests/ansi-test.js';
 import { runTests as runPrefsTests } from '../unit-tests/prefs-test.js';
 import { runTests as runColumnWidthTests } from '../unit-tests/column-width-test.js';
+import { runTests as runColumnFitTests } from '../unit-tests/column-fit-test.js';
 import { runTests as runThemeToggleTests } from '../unit-tests/theme-toggle-test.js';
 import { runTests as runToolNameResolutionTests } from '../unit-tests/tool-name-resolution-test.js';
 import { runTests as runNewTabUxTests } from '../unit-tests/new-tab-ux-test.js';
@@ -223,6 +224,8 @@ import { runTests as runUserSendFollowTests } from '../unit-tests/user-send-foll
 import { runTests as runThreadColumnLandingTests } from '../unit-tests/thread-column-landing-test.js';
 import { runTests as runEmptyConversationHintTests } from '../unit-tests/empty-conversation-hint-test.js';
 import { runTests as runNoConversationsOnboardingTests } from '../unit-tests/no-conversations-onboarding-test.js';
+import { runTests as runNoProjectOnboardingTests } from '../unit-tests/no-project-onboarding-test.js';
+import { runTests as runStarterPromptsTests } from '../unit-tests/starter-prompts-test.js';
 import { runTests as runColumnFileDropTests } from '../unit-tests/column-file-drop-test.js';
 import { runTests as runColumnNavigationTests } from '../unit-tests/column-navigation-test.js';
 import { runTests as runDeleteSelectionNeighbourTests } from '../unit-tests/delete-selection-neighbour-test.js';
@@ -567,6 +570,7 @@ const UNIT_TEST_SUITES = [
   // Exclusive for the same reason: it stands in for the server and writes
   // the localStorage cache behind the widths.
   { name: 'unit:column-width', run: runColumnWidthTests, needsExclusiveRun: true },
+  { name: 'unit:column-fit', run: runColumnFitTests },
   // Exclusive: it repaints data-theme and stubs matchMedia for the length of a
   // case, both of which are document-wide.
   { name: 'unit:theme-toggle', run: runThemeToggleTests, needsExclusiveRun: true },
@@ -622,6 +626,8 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:thread-column-landing', run: runThreadColumnLandingTests },
   { name: 'unit:empty-conversation-hint', run: runEmptyConversationHintTests },
   { name: 'unit:no-conversations-onboarding', run: runNoConversationsOnboardingTests },
+  { name: 'unit:no-project-onboarding', run: runNoProjectOnboardingTests },
+  { name: 'unit:starter-prompts', run: runStarterPromptsTests },
   { name: 'unit:column-file-drop', run: runColumnFileDropTests },
   { name: 'unit:column-navigation', run: runColumnNavigationTests },
   // Exclusive for the shared origin: one case writes the tool-grouping

@@ -5,6 +5,10 @@ of changes; this project follows semantic versioning.
 
 ## [Unreleased]
 
+- An empty window now offers to create a project folder, so there is no trip to the Finder
+- A folder dropped on an empty window, or on the Dock icon, opens as the project
+- The welcome panel now lists recent projects, says whether a provider is connected, and can create a new folder
+- Improvements to the way windows and property panels are sized and scrolled, to make them more discoverable and navigable
 - The skill button now stays put with no skills installed, its menu pointing at the Skills page
 - Notification sounds are now on by default, with six new chime voices, six new patterns and a Random button
 

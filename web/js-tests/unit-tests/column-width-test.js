@@ -38,7 +38,7 @@ export async function runTests(_ctx) {
   /** @type {string[]} */
   const errors = [];
 
-  const { setupColumnResize } = await import('../../js/utils/column-resize.js');
+  const { setupColumnResize, startingColumnWidthRem } = await import('../../js/utils/column-resize.js');
   const { setDevicePref, __resetPrefsForTests } = await import('../../js/services/prefs.js');
 
   /**
@@ -153,6 +153,45 @@ export async function runTests(_ctx) {
       } finally {
         column.remove();
       }
+    });
+
+    // The width a window with nothing stored starts at. It is arithmetic on the
+    // room available, because whether a given width fits is a fact about the
+    // window: leave less than the properties panel's 30rem floor beside the
+    // conversation and the first panel the user opens arrives part-way off the
+    // right-hand edge, which `column-container` answers with a sideways
+    // scrollbar rather than a narrower panel.
+    await run('the starting width leaves the properties panel its floor', () => {
+      // 1520px at a 16px root is 95rem, which is the app's own default window
+      // width: 15 for the tab sidebar, 50 for the conversation, 30 for the
+      // panel. The window was sized from these figures, so it comes out exact.
+      const wide = startingColumnWidthRem(1520, 16);
+      if (wide !== 50) throw new Error(`at 1520px: ${wide}rem, want 50rem`);
+
+      // Narrower: the conversation gives up the difference, not the panel.
+      const snug = startingColumnWidthRem(1400, 16);
+      if (snug !== 42.5) throw new Error(`at 1400px: ${snug}rem, want 42.5rem`);
+    });
+
+    await run('the starting width stays within its two bounds', () => {
+      // Wider than any conversation needs to be: the rest goes to the panel.
+      const huge = startingColumnWidthRem(4000, 16);
+      if (huge !== 50) throw new Error(`at 4000px: ${huge}rem, want the 50rem ceiling`);
+
+      // Narrower than all three can fit. Something has to overflow at this
+      // size; the conversation still gets the CSS flex basis, not a sliver.
+      const tiny = startingColumnWidthRem(900, 16);
+      if (tiny !== 30) throw new Error(`at 900px: ${tiny}rem, want the 30rem floor`);
+    });
+
+    // Widths are stored in rem so they track the app zoom, and this is computed
+    // in rem for the same reason: at 200% zoom the same window holds half as
+    // many rem, and the starting width has to be the smaller number.
+    await run('the starting width is in rem, so it follows the zoom', () => {
+      // The same window at 200%: 47.5rem all in, so the conversation is back to
+      // its floor rather than holding the 50rem it had at 100%.
+      const zoomed = startingColumnWidthRem(1520, 32);
+      if (zoomed !== 30) throw new Error(`at 1520px/32px rem: ${zoomed}rem, want 30rem`);
     });
   } finally {
     // Each case used a preference name of its own, so nothing is left behind

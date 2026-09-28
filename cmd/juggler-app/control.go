@@ -187,6 +187,17 @@ func (a *appState) handleWindowControl(w http.ResponseWriter, r *http.Request) {
 		}
 		application.InvokeAsync(func() { e.win.SetTitle(title) })
 		a.setWindowProject(e, r.URL.Query().Get("project"))
+		// The same report says whether this window is empty, which is the one
+		// state that accepts a dropped folder.
+		a.syncFileDrop(e, r.URL.Query().Get("project"))
+		w.WriteHeader(http.StatusNoContent)
+	case "folder-dropped":
+		// Paths from a file drop on this window's native drag overlay. They are
+		// reported by the page because that is where the native side hands them
+		// over (see the bridge in no-project-overlay.js), but nothing is decided
+		// there: which of them names a project needs the filesystem, and filling
+		// the window needs the other windows.
+		a.openDroppedFolderInWindow(e, r.URL.Query()["path"])
 		w.WriteHeader(http.StatusNoContent)
 	case "control":
 		// The reply reports the window's state after the action, which is how page

@@ -516,6 +516,15 @@ ifeq ($(UNAME_S),Darwin)
 		'  <key>CFBundleVersion</key><string>$(VERSION)</string>' \
 		'  <key>LSMinimumSystemVersion</key><string>14.0</string>' \
 		'  <key>NSHighResolutionCapable</key><true/>' \
+		'  <!-- Accept a folder dropped on the Dock icon, or sent over by Finder. -->' \
+		'  <!-- Alternate rank: Finder stays the default handler for a folder. -->' \
+		'  <key>CFBundleDocumentTypes</key>' \
+		'  <array><dict>' \
+		'    <key>CFBundleTypeName</key><string>Folder</string>' \
+		'    <key>CFBundleTypeRole</key><string>Editor</string>' \
+		'    <key>LSHandlerRank</key><string>Alternate</string>' \
+		'    <key>LSItemContentTypes</key><array><string>public.folder</string></array>' \
+		'  </dict></array>' \
 		'  <!-- TCC attributes a tool subprocess request to its responsible app. -->' \
 		'  <key>NSMicrophoneUsageDescription</key>' \
 		'  <string>A program you ran from Juggler asked to use the microphone.</string>' \

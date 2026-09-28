@@ -614,6 +614,24 @@ class APIService {
   }
 
   /**
+   * Create a folder and open it as the project.
+   *
+   * The folder is made directly inside `parent`, which must already exist — a
+   * mistyped parent is refused rather than built, so a typo cannot leave empty
+   * folders behind. An existing folder of that name is a conflict, never a
+   * silent switch onto someone else's work.
+   * @param {string} parent - Absolute or ~-relative folder to create it in
+   * @param {string} name - Folder name; no slashes, not "." or ".."
+   * @returns {Promise<{projectPath: string}>} Resolves with the absolute path of the now-loaded project.
+   */
+  async createProject(parent, name) {
+    return await this.request('/project/new', {
+      method: 'POST',
+      body: { parent, name }
+    });
+  }
+
+  /**
    * Open a new desktop window onto a project. Only works in the native desktop
    * app, which handles it via its loopback nativeCtl endpoint by opening
    * another in-process window; a plain browser tab has no native host, so this

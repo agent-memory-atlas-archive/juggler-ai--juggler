@@ -5,6 +5,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -100,6 +101,19 @@ type winEntry struct {
 	win       *application.WebviewWindow
 	spec      windowSpec // what this window views (project or URL) — its workspace identity
 	serverURL string     // the server this window posts/reads its geometry to (immutable)
+
+	// fileDrop is whether native file drop is currently on for this window —
+	// true while it shows no project. Tracked so a repeated report of the same
+	// state does not keep adding and removing the macOS drag overlay.
+	fileDrop bool
+
+	// sizeDefaulted is whether this window opened at the default size rather
+	// than one saved or inherited. The initial window is built before Wails
+	// knows of any screens, so its default is the layout's bare minimum;
+	// knowing the size was nobody's choice is what lets fitWindowToScreens
+	// replace it with the one the display deserves, and leave every other
+	// window's size alone. Immutable.
+	sizeDefaulted bool
 
 	// role is what this window is for — roleMain for the app, or this board's own
 	// rolePinboardFor slot. It keys the geometry this window reads and writes,
@@ -387,6 +401,18 @@ func (a *appState) initApplication() {
 		a.signalAllServers()
 	})
 
+	// A folder dropped on the Dock icon, or sent here by Finder's "Open With".
+	// macOS delivers these by Apple Event, so they never reach the launch flags
+	// — this is the only place they arrive.
+	a.app.Event.OnApplicationEvent(events.Common.ApplicationOpenedWithFile, func(event *application.ApplicationEvent) {
+		var quitting bool
+		a.reg(func(st *regState) { quitting = st.quitting })
+		if quitting {
+			return
+		}
+		a.openDroppedFolder(event.Context().Filename())
+	})
+
 	afterAppInit(a)
 	installAppMenu(a, a.devMode)
 }
@@ -444,7 +470,7 @@ func (a *appState) run(specs []windowSpec) error {
 						fatalf("panic while showing initial window: %v", r)
 					}
 				}()
-				if a.rescueStrandedWindow(initial) {
+				if a.fitWindowToScreens(initial) {
 					initial.triggerSave()
 				}
 				a.showWindow(initial)
@@ -664,6 +690,63 @@ func (a *appState) openWindowForProject(project string, opts windowOpts) {
 	a.openWindow(windowSpec{project: project}, opts)
 }
 
+// openDroppedFolder handles a folder dropped on the Dock icon, or opened from
+// Finder's "Open With" — macOS delivers those as an Apple Event rather than on
+// the command line, so they arrive here and not through the launch flags. No
+// window is implied by the gesture, so any empty one will do.
+func (a *appState) openDroppedFolder(path string) {
+	a.openDroppedFolderInWindow(a.emptyMainWindow(), []string{path})
+}
+
+// openDroppedFolderInWindow opens what was dropped, preferring the window it was
+// dropped on. A nil window means the gesture named none.
+//
+// Three outcomes, in the order a user would expect:
+//
+//  1. A window is already on that project. Raise it. Opening a second window
+//     onto one project is never what the gesture meant, and the project lock
+//     would refuse it anyway.
+//  2. The window that took the drop is empty. Fill it, by handing the page an
+//     announcement — which is also what routes the open through the endpoint
+//     that validates the path and records it in recents. Leaving a blank window
+//     next to a new one is the shabbier answer.
+//  3. Otherwise open a window for it.
+func (a *appState) openDroppedFolderInWindow(e *winEntry, paths []string) {
+	folder := droppedProjectFolder(paths)
+	if folder == "" {
+		return
+	}
+	if a.focusWindowBySpec(windowSpec{project: folder}) {
+		return
+	}
+	if e != nil && e.win != nil {
+		focusEntry(e)
+		e.win.ExecJS("window.dispatchEvent(new CustomEvent('juggler:folder-dropped',{detail:{path:" +
+			jsString(folder) + "}}))")
+		return
+	}
+	a.openWindowForProject(folder, windowOpts{})
+}
+
+// emptyMainWindow returns an open app window showing no project, or nil. A
+// board is not a candidate: it is a view of a conversation, with nowhere to put
+// a project.
+func (a *appState) emptyMainWindow() *winEntry {
+	var match *winEntry
+	a.reg(func(st *regState) {
+		best := -1
+		for _, w := range st.windows {
+			if isBoardRole(w.role) || w.spec.isURL() || w.spec.project != "" {
+				continue
+			}
+			if n := winNum(w.id); n > best {
+				best, match = n, w
+			}
+		}
+	})
+	return match
+}
+
 func normaliseTheme(theme string) string {
 	if _, ok := themeColours[theme]; ok {
 		return theme
@@ -867,6 +950,67 @@ func (a *appState) setWindowProject(e *winEntry, project string) {
 	}
 }
 
+// syncFileDrop keeps native file drop on exactly while a window shows no
+// project, from the project the page has just reported.
+//
+// It cannot ride setWindowProject's "changed" flag: that deliberately ignores a
+// report of "" once a window has a project, so the workspace identity survives
+// a momentary blank — but closing a project is precisely when drop has to come
+// back. So this reads every report instead, and dedupes against what the window
+// was last told.
+func (a *appState) syncFileDrop(e *winEntry, project string) {
+	if e == nil || e.win == nil {
+		return
+	}
+	want := strings.TrimSpace(project) == ""
+	changed := false
+	a.reg(func(st *regState) {
+		if e.fileDrop == want {
+			return
+		}
+		e.fileDrop = want
+		changed = true
+	})
+	if changed {
+		// Does its own main-thread hop.
+		e.win.SetEnableFileDrop(want)
+	}
+}
+
+// droppedProjectFolder picks the folder to open from what was dropped.
+//
+// One item only: a multi-item drop names no single project, and picking the
+// first would be a guess the user cannot see being made. A dropped FILE is read
+// as its containing folder — dragging a file from a project you want to open is
+// a near miss, not a mistake worth refusing.
+func droppedProjectFolder(paths []string) string {
+	if len(paths) != 1 {
+		return ""
+	}
+	path := strings.TrimSpace(paths[0])
+	if path == "" {
+		return ""
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return ""
+	}
+	if info.IsDir() {
+		return path
+	}
+	return filepath.Dir(path)
+}
+
+// jsString renders s as a JavaScript string literal for an ExecJS payload. A
+// path can hold quotes and backslashes, and JSON's escaping is JavaScript's.
+func jsString(s string) string {
+	encoded, err := json.Marshal(s)
+	if err != nil {
+		return `""`
+	}
+	return string(encoded)
+}
+
 // rememberRecentProject records an opened project folder in the user-level
 // recents list the in-page picker reads (GET /api/recents). The server updates
 // that list when a project is switched in place (POST /api/project), but a
@@ -974,8 +1118,9 @@ func (a *appState) buildWindow(spec windowSpec, serverURL string, serverProc *ex
 	//
 	// Wails fills its screen cache inside Run(), so the initial window — built
 	// before Run — is placed against no screens at all and PlaceVisible cannot
-	// judge it. rescueStrandedWindow re-checks the live frame once the app is up;
-	// this log line is what says which of the two decided the outcome.
+	// judge it — neither for reachability nor for size. fitWindowToScreens
+	// re-checks the live frame once the app is up, before the window is
+	// revealed; this log line is what says which of the two decided the outcome.
 	screens := a.app.Screen.GetAll()
 	frame := openingFrame(saved, hasSaved, opts, a.openerFrame(opts.openedBy), screens)
 	place := windowgeom.PlaceVisible(frame, screens)
@@ -1012,12 +1157,30 @@ func (a *appState) buildWindow(spec windowSpec, serverURL string, serverProc *ex
 		// before its first paint doesn't flash black. On macOS applyWindowChrome
 		// repaints the NSWindow too; this covers Windows/Linux where it's a no-op.
 		BackgroundColour: themeColours[bgTheme],
-		// NB: deliberately NOT setting EnableFileDrop. With it off, WebKit's own
-		// HTML5 file drag-and-drop reaches the page — the WKWebView delivers real
-		// File objects to page JS exactly like a browser — and the composer's
-		// dragover/drop listeners handle image drops with no native bridge. (The
-		// Wails runtime would otherwise cancel the drop when the flag is off; the
-		// composer re-enables it — see installFileDropOverride in composer.js.)
+		// File drop is on for a window with no project and off for one with a
+		// project, and syncFileDrop keeps it that way as the window changes state.
+		//
+		// The two drag mechanisms cannot coexist. Native drop is the only way to
+		// learn a dropped folder's PATH — WebKit withholds it from the page for
+		// every file drag, so text/uri-list and text/plain both come back empty —
+		// but on macOS it works by putting a drag destination above the webview,
+		// and a drag has exactly one destination: what that overlay takes, the
+		// page never sees.
+		//
+		// Off is therefore the right default, and what makes it safe to switch on
+		// here is that the two states want opposite things and never overlap. With
+		// no project there is no composer, so nothing in the page wants a file
+		// drag, and a dropped folder is the fastest way into a project. With a
+		// project open, HTML5 drop reaches the page again and the composer's own
+		// dragover/drop listeners handle image and file drops as before. (The
+		// Wails runtime cancels the drop while the flag is off; the composer
+		// re-enables it — see installFileDropGuard in composer.js.)
+		//
+		// What the overlay catches arrives back here through the page: the native
+		// side hands the paths to window._wails.handlePlatformFileDrop, which
+		// no-project-overlay.js implements and reports to the "folder-dropped"
+		// window-control action.
+		EnableFileDrop: spec.project == "",
 		Mac: application.MacWindow{
 			TitleBar: application.MacTitleBar{
 				AppearsTransparent:   true,
@@ -1058,17 +1221,19 @@ func (a *appState) buildWindow(spec windowSpec, serverURL string, serverProc *ex
 	})
 
 	e := &winEntry{
-		id:           id,
-		win:          win,
-		spec:         spec,
-		serverURL:    serverURL,
-		role:         opts.role(),
-		board:        opts.board,
-		openedBy:     opts.openedBy,
-		geom:         windowgeom.NewTracker(windowgeom.Seed(place), a.app.Screen.GetAll),
-		saves:        windowgeom.NewDebouncer(),
-		stopSave:     make(chan struct{}),
-		currentTheme: startupTheme,
+		id:            id,
+		win:           win,
+		spec:          spec,
+		serverURL:     serverURL,
+		role:          opts.role(),
+		board:         opts.board,
+		openedBy:      opts.openedBy,
+		fileDrop:      spec.project == "", // matches EnableFileDrop in the options above
+		sizeDefaulted: frame.Width <= 0 || frame.Height <= 0,
+		geom:          windowgeom.NewTracker(windowgeom.Seed(place), a.app.Screen.GetAll),
+		saves:         windowgeom.NewDebouncer(),
+		stopSave:      make(chan struct{}),
+		currentTheme:  startupTheme,
 	}
 	a.reg(func(st *regState) {
 		st.windows[id] = e

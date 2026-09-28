@@ -93,13 +93,17 @@
     animation-delay: calc(var(--duration) * var(--js-phase, 0) / var(--js-n) * -1);
 }
 
-/* Scoped through .js-club (not a bare `juggler-spinner svg`) on purpose: it
-   raises specificity to (0,1,2) so a container's own icon rule can't reach in
-   and resize the clubs. Notably `.message-action-btn svg { width:1rem }` is
-   (0,1,1) and WOULD otherwise win when the spinner sits inside such a button
-   (e.g. the footer Pause button), blowing every club up to a full 1rem square
-   and piling them in the centre. The svg always lives inside .js-club, so this
-   still matches all three. */
+/* Scoped through .js-club, which the svg always lives inside, so this matches
+   all three clubs.
+
+   Specificity buys no protection here and must not be relied on for any:
+   :where() contributes nothing, so this is (0,1,1) — a tie with a container's
+   own `.some-btn svg { width: 1rem }`, settled by source order, and this sheet
+   is a pattern, linked ahead of every component. A container that reaches into
+   the clubs with a descendant selector therefore wins and sizes each one to the
+   whole spinner. Raising the count here would only swap the failure for a layer
+   inversion (patterns sits below components), which is what lint-css-arch
+   reports. A container styles its own icons with a child combinator instead. */
 :where(juggler-spinner) .js-club svg {
     display: block;
     width: 100%;

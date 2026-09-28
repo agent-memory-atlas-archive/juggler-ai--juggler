@@ -45,7 +45,7 @@ func (a *appState) revealInitialWindowWhenReady(e *winEntry) {
 				continue
 			}
 			application.InvokeAsync(func() {
-				if a.rescueStrandedWindow(e) {
+				if a.fitWindowToScreens(e) {
 					// Persist the corrected frame rather than waiting for the user to
 					// move the window: a session poisoned by an older build otherwise
 					// strands every launch from here on, which is the loop this breaks.
@@ -126,6 +126,87 @@ func (a *appState) rescueStrandedWindow(e *winEntry) bool {
 	// older build is rescued on every launch but never actually repaired.
 	e.geom.Reseed(rescued)
 	return true
+}
+
+// capOversizedWindow shrinks a window that came up larger than the display it
+// is on, and persists nothing itself — it reports whether it changed anything.
+//
+// It is the same problem rescueStrandedWindow exists for, from the other end:
+// the initial window is built before Run, when Wails knows of no screens, so
+// its size is whatever was saved or defaulted and has never been judged against
+// a display. A window wider than the screen hides its own right-hand side,
+// which on a frameless window is where the controls are.
+//
+// Startup only, and deliberately not asked again when the geometry settles: a
+// size the user chose is theirs, including one that hangs off the edge.
+func (a *appState) capOversizedWindow(e *winEntry) bool {
+	if e.win.IsMinimised() || e.win.IsMaximised() || e.win.IsFullscreen() {
+		return false
+	}
+	x, y := e.win.Position()
+	width, height := e.win.Size()
+	if width <= 0 || height <= 0 {
+		return false
+	}
+	live := core.WindowState{X: x, Y: y, Width: width, Height: height, HasPos: true}
+	screens := a.app.Screen.GetAll()
+	capped, changed := windowgeom.CapToWorkArea(live, screens)
+	if !changed {
+		return false
+	}
+	logf("window %s came up larger than its display at %s (screens %s); fitting it to %s",
+		e.id, describeFrame(live), describeScreens(screens), describeFrame(capped))
+	e.win.SetSize(capped.Width, capped.Height)
+	e.win.SetPosition(capped.X, capped.Y)
+	// The window has genuinely been at this frame, so it is the honest one to
+	// keep and to write back — same reasoning as the rescue above.
+	e.geom.Reseed(capped)
+	return true
+}
+
+// sizeDefaultedWindow gives a window that opened at the bare default the size
+// it would have been given had the display been known, and centres it there.
+//
+// The initial window is built before Run, when Wails knows of no screens, so a
+// window with nothing saved gets windowgeom.DefaultWidth/Height — the layout's
+// minimum, which on a large display is a small window in the middle of a lot of
+// space. Every other window is placed after Run and gets the right size from
+// PlaceVisible; this is the one that cannot.
+//
+// Only a window whose size nobody chose: a saved frame, an inherited one, or a
+// size the user has since dragged to are all decisions, and none of them is
+// ours to improve on.
+func (a *appState) sizeDefaultedWindow(e *winEntry) bool {
+	if !e.sizeDefaulted || e.win.IsMinimised() || e.win.IsMaximised() || e.win.IsFullscreen() {
+		return false
+	}
+	width, height := e.win.Size()
+	if width <= 0 || height <= 0 {
+		return false
+	}
+	screens := a.app.Screen.GetAll()
+	frame, ok := windowgeom.DefaultFrame(screens)
+	if !ok || (frame.Width == width && frame.Height == height) {
+		return false
+	}
+	logf("window %s opened at the screenless default %dx%d (screens %s); resizing it to %s",
+		e.id, width, height, describeScreens(screens), describeFrame(frame))
+	e.win.SetSize(frame.Width, frame.Height)
+	e.win.SetPosition(frame.X, frame.Y)
+	e.geom.Reseed(frame)
+	return true
+}
+
+// fitWindowToScreens applies every correction a window can need before it is
+// revealed: the size nobody chose, then a size too big for the display, then a
+// position that cannot be reached on it. In that order, because each one moves
+// what the next is judging. Reports whether any did anything, which is the
+// caller's cue to persist the result.
+func (a *appState) fitWindowToScreens(e *winEntry) bool {
+	sized := a.sizeDefaultedWindow(e)
+	capped := a.capOversizedWindow(e)
+	rescued := a.rescueStrandedWindow(e)
+	return sized || capped || rescued
 }
 
 // rescueIfStranded hops onto the main thread to ask rescueStrandedWindow, for a

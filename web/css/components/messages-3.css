@@ -307,7 +307,13 @@ thread-column-actions {
     cursor: not-allowed;
 }
 
-.message-action-btn svg {
+/* The button's OWN icon, which is always a direct child. A descendant selector
+   here also lands on the three club <svg>s inside a <juggler-spinner> in the
+   button (the footer Pause button holds one), where it ties with the spinner's
+   own club rule on specificity and wins on source order — sizing every club to
+   the full 1rem of the spinner, so they pile up in the centre and spill out of
+   the button. The child combinator cannot reach them. */
+.message-action-btn > svg {
     width: 1rem;
     height: 1rem;
     fill: currentcolor;

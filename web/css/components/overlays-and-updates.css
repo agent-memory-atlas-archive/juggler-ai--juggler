@@ -284,6 +284,29 @@
     white-space: nowrap;
 }
 
+/* The folder-name field in the new-project panel. Matched to the path field
+   above it: the two are read as one answer, and a name in a different typeface
+   from the path it lands in reads as a different kind of thing. */
+.pp-body .pp-name-input {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--bg-primary);
+    border: 0.0625rem solid var(--border-color);
+    border-radius: 0.375rem;
+    color: var(--text-primary);
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 0.8125rem;
+    padding: 0.5rem 0.75rem;
+    outline: none;
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.pp-body .pp-name-input:focus {
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 0.1875rem rgb(88 166 255 / 10%);
+}
+
 path-input {
     display: block;
     position: relative;

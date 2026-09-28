@@ -51,11 +51,15 @@ class ReplySuggestionsRow extends HTMLElement {
    * the press. On a row whose entire purpose is being clicked, that would not
    * be an intermittent annoyance — it would be the feature not working.
    * @param {string[]} suggestions - What to offer; empty hides the row.
+   * @param {string} [ariaLabel] - What the group is, for a screen reader. The
+   *   default describes a reply to something; before anything has been said the
+   *   same row carries starter prompts, which are a reply to nothing.
    */
-  update(suggestions) {
-    const key = suggestions.join('\u0000');
+  update(suggestions, ariaLabel = 'Suggested replies') {
+    const key = `${ariaLabel}\u0000${suggestions.join('\u0000')}`;
     if (key === this._key) return;
     this._key = key;
+    this.setAttribute('aria-label', ariaLabel);
 
     this.textContent = '';
     for (const text of suggestions) {

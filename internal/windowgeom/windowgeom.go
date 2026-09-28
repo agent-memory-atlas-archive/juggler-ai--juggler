@@ -20,11 +20,82 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-// Default frame for a window that has no saved geometry.
+// The smallest window a first launch opens at, and what a caller with no
+// screens to consult gets.
+//
+// The width is the app's own layout read back as a number: the tab sidebar
+// (15rem), a conversation column at the width it starts at (50rem) and the
+// properties panel at the narrowest it is allowed to be (30rem) come to 95rem,
+// which is 1520px at the default root font size. A window narrower than that
+// cannot show a conversation and the panel beside it at once, and the first
+// thing a new user does that opens a panel is met with a sideways scrollbar.
+//
+// A display too small even for this caps it (see CapToWorkArea), and the column
+// widths then follow the window rather than the other way round
+// (startingColumnWidthRem in js/utils/column-resize.js).
 const (
-	DefaultWidth  = 1400
+	DefaultWidth  = 1520
 	DefaultHeight = 900
 )
+
+// What a window with no saved geometry takes of the display it opens on, once
+// there is a display to ask about (DefaultSize).
+//
+// The share keeps a first launch from covering the desktop it was started from;
+// the maxima keep a large display from being answered with a window nobody
+// wants. 1920 is the layout with room to spare — sidebar, a conversation at the
+// width it starts at, and 55rem for the panel, nearly twice its floor — past
+// which the extra width is going to a properties panel that stopped needing it.
+// An ultrawide would otherwise open a window a metre across.
+const (
+	defaultWidthShare  = 70 // percent of the work area
+	defaultHeightShare = 80
+	maxDefaultWidth    = 1920
+	maxDefaultHeight   = 1360
+)
+
+// DefaultSize is the size a window with no saved geometry opens at on these
+// screens: a share of the primary display's work area, never below the layout's
+// own minimum and never past the maxima above. Falls back to that minimum when
+// there are no screens to measure, which is what the initial window gets — it
+// is built before Wails knows of any (see fitWindowToScreens in cmd/juggler-app).
+func DefaultSize(screens []*application.Screen) (int, int) {
+	primary := primaryScreen(screens)
+	if primary == nil {
+		return DefaultWidth, DefaultHeight
+	}
+	area := primary.WorkArea
+	if area.Width <= 0 || area.Height <= 0 {
+		return DefaultWidth, DefaultHeight
+	}
+	width := min(max(area.Width*defaultWidthShare/100, DefaultWidth), maxDefaultWidth)
+	height := min(max(area.Height*defaultHeightShare/100, DefaultHeight), maxDefaultHeight)
+	// The minimum can be larger than the display it is being applied to, which
+	// is the one case where the layout does not get what it asked for.
+	return min(width, area.Width), min(height, area.Height)
+}
+
+// DefaultFrame is DefaultSize centred on the primary work area, for a caller
+// correcting a window that was placed before there were screens to consult.
+// Reported as (frame, false) when there are none now either.
+func DefaultFrame(screens []*application.Screen) (core.WindowState, bool) {
+	primary := primaryScreen(screens)
+	if primary == nil {
+		return core.WindowState{}, false
+	}
+	area := primary.WorkArea
+	if area.Width <= 0 || area.Height <= 0 {
+		return core.WindowState{}, false
+	}
+	width, height := DefaultSize(screens)
+	return core.WindowState{
+		X:      area.X + (area.Width-width)/2,
+		Y:      area.Y + (area.Height-height)/2,
+		Width:  width,
+		Height: height,
+		HasPos: true,
+	}, true
+}
 
 // SaveDebounce collapses a burst of window move/resize events into a single
 // geometry write ~this long after the last change.
@@ -211,6 +282,24 @@ func Place(saved core.WindowState) Placement {
 // display left of the primary are retained.
 func PlaceVisible(saved core.WindowState, screens []*application.Screen) Placement {
 	p := Place(saved)
+
+	// Place answers a window with no saved size with the layout's minimum,
+	// because it has no display to ask. Here there is one.
+	if saved.Width <= 0 || saved.Height <= 0 {
+		p.Width, p.Height = DefaultSize(screens)
+	}
+
+	// Size first, and for every placement rather than only a stranded one: a
+	// frame can be perfectly reachable and still be wider than the display it
+	// opens on — the default is sized for the layout it has to hold, and a saved
+	// frame outlives the monitor it was saved on.
+	if capped, changed := CapToWorkArea(frameOf(p), screens); changed {
+		p.Width, p.Height = capped.Width, capped.Height
+		if p.Position == application.WindowXY {
+			p.X, p.Y = capped.X, capped.Y
+		}
+	}
+
 	if p.Position != application.WindowXY || !Stranded(frameOf(p), screens) {
 		return p
 	}
@@ -259,6 +348,45 @@ func FitOnScreen(frame core.WindowState, screens []*application.Screen) core.Win
 	frame.X = max(min(frame.X, area.X+area.Width-frame.Width), area.X)
 	frame.Y = max(min(frame.Y, area.Y+area.Height-frame.Height), area.Y)
 	return frame
+}
+
+// CapToWorkArea shrinks a frame that is larger than the work area of the screen
+// it lands on, and pulls what is left back inside that area. Reported as
+// (frame, true) only when it changed the size, so a caller can log it and
+// persist the result.
+//
+// Oversize is not the same problem as stranding and is not caught by it: the
+// header of a window half a display too wide is perfectly visible and perfectly
+// draggable, while the right-hand side of the app — where the properties panel
+// and the window controls of a frameless window live — is off the edge of the
+// screen with no way to bring it back short of resizing the window, which is
+// the thing a new user is least likely to think of.
+//
+// A frame with no size is returned untouched; there is nothing to cap.
+func CapToWorkArea(frame core.WindowState, screens []*application.Screen) (core.WindowState, bool) {
+	if frame.Width <= 0 || frame.Height <= 0 {
+		return frame, false
+	}
+	screen := screenUnder(frame, screens)
+	if screen == nil {
+		return frame, false
+	}
+	area := screen.WorkArea
+	if area.Width <= 0 || area.Height <= 0 {
+		return frame, false
+	}
+	width, height := frame.Width, frame.Height
+	if width > area.Width {
+		width = area.Width
+	}
+	if height > area.Height {
+		height = area.Height
+	}
+	if width == frame.Width && height == frame.Height {
+		return frame, false
+	}
+	frame.Width, frame.Height = width, height
+	return FitOnScreen(frame, screens), true
 }
 
 // screenUnder picks the screen a frame mostly lies on, falling back to the

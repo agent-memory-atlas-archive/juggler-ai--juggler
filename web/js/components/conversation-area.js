@@ -25,7 +25,7 @@ import { isToolGroupingEnabled } from '../utils/tool-grouping-pref.js';
 import { createIconBadge, createTypeBadge } from '../utils/icon-message-renderer.js';
 import { badgeForItem } from '../utils/item-badge.js';
 import { SCROLL_TOP_SVG, SCROLL_BOTTOM_SVG } from '../utils/icons.js';
-import { setupColumnResize } from '../utils/column-resize.js';
+import { setupColumnResize, startingColumnWidth } from '../utils/column-resize.js';
 import {
   hasPendingApprovalInTree,
   hasUnsettledToolInTree,
@@ -55,6 +55,7 @@ import { guarded } from '../utils/fault-report.js';
 import { emptyHintStackMarkup } from './empty-hint-stack.js';
 import { isFileDrag, installFileDropGuard, markFileDropAccepted } from '../utils/file-drop.js';
 import { ReplySuggestionsController } from '../services/reply-suggestions-controller.js';
+import { STARTER_PROMPTS } from '../utils/starter-prompts.js';
 
 /**
  * Duration of the insert/relayout FLIP glide — the eased motion that replaces
@@ -798,8 +799,9 @@ class ConversationArea extends HTMLElement {
       <col-resize-handle></col-resize-handle>
     `;
 
-    // Give new users (no persisted width) a sensible fixed 50rem.
-    setupColumnResize(this, 'juggler-column-width', undefined, 50);
+    // A window with no persisted width starts as wide as it can while still
+    // leaving a properties panel room to open beside it (startingColumnWidth).
+    setupColumnResize(this, 'juggler-column-width', undefined, startingColumnWidth());
 
     // A suggestion is DRAFTED, never sent: the words go into the composer with
     // the caret after them, so nothing is ever sent that the user did not read,
@@ -1773,6 +1775,26 @@ class ConversationArea extends HTMLElement {
   }
 
   /**
+   * Whether anything has been said in this column yet.
+   *
+   * A new conversation is not an empty one: it is seeded with standing context
+   * items before the first message, so only CONVERSATIONAL items count. A
+   * thread column is opened from work that has already happened, so it always
+   * has history whatever its items say.
+   * @param {Array<any>} [items] - The column's items, before display grouping.
+   *   Defaults to the message thread's own.
+   * @returns {boolean} True once the column holds a conversational item.
+   * @private
+   */
+  _hasConversationalHistory(items) {
+    if (this._threadYMap) return true;
+    for (const item of items || this._messageThread?.items || []) {
+      if (isConversationalItemType(item?.get?.('type'))) return true;
+    }
+    return false;
+  }
+
+  /**
    * Show or hide the starting hint over the empty background.
    *
    * A new conversation is not an empty one: it is seeded with standing context
@@ -1790,15 +1812,7 @@ class ConversationArea extends HTMLElement {
     const hint = /** @type {HTMLElement|null} */ (this.querySelector('conversation-empty-hint'));
     if (!hint) return;
 
-    let hasHistory = !!this._threadYMap;
-    if (!hasHistory) {
-      for (const item of items || []) {
-        if (isConversationalItemType(item?.get?.('type'))) {
-          hasHistory = true;
-          break;
-        }
-      }
-    }
+    const hasHistory = this._hasConversationalHistory(items);
     hint.classList.toggle('hidden', hasHistory);
     if (hasHistory) {
       // Retired: drop the band measurements too, so a later re-show starts from
@@ -2116,8 +2130,17 @@ class ConversationArea extends HTMLElement {
     // say next to the root. Decided above the group-column branch below, so a
     // lens clears its row rather than keeping whatever was on offer when it
     // opened.
+    // Before anything has been said there is nothing to suggest a reply TO, so
+    // the row carries starter prompts instead. One row, one source at a time:
+    // the two can never stack, and a starter prompt is drafted by the same
+    // handler, so it is read back in the composer rather than sent.
     const canSuggest = !isProcessing && !this._isGroupColumn;
-    this.suggestionsRow?.update(canSuggest ? this._replySuggestions : []);
+    const started = this._hasConversationalHistory();
+    const offered = started ? this._replySuggestions : [...STARTER_PROMPTS];
+    this.suggestionsRow?.update(
+      canSuggest ? offered : [],
+      started ? 'Suggested replies' : 'Things to ask',
+    );
 
     if (this._isGroupColumn) {
       footer.setStatusOnly(true);

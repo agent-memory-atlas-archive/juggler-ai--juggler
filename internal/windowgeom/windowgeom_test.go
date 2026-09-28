@@ -119,6 +119,75 @@ func TestPlaceVisibleClampsRescuedFrameToWorkArea(t *testing.T) {
 	}
 }
 
+// A default sized for the layout it has to hold is still bigger than some
+// displays. The second screen here is 1280x984, so a first launch on it — no
+// saved frame, so a centred default — has to come back at the size of the
+// screen rather than hanging off it.
+func TestPlaceVisibleCapsDefaultToASmallDisplay(t *testing.T) {
+	small := []*application.Screen{
+		{IsPrimary: true, WorkArea: application.Rect{X: 0, Y: 0, Width: 1280, Height: 984}},
+	}
+
+	got := PlaceVisible(core.WindowState{}, small)
+	if got.Width != 1280 || got.Height != 900 {
+		t.Fatalf("PlaceVisible() size = %dx%d, want 1280x900 (width capped, height already fits)", got.Width, got.Height)
+	}
+	if got.Position != application.WindowCentered {
+		t.Fatalf("PlaceVisible() position = %v, want WindowCentered", got.Position)
+	}
+}
+
+// A saved frame outlives the monitor it was saved on. This one is reachable —
+// its header is on screen, so nothing is stranded — and still far too wide, the
+// case that used to pass straight through.
+func TestPlaceVisibleCapsAnOversizedReachableFrame(t *testing.T) {
+	screens := testScreens()
+	saved := core.WindowState{X: 100, Y: 50, Width: 3000, Height: 900, HasPos: true}
+
+	got := PlaceVisible(saved, screens)
+	if got.Width != 1920 {
+		t.Fatalf("PlaceVisible() width = %d, want 1920 (the work area)", got.Width)
+	}
+	if got.Height != 900 {
+		t.Fatalf("PlaceVisible() height = %d, want it left alone at 900", got.Height)
+	}
+	if got.Position != application.WindowXY || got.X != 0 || got.Y != 50 {
+		t.Fatalf("PlaceVisible() = %+v, want the capped frame pulled back inside the work area", got)
+	}
+}
+
+// Capping is about size alone: a frame that fits is not moved, however it is
+// placed. Otherwise every launch would drift a window the user had put where
+// they wanted it.
+func TestCapToWorkAreaLeavesAFrameThatFits(t *testing.T) {
+	screens := testScreens()
+	frame := core.WindowState{X: -1200, Y: 50, Width: 1000, Height: 800, HasPos: true}
+
+	got, changed := CapToWorkArea(frame, screens)
+	if changed {
+		t.Fatalf("CapToWorkArea() reported a change, want none for %+v", frame)
+	}
+	if !got.SameFrame(frame) {
+		t.Fatalf("CapToWorkArea() = %+v, want it untouched", got)
+	}
+}
+
+// The display a window is mostly on is the one it is capped against, not the
+// primary — a window on the smaller second screen is not entitled to the
+// primary's room.
+func TestCapToWorkAreaUsesTheScreenTheFrameIsOn(t *testing.T) {
+	screens := testScreens()
+	frame := core.WindowState{X: -1280, Y: 0, Width: 1600, Height: 900, HasPos: true}
+
+	got, changed := CapToWorkArea(frame, screens)
+	if !changed {
+		t.Fatal("CapToWorkArea() reported no change for a frame wider than its screen")
+	}
+	if got.Width != 1280 || got.X != -1280 {
+		t.Fatalf("CapToWorkArea() = %+v, want 1280 wide at x=-1280 (the second screen)", got)
+	}
+}
+
 // A frame the caller worked out for itself — a window opened over something the
 // user was already looking at — is fitted onto the screen it lands on before it
 // is placed. PlaceVisible only promises a header you can drag; a window with its

@@ -465,3 +465,184 @@ export async function openProjectPicker(currentPath, session) {
     await showAlert(msg, 'Open project');
   }
 }
+
+/**
+ * The folder the panel offers to create in: wherever the last project came
+ * from, since the next one is usually a sibling of the last. Falls back to the
+ * home directory, which the server expands.
+ * @param {string[]} recents - Recent project paths, most-recent first.
+ * @returns {string} A parent folder path, never empty.
+ */
+function defaultParentFolder(recents) {
+  const last = (recents && recents[0]) || '';
+  const cut = Math.max(last.lastIndexOf('/'), last.lastIndexOf('\\'));
+  return cut > 0 ? last.slice(0, cut) : '~';
+}
+
+/**
+ * Join for display only — the two halves travel to the server separately and
+ * are joined there. Follows whichever separator the parent is already written
+ * with, so a Windows path does not grow a forward slash in the preview.
+ * @param {string} parent
+ * @param {string} name
+ * @returns {string} The path the folder would be created at.
+ */
+function previewPath(parent, name) {
+  const sep = parent.includes('\\') && !parent.includes('/') ? '\\' : '/';
+  return parent.replace(/[/\\]+$/, '') + sep + name;
+}
+
+/**
+ * Why a folder name cannot be used, or "" when it can. Mirrors the server's
+ * rules (`HandleNewProject`) so the reason arrives as you type rather than as a
+ * rejected request.
+ * @param {string} name - The trimmed folder name.
+ * @returns {string} A reason, or "" when the name is fine.
+ */
+function folderNameProblem(name) {
+  if (name === '.' || name === '..') return 'That names the parent folder, not a new one';
+  if (/[/\\]/.test(name)) return 'A name cannot contain a slash — it is created inside the folder above';
+  return '';
+}
+
+/**
+ * Open the "new project folder" panel: make a folder and open it as the
+ * project, so starting from nothing does not mean going out to the Finder to
+ * create a folder and coming back.
+ *
+ * Anchored to the header project chip, like the picker it sits beside.
+ * @param {string[]} [recents] - Recent project paths, used only to guess where
+ *   the new folder should go.
+ * @returns {void}
+ */
+export function openNewProjectPanel(recents = []) {
+  // Toggle, like every other button popup. Before the first await so a rapid
+  // second click cannot race a half-built panel.
+  if (closePopupById('new-project')) return;
+
+  const anchor = /** @type {HTMLElement|null} */ (document.getElementById('project-path-chip'));
+  if (!anchor) {
+    console.warn('[project-picker] no anchor (#project-path-chip) found; cannot open the new-project panel');
+    return;
+  }
+
+  const parentValue = defaultParentFolder(recents);
+  const panel = document.createElement('div');
+  panel.className = 'pp-panel pp-panel-popup';
+  panel.innerHTML = `
+    <div class="pp-header">
+      <span class="pp-title">New project folder</span>
+      <span class="pp-subtitle">Creates an empty folder and opens it.</span>
+    </div>
+    <div class="pp-body">
+      <div class="pp-input-row">
+        <path-input dirs-only placeholder="Where to create it…" value="${parentValue.replace(/"/g, '&quot;')}" class="pp-path-input"></path-input>
+        ${hasNativeHost() ? '<button class="pp-btn pp-btn-browse" type="button">Browse…</button>' : ''}
+      </div>
+      <input type="text" class="pp-name-input" placeholder="Folder name" spellcheck="false" autocomplete="off">
+      <div class="pp-status" aria-live="polite"></div>
+    </div>
+    <div class="pp-footer">
+      <button class="pp-btn pp-btn-open" disabled>Create</button>
+    </div>
+  `;
+
+  const pathInputEl = /** @type {import('./path-input.js').default & HTMLElement} */ (
+    panel.querySelector('path-input')
+  );
+  const nameEl = /** @type {HTMLInputElement} */ (panel.querySelector('.pp-name-input'));
+  const statusEl = /** @type {HTMLElement} */ (panel.querySelector('.pp-status'));
+  const createBtn = /** @type {HTMLButtonElement} */ (panel.querySelector('.pp-btn-open'));
+
+  /**
+   * Show the path that would be created, or the reason it would not be. The
+   * preview is the whole validation UI: seeing the absolute path is what tells
+   * someone the folder is going where they think it is.
+   * @returns {void}
+   */
+  function sync() {
+    const parent = pathInputEl.value.trim();
+    const name = nameEl.value.trim();
+    if (!parent || !name) {
+      statusEl.className = 'pp-status pp-status--idle';
+      statusEl.textContent = '';
+      createBtn.disabled = true;
+      return;
+    }
+    const problem = folderNameProblem(name);
+    if (problem) {
+      statusEl.className = 'pp-status pp-status--invalid';
+      statusEl.textContent = problem;
+      createBtn.disabled = true;
+      return;
+    }
+    statusEl.className = 'pp-status pp-status--valid';
+    statusEl.textContent = previewPath(parent, name);
+    createBtn.disabled = false;
+  }
+
+  pathInputEl.addEventListener('path-change', sync);
+  nameEl.addEventListener('input', sync);
+
+  const browseBtn = /** @type {HTMLButtonElement|null} */ (panel.querySelector('.pp-btn-browse'));
+  if (browseBtn) {
+    browseBtn.addEventListener('click', async () => {
+      const chosen = await pickDirectory();
+      if (!chosen) return;
+      pathInputEl.value = chosen;
+      sync();
+    });
+  }
+
+  // `onClose` is how every dismissal the surface owns — Escape, a click outside,
+  // the sheet's scrim and its drag — asks for the panel to go away, so it has to
+  // be the teardown itself. The guard makes it idempotent and lets it stand in
+  // for `release` everywhere, including a close arriving before presentPopup has
+  // returned one.
+  /** @type {(() => void)|null} */
+  let release = null;
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    release?.();
+  };
+
+  release = presentPopup({
+    surface: panel,
+    anchor,
+    id: 'new-project',
+    onClose: close,
+    align: 'left',
+    insideSelectors: ['.pp-panel', '#project-path-chip', '.path-input-menu'],
+  });
+  if (closed) release();
+
+  /** @returns {Promise<void>} */
+  async function create() {
+    if (createBtn.disabled) return;
+    createBtn.disabled = true;
+    try {
+      await apiService.createProject(pathInputEl.value.trim(), nameEl.value.trim());
+      // Server broadcasts `project-changed`; session listener triggers full reload.
+      close();
+    } catch (err) {
+      // An existing folder is reported against the path, never adopted: the
+      // request was to create something, and opening someone else's work
+      // instead is a different decision.
+      createBtn.disabled = false;
+      await showAlert(extractUserMessage(err), 'New project folder');
+    }
+  }
+
+  createBtn.addEventListener('click', () => void create());
+  nameEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !createBtn.disabled) void create();
+  });
+  pathInputEl.addEventListener('keydown', (e) => {
+    // Only when the completion dropdown is closed, which owns Enter while open.
+    if (e.key === 'Enter' && !document.querySelector('.completions-menu')) nameEl.focus();
+  });
+
+  focusWhenShown(nameEl, { delay: 50 });
+}

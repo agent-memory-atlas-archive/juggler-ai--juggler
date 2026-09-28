@@ -34,7 +34,7 @@ import {
 } from '../services/workspace-provisioning.js';
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
 import { createFileActions } from '../utils/properties-panel-helpers.js';
-import { setupColumnResize } from '../utils/column-resize.js';
+import { setupColumnResize, startingColumnWidth } from '../utils/column-resize.js';
 import { showConfirm, showNotice } from './modal-dialog.js';
 import { openWorkspaceFinish } from './workspace-finish-dialog.js';
 
@@ -233,7 +233,7 @@ class WorkspacePanel extends HTMLElement {
     if (this._resizeHandle) return this._resizeHandle;
     this._resizeHandle = document.createElement('col-resize-handle');
     this.appendChild(this._resizeHandle);
-    setupColumnResize(this, 'juggler-column-width', undefined, 50);
+    setupColumnResize(this, 'juggler-column-width', undefined, startingColumnWidth());
     return this._resizeHandle;
   }
 

@@ -76,6 +76,13 @@ func (api *ProjectAPI) HandlePostProject(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	api.switchAndRespond(w, r, abs)
+}
+
+// switchAndRespond performs the live project swap, records the folder in
+// recents, and answers with the absolute path. Shared by opening an existing
+// folder and creating a new one, so both report the same errors the same way.
+func (api *ProjectAPI) switchAndRespond(w http.ResponseWriter, r *http.Request, abs string) {
 	if err := api.switchFn(abs); err != nil {
 		status := http.StatusInternalServerError
 		switch {
@@ -93,6 +100,78 @@ func (api *ProjectAPI) HandlePostProject(w http.ResponseWriter, r *http.Request)
 	}
 
 	WriteJSON(w, r, 0, map[string]any{"projectPath": abs})
+}
+
+// HandleNewProject creates a folder and opens it as the project, so starting
+// from nothing does not mean leaving the app to make a folder by hand.
+// POST /api/project/new  { "parent": "/abs/or/~/path", "name": "myapp" }
+func (api *ProjectAPI) HandleNewProject(w http.ResponseWriter, r *http.Request) {
+	req, ok := DecodeJSON[struct {
+		Parent string `json:"parent"`
+		Name   string `json:"name"`
+	}](w, r)
+	if !ok {
+		return
+	}
+
+	if strings.TrimSpace(req.Parent) == "" {
+		WriteError(w, r, http.StatusBadRequest, "parent is required")
+		return
+	}
+
+	// The name must land directly inside the parent the user named. A separator
+	// would put it somewhere else entirely, and "." or ".." name the parent
+	// itself — none of which is what the field in front of them asked for.
+	name := strings.TrimSpace(req.Name)
+	switch {
+	case name == "":
+		WriteError(w, r, http.StatusBadRequest, "name is required")
+		return
+	case name == "." || name == "..":
+		WriteError(w, r, http.StatusBadRequest, "name must be a folder name, not a path")
+		return
+	case strings.ContainsAny(name, `/\`):
+		WriteError(w, r, http.StatusBadRequest, "name cannot contain a slash — it is created inside the parent folder")
+		return
+	}
+
+	parent, err := filepath.Abs(expandTilde(req.Parent))
+	if err != nil {
+		WriteError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
+	info, err := os.Stat(parent)
+	switch {
+	case os.IsNotExist(err):
+		WriteError(w, r, http.StatusBadRequest, "parent folder not found: "+parent)
+		return
+	case err != nil:
+		WriteError(w, r, http.StatusBadRequest, err.Error())
+		return
+	case !info.IsDir():
+		WriteError(w, r, http.StatusBadRequest, "parent is not a folder: "+parent)
+		return
+	}
+
+	// Mkdir, never MkdirAll: one level, inside a parent already proven to be
+	// there. A mistyped parent has to fail in front of the user rather than
+	// quietly grow a tree of empty folders they will never find again.
+	abs := filepath.Join(parent, name)
+	if err := os.Mkdir(abs, 0o755); err != nil {
+		if os.IsExist(err) {
+			// Not silently adopted: they asked to create something new, and
+			// opening a folder that is already full of someone else's work is a
+			// different decision, taken with the picker in front of them.
+			WriteError(w, r, http.StatusConflict, "there is already something called "+name+" in "+parent)
+			return
+		}
+		WriteError(w, r, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// The folder stays if the swap fails — it was created exactly as asked, and
+	// deleting it would discard a thing the user can see and now expects.
+	api.switchAndRespond(w, r, abs)
 }
 
 // HandleCheckProject validates whether a path exists and is a directory, without switching.

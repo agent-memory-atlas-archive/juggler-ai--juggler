@@ -124,6 +124,37 @@ export async function reportDraftsFlushed(token) {
 }
 
 /**
+ * Hand the native host the paths from a file drop on this window, so it can
+ * resolve which project folder they name and announce it back.
+ *
+ * The paths arrive in the page because that is where the native side delivers
+ * them, but only the host can act on them: it holds the filesystem, the other
+ * windows, and the recents list. Which of the paths (if any) names a project is
+ * the host's decision, not this page's.
+ *
+ * A no-op without a native host: a browser tab is never told a dropped path in
+ * the first place, because WebKit withholds it from the page.
+ * @param {string[]} paths - Filesystem paths from the drop, in drop order.
+ * @returns {Promise<void>}
+ */
+export async function reportFolderDropped(paths) {
+  if (!Array.isArray(paths) || paths.length === 0) return;
+  const query = paths
+    .filter((p) => typeof p === 'string' && p !== '')
+    .map((p) => `path=${encodeURIComponent(p)}`)
+    .join('&');
+  if (!query) return;
+  const url = windowControlURL('folder-dropped', `?${query}`);
+  if (!url) return;
+  try {
+    await fetch(url, { method: 'POST' });
+  } catch {
+    // Nothing to recover: a dropped folder that never arrived leaves the
+    // window exactly as it was, which is a state the user can see and retry.
+  }
+}
+
+/**
  * Whether this page is hosted in a native desktop-app window (window-mode) as
  * opposed to a plain browser tab. Reads the `windowMode` document flag the host
  * bakes onto <html>, which drives the browser-tab vs desktop-window UX split
