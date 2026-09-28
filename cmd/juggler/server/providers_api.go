@@ -913,7 +913,15 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 // handleRefreshProviders queues a provider/model refresh and returns the current
 // cached list immediately. Clients receive the refreshed list via providers-update
 // once model discovery completes.
+//
+// This is the only refresh that discards memoised auto-detection. It is the one a
+// person asked for — the settings re-check button, and first-run setup's "check
+// again" after being sent off to install a CLI — so the machine is read afresh
+// rather than reported as it was at startup. The refreshes that fire on every
+// credential change keep the memo, which is what stops a PATH scan running on
+// each pass.
 func (s *Server) handleRefreshProviders(w http.ResponseWriter, r *http.Request) {
+	provider.InvalidateAutoDetect()
 	s.RefreshProviders()
 	handlers.WriteJSON(w, r, 0, map[string]any{
 		"success":   true,

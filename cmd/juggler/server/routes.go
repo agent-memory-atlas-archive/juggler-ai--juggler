@@ -498,6 +498,8 @@ func (s *Server) setupRoutes() {
 	api.HandleFunc("/providers", s.handleProviders).Methods("GET")
 	api.HandleFunc("/providers/refresh", s.handleRefreshProviders).Methods("POST")
 	api.HandleFunc("/providers/usage", s.handleProviderUsageStats).Methods("GET")
+	// What first-run setup found on this machine (see onboarding_api.go).
+	api.HandleFunc("/onboarding/detect", s.handleOnboardingDetect).Methods("GET")
 	// GitHub Copilot device-flow sign-in (see copilot_signin.go).
 	api.HandleFunc("/providers/copilot/device/start", s.handleCopilotDeviceStart).Methods("POST")
 	api.HandleFunc("/providers/copilot/device/poll", s.handleCopilotDevicePoll).Methods("POST")

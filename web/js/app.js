@@ -18,6 +18,8 @@ import { ModelCycler, ThinkingCycler } from './services/model-cycler.js';
 import wsService from './services/websocket.js';
 import { fetchJson } from './services/http.js';
 import { openSettings } from './services/settings-launcher.js';
+import { startSetupWizard, ONBOARDING_DISMISSED_PREF } from './components/onboarding/setup-wizard.js';
+import { getUserPref, setUserPref } from './services/prefs.js';
 import {
   reloadRegistries,
   initAllRegistries,
@@ -42,7 +44,7 @@ import { isPinboardView } from './utils/view-mode.js';
 import './services/tooltip-manager.js'; // styled hover/focus tooltips (self-installs on import)
 import { MAX_CONVERSATIONS, CONVERSATION_LIMIT_MESSAGE } from './model/session.js';
 import { normalizeAttachments } from './utils/attachments.js';
-import { showAlert, showConfirm, showNotice } from './components/modal-dialog.js';
+import { showAlert, showNotice } from './components/modal-dialog.js';
 import { setFaultSink, reportFault } from './utils/fault-report.js';
 
 /**
@@ -544,9 +546,10 @@ class JugglerApp {
   /**
    * Show the first-run walkthrough whenever no AI provider is configured yet.
    * An unconfigured Juggler can't do anything, so we prompt on every launch until
-   * a provider exists — provider presence IS the completion signal, so there's no
-   * persisted flag. Reuses the existing confirm dialog + Provider Settings panel
-   * rather than a bespoke UI.
+   * a provider exists — provider presence IS the completion signal. The one way
+   * to stop being asked is to say so, which is what ONBOARDING_DISMISSED_PREF
+   * records: someone who has decided not to connect anything yet is not helped
+   * by being asked again every launch.
    * @private
    */
   async _maybeShowOnboarding() {
@@ -564,12 +567,13 @@ class JugglerApp {
       // A provider is configured — Juggler is usable, nothing to prompt.
       if (providersCache.hasAvailableProvider()) return;
 
-      const goToSettings = await showConfirm(
-        'Juggler is a visual AI coding workbench. To get started, connect an AI provider — add an API key, or enable Claude Code if you have its CLI installed and signed in.',
-        'Welcome to Juggler',
-        { confirmText: 'Add a provider', cancelText: 'Later' }
-      );
-      if (goToSettings) openSettings('providers');
+      if (await getUserPref(ONBOARDING_DISMISSED_PREF, false)) return;
+
+      const outcome = await startSetupWizard({ openProviderSettings: openSettings });
+      // Only an explicit "don't ask again" is remembered. Dismissing the window
+      // means "not now", and a machine that still cannot run anything should
+      // still say so next launch.
+      if (outcome === 'dismissForever') await setUserPref(ONBOARDING_DISMISSED_PREF, true);
     } catch {
       /* onboarding is best-effort; never block or crash startup */
     }

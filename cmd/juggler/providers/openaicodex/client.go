@@ -39,7 +39,7 @@ func Register() {
 	openaibase.Register(openaibase.Descriptor{
 		Name:            "openaicodex",
 		DisplayName:     "OpenAI Codex (ChatGPT plan)",
-		Description:     "Uses your local Codex app/CLI ChatGPT login, so Plus/Pro/Business/Edu/Enterprise Codex plans can be selected without an OpenAI Platform API key.",
+		Description:     "Uses your local ChatGPT app or Codex CLI login, so any ChatGPT plan including Free can run Codex here without an OpenAI Platform API key.",
 		AuthType:        provider.AuthTypeOAuthBearer,
 		AuthSource:      "codex_cli",
 		BaseURL:         baseURL,

@@ -95,6 +95,33 @@ func TestCheckAutoDetectMemoisesPerProvider(t *testing.T) {
 	}
 }
 
+// TestInvalidateAutoDetectReprobesEnvironment pins the case the memo cannot see
+// on its own: the definition is unchanged and the machine underneath it is not.
+// A probe that answered "no CLI here" at startup must be retaken after the user
+// goes and installs one, or first-run setup tells them their install failed.
+func TestInvalidateAutoDetectReprobesEnvironment(t *testing.T) {
+	const name = "registry-autodetect-environment"
+	// Stands in for a CLI that is absent when the server starts and present once
+	// the user has installed it.
+	var installed atomic.Bool
+	RegisterProvider(ProviderInfo{Name: name, AutoDetect: installed.Load}, nilInitializer)
+	t.Cleanup(func() { UnregisterProvider(name) })
+
+	if CheckAutoDetect(name) {
+		t.Fatal("CheckAutoDetect = true before the CLI was installed, want false")
+	}
+
+	installed.Store(true)
+	if CheckAutoDetect(name) {
+		t.Fatal("CheckAutoDetect re-probed without being invalidated, so the memo is not doing its job")
+	}
+
+	InvalidateAutoDetect()
+	if !CheckAutoDetect(name) {
+		t.Fatal("CheckAutoDetect = false after InvalidateAutoDetect, so a CLI installed mid-session stays invisible")
+	}
+}
+
 // TestRegistryConcurrentAccess drives every accessor from many goroutines while
 // providers are registered and removed underneath them. It is a race-detector
 // test: it asserts nothing beyond "no torn read, no panic", and only says

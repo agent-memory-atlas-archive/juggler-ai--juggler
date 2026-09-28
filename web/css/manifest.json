@@ -293,7 +293,8 @@
 			"layer": "components",
 			"owns": [
 				"no-conversations-overlay",
-				"no-project-overlay"
+				"no-project-overlay",
+				"onboarding-wizard"
 			]
 		},
 		{

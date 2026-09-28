@@ -35,14 +35,15 @@ func apiBase() string {
 	return core.CopilotAPIBase()
 }
 
-// Register adds the GitHub Copilot provider to the global registry. It uses the
-// editor's Copilot OAuth login (exchanged for a short-lived bearer in core), not
-// a Platform API key.
+// Register adds the GitHub Copilot provider to the global registry. It uses a
+// GitHub Copilot OAuth login (exchanged for a short-lived bearer in core), not a
+// Platform API key. The login can be made here through the device flow, or
+// picked up from one an editor already holds.
 func Register() {
 	openaibase.Register(openaibase.Descriptor{
 		Name:         "copilot",
 		DisplayName:  "GitHub Copilot",
-		Description:  "Uses your GitHub Copilot subscription via your editor's Copilot login. No API key required — sign in to Copilot in VS Code, a JetBrains IDE, or Neovim first.",
+		Description:  "Uses your GitHub Copilot plan, including the free one. No API key required — sign in with GitHub here, or reuse a Copilot login from VS Code, a JetBrains IDE, or Neovim.",
 		AuthType:     provider.AuthTypeOAuthBearer,
 		AuthSource:   "github_copilot",
 		SignInMethod: "github_device",

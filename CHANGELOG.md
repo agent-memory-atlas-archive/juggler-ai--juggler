@@ -5,6 +5,8 @@ of changes; this project follows semantic versioning.
 
 ## [Unreleased]
 
+- A first launch with no provider now walks you through setup, finding what is already installed
+- Setup says when Claude Code needs its separate CLI, and that Codex works on a free ChatGPT account
 - An empty window now offers to create a project folder, so there is no trip to the Finder
 - A folder dropped on an empty window, or on the Dock icon, opens as the project
 - The welcome panel now lists recent projects, says whether a provider is connected, and can create a new folder

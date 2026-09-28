@@ -227,7 +227,7 @@ func exchangeCopilotToken(ctx context.Context, login copilotLogin) (bearer, apiB
 		Defaults:         map[string]string{"Accept": "application/json"},
 		Label:            "GitHub Copilot token exchange",
 	}, &resp); err != nil {
-		return "", "", time.Time{}, fmt.Errorf("copilot token exchange failed (is your GitHub Copilot subscription active?): %w", err)
+		return "", "", time.Time{}, fmt.Errorf("couldn't exchange the Copilot token (is Copilot enabled on your GitHub account?): %w", err)
 	}
 	if resp.Token == "" {
 		return "", "", time.Time{}, fmt.Errorf("copilot token exchange returned no token")

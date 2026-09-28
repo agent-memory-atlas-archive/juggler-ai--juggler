@@ -133,6 +133,21 @@ func invalidateAutoDetect(name string) {
 	autoDetectGen++
 }
 
+// InvalidateAutoDetect drops every memoised detection, so the next ask re-probes
+// the machine rather than answering from what was true at startup. The memo is
+// keyed to a definition, not to the environment around it, so nothing about
+// registering a provider expires an answer that went stale because the user
+// installed a CLI while the server ran — which is the ordinary case during
+// first-run setup, where the whole point is to go and install one.
+func InvalidateAutoDetect() {
+	autoDetectLock <- struct{}{}
+	defer func() { <-autoDetectLock }()
+	clear(autoDetectResults)
+	// Advancing the generation discards the answer of any probe already in flight,
+	// which would otherwise memoise a reading taken before the invalidation.
+	autoDetectGen++
+}
+
 // CheckAutoDetect returns whether a provider is auto-detected as available,
 // probing on the first ask for a name and answering from the memo after that.
 func CheckAutoDetect(providerName string) bool {
