@@ -242,11 +242,45 @@ conversation-tab.hidden {
 
 /* Column container - holds conversation-area columns + properties-panel */
 column-container {
+    --column-fade: 2.5rem;
+
     display: flex;
     flex: 1;
     overflow: auto hidden;
     min-height: 0;
     scroll-behavior: smooth;
+}
+
+/* A column cut off by an edge of the container looks exactly like a column that
+   ends there. Nothing else says otherwise: macOS draws its scrollbar as an
+   overlay that fades out at rest, so a chain wider than the window sits there
+   presenting itself as the whole chain. So the container softens whichever edge
+   it is hiding columns behind — the same affordance, and the same shape of one,
+   as the settings tab strip (.settings-tabs-scroll in components/settings-2.css).
+
+   Keyed to real overflow by _updateColumnOverflow in conversation-tab.js, which
+   toggles .overflow-start / .overflow-end from the scroll position: a chain that
+   fits shows no fade on either edge, and the right fade goes the moment the last
+   column is reached. The mask is declared on those classes rather than on
+   column-container itself so that a chain that fits is not masked at all —
+   masking every conversation in the app to paint nothing is not free. */
+column-container.overflow-start,
+column-container.overflow-end {
+    mask-image: linear-gradient(
+        to right,
+        transparent 0,
+        #000 var(--column-fade-start, 0),
+        #000 calc(100% - var(--column-fade-end, 0)),
+        transparent 100%
+    );
+}
+
+column-container.overflow-start {
+    --column-fade-start: var(--column-fade);
+}
+
+column-container.overflow-end {
+    --column-fade-end: var(--column-fade);
 }
 
 /* Frameless Windows synthesizes the bottom resize border only within a few
@@ -272,9 +306,12 @@ column-container {
 column-container conversation-area,
 column-container workspace-panel {
     flex: 0 0 30rem;
-    min-width: 12.5rem;
     min-height: 0;
     overflow: hidden;
+
+    /* The floor these columns will not shrink past is NOT here — see the
+       min-width rule filed below `conversation-tab conversation-area`, which
+       ties with this selector and would win. */
 }
 
 /* When an explicit width is set via resize handle, respect it — unless the rule
@@ -303,10 +340,29 @@ column-container workspace-panel[style*="width"] {
 
    Exactly two columns, and only with the panel second — a longer chain is read
    by scrolling, which is the whole of what a Miller column is, and squeezing
-   one would narrow every column in it the further the user drilled. */
+   one would narrow every column in it the further the user drilled.
+
+   And only down to a floor. Fitting the pair is worth doing until it costs the
+   conversation more than the panel is worth, and then it is worth nothing at
+   all: a conversation narrowed past reading has not been fitted, it has been
+   taken away to make room for a panel. Below the floor the panel gives instead,
+   spilling off the edge into the scroll a Miller column is read by anyway.
+
+   The floor is deliberately NOT min-width's usual 12.5rem (COL_MIN_WIDTH_REM in
+   js/utils/column-resize.js). That number is the narrowest a user may DRAG a
+   column to — a width they chose, and may have every reason to want. This is the
+   narrowest the layout may take on its own initiative, which is a different
+   question and deserves a different, kinder answer.
+
+   It rides on a custom property for the same reason --column-shrink does: read
+   by the base rule above, at the specificity every component sheet expects to
+   override, rather than declared here where these selectors would out-specify
+   every min-width in the app. It is also what lets the phone rule below put the
+   floor back to 0 with a plain declaration. */
 column-container > conversation-area:nth-child(1):nth-last-child(2):has(+ properties-panel),
 column-container > workspace-panel:nth-child(1):nth-last-child(2):has(+ properties-panel) {
     --column-shrink: 1;
+    --column-floor: 24rem;
 }
 
 /* Selected item in inactive columns — muted/gray highlight (Finder-style) */
@@ -397,6 +453,35 @@ conversation-area {
     position: relative;
 }
 
+/* The floor a column will not shrink past, whoever is asking.
+   
+   12.5rem is COL_MIN_WIDTH_REM in js/utils/column-resize.js: the narrowest a
+   user may DRAG a column to. The arrangement that shrinks a column of its own
+   accord raises it (--column-floor, set where that arrangement is named above),
+   because a width the user chose and a width the layout took are not the same
+   question and do not deserve the same answer.
+
+   Nothing clamps it to the room available. Below it the columns stop fitting and
+   start overspilling, and the container scrolls — which is not the failure case,
+   it is what a scrolling Miller column view is FOR.
+
+   It is filed HERE, after the rule above, and it has to be. `conversation-tab
+   conversation-area` and `column-container conversation-area` have identical
+   specificity, every conversation-area in the app matches both, and so the only
+   thing separating them is which comes last in the sheet. Declared up with the
+   rest of the column sizing it loses to `min-width: 0` above for every column in
+   the app while still winning anywhere there is no tab — which is to say it
+   would work everywhere except in the product, and pass any test mounted without
+   a <conversation-tab> around it. It has done exactly that.
+
+   The child combinator is how a column is addressed everywhere else in this
+   sheet, and it keeps this a different selector from the sizing rule above
+   rather than a second copy of it. */
+column-container > conversation-area,
+column-container > workspace-panel {
+    min-width: var(--column-floor, 12.5rem);
+}
+
 conversation-message-list-wrapper {
     flex: 1;
     min-height: 0;
@@ -446,6 +531,15 @@ conversation-message-list-wrapper {
        columns page cleanly instead of half-showing. */
     column-container {
         scroll-snap-type: x mandatory;
+    }
+
+    /* No edge fade on a phone. A column here is exactly one page wide, so the
+       edges of the container are the edges of a column and there is never a
+       clipped one to point at — the fade would only ever dim the two sides of
+       whatever you are reading. Paging is its own affordance. */
+    column-container.overflow-start,
+    column-container.overflow-end {
+        mask-image: none;
     }
 
     column-container conversation-area,

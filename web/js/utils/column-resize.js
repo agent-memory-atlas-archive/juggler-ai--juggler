@@ -76,7 +76,7 @@ const SIDEBAR_REM = 15;
  * @param {number} [remPx] - Root font size, for converting the budget to rem.
  * @returns {number} Starting width in rem, within [30, 50].
  */
-export function startingColumnWidthRem(windowPx, remPx = _remPx()) {
+export function startingColumnWidthRem(windowPx, remPx = rootFontSizePx()) {
   const room = windowPx / remPx - SIDEBAR_REM - PROPERTIES_MIN_REM;
   return Math.max(START_WIDTH_MIN_REM, Math.min(START_WIDTH_MAX_REM, room));
 }
@@ -93,8 +93,39 @@ export function startingColumnWidth() {
 /**
  * @returns {number} Current root font-size in CSS pixels.
  */
-function _remPx() {
+export function rootFontSizePx() {
   return parseFloat(window.getComputedStyle(document.documentElement).fontSize) || 16;
+}
+
+/**
+ * How far to scroll a column container so the given column is in view: the
+ * smallest movement that does it, plus `peek` so the result never comes to rest
+ * with a column boundary flush against either edge of the container.
+ *
+ * Pure arithmetic on two already-measured rects, so the rule can be read and
+ * tested without a browser to lay anything out in.
+ *
+ * A column already fully in view returns 0 — including one resting flush. The
+ * peek shapes a movement that was happening anyway; it is never a reason to
+ * move a view the user is looking at.
+ * @param {{left: number, right: number}} colRect - The column, in client coordinates.
+ * @param {{left: number, right: number}} containerRect - The container, same coordinates.
+ * @param {number} peek - How much of the column being scrolled past to leave showing, in px.
+ * @returns {number} Pixels to add to the container's scrollLeft; 0 to leave it alone.
+ */
+export function columnScrollDelta(colRect, containerRect, peek) {
+  if (colRect.left < containerRect.left) {
+    return colRect.left - containerRect.left - peek;
+  }
+  if (colRect.right > containerRect.right) {
+    // Never drive the left edge out of view chasing the right one — and never
+    // scroll backwards doing it, which clamping the second arm at 0 prevents
+    // for a column already sitting within a peek of the left edge.
+    return Math.min(
+      colRect.right - containerRect.right + peek,
+      Math.max(0, colRect.left - containerRect.left - peek));
+  }
+  return 0;
 }
 
 /**
@@ -132,7 +163,7 @@ export function applyColumnWidthRem(element, prefName, rem, minWidthRem = COL_MI
  * @param {number} [minWidthRem]
  */
 export function applyColumnWidthPx(element, prefName, px, minWidthRem = COL_MIN_WIDTH_REM) {
-  applyColumnWidthRem(element, prefName, px / _remPx(), minWidthRem);
+  applyColumnWidthRem(element, prefName, px / rootFontSizePx(), minWidthRem);
 }
 
 /**
@@ -173,7 +204,7 @@ export function setupColumnResize(
 
     const startX = pointerEvent.clientX;
     const startWidth = element.getBoundingClientRect().width;
-    const remPx = _remPx();
+    const remPx = rootFontSizePx();
     const minPx = minWidthRem * remPx;
     const maxPx = COL_MAX_WIDTH_REM * remPx;
 

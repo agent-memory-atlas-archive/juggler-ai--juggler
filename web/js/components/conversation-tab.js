@@ -10,6 +10,7 @@
 import { isThreadMessage } from '../../sdk/lib/message.js';
 import { createMessageThread } from '../model/message-thread.js';
 import { ColumnSelectionState } from '../utils/column-selection.js';
+import { rootFontSizePx, columnScrollDelta } from '../utils/column-resize.js';
 import { isToolGroupingEnabled, TOOL_GROUPING_EVENT } from '../utils/tool-grouping-pref.js';
 import { buildDisplayItems, isGroupId, groupMemberIndices } from '../utils/item-grouping.js';
 import { isItemSelectable } from '../services/context-item-utilities.js';
@@ -39,6 +40,19 @@ const PROPS_RENDER_DEBOUNCE_MS = 150;
 const PROPS_RENDER_IDLE_MS = 1000;
 
 /**
+ * How much of the column it moved past a column-level scroll leaves showing, in
+ * rem (so it tracks zoom, as every other column measurement does).
+ *
+ * A scroll that parks a column boundary exactly on the container's edge produces
+ * the one arrangement that cannot be read: a chain that continues looks
+ * identical to a chain that ends. Leaving a sliver behind costs nothing and
+ * removes the ambiguity — it is the reason Finder's columns never sit flush.
+ * Small on purpose: enough to read as the edge of something, too narrow to be
+ * mistaken for a column you were meant to be looking at.
+ */
+const COLUMN_PEEK_REM = 1.5;
+
+/**
  * ConversationTab - Isolated DOM container for a single conversation
  *
  * Supports Miller columns: selecting any item in column N opens column N+1.
@@ -66,6 +80,12 @@ class ConversationTab extends JugglerElement {
 
     /** @type {HTMLElement[]} @private - Array of column elements (conversation-area or properties-panel) */
     this._columns = [];
+
+    /** @type {ResizeObserver|null} @private - Watches the container for the edge-fade classes */
+    this._columnOverflowObserver = null;
+
+    /** @type {boolean} @private - Whether the edge-fade teardown is registered */
+    this._columnOverflowWired = false;
 
     /** @type {ColumnSelectionState} @private */
     this._selection = new ColumnSelectionState();
@@ -969,7 +989,61 @@ class ConversationTab extends JugglerElement {
       });
     }
 
+    this._setupColumnOverflow();
     this._setupKeyboardNavigation();
+  }
+
+  /**
+   * Wire the container's edge fades to its actual scroll state.
+   *
+   * Unlike the keyboard listener this is re-wired on every render, because
+   * render() builds a new column-container each time and the scroll listener
+   * goes with the old one. The ResizeObserver does not, so the previous one is
+   * disconnected here and the teardown registered once.
+   *
+   * The observer only catches the container changing shape — the window
+   * resizing, a panel opening beside it. Columns arriving and leaving do not
+   * change the container's own box at all, so _updateColumnLayout calls this
+   * too, on the one path every rebuild goes through.
+   * @private
+   */
+  _setupColumnOverflow() {
+    const container = this._columnContainer;
+    if (!container) return;
+    container.addEventListener('scroll', () => this._updateColumnOverflow(), { passive: true });
+    this._columnOverflowObserver?.disconnect();
+    if (typeof ResizeObserver !== 'undefined') {
+      this._columnOverflowObserver = new ResizeObserver(() => this._updateColumnOverflow());
+      this._columnOverflowObserver.observe(container);
+      if (!this._columnOverflowWired) {
+        this._columnOverflowWired = true;
+        this.addCleanup(() => {
+          this._columnOverflowObserver?.disconnect();
+          this._columnOverflowObserver = null;
+          this._columnOverflowWired = false;
+        });
+      }
+    }
+    this._updateColumnOverflow();
+  }
+
+  /**
+   * Mark which edges of the column container have columns hidden behind them,
+   * so the CSS can fade exactly those (see column-container in
+   * layout/app-shell.css). Neither class is set when the chain fits, which is
+   * the point: a fade that is always there says nothing.
+   *
+   * The 1px slack absorbs the fractional scrollLeft a fractional column width or
+   * a non-integer device pixel ratio produces, which would otherwise leave the
+   * end fade permanently lit at the end of the chain.
+   * @private
+   */
+  _updateColumnOverflow() {
+    const el = this._columnContainer;
+    if (!el) return;
+    const maxScroll = el.scrollWidth - el.clientWidth;
+    el.classList.toggle('overflow-start', el.scrollLeft > 1);
+    el.classList.toggle('overflow-end', el.scrollLeft < maxScroll - 1);
   }
 
   /**
@@ -1215,7 +1289,10 @@ class ConversationTab extends JugglerElement {
 
   /**
    * Bring the active column fully into view with the smallest horizontal
-   * movement that does it — and nothing at all when it is already fully visible.
+   * movement that does it, plus COLUMN_PEEK_REM so the move never comes to rest
+   * with a column boundary flush against an edge — and nothing at all when the
+   * column is already fully visible, peek or no peek. The peek shapes the moves
+   * this function was making anyway; it is not a reason to make a new one.
    *
    * One rule for every column, whatever the chain holds. Aligning the active
    * column to the left edge shows it, but it also re-anchors the whole row from
@@ -1228,7 +1305,7 @@ class ConversationTab extends JugglerElement {
    * assignment, which clamps to [0, scrollWidth - clientWidth]: it can neither
    * overshoot nor scroll an ancestor, unlike Element.scrollIntoView's
    * ancestor-walking and nearest-edge guesswork. A column too wide to fit lands
-   * on its left edge, where its content starts.
+   * a peek in from its left edge, where its content starts.
    *
    * Called only for explicit column-level navigation: arrow-left/right, clicking
    * a column, opening a thread, following a thread the LLM has started.
@@ -1244,13 +1321,11 @@ class ConversationTab extends JugglerElement {
       if (!col.isConnected || !container.isConnected) return;
       const containerRect = container.getBoundingClientRect();
       const colRect = col.getBoundingClientRect();
-      let delta = 0;
-      if (colRect.left < containerRect.left) {
-        delta = colRect.left - containerRect.left;
-      } else if (colRect.right > containerRect.right) {
-        // Never drive the left edge out of view chasing the right one.
-        delta = Math.min(colRect.right - containerRect.right, colRect.left - containerRect.left);
-      }
+      // A paged viewport holds exactly one column and snaps it: there is no
+      // neighbour to leave showing, and a peek would only fight the snap.
+      const paged = window.matchMedia?.('(width <= 36rem)').matches ?? false;
+      const peek = paged ? 0 : COLUMN_PEEK_REM * rootFontSizePx();
+      const delta = columnScrollDelta(colRect, containerRect, peek);
       if (delta === 0) return;
       container.scrollTo({ left: container.scrollLeft + delta, behavior: 'smooth' });
     });
@@ -2085,6 +2160,10 @@ class ConversationTab extends JugglerElement {
       // the CSS's call (only ones that flex-fill the space beside them).
       col.classList.toggle('column-rightmost', i === lastIndex && this._columns.length > 1);
     }
+
+    // Columns arriving or leaving changes what is hidden past an edge without
+    // changing the container's own box, so nothing else would notice.
+    this._updateColumnOverflow();
   }
 
   /**
