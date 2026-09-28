@@ -1075,7 +1075,7 @@ settings-panel .mcp-form-actions {
 }
 
 /* Notifications tab: the chime-customisation row — two popup menus (Pattern +
-   Sound) above an action row (Volume rotary + Preview/Reset). The rotary's
+   Sound) above an action row (Volume rotary + Preview/Random/Reset). The rotary's
    native range stays accessible/focusable; pointer dragging is handled by JS
    against the visible dial. The control column stacks, so top-align it. */
 settings-panel .chime-controls-field {
@@ -1107,7 +1107,8 @@ settings-panel .chime-select-label {
     font-size: 0.75rem;
 }
 
-/* Volume rotary + Preview/Reset buttons share the action row. */
+/* Volume rotary + Preview/Random/Reset buttons share the action row; it wraps,
+   so a narrow panel drops the buttons below the dial rather than squeezing them. */
 settings-panel .chime-actions {
     display: flex;
     flex-flow: row wrap;

@@ -239,6 +239,7 @@ import { runTests as runRunRecordsTests } from '../unit-tests/run-records-test.j
 import { runTests as runExpandFoldGuardTests } from '../unit-tests/expand-fold-guard-test.js';
 import { runTests as runToolGroupingTests } from '../unit-tests/tool-grouping-test.js';
 import { runTests as runChimeRecoveryTests } from '../unit-tests/chime-recovery-test.js';
+import { runTests as runChimeVoiceTests } from '../unit-tests/chime-voice-test.js';
 import { runTests as runTabBehaviourPrefsTests } from '../unit-tests/tab-behaviour-prefs-test.js';
 import { runTests as runKeyShortcutManagerTests } from '../unit-tests/key-shortcut-manager-test.js';
 import { runTests as runEscapeBehaviourTests } from '../unit-tests/escape-behaviour-test.js';
@@ -641,6 +642,7 @@ const UNIT_TEST_SUITES = [
   // tool-grouping localStorage preference, which every lane's renderer reads.
   { name: 'unit:tool-grouping', run: runToolGroupingTests, needsExclusiveRun: true },
   { name: 'unit:chime-recovery', run: runChimeRecoveryTests },
+  { name: 'unit:chime-voice', run: runChimeVoiceTests },
   // Exclusive for the shared origin: this suite writes the attention prefs, and
   // one of them (tabReorder) gates every lane's Session.bumpConversation.
   { name: 'unit:tab-behaviour-prefs', run: runTabBehaviourPrefsTests, needsExclusiveRun: true },

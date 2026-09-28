@@ -62,7 +62,7 @@
  */
 
 import { hasUnattendedPendingApprovalInTree } from '../model/thread-navigation.js';
-import { playChime, unlockAudio, rearmAudio, CHIME_DEFAULTS, chimePatterns, chimeSounds } from './chime-synth.js';
+import { playChime, unlockAudio, rearmAudio, CHIME_DEFAULTS, chimePatterns, chimeSounds, randomChimeVoice } from './chime-synth.js';
 import { isDesktopWindow, postWindowControl } from '../../sdk/lib/window-control.js';
 import { cachedUserPref, setUserPref, reconcilePref } from '../services/prefs.js';
 
@@ -90,19 +90,25 @@ export const ATTENTION_PREFS_EVENT = 'juggler:attention-prefs-changed';
  */
 
 /**
- * Defaults: notify on (unobtrusive, no permission), sound off (enabling it is
- * the gesture that unlocks audio), and both tab behaviours on — the highlight
- * and the recency bump are how a tab has always announced itself, so opting out
- * is the deliberate choice.
+ * Defaults: everything on. A conversation that needs the user is the one thing
+ * this app has to be able to tell them, and a chime nobody hears until they go
+ * looking for the setting is the same as no chime at all — so the audible alert
+ * is opt-out, like the highlight and the recency bump, not opt-in. Sound being on
+ * before any click has happened is what {@link armAudioOnFirstGesture} exists for:
+ * autoplay policy still wants a gesture, and nothing here would otherwise supply
+ * one. `notify` is on for the same reason and costs nothing (no permission prompt
+ * — a Dock bounce or a mark on the tab title).
+ *
+ * Exported frozen so a test can assert the shipped defaults directly.
  * @type {AttentionPrefs}
  */
-const DEFAULT_PREFS = {
-  sound: false,
+export const DEFAULT_ATTENTION_PREFS = Object.freeze({
+  sound: true,
   notify: true,
   tabHighlight: true,
   tabReorder: true,
   chime: { ...CHIME_DEFAULTS },
-};
+});
 
 /**
  * Read the current prefs, merged over defaults so a partial or older stored blob
@@ -121,11 +127,11 @@ export function getAttentionPrefs() {
   const validSounds = new Set(chimeSounds().map((s) => s.id));
   const vol = storedChime.volume;
   const chime = /** @type {ChimeParams} */ ({
-    pattern: validPatterns.has(/** @type {any} */ (storedChime.pattern)) ? storedChime.pattern : DEFAULT_PREFS.chime.pattern,
-    sound: validSounds.has(/** @type {any} */ (storedChime.sound)) ? storedChime.sound : DEFAULT_PREFS.chime.sound,
-    volume: typeof vol === 'number' ? Math.max(0, Math.min(1, vol)) : DEFAULT_PREFS.chime.volume,
+    pattern: validPatterns.has(/** @type {any} */ (storedChime.pattern)) ? storedChime.pattern : DEFAULT_ATTENTION_PREFS.chime.pattern,
+    sound: validSounds.has(/** @type {any} */ (storedChime.sound)) ? storedChime.sound : DEFAULT_ATTENTION_PREFS.chime.sound,
+    volume: typeof vol === 'number' ? Math.max(0, Math.min(1, vol)) : DEFAULT_ATTENTION_PREFS.chime.volume,
   });
-  return { ...DEFAULT_PREFS, ...stored, chime };
+  return { ...DEFAULT_ATTENTION_PREFS, ...stored, chime };
 }
 
 /**
@@ -253,6 +259,18 @@ export function setChimeParam(name, value) {
  */
 export function resetChimeParams() {
   savePrefs({ chime: { ...CHIME_DEFAULTS } });
+}
+
+/**
+ * Roll a random chime voice — a new pattern and sound, neither of them the one
+ * already selected (see {@link module:utils/chime-synth.randomChimeVoice}).
+ * Volume is left where the user set it. Saved in one write, so the resulting
+ * {@link ATTENTION_PREFS_EVENT} re-syncs both settings menus at once.
+ * @returns {void}
+ */
+export function randomizeChimeParams() {
+  const chime = getAttentionPrefs().chime;
+  savePrefs({ chime: { ...chime, ...randomChimeVoice(chime) } });
 }
 
 /**
@@ -549,6 +567,42 @@ function rearmAudioOnReturn() {
   if (isSoundEnabled()) rearmAudio();
 }
 
+/** Whether the first-gesture audio arming is wired. Once per document. */
+let audioArmWired = false;
+
+/**
+ * Unlock audio on the first user gesture of the session, when sound is on.
+ *
+ * Autoplay policy keeps the AudioContext `suspended` until a gesture resumes it,
+ * and the media-element sink that survives the macOS sleep/wake output wedge can
+ * only be started from inside one (see
+ * {@link module:utils/chime-synth.unlockAudio}). The two places that supply that
+ * gesture — the header bell and the settings Preview — are both *changes* to the
+ * setting, so with sound on by default a session that simply leaves it on would
+ * never pass through either: its first chime would arrive at a parked context and
+ * fall back on the resume-and-retry path, which is the degraded one and reports a
+ * give-up to the app log when the OS wins. Any click or keypress is a good enough
+ * gesture, so the first one is taken.
+ *
+ * One-shot: the listeners come off at the first gesture whatever the setting says,
+ * because turning sound on later unlocks through {@link setSoundEnabled} instead.
+ * With sound off nothing is created — an AudioContext for someone who wants
+ * silence is a render thread spinning for the life of the process.
+ * @private
+ */
+function armAudioOnFirstGesture() {
+  if (audioArmWired) return;
+  audioArmWired = true;
+  const arm = () => {
+    window.removeEventListener('pointerdown', arm, true);
+    window.removeEventListener('keydown', arm, true);
+    if (isSoundEnabled()) unlockAudio();
+  };
+  // Capture phase, so a handler that stops propagation can't swallow the gesture.
+  window.addEventListener('pointerdown', arm, true);
+  window.addEventListener('keydown', arm, true);
+}
+
 /**
  * Wire the attention manager to a session. Idempotent per session: subscribes to
  * the two feeds the alert edges live on, and to focus/visibility so viewing a
@@ -571,6 +625,9 @@ export function initAttention(sess) {
   // Ask for this person's alert preferences; the bell and the settings rows
   // re-read on the event when the answer differs from what was cached.
   void reconcilePref('user', PREFS_KEY, ATTENTION_PREFS_EVENT);
+  // Sound is on by default, so the unlock gesture has to come from ordinary use
+  // rather than from the user finding the switch.
+  armAudioOnFirstGesture();
   prevAwaiting.clear();
   prevTurns.clear();
   clearAllFlash();

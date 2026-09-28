@@ -17,6 +17,7 @@ import {
   setTabReorderEnabled,
   setChimeParam,
   resetChimeParams,
+  randomizeChimeParams,
   previewChime,
   ATTENTION_PREFS_EVENT,
 } from '../../utils/attention-manager.js';
@@ -209,7 +210,7 @@ export class NotificationsTab {
 
   /**
    * Build the chime customisation section: a Pattern popup and a Sound popup (the
-   * curated menus), a Volume rotary, and the preview/reset buttons.
+   * curated menus), a Volume rotary, and the preview/random/reset buttons.
    * @param {import('../../utils/chime-synth.js').ChimeParams} chime
    * @returns {{row: HTMLElement, controls: {pattern: {setValue: (v: string) => void}, sound: {setValue: (v: string) => void}, volume: {setValue: (v: number) => void}}}} The row and named controls.
    * @private
@@ -259,6 +260,18 @@ export class NotificationsTab {
     previewBtn.textContent = 'Preview';
     previewBtn.addEventListener('click', () => previewChime());
     actions.appendChild(previewBtn);
+
+    // Roll a new pattern + sound. Both menus re-sync from the prefs event, same
+    // as Reset; previewing is the point of the button, so there's no silent roll.
+    const randomBtn = document.createElement('button');
+    randomBtn.type = 'button';
+    randomBtn.className = 'settings-btn small chime-random-btn';
+    randomBtn.textContent = 'Random';
+    randomBtn.addEventListener('click', () => {
+      randomizeChimeParams();
+      previewChime();
+    });
+    actions.appendChild(randomBtn);
 
     // Reset every control to the default voice. The resulting prefs event
     // re-syncs the menus/rotary via _onAttentionPrefs, then we preview it.

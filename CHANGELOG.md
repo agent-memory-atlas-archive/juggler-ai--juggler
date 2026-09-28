@@ -6,6 +6,7 @@ of changes; this project follows semantic versioning.
 ## [Unreleased]
 
 - The skill button now stays put with no skills installed, its menu pointing at the Skills page
+- Notification sounds are now on by default, with six new chime voices, six new patterns and a Random button
 
 ## [0.7.1] - 2026-09-27
 

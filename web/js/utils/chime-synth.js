@@ -14,9 +14,10 @@ import { fetchJson } from '../services/http.js';
  * static tone.
  *
  * The public surface is three concrete choices the settings UI exposes directly:
- *  - `pattern` — the *tune*: an id into a curated {@link PATTERNS} table of ~30
- *    named musical motifs (lone notes at various pitches → 2/3/4-note figures),
- *    each carrying its own base pitch and timing. Shown as a popup menu.
+ *  - `pattern` — the *tune*: an id into a curated {@link PATTERNS} table of ~36
+ *    named musical motifs (lone notes at various pitches → 2/3/4-note figures,
+ *    consonant through deliberately atonal), each carrying its own base pitch and
+ *    timing. Shown as a popup menu.
  *  - `sound` — the *timbre*: an id into a {@link SOUNDS} table of distinct voices
  *    (bell, music box, marimba, glass, pluck, …). Shown as a popup menu.
  *  - `volume` — 0..1 output level. Shown as a rotary.
@@ -73,10 +74,17 @@ const A4_HZ = 440;
  */
 
 /**
- * Curated pattern table — the "tune" popup. ~30 named motifs, grouped lone →
+ * Curated pattern table — the "tune" popup. ~36 named motifs, grouped lone →
  * 2-note → 3-note → 4-note, each a self-contained musical figure with its own
  * pitch (`root`) and timing (`spacing`/`decay`). Names are deliberately playful.
  * Kept inside a tasteful register (roots + offsets ~ -12..+19 semitones from A4).
+ *
+ * Each group ends with its dissonant entries — tritones, whole-tone and
+ * diminished runs, chromatic clusters, wide atonal leaps. Those intervals are
+ * chosen, not mistyped: a chime is a two-second event that has to stay
+ * distinguishable from every other sound a desktop makes, and an unresolved shape
+ * does that better than another major triad. They are still bound by the same
+ * register and level limits as the rest, so none of them is harsh — just odd.
  * @type {ReadonlyArray<ChimePattern>}
  */
 const PATTERNS = Object.freeze(/** @type {ReadonlyArray<ChimePattern>} */ ([
@@ -96,6 +104,8 @@ const PATTERNS = Object.freeze(/** @type {ReadonlyArray<ChimePattern>} */ ([
   { id: 'nudge',       name: 'Nudge',       root: 0,   spacing: 0.09, decay: 0.2,  notes: [{ s: 0 }, { s: 2 }] },
   { id: 'knock-knock', name: 'Knock Knock', root: 4,   spacing: 0.1,  decay: 0.18, notes: [{ s: 0 }, { s: 0 }] },
   { id: 'sixth-sense', name: 'Sixth Sense', root: 0,   spacing: 0.12, decay: 0.34, notes: [{ s: 0 }, { s: 9 }] },
+  // The interval that refuses to settle — halfway up the octave, belonging to no key.
+  { id: 'tritone',     name: 'Tritone',     root: 0,   spacing: 0.12, decay: 0.32, notes: [{ s: 0 }, { s: 6 }] },
   // ── Three notes ──────────────────────────────────────────────────────
   { id: 'major-triad', name: 'Major Triad', root: 0,   spacing: 0.1,  decay: 0.3,  notes: [{ s: 0 }, { s: 4 }, { s: 7 }] },
   { id: 'minor-mood',  name: 'Minor Mood',  root: 0,   spacing: 0.1,  decay: 0.32, notes: [{ s: 0 }, { s: 3 }, { s: 7 }] },
@@ -106,6 +116,8 @@ const PATTERNS = Object.freeze(/** @type {ReadonlyArray<ChimePattern>} */ ([
   { id: 'question',    name: 'Question?',   root: 0,   spacing: 0.11, decay: 0.3,  notes: [{ s: 0 }, { s: 4 }, { s: 5 }] },
   { id: 'pentatonic',  name: 'Pentatonic',  root: 0,   spacing: 0.1,  decay: 0.3,  notes: [{ s: 0 }, { s: 2 }, { s: 7 }] },
   { id: 'suspended',   name: 'Suspended',   root: 0,   spacing: 0.11, decay: 0.32, notes: [{ s: 0 }, { s: 5 }, { s: 7 }] },
+  // Three notes inside a tritone, played fast enough to land as one sour stab.
+  { id: 'cluster',     name: 'Cluster',     root: 0,   spacing: 0.07, decay: 0.3,  notes: [{ s: 0 }, { s: 1 }, { s: 6 }] },
   // ── Four notes ───────────────────────────────────────────────────────
   { id: 'sparkle',     name: 'Sparkle',     root: 0,   spacing: 0.09, decay: 0.26, notes: [{ s: 0 }, { s: 4 }, { s: 7 }, { s: 12 }] },
   { id: 'skip',        name: 'Skip',        root: 0,   spacing: 0.09, decay: 0.26, notes: [{ s: 0 }, { s: 2 }, { s: 4 }, { s: 7 }] },
@@ -114,6 +126,14 @@ const PATTERNS = Object.freeze(/** @type {ReadonlyArray<ChimePattern>} */ ([
   { id: 'wander',      name: 'Wander',      root: 0,   spacing: 0.1,  decay: 0.28, notes: [{ s: 0 }, { s: 5 }, { s: 3 }, { s: 7 }] },
   { id: 'pixie-dust',  name: 'Pixie Dust',  root: 7,   spacing: 0.08, decay: 0.22, notes: [{ s: 0 }, { s: 5 }, { s: 7 }, { s: 12 }] },
   { id: 'staircase',   name: 'Staircase',   root: -5,  spacing: 0.1,  decay: 0.3,  notes: [{ s: 0 }, { s: 4 }, { s: 7 }, { s: 11 }] },
+  // Even whole steps — the scale with no leading note, so it never arrives anywhere.
+  { id: 'whole-tone',  name: 'Whole Tone',  root: 0,   spacing: 0.09, decay: 0.26, notes: [{ s: 0 }, { s: 2 }, { s: 4 }, { s: 6 }] },
+  // Stacked minor thirds: symmetrical, rootless, and faintly ominous.
+  { id: 'diminished',  name: 'Diminished',  root: 0,   spacing: 0.09, decay: 0.28, notes: [{ s: 0 }, { s: 3 }, { s: 6 }, { s: 9 }] },
+  // Wide alternating leaps that cross over themselves instead of climbing.
+  { id: 'zigzag',      name: 'Zigzag',      root: 0,   spacing: 0.09, decay: 0.26, notes: [{ s: 0 }, { s: 11 }, { s: 2 }, { s: 9 }] },
+  // Chromatic slide apart, the last note dropping an octave on an audible glide.
+  { id: 'unravel',     name: 'Unravel',     root: 12,  spacing: 0.095, decay: 0.26, notes: [{ s: 0 }, { s: -1 }, { s: -4 }, { s: -12, g: 4 }] },
 ]));
 
 /**
@@ -157,6 +177,21 @@ const SOUNDS = Object.freeze(/** @type {ReadonlyArray<ChimeSound>} */ ([
   { id: 'retro',     name: 'Retro',      wave: 'square',   partials: [[1, 1]], attack: 0.004, decayScale: 0.6, gain: 0.42, lowpassRatio: 8 },
   // Crystalline — pure fundamental plus high harmonics, bright and delicate.
   { id: 'crystal',   name: 'Crystal',    wave: 'sine',     partials: [[1, 0.9], [4, 0.4], [9, 0.15]], decayScale: 0.9, gain: 0.8 },
+  // Tuned bronze — partials at no whole-number ratio, so the note shimmers
+  // against itself the way a struck gong does.
+  { id: 'gamelan',   name: 'Gamelan',    wave: 'sine',     partials: [[1, 1], [3.46, 0.45], [6.7, 0.2]], decayScale: 1.1, gain: 0.72 },
+  // Irrational partials (√2, and two further primes' worth of nothing) beating
+  // hard against the fundamental: the least musical voice here, on purpose.
+  { id: 'clang',     name: 'Clang',      wave: 'triangle', partials: [[1, 1], [1.41, 0.6], [2.3, 0.35], [3.72, 0.18]], decayScale: 0.9, gain: 0.55 },
+  // Odd harmonics only, eased in rather than struck — a stopped pipe or a reed.
+  { id: 'hollow',    name: 'Hollow',     wave: 'sine',     partials: [[1, 1], [3, 0.3], [5, 0.18], [7, 0.08]], attack: 0.018, decayScale: 1.25, gain: 0.77 },
+  // Two partials a whisker apart, beating slowly against each other — the chorus
+  // of a detuned pair, moving for the whole length of the note.
+  { id: 'shimmer',   name: 'Shimmer',    wave: 'sine',     partials: [[1, 1], [1.006, 0.9], [2.01, 0.3]], decayScale: 1.3, gain: 0.55 },
+  // An octave below the written note carries the weight; the rest is overtone.
+  { id: 'undertone', name: 'Undertone',  wave: 'sine',     partials: [[0.5, 0.8], [1, 1], [2, 0.2]], decayScale: 1.1, gain: 0.6 },
+  // Filtered sawtooth with a slow, deliberate swell — drawn rather than struck.
+  { id: 'bowed',     name: 'Bowed',      wave: 'sawtooth', partials: [[1, 1]], attack: 0.05, decayScale: 1.4, gain: 0.4, lowpassRatio: 4 },
 ]));
 
 /** @type {ReadonlyMap<string, ChimePattern>} */
@@ -199,6 +234,46 @@ export function chimePatterns() {
  */
 export function chimeSounds() {
   return SOUNDS.map((s) => ({ id: s.id, name: s.name }));
+}
+
+/**
+ * Pick one entry's id from a table at random, excluding `exclude` when that still
+ * leaves something to choose from (a table of one, or an `exclude` that isn't in
+ * the table, falls back to the whole table rather than returning nothing).
+ * @param {ReadonlyArray<{id: string}>} table - The table to choose from.
+ * @param {string|undefined} exclude - Id to leave out of the draw.
+ * @param {() => number} rand - RNG returning 0..1.
+ * @returns {string} The chosen id.
+ * @private
+ */
+function pickOther(table, exclude, rand) {
+  const remaining = table.filter((e) => e.id !== exclude);
+  const pool = remaining.length ? remaining : table;
+  // Math.random() is [0, 1), but an injected RNG returning exactly 1 must not
+  // index past the end and hand back undefined.
+  const i = Math.min(pool.length - 1, Math.floor(Math.max(0, rand()) * pool.length));
+  // In range by construction — the clamp above, over a pool that is non-empty
+  // because both callers pass a populated table constant.
+  return /** @type {{id: string}} */ (pool[i]).id;
+}
+
+/**
+ * Roll a chime voice at random — the settings Random button. Both the pattern and
+ * the sound are guaranteed to differ from the ones passed in, so a click always
+ * lands on something audibly new instead of silently re-rolling what is already
+ * selected. Volume is not touched: that is the user's comfort level, not part of
+ * the chime's character.
+ *
+ * Pure (the RNG is injected), so "never what you already had" is testable.
+ * @param {Partial<ChimeParams>} [current] - The voice in use, excluded from the roll.
+ * @param {() => number} [rand] - RNG returning 0..1.
+ * @returns {{pattern: string, sound: string}} The rolled pattern and sound ids.
+ */
+export function randomChimeVoice(current = {}, rand = Math.random) {
+  return {
+    pattern: pickOther(PATTERNS, current.pattern, rand),
+    sound: pickOther(SOUNDS, current.sound, rand),
+  };
 }
 
 /** Default per-note bloom: start this many semitones sharp and settle to pitch. */
