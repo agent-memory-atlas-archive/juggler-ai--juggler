@@ -17,7 +17,9 @@
  *      token (no doubled space), dedupes, and leaves an unknown `$foo` as prose;
  *   4. the composer wires the skill provider into its menu and the picker
  *      button inserts `$` and opens it;
- *   5. sending `$tdd do it` loads the `tdd` skill via executeContextItem and
+ *   5. with no skills the button stays clickable and the picker opens on an
+ *      empty state plus the "Manage skills…" route to the Skills page;
+ *   6. sending `$tdd do it` loads the `tdd` skill via executeContextItem and
  *      dispatches the trigger-stripped prose "do it"; a bare `$tdd` is a preload
  *      (skill loaded, box cleared, no turn dispatched).
  * @module unit-tests/skill-completion-test
@@ -56,18 +58,19 @@ function mountComposer() {
 }
 
 /**
- * A stub message thread that advertises FIXTURE skills and records every
+ * A stub message thread that advertises the given skills and records every
  * context-item activation, so the send path can be exercised with no backend.
+ * @param {import('../../js/services/skills.js').SkillMeta[]} [skills] - Snapshot the stub advertises (FIXTURE by default)
  * @returns {{thread: any, calls: Array<{type: string, params: any, pending: boolean}>}} The stub and its call log.
  */
-function makeStubThread() {
+function makeStubThread(skills = FIXTURE) {
   /** @type {Array<{type: string, params: any, pending: boolean}>} */
   const calls = [];
   const skillItem = {
     // Own `constructor` property shadows Object's, so the id lookup in
     // getThreadSkillSnapshot resolves to this manifest.
     constructor: { MANIFEST: { id: 'skill' } },
-    getSnapshotSkills: async () => FIXTURE,
+    getSnapshotSkills: async () => skills,
   };
   const thread = {
     conversationId: 'c-test',
@@ -230,7 +233,53 @@ export async function runTests() {
     }
   }
 
-  // ── Test 5: send path FORWARDS chosen skills and strips the triggers ──────
+  // ── Test 5: with no skills the picker still opens, on an empty state ──────
+  // A dead button teaches nothing: with an empty snapshot the button stays
+  // clickable and the picker says there are none and offers the way to add some.
+  {
+    const { box, container } = mountComposer();
+    try {
+      const { thread } = makeStubThread([]);
+      box._messageThread = thread;
+
+      const button = /** @type {HTMLButtonElement} */ (box.querySelector('#skill-button'));
+      assert(!!button, 'composer-box must render a skill picker button');
+      assert(!button.hidden, 'the skill button must stay clickable when there are no skills');
+
+      await box._openSkillMenu();
+      assert(!!box._skillMenu, 'clicking with no skills must still open the picker');
+      const rows = box._skillMenu.querySelectorAll('li.skill-mention-item');
+      assert(rows.length === 0, `an empty snapshot must list no skills, got ${rows.length}`);
+      const hint = box._skillMenu.querySelector('li.menu-item-hint');
+      assert(!!hint, 'the empty picker must say that there are no skills');
+      assert(!!box._skillMenu.querySelector('li.skill-menu-manage'),
+        'the empty picker must offer a "Manage skills…" row into the Skills page');
+
+      // Layout: with nothing to describe, the popup must not keep the wide fixed
+      // width its description column needs, and the hint must fill the row rather
+      // than being wedged into the narrow name column of the two-column grid.
+      const menuWidth = box._skillMenu.getBoundingClientRect().width;
+      assert(menuWidth > 0 && menuWidth < 320,
+        `an empty picker must shrink to its message, got ${Math.round(menuWidth)}px wide`);
+      const rowWidth = hint.getBoundingClientRect().width;
+      const hintText = hint.querySelector('.menu-hint-text');
+      const textWidth = hintText.getBoundingClientRect().width;
+      const rowStyle = getComputedStyle(hint);
+      const pad = parseFloat(rowStyle.paddingLeft) + parseFloat(rowStyle.paddingRight);
+      assert(textWidth >= rowWidth - pad - 1,
+        `the hint must span the row, not one grid column (row ${Math.round(rowWidth)}px, text ${Math.round(textWidth)}px, display ${rowStyle.display}, padding ${Math.round(pad)}px, align ${getComputedStyle(hintText).textAlign})`);
+      passed++;
+    } catch (e) {
+      failed++;
+      errors.push('composer-box-skill-picker-empty: ' + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      box._closeSkillMenu();
+      box._completions?.close();
+      container.remove();
+    }
+  }
+
+  // ── Test 6: send path FORWARDS chosen skills and strips the triggers ──────
   // Skills are loaded worker-side (a real `skill` tool-action), so the composer
   // only forwards the names in the send-message detail — it must NOT run a
   // context-item load itself (which would merely re-seed the standing list).

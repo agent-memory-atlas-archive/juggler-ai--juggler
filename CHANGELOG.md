@@ -5,6 +5,8 @@ of changes; this project follows semantic versioning.
 
 ## [Unreleased]
 
+- The skill button now stays put with no skills installed, its menu pointing at the Skills page
+
 ## [0.7.1] - 2026-09-27
 
 - Fixes for conversation dragging order when workspaces are there, and for conversation flashing colours

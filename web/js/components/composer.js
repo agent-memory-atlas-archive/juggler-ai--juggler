@@ -427,7 +427,7 @@ class Composer extends HTMLElement {
     // commands (`/`) button. It opens a menu of this thread's skills and inserts
     // NOTHING on open or dismissal — only SELECTING a skill splices `$name ` into
     // the composer, which then flows through the identical send-time activation
-    // path. Hidden when this thread has no skills (visibility refreshed on bind).
+    // path.
     const skillButton = this.querySelector('#skill-button');
     if (skillButton) {
       skillButton.addEventListener('click', (e) => {
@@ -435,7 +435,6 @@ class Composer extends HTMLElement {
         this._toggleSkillMenu();
       });
     }
-    this._refreshSkillButtonVisibility();
 
     // Image attachments: file-picker button, paste, and drag-and-drop. All
     // three funnel image files through _handleFiles, which validates size /
@@ -1681,8 +1680,6 @@ class Composer extends HTMLElement {
 
     this._syncStrategySelector();
 
-    this._refreshSkillButtonVisibility();
-
     const modelSelector = this.querySelector('model-selector');
     if (modelSelector && 'setMessageThread' in modelSelector) {
       /** @type {any} */ (modelSelector).setMessageThread(messageThread);
@@ -2158,7 +2155,8 @@ class Composer extends HTMLElement {
    * skills, mirroring the commands (`/`) button. Nothing is inserted on open or
    * on dismissal — only SELECTING a skill splices `$name ` into the composer (via
    * {@link _insertSkillMention}), so the choice flows through the same send-time
-   * activation path as typing `$name`.
+   * activation path as typing `$name`. It opens on an empty snapshot too: with no
+   * skills the menu is the only place that says so and points at the Skills page.
    * @private
    * @returns {Promise<void>}
    */
@@ -2166,9 +2164,8 @@ class Composer extends HTMLElement {
     const button = this.querySelector('#skill-button');
     if (!button) return;
     const skills = await getThreadSkillSnapshot(this._messageThread);
-    if (!Array.isArray(skills) || skills.length === 0) return;
 
-    this._createSkillMenu(skills);
+    this._createSkillMenu(Array.isArray(skills) ? skills : []);
     if (!this._skillMenu) return;
 
     this._skillMenu.classList.add('show');
@@ -2207,11 +2204,12 @@ class Composer extends HTMLElement {
   /**
    * Build the skill picker menu: one row per available skill (mono `$name` +
    * one-line description), each inserting `$name ` on click, followed by a
-   * "Manage skills…" footer that opens the Skills settings page. Carries the
-   * `commands-menu` class so it borrows the slash-command popup's justified
-   * two-column grid and colour scheme verbatim, and shares the `$` completion
-   * menu's row builder ({@link renderSkillMenuItem}). presentPopup (in
-   * _openSkillMenu) owns body-append and teardown.
+   * "Manage skills…" footer that opens the Skills settings page. With no skills
+   * the rows are replaced by a hint saying so, since the footer is then the whole
+   * point of the menu. Carries the `commands-menu` class so it borrows the
+   * slash-command popup's justified two-column grid and colour scheme verbatim,
+   * and shares the `$` completion menu's row builder ({@link renderSkillMenuItem}).
+   * presentPopup (in _openSkillMenu) owns body-append and teardown.
    * @param {import('../services/skills.js').SkillMeta[]} skills - This thread's snapshot skills
    * @private
    */
@@ -2235,12 +2233,28 @@ class Composer extends HTMLElement {
       menu.appendChild(item);
     }
 
+    // Nothing to list: one line where the rows would have been, and the footer
+    // below it reads as the remedy — so no divider, which would only rule off a
+    // sentence from its own answer. `skill-menu-empty` drops the wide fixed width
+    // the description column needs, leaving the popup the size of its message.
+    if (sorted.length === 0) {
+      menu.classList.add('skill-menu-empty');
+      const hint = document.createElement('li');
+      hint.className = 'menu-item menu-item-hint';
+      const text = document.createElement('span');
+      text.className = 'menu-hint-text';
+      text.textContent = 'No skills installed.';
+      hint.appendChild(text);
+      menu.appendChild(hint);
+    } else {
+      const divider = document.createElement('li');
+      divider.className = 'menu-divider';
+      menu.appendChild(divider);
+    }
+
     // Footer: a jump to the Skills settings page (install / edit / remove
     // skills). The picker is a deliberate, mouse-first surface — unlike the `$`
     // autocomplete — so it carries the management affordance the typed path omits.
-    const divider = document.createElement('li');
-    divider.className = 'menu-divider';
-    menu.appendChild(divider);
 
     const manage = document.createElement('li');
     manage.className = 'menu-item skill-menu-manage';
@@ -2279,27 +2293,6 @@ class Composer extends HTMLElement {
     textarea.selectionStart = textarea.selectionEnd = newPos;
     this.autoResize(textarea);
     textarea.focus();
-  }
-
-  /**
-   * Show the skill picker button only when this thread advertises at least one
-   * skill (mirrors the standing Skills item's own gating). Resolves the frozen
-   * snapshot asynchronously and toggles the button's `hidden` attribute; a guard
-   * against a null button keeps this safe before/after render.
-   * @private
-   * @returns {Promise<void>}
-   */
-  async _refreshSkillButtonVisibility() {
-    const button = /** @type {HTMLButtonElement|null} */ (this.querySelector('#skill-button'));
-    if (!button) return;
-    let hasSkills = false;
-    try {
-      const skills = await getThreadSkillSnapshot(this._messageThread);
-      hasSkills = Array.isArray(skills) && skills.length > 0;
-    } catch {
-      hasSkills = false;
-    }
-    button.hidden = !hasSkills;
   }
 
   /**
@@ -2512,8 +2505,9 @@ class Composer extends HTMLElement {
 
     // Skills section (collapsed) — this thread's frozen snapshot, standing in for
     // the inline `$` picker on touch. Selecting one splices `$name ` into the
-    // composer via the same path as the picker/autocomplete; the section is
-    // omitted entirely when the thread advertises no skills.
+    // composer via the same path as the picker/autocomplete, and the section is
+    // led by the same "Manage skills…" row the picker ends with, so it is there
+    // to be found when the thread advertises no skills at all.
     /** @type {import('../services/skills.js').SkillMeta[]} */
     let skills = [];
     try {
@@ -2541,7 +2535,18 @@ class Composer extends HTMLElement {
         });
         return row;
       });
-    addSection('Skills', skillRows);
+    const manageSkillsRow = document.createElement('li');
+    manageSkillsRow.className = 'menu-item actions-sheet-item skill-menu-manage';
+    manageSkillsRow.dataset.action = 'manage-skills';
+    const manageSkillsLabel = document.createElement('span');
+    manageSkillsLabel.className = 'actions-sheet-label';
+    manageSkillsLabel.textContent = 'Manage skills…';
+    manageSkillsRow.appendChild(manageSkillsLabel);
+    manageSkillsRow.addEventListener('click', () => {
+      this._closeActionsSheet();
+      openSettings('skills');
+    });
+    addSection('Skills', [manageSkillsRow, ...skillRows]);
 
     // New Thread closes the sheet — it starts a fresh sub-thread rather than
     // acting on this composer, so it sits apart at the bottom below the command
@@ -2609,7 +2614,7 @@ class Composer extends HTMLElement {
                                 aria-label="Commands menu">
                             <span class="icon-slash"></span>
                         </button>
-                        <button class="skill-button input-ctrl-btn" id="skill-button" hidden
+                        <button class="skill-button input-ctrl-btn" id="skill-button"
                                 title="Load a skill ($)"
                                 aria-label="Load a skill">
                             <span class="skill-glyph" aria-hidden="true">$</span>

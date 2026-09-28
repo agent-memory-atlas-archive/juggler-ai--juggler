@@ -182,6 +182,25 @@
     color: var(--text-secondary);
 }
 
+/* With no skills there is no description column to size, so the popup shrinks to
+   its two lines: the message and the action under it. */
+.skill-menu.skill-menu-empty {
+    width: max-content;
+}
+
+/* The hint is a sentence, not a name/description pair: span both columns and set
+   it flush left on the rows' own gutter, so it lines up with "Manage skills…"
+   below rather than floating centred over the name column. */
+.skill-menu .menu-item-hint {
+    display: block;
+    grid-column: 1 / -1;
+    padding: 0.45rem 0.75rem;
+}
+
+.skill-menu .menu-hint-text {
+    text-align: left;
+}
+
 /* ===================================================================
    Project Picker Modal
    ================================================================== */
