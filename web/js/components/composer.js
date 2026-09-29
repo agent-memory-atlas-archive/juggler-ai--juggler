@@ -255,8 +255,9 @@ class Composer extends HTMLElement {
     this._actionsSheetOpen = false;
     /** @type {(() => void)|null} @private - presentPopup release for the open actions sheet. */
     this._actionsSheetCleanup = null;
-    /** @type {HTMLElement|null} @private - strategy-selector while relocated into the open sheet. */
-    this._relocatedStrategy = null;
+
+    /** @type {(() => void)|null} @private - Detaches the pointer-type listener that re-homes the config controls. */
+    this._pointerQueryCleanup = null;
 
     // Initialized in setupListeners after render
     /** @type {CompletionMenu|null} @private */
@@ -287,12 +288,18 @@ class Composer extends HTMLElement {
 
   connectedCallback() {
     this.render();
+    this._watchPointerType();
     if (document.activeElement === document.body && !document.querySelector('conversation-bar.tab-list-focused')) {
       this.querySelector('textarea')?.focus();
     }
   }
 
   disconnectedCallback() {
+    // Stop following the pointer type; the listener outlives the element.
+    if (this._pointerQueryCleanup) {
+      this._pointerQueryCleanup();
+      this._pointerQueryCleanup = null;
+    }
     // Drop a queued height measurement: it would resolve against a detached box
     // and measure nothing.
     this._cancelScheduledAutoResize();
@@ -900,10 +907,11 @@ class Composer extends HTMLElement {
   /**
    * Whether this composer should behave as a touch composer: Enter inserts a
    * newline (the onscreen keyboard's return key) and the touch-only Send / "⋮"
-   * affordances are active. Gated on a coarse pointer with no hover — the same
-   * signal the CSS `@media (hover: none) and (pointer: coarse)` block keys off,
-   * so the key behaviour and the layout never disagree. A narrow DESKTOP window
-   * (fine pointer) keeps Enter-to-send.
+   * affordances are active. Gated on a coarse pointer with no hover. This is
+   * the single source of that decision — _applyConfigPlacement turns it into
+   * the `touch-composer` class the CSS layout selects on — so the key
+   * behaviour and the layout cannot disagree. A narrow DESKTOP window (fine
+   * pointer) keeps Enter-to-send.
    *
    * Tests can't drive `matchMedia`, so an explicit `_touchComposerOverride`
    * (true/false) wins when set — that is the only way the harness flips this.
@@ -915,6 +923,77 @@ class Composer extends HTMLElement {
       return this._touchComposerOverride;
     }
     return window.matchMedia?.('(hover: none) and (pointer: coarse)').matches === true;
+  }
+
+  /**
+   * Follow the pointer type for as long as this box is mounted, so a device
+   * that changes it mid-session — an iPad gaining a trackpad, a convertible
+   * folding back into a tablet — re-homes the config controls to match. The CSS
+   * half of the touch layout re-evaluates on its own; without this the DOM half
+   * would not, and the two would disagree.
+   * @private
+   */
+  _watchPointerType() {
+    if (this._pointerQueryCleanup || typeof window.matchMedia !== 'function') return;
+    const query = window.matchMedia('(hover: none) and (pointer: coarse)');
+    const onChange = () => this._applyConfigPlacement();
+    query.addEventListener('change', onChange);
+    this._pointerQueryCleanup = () => query.removeEventListener('change', onChange);
+  }
+
+  /**
+   * Home the three config controls — strategy, permissions, model — in the row
+   * or in the strip, depending on the layout in force.
+   *
+   * On a pointer big enough to hit a pill they sit inline in the controls row.
+   * On touch they move to `<composer-config-strip>` above the textarea, where
+   * they render as a line of plain text rather than three pills. The controls
+   * row is then just the "⋮" and Send, which is what makes it stable: text
+   * ellipsises in the space it is given, whereas three pills on a phone-width
+   * row cannot all fit and push the controls after them off the edge.
+   *
+   * The elements MOVE rather than being rebuilt — each one owns live state its
+   * host set on it (the strategy selector's messageThread, the model chip's
+   * config), and all of that is plain properties, untouched by the disconnect
+   * and reconnect a re-parent causes.
+   * @private
+   */
+  _applyConfigPlacement() {
+    const strip = this.querySelector('composer-config-strip');
+    const inlineRow = this.querySelector('input-controls-config');
+    if (!strip || !inlineRow) return;
+
+    const touch = this._isTouchComposer();
+    // The class the whole touch layout hangs off. Written here, from the same
+    // predicate that decides where the controls go and whether Enter sends, so
+    // that CSS and DOM can never describe different layouts.
+    this.classList.toggle('touch-composer', touch);
+    const home = touch ? strip : inlineRow;
+
+    // Appending in order both moves and re-sorts, so one pass settles the
+    // layout whichever home the controls were in before. The orders differ:
+    // inline, strategy leads so its fixed left edge anchors the permission
+    // button beside it. In the strip the model leads, because the model is what
+    // a glance at the strip is usually looking for, and — load-bearing —
+    // permissions comes LAST because it is the one of the three that is never
+    // hidden. The strip's separators hang off `:not(:last-child)`, so a final
+    // slot that can vanish (the strategy selector hides itself on a delegated
+    // thread) would strand a dangling "·" at the end of the line.
+    const order = touch
+      ? ['model-selector', 'strategy-selector', 'permission-controls']
+      : ['strategy-selector', 'permission-controls', 'model-selector'];
+    for (const selector of order) {
+      const control = this.querySelector(selector);
+      if (control) home.appendChild(control);
+    }
+
+    // Empty the home they left. Moving the elements out leaves the whitespace
+    // between them behind as text nodes, and a box holding "\n        " is not
+    // `:empty` — it still lays out, and the flex gap beside it still counts, so
+    // the rule that collapses the unused home would silently not apply and the
+    // row would be a few pixels wider than it has any content for.
+    const vacated = touch ? inlineRow : strip;
+    vacated.textContent = '';
   }
 
   /**
@@ -2416,26 +2495,9 @@ class Composer extends HTMLElement {
     };
 
     // Essentials lead the sheet so they never scroll off behind a long command
-    // list. Relocate the live strategy selector in first — on touch it is hidden
-    // from the inline row to keep that row single-line. Re-parenting preserves
-    // its messageThread (a plain property, untouched by disconnect/reconnect),
-    // so it keeps working; _closeActionsSheet returns it to its inline home
-    // before the sheet surface is torn down. It renders its own button +
-    // dropdown, so it works at any viewport width (unlike clicking a hidden
-    // inline anchor, which would mis-anchor on wide tablets).
-    const strategySel = /** @type {HTMLElement|null} */ (this.querySelector('strategy-selector'));
-    if (strategySel) {
-      const row = document.createElement('li');
-      row.className = 'menu-item actions-sheet-item actions-sheet-strategy';
-      const label = document.createElement('span');
-      label.className = 'actions-sheet-label';
-      label.textContent = 'Strategy';
-      row.appendChild(label);
-      row.appendChild(strategySel); // moves the element out of the inline row
-      menu.appendChild(row);
-      this._relocatedStrategy = strategySel;
-    }
-
+    // list. Strategy is not among them: on touch it is on show in the config
+    // strip, which is both a display of the current strategy and the control
+    // that changes it.
     addRow('Attach image', IMAGE_ATTACH_SVG, () => {
       /** @type {HTMLInputElement|null} */
       (this.querySelector('.attach-file-input'))?.click();
@@ -2574,15 +2636,6 @@ class Composer extends HTMLElement {
   _closeActionsSheet() {
     if (!this._actionsSheetOpen) return;
     this._actionsSheetOpen = false;
-    // Return the relocated strategy selector to its inline home (the FIRST slot
-    // in the config cluster — strategy leads so its fixed left edge anchors the
-    // permission button, which can hide/show as the strategy changes) BEFORE the
-    // sheet surface is removed — otherwise it would be torn down along with it.
-    if (this._relocatedStrategy) {
-      const config = this.querySelector('input-controls-config');
-      if (config) config.insertBefore(this._relocatedStrategy, config.firstElementChild || null);
-      this._relocatedStrategy = null;
-    }
     if (this._actionsSheetCleanup) {
       this._actionsSheetCleanup();
       this._actionsSheetCleanup = null;
@@ -2593,6 +2646,7 @@ class Composer extends HTMLElement {
   render() {
     this.innerHTML = `
             <composer-box-wrapper>
+                <composer-config-strip></composer-config-strip>
                 <composer-box-attachments></composer-box-attachments>
                 <textarea
                     aria-label="Message input"
@@ -2655,6 +2709,10 @@ class Composer extends HTMLElement {
                 </input-controls>
             </composer-box-wrapper>
         `;
+    // Home the config controls synchronously, in the same frame as the DOM they
+    // belong to: deferring it would paint the row once with three pills in it
+    // before moving them to the strip.
+    this._applyConfigPlacement();
     // Seed the placeholder synchronously: the textarea exists as of the write
     // above, and the box is on screen before the deferred setup below runs.
     this._updatePlaceholder();

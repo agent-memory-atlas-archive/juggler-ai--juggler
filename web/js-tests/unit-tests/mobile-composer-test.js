@@ -18,6 +18,9 @@
  *      one row that presents a popup of its own, which closes the sheet
  *      mid-presentation and re-parents the selector — a cascade that must still
  *      leave a menu that closes and releases its open-popup token.
+ *   5. At the narrowest column the layout allows, every control still lies
+ *      inside the composer bubble. A control laid out past the content edge is
+ *      a control the user cannot reach.
  *
  * The touch decision normally reads `matchMedia('(hover: none) and
  * (pointer: coarse)')`, which the headless harness cannot drive. So the test
@@ -28,6 +31,7 @@
 
 import { initializeRegistries, assert } from '../utilities/test-helpers.js';
 import { closeAllPopups, isAnyPopupOpen, __resetPopupManagerForTests } from '../../js/utils/popup-manager.js';
+import { COL_MIN_WIDTH_REM } from '../../js/utils/column-resize.js';
 import '../../js/components/composer.js';
 
 /**
@@ -167,12 +171,10 @@ export async function runTests() {
       const threadRow = rows.find((r) => r.textContent?.includes('New Thread') && !r.hasAttribute('data-command'));
       assert(!!threadRow, 'actions sheet must have a "New Thread" action row');
 
-      // The strategy selector is RELOCATED into the sheet (hidden inline on
-      // touch), not left in the control row — so it lives in the sheet now,
-      // not under the box.
-      const strategySel = sheet.querySelector('strategy-selector');
-      assert(!!strategySel,
-        'strategy-selector must be relocated into the open actions sheet');
+      // Strategy is NOT in the sheet: on touch it is on show in the config
+      // strip, which is also the control that changes it.
+      assert(!sheet.querySelector('strategy-selector'),
+        'strategy-selector must stay in the config strip, not move into the sheet');
 
       // Clicking New Thread dispatches the /thread command (via _createThread).
       /** @type {HTMLElement} */ (threadRow).click();
@@ -181,11 +183,6 @@ export async function runTests() {
         `New Thread row must dispatch the /thread command, got ${JSON.stringify(sent.map((s) => s.message))}`);
       assert(!document.querySelector('.actions-sheet'),
         'picking an actions-sheet row must close the sheet');
-
-      // Closing the sheet returns the strategy selector to the inline row.
-      const config = box.querySelector('input-controls-config');
-      assert(!!config && config.contains(strategySel),
-        'strategy-selector must return to the inline control row when the sheet closes');
       passed++;
     } catch (e) {
       failed++;
@@ -222,13 +219,13 @@ export async function runTests() {
     }
   }
 
-  // ── Test 5: the strategy menu opened FROM the sheet is still dismissible ──
-  // Opening it announces a new popup from inside presentPopup, so the sheet
-  // closes mid-presentation and hands the selector back to the inline row — a
-  // re-parent, which disconnects the element. Nothing in that cascade may strand
-  // the menu: it must end up on <body>, dismissible, and must release its
-  // open-popup token (a leaked one makes Escape stop dismissing popups AND stop
-  // reaching the running turn for the rest of the session).
+  // ── Test 5: the strategy menu opened from the config strip is dismissible ─
+  // The strip's segments are the same selectors the inline row holds, re-homed
+  // by _applyConfigPlacement — a re-parent, which disconnects and reconnects
+  // the element. That must leave a selector whose menu still presents on
+  // <body>, still closes, and still releases its open-popup token (a leaked one
+  // makes Escape stop dismissing popups AND stop reaching the running turn for
+  // the rest of the session).
   {
     __resetPopupManagerForTests();
     // presentInlineMenu and presentPopup both defer a frame, and the hidden
@@ -240,27 +237,24 @@ export async function runTests() {
     window.cancelAnimationFrame = (/** @type {number} */ id) => clearTimeout(id);
     const { box, container } = mountTouchComposer();
     try {
-      await /** @type {any} */ (box)._openActionsSheet();
       const selector = /** @type {any} */ (
-        document.querySelector('.actions-sheet strategy-selector'));
-      assert(!!selector, 'the strategy selector must be relocated into the sheet');
+        box.querySelector('composer-config-strip strategy-selector'));
+      assert(!!selector, 'the strategy selector must be homed in the config strip');
 
       const strategyBtn = /** @type {HTMLElement|null} */ (
         selector.querySelector('.strategy-selector-button'));
-      assert(!!strategyBtn, 'the relocated selector must render its button');
+      assert(!!strategyBtn, 'the re-homed selector must render its button');
       /** @type {HTMLElement} */ (strategyBtn).click();
       await tick(); // presentInlineMenu's frame: relocate + present
       await tick(); // presentPopup's own frame: place it
 
-      assert(!document.querySelector('.actions-sheet'),
-        'opening the strategy menu must close the actions sheet (one popup at a time)');
       const menu = document.querySelector('.strategy-dropdown[data-strategy-selector="true"]');
       assert(!!menu, 'the strategy menu must be presented on <body>, not torn down by the re-parent');
       assert(menu.parentElement === document.body,
         'the presented menu must be hosted on <body>');
-      const config = box.querySelector('input-controls-config');
-      assert(!!config && config.contains(selector),
-        'the selector itself must be back in the inline control row');
+      const strip = box.querySelector('composer-config-strip');
+      assert(!!strip && strip.contains(selector),
+        'the selector itself must stay in the config strip');
 
       // Escape / Back / scrim-tap all route through closeAllPopups.
       closeAllPopups();
@@ -283,6 +277,120 @@ export async function runTests() {
       window.requestAnimationFrame = realRaf;
       window.cancelAnimationFrame = realCancelRaf;
       __resetPopupManagerForTests();
+    }
+  }
+
+  // ── Test 6: a narrow column never pushes a control outside the bubble ─────
+  // The narrow-column fold (composer.css, `@container (max-width: 46rem)`) is
+  // there so the config controls wrap and ellipsise rather than spill: its own
+  // comment states that never losing a control beats width stability. A column
+  // can be dragged down to COL_MIN_WIDTH_REM, so the invariant has to hold
+  // there — a control laid out past the bubble's content edge cannot be tapped.
+  {
+    const container = document.createElement('div');
+    container.style.cssText =
+      `position:absolute;left:0;top:0;width:${COL_MIN_WIDTH_REM}rem;`;
+    const box = document.createElement('composer-box');
+    container.appendChild(box);
+    document.body.appendChild(container);
+    try {
+      // A long model id is the realistic worst case. `.model-name` is capped
+      // and ellipsised precisely so it cannot widen the row, so substituting
+      // one here changes what is displayed, never what fits.
+      const modelName = /** @type {HTMLElement|null} */ (box.querySelector('.model-name'));
+      assert(!!modelName, 'the composer must render a .model-name');
+      /** @type {HTMLElement} */ (modelName).textContent =
+        'anthropic/claude-sonnet-4-5-20260930-thinking-preview';
+
+      const wrapper = /** @type {HTMLElement|null} */ (box.querySelector('composer-box-wrapper'));
+      assert(!!wrapper, 'the composer must render a composer-box-wrapper');
+      const padRight = parseFloat(getComputedStyle(/** @type {HTMLElement} */ (wrapper)).paddingRight) || 0;
+      const contentRight = /** @type {HTMLElement} */ (wrapper).getBoundingClientRect().right - padRight;
+
+      const spilled = Array.from(box.querySelectorAll('input-controls button'))
+        .map((el) => ({ el, rect: el.getBoundingClientRect() }))
+        .filter(({ rect }) => rect.width > 0) // skip the ones CSS has hidden
+        .filter(({ rect }) => rect.right > contentRight + 0.5)
+        .map(({ el, rect }) =>
+          `${el.id || el.className.split(' ')[0]} (right edge ${Math.round(rect.right)}, bubble ends ${Math.round(contentRight)})`);
+
+      assert(spilled.length === 0,
+        `at a ${COL_MIN_WIDTH_REM}rem column every control must lie inside the bubble, but these spilled past it: ${spilled.join('; ')}`);
+      passed++;
+    } catch (e) {
+      failed++;
+      errors.push('narrow-column-keeps-controls-reachable: ' + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      container.remove();
+    }
+  }
+
+  // ── Test 7: the touch composer's config strip, at phone width ────────────
+  // The three config controls move out of the controls row and into the strip,
+  // leaving a row that cannot overflow. The strip itself must hold one line
+  // whatever the model is called: the model segment ellipsises, the other two
+  // stay whole, and nothing leaves the bubble.
+  {
+    const container = document.createElement('div');
+    container.style.cssText = 'position:absolute;left:0;top:0;width:390px;';
+    const box = document.createElement('composer-box');
+    /** @type {any} */ (box)._touchComposerOverride = true;
+    container.appendChild(box);
+    document.body.appendChild(container);
+    try {
+      const strip = /** @type {HTMLElement|null} */ (box.querySelector('composer-config-strip'));
+      assert(!!strip, 'the touch composer must render a composer-config-strip');
+
+      // All three controls are homed in the strip, in reading order, and the
+      // controls row keeps none of them.
+      const homed = Array.from(/** @type {HTMLElement} */ (strip).children).map((el) => el.tagName.toLowerCase());
+      assert(homed.join(' ') === 'model-selector strategy-selector permission-controls',
+        `the strip must hold model, strategy and permissions in that order, got: ${homed.join(' ') || '(empty)'}`);
+      assert(!box.querySelector('input-controls-config > *'),
+        'the touch controls row must keep none of the config controls');
+
+      // Permissions is last, so no separator is left dangling at the line end.
+      const trailing = getComputedStyle(
+        /** @type {HTMLElement} */ (strip.lastElementChild), '::after').content;
+      assert(trailing === 'none' || trailing === 'normal' || trailing === '""',
+        `the last strip segment must not render a trailing separator, got ${trailing}`);
+
+      // A long model id must ellipsise inside the strip, not widen it.
+      const modelName = /** @type {HTMLElement|null} */ (box.querySelector('.model-name'));
+      assert(!!modelName, 'the strip must render a .model-name');
+      /** @type {HTMLElement} */ (modelName).textContent =
+        'anthropic/claude-sonnet-4-5-20260930-thinking-preview';
+
+      const wrapper = /** @type {HTMLElement} */ (box.querySelector('composer-box-wrapper'));
+      const padRight = parseFloat(getComputedStyle(wrapper).paddingRight) || 0;
+      const contentRight = wrapper.getBoundingClientRect().right - padRight;
+
+      const stripRect = /** @type {HTMLElement} */ (strip).getBoundingClientRect();
+      assert(stripRect.right <= contentRight + 0.5,
+        `the config strip must stay inside the bubble (right edge ${Math.round(stripRect.right)}, bubble ends ${Math.round(contentRight)})`);
+
+      // One line: the strip is no taller than the tallest single segment.
+      const tallest = Math.max(...Array.from(/** @type {HTMLElement} */ (strip).children)
+        .map((el) => el.getBoundingClientRect().height));
+      assert(stripRect.height <= tallest + 1,
+        `the config strip must stay on one line (height ${Math.round(stripRect.height)} vs segment ${Math.round(tallest)})`);
+
+      // And the row that is left over holds the two controls that matter, both
+      // inside the bubble.
+      for (const id of ['more-actions-button', 'send-button']) {
+        const btn = /** @type {HTMLElement|null} */ (box.querySelector('#' + id));
+        assert(!!btn, `the touch controls row must render #${id}`);
+        const rect = /** @type {HTMLElement} */ (btn).getBoundingClientRect();
+        assert(rect.width > 0, `#${id} must be visible on the touch controls row`);
+        assert(rect.right <= contentRight + 0.5,
+          `#${id} must lie inside the bubble (right edge ${Math.round(rect.right)}, bubble ends ${Math.round(contentRight)})`);
+      }
+      passed++;
+    } catch (e) {
+      failed++;
+      errors.push('touch-config-strip: ' + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      container.remove();
     }
   }
 

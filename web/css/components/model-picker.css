@@ -10,6 +10,25 @@ model-selector {
     align-items: center;
 }
 
+/* `<model-chip>` sits between `model-selector` and the button it renders, and
+   an unstyled custom element is `display: inline` — blockified into a rigid
+   flex item that keeps `min-width: auto`, a floor of the button's min-content
+   (the model name is `white-space: nowrap`, so that is the whole name up to its
+   max-width cap). That floor is what a narrow layout has to get through: the
+   wrapper outside it and the button inside it are both told to shrink, but with
+   an unshrinkable box between them the button is never a flex item and so can
+   never be taken below its min-content. The pill then holds its full width and
+   pushes everything after it in the controls row off the column's edge.
+
+   Being a flex box itself makes the button a flex item that honours its own
+   `min-width: 0`, so the name ellipsises; `inline-flex` keeps the inline-level
+   outer display the settings rows place it with. */
+model-chip {
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+}
+
 /* The model button's chrome everywhere except the composer, which has its own:
    there the button is one of the input controls and rides the ghost house style
    (`composer-box .input-ctrl-btn`, utilities.css), while anywhere else — a

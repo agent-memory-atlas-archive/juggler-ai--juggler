@@ -6,6 +6,10 @@ of changes; this project follows semantic versioning.
 ## [Unreleased]
 
 - Usage meters now redden by pace against the window, not by how much of the quota is gone
+- The composer's "⋮" menu now appears on touch devices, where it had never been shown
+- On touch, strategy, model and permissions move to a line of text above the message box
+- A very narrow column no longer pushes the model and send buttons off its edge
+- On a phone the tab drawer always leaves a strip of page to tap it away
 
 ## [0.7.2] - 2026-09-28
 

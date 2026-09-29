@@ -1562,6 +1562,16 @@ conversation-bar .conversation-tabs::-webkit-scrollbar-thumb {
         inset: 0 auto 0 0;
         z-index: var(--z-dropdown);
         width: min(15rem, 80vw);
+
+        /* A cap, not just a default: the width above loses to the inline width
+           the resize grip writes, and that width is shared with the desktop
+           layout, so a sidebar widened there arrives here wider than the phone.
+           A stylesheet max-width still clamps an inline width. What it keeps
+           clear is the strip of dimmed page to the drawer's right — the only
+           sign the drawer is over something rather than a page of its own, and
+           the place to tap it away — sized past the 44px a finger can
+           reliably hit. */
+        max-width: calc(100% - 3.5rem);
         transform: translateX(-100%);
         transition: transform 200ms ease;
 
@@ -1587,6 +1597,7 @@ conversation-bar .conversation-tabs::-webkit-scrollbar-thumb {
     /* The resize grip stays active in drawer mode: it sits on the drawer's
        right edge, so dragging it widens the open drawer to fit long tab names
        (setupColumnResize sets an inline rem width that overrides the default
-       above; the same localStorage width is shared with fixed mode). The grip
-       rides off-screen with the drawer while it's closed. */
+       above, up to the max-width cap; the same localStorage width is shared
+       with fixed mode). The grip rides off-screen with the drawer while it's
+       closed. */
 }

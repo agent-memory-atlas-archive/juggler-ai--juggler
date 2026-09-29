@@ -23,6 +23,97 @@ reply-suggestions .reply-suggestion {
     transition: background 150ms ease, box-shadow 150ms ease;
 }
 
+/* Config strip — the touch layout's home for strategy, model and permissions
+   (composer-box._applyConfigPlacement moves the live elements here). One line
+   of small secondary text above the textarea, dot-separated, each segment
+   still the control it always was: tapping opens the same popup the pill does.
+
+   Text, not pills, is the whole point. Three pills cannot fit a phone-width
+   row, and the row they overflow is the one holding "⋮" and Send. As text the
+   same three states cost a fraction of the width, stay readable, and leave the
+   controls row with nothing in it that can push anything off the edge.
+
+   Empty on every other layout — the controls are in the row instead — and an
+   empty strip must take no space, hence :empty. */
+composer-box composer-config-strip {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    margin-bottom: 0.25rem;
+    overflow: hidden;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+composer-box composer-config-strip:empty {
+    display: none;
+}
+
+/* The separator rides the element BEFORE each gap rather than after it, so a
+   segment that hides itself (the strategy selector does, on a delegated
+   thread) takes its own separator with it into display:none. That only holds
+   while the last slot is a segment that never hides — see the ordering note in
+   _applyConfigPlacement. */
+composer-box composer-config-strip > *:not(:last-child)::after {
+    content: "·";
+    margin: 0 0.375rem;
+    color: var(--text-tertiary);
+}
+
+/* Only the model can grow without bound, so only the model absorbs the
+   shortfall; the other two sit at their natural width and stay whole. */
+composer-box composer-config-strip > model-selector {
+    min-width: 0;
+    flex-shrink: 1;
+}
+
+composer-box composer-config-strip > strategy-selector,
+composer-box composer-config-strip > permission-controls {
+    flex-shrink: 0;
+}
+
+/* Strip the pill chrome off the controls in here: no border, no fill, no
+   horizontal padding, inheriting the strip's size and colour so the three read
+   as one line of text rather than three controls. The min-width floors go too
+   — they are sized for pills, and a 7rem floor on a text segment would put the
+   separators in arbitrary places.
+
+   The vertical padding stays, and is the only reason these are tappable: text
+   this size is a 14px-tall target, which on the device this layout is for is
+   not a target at all. It buys height without costing the line any width.
+
+   A tinted strategy name keeps its colour — that rule paints .strategy-name,
+   not the button, so it survives `color: inherit` and gives the line its one
+   piece of colour. */
+composer-box composer-config-strip .input-ctrl-btn {
+    min-width: 0;
+    max-width: 100%;
+    padding: 0.375rem 0;
+    border: none;
+    border-radius: 0;
+    background: none;
+    color: inherit;
+    font-size: inherit;
+}
+
+/* The pill's label cap is a pill measurement too; in the strip the model name
+   is simply whatever room is left after the other two segments. */
+composer-box composer-config-strip .model-name {
+    max-width: none;
+}
+
+composer-box composer-config-strip .input-ctrl-btn:hover:not(:disabled) {
+    background: none;
+    border-color: transparent;
+    color: var(--text-primary);
+}
+
+/* The icons belong to the pill, not to a line of text. */
+composer-box composer-config-strip .icon-auto-awesome,
+composer-box composer-config-strip .strategy-icon {
+    display: none;
+}
+
 /* Composer wrapper - the visual bubble containing textarea and button */
 composer-box composer-box-wrapper {
     display: flex;
@@ -422,9 +513,19 @@ composer-box .strategy-selector-button .strategy-name {
    floors, let the buttons shrink (a long model name ellipsises), and let the
    cluster wrap to as many lines as it needs rather than overflow. */
 @container (max-width: 46rem) {
+    /* `min-width: 0` is what lets the shrink chain inside the cluster run at
+       all. Without it the cluster keeps `min-width: auto`, whose floor is its
+       min-content — and min-content is computed from the widest item's own
+       min-content, which for a `white-space: nowrap` model name is that name at
+       its full max-width cap. A floor sized to the content the shrinking is
+       supposed to remove holds the cluster at its unshrunk width whatever the
+       items inside it are told to do, and the overflow lands on the controls
+       that follow: the model pill spills past the column edge, taking the
+       schedule and send buttons with it. */
     composer-box input-controls-config {
         flex-basis: 100%;
         flex-wrap: wrap;
+        min-width: 0;
     }
 
     /* The config cluster's flex items are the custom-element WRAPPERS, not the
@@ -449,6 +550,26 @@ composer-box .strategy-selector-button .strategy-name {
         min-width: 0;
         overflow: hidden;
         flex-shrink: 1;
+    }
+
+    /* The other two clusters hold fixed-size buttons that cannot ellipsise, so
+       the only way for them to fit a column narrower than the cluster itself is
+       to break across lines.
+
+       Wrapping has to be paid for with `flex-shrink: 1` and `min-width: 0`, and
+       neither is optional: a flex item with `flex-shrink: 0` is laid out at its
+       flex base size, which for these is max-content — every button on one line
+       — so the box never becomes narrow enough for its own wrapping to engage
+       and it simply overhangs the column. Shrinking is what makes the box
+       narrow; wrapping is what keeps the buttons inside it once it is. The
+       spill the outer `flex-shrink: 0` guards against cannot happen here
+       precisely because these two now wrap. */
+    composer-box input-controls-actions,
+    composer-box input-controls-send {
+        flex-wrap: wrap;
+        flex-shrink: 1;
+        min-width: 0;
+        justify-content: flex-end;
     }
 }
 
@@ -791,112 +912,85 @@ composer-box .context-cache-warning-btn .icon-warning {
     color: var(--text-secondary);
 }
 
-/* Touch composer layout: Enter inserts a newline (see composer-box._isTouchComposer,
-   keyed off the same media features), so a Send button is the send affordance
-   and the secondary actions collapse into the "⋮" sheet to keep the controls
-   row single-line. Desktop keeps the full visible row. */
-@media (hover: none) and (pointer: coarse) {
-    composer-box .more-actions-btn {
-        display: inline-flex;
-    }
+/* Touch composer layout: Enter inserts a newline, so a Send button is the send
+   affordance, the secondary actions collapse into the "⋮" sheet, and the config
+   controls move up to the text strip. What is left on the row is [⋮] … [send].
+   Desktop keeps the full visible row.
 
-    /* Touch has no true hover, but tapping the button (or dragging off it) leaves
-       a sticky :hover/:focus that would otherwise paint the ghost pill's wash and
-       hairline border over the circular control. Pin hover/focus to the resting
-       fill so it stays a clean solid circle; :active still dips via the shared
-       .input-ctrl-btn press scale. Qualified with .input-ctrl-btn to outrank
-       that utility's own hover rule, which is in the last layer. */
-    composer-box .more-actions-btn.input-ctrl-btn:hover:not(:disabled),
-    composer-box .more-actions-btn.input-ctrl-btn:focus:not(:disabled) {
-        background: var(--overlay-light-30);
-        border-color: transparent;
-        color: var(--text-primary);
-    }
-
-    /* The schedule-send ("timer") button is rarely used, so on touch it collapses
-       into the "⋮" actions sheet — except while a send is armed, when it stays
-       inline so the live countdown and cancel affordance remain visible. */
-    composer-box .schedule-send-btn:not(.armed) {
-        display: none;
-    }
-
-    /* Focusing the textarea pops the onscreen keyboard, and the browser scrolls
-       the focused element to sit just above it. The send button and the rest of
-       input-controls live BELOW the textarea, so that alignment hides them
-       behind the keyboard. scroll-margin-bottom makes the focus scroll-into-view
-       reserve room below the textarea — enough for the controls row (margin-top
-       1rem + button 1.5rem + wrapper padding-bottom 1rem) plus breathing room —
-       so the whole composer, send button included, lands above the keyboard. */
-    composer-box textarea {
-        scroll-margin-bottom: 4rem;
-    }
-
-    /* These live in the "⋮" actions sheet: the commands (`/`) and skill (`$`)
-       buttons collapse into its Slash-commands and Skills sections, and attach
-       image / new thread each become a row. */
-    composer-box .commands-button,
-    composer-box .skill-button,
-    composer-box .attach-image-btn,
-    composer-box .new-thread-btn {
-        display: none;
-    }
-
-    /* The strategy selector is relocated into the "⋮" sheet (see
-       composer-box._openActionsSheet); hide its inline slot. */
-    composer-box input-controls-config > strategy-selector {
-        display: none;
-    }
-
-    /* …except while its dropdown is open. Opening it from the sheet closes the
-       sheet (one popup at a time), which hands the selector straight back to
-       this inline slot — and on a tablet, wide enough that the dropdown anchors
-       to a button rather than becoming a sheet, a hidden button is a zero-sized
-       anchor and the menu lands in the top-left corner. Showing it for exactly
-       the span the menu is open keeps the anchor real. A delegated thread's
-       selector stays gone: [hidden] is excluded rather than out-specified. */
-    composer-box input-controls-config > strategy-selector:not([hidden]):has(.strategy-selector-button.open) {
-        display: flex;
-    }
-
-    /* One row, never wrapping: [permission] [model] [⋮] … [send]. Neutralise the
-       narrow-column fold (config never claims a full row here) and let the
-       config cluster shrink (min-width:0) so a long model name ellipsises
-       rather than pushing the row to a second line. */
-    composer-box input-controls {
-        flex-wrap: nowrap;
-    }
-
-    composer-box input-controls-config {
-        flex-basis: auto;
-        flex-wrap: nowrap;
-        min-width: 0;
-        flex-shrink: 1;
-        gap: 0.375rem;
-    }
-
-    /* Compact the permission pill to just "✓ Edits on" — the cmd/path counts
-       are still one tap away in the permissions popup. The head floor would
-       waste space on this tight row, so drop it too. */
-    composer-box .permission-btn {
-        min-width: 0;
-    }
-
-    composer-box .permission-btn .permission-detail {
-        display: none;
-    }
-
-    /* Let the model selector absorb the remaining width and ellipsise. */
-    composer-box model-selector,
-    composer-box .model-selector-button {
-        min-width: 0;
-        overflow: hidden;
-    }
+   Selected on a class, NOT on `@media (hover: none) and (pointer: coarse)`,
+   even though that media query is what decides it. The class is written by
+   composer-box._applyConfigPlacement from _isTouchComposer(), so the layout,
+   the DOM placement of the config controls and the Enter-key behaviour are all
+   three driven by one predicate and cannot drift apart. It also puts the whole
+   touch layout inside reach of the test harness, which can set the override but
+   cannot drive matchMedia — this block was unreachable and untested for as long
+   as it was a media query, which is how `.more-actions-btn` came to be revealed
+   at a LOWER specificity than the rule hiding it (a bare `.more-actions-btn`
+   against `.more-actions-btn.input-ctrl-btn`) and so was never revealed at all.
+   Every rule here is therefore qualified to at least match its own default. */
+composer-box.touch-composer .more-actions-btn.input-ctrl-btn {
+    display: inline-flex;
 }
 
-/* Strategy row inside the "⋮" sheet: the relocated selector fills the row, its
-   label sitting left and the selector button pushed to the right edge. */
-.actions-sheet .actions-sheet-strategy {
-    justify-content: space-between;
+/* Touch has no true hover, but tapping the button (or dragging off it) leaves
+   a sticky :hover/:focus that would otherwise paint the ghost pill's wash and
+   hairline border over the circular control. Pin hover/focus to the resting
+   fill so it stays a clean solid circle; :active still dips via the shared
+   .input-ctrl-btn press scale. Qualified with .input-ctrl-btn to outrank
+   that utility's own hover rule, which is in the last layer. */
+composer-box.touch-composer .more-actions-btn.input-ctrl-btn:hover:not(:disabled),
+composer-box.touch-composer .more-actions-btn.input-ctrl-btn:focus:not(:disabled) {
+    background: var(--overlay-light-30);
+    border-color: transparent;
+    color: var(--text-primary);
+}
+
+/* The schedule-send ("timer") button is rarely used, so on touch it collapses
+   into the "⋮" actions sheet — except while a send is armed, when it stays
+   inline so the live countdown and cancel affordance remain visible. */
+composer-box.touch-composer .schedule-send-btn:not(.armed) {
+    display: none;
+}
+
+/* Focusing the textarea pops the onscreen keyboard, and the browser scrolls
+   the focused element to sit just above it. The send button and the rest of
+   input-controls live BELOW the textarea, so that alignment hides them
+   behind the keyboard. scroll-margin-bottom makes the focus scroll-into-view
+   reserve room below the textarea — enough for the controls row (margin-top
+   1rem + button 1.5rem + wrapper padding-bottom 1rem) plus breathing room —
+   so the whole composer, send button included, lands above the keyboard. */
+composer-box.touch-composer textarea {
+    scroll-margin-bottom: 4rem;
+}
+
+/* These live in the "⋮" actions sheet: the commands (`/`) and skill (`$`)
+   buttons collapse into its Slash-commands and Skills sections, and attach
+   image / new thread each become a row. */
+composer-box.touch-composer .commands-button,
+composer-box.touch-composer .skill-button,
+composer-box.touch-composer .attach-image-btn,
+composer-box.touch-composer .new-thread-btn {
+    display: none;
+}
+
+/* One row, never wrapping — and with the three config controls living in the
+   strip above, all that is left on it is [⋮] … [send]. Two fixed circles and
+   the elastic gap between them fit any width we support, so there is nothing
+   here that can be pushed off the edge and nothing to fold: the narrow-column
+   fold is neutralised, and the now-empty config cluster collapses rather than
+   contributing a stray gap. */
+composer-box.touch-composer input-controls {
+    flex-wrap: nowrap;
+}
+
+composer-box.touch-composer input-controls-config:empty {
+    display: none;
+}
+
+/* Compact the permission text to just "✓ Edits on" — the cmd/path counts are
+   still one tap away in the permissions popup. */
+composer-box.touch-composer .permission-btn .permission-detail {
+    display: none;
 }
 
 /* Collapsible sections inside the "⋮" sheet (Slash commands, Skills). Native

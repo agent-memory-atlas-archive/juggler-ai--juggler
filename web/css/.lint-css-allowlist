@@ -70,7 +70,7 @@ ownership layout/app-header.css:conversation-tabs-container
 # reach them, and cross-cutting policy filed in layout/ instead of in the
 # components it modifies. Re-classifying and re-filing those empties the block.
 # (Deleting the dead CSS already took it from 33,908 to 14,828.)
-layer-inversion patterns/icons.css > components/composer.css 224
+layer-inversion patterns/icons.css > components/composer.css 280
 layer-inversion patterns/icons.css > components/messages.css 224
 layer-inversion layout/app-shell.css > patterns/icons.css 140
 layer-inversion patterns/icons.css > components/properties-panel.css 140
@@ -78,12 +78,12 @@ layer-inversion patterns/icons.css > components/diff-viewer.css 112
 layer-inversion layout/app-header.css > patterns/icons.css 94
 layer-inversion patterns/markdown.css > components/plugin-catalog.css 74
 layer-inversion patterns/icons.css > components/conversation-bar.css 72
+layer-inversion patterns/icons.css > components/model-picker.css 42
 layer-inversion patterns/icons.css > components/overlays-and-updates.css 42
 layer-inversion patterns/markdown.css > components/settings.css 35
 layer-inversion components/composer.css > vendor/prism-theme.css 31
 layer-inversion components/plugin-catalog.css > vendor/prism-theme.css 31
 layer-inversion patterns/icons.css > components/approvals.css 28
-layer-inversion patterns/icons.css > components/model-picker.css 28
 layer-inversion patterns/icons.css > components/onboarding.css 28
 layer-inversion patterns/icons.css > components/pinboard.css 28
 layer-inversion patterns/menus.css > components/plugin-catalog.css 28
@@ -110,14 +110,14 @@ layer-inversion patterns/icons.css > components/plugin-catalog.css 14
 layer-inversion patterns/icons.css > components/settings.css 14
 layer-inversion patterns/icons.css > components/strategy-bar.css 14
 layer-inversion layout/app-header.css > patterns/buttons.css 13
-layer-inversion layout/app-shell.css > components/composer.css 13
+layer-inversion layout/app-shell.css > components/composer.css 11
 layer-inversion patterns/markdown.css > components/diff-viewer.css 13
 layer-inversion layout/app-header.css > components/diff-viewer.css 12
 layer-inversion layout/app-header.css > patterns/menus.css 12
 layer-inversion base/elements.css > components/properties-panel.css 11
 layer-inversion layout/app-shell.css > components/pinboard.css 11
 layer-inversion patterns/markdown.css > components/pinboard.css 11
-layer-inversion patterns/menus.css > components/composer.css 11
+layer-inversion patterns/menus.css > components/composer.css 15
 layer-inversion base/elements.css > components/diff-viewer.css 10
 layer-inversion layout/app-header.css > components/settings.css 10
 layer-inversion layout/app-header.css > components/skills-marketplace.css 10
@@ -134,7 +134,7 @@ layer-inversion layout/app-shell.css > components/properties-panel.css 8
 layer-inversion layout/window-chrome.css > components/diff-viewer.css 8
 layer-inversion base/elements.css > components/project-setup.css 7
 layer-inversion base/elements.css > components/skills-marketplace.css 7
-layer-inversion layout/app-header.css > components/composer.css 7
+layer-inversion layout/app-header.css > components/composer.css 5
 layer-inversion layout/app-header.css > components/model-picker.css 7
 layer-inversion layout/app-header.css > components/popup-sheet.css 7
 layer-inversion layout/app-shell.css > patterns/menus.css 7
@@ -148,7 +148,7 @@ layer-inversion layout/app-header.css > components/approvals.css 5
 layer-inversion layout/app-header.css > patterns/spinner.css 5
 layer-inversion layout/app-shell.css > components/conversation-bar.css 5
 layer-inversion layout/app-shell.css > components/popup-sheet.css 5
-layer-inversion patterns/markdown.css > components/composer.css 5
+layer-inversion patterns/markdown.css > components/composer.css 7
 layer-inversion patterns/markdown.css > components/popup-sheet.css 5
 layer-inversion patterns/menus.css > components/conversation-bar.css 5
 layer-inversion patterns/menus.css > components/properties-panel.css 5

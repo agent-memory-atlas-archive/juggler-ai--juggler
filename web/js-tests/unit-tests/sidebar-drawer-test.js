@@ -27,13 +27,18 @@
  *   9. Closing it any other way releases the token, so the next Back press is
  *      the browser's own again.
  *
+ * And its size:
+ *
+ *  10. However wide the stored sidebar width, the open drawer leaves a strip of
+ *      the page beside it to show it is an overlay and to tap it away.
+ *
  * Driven through the real handler against a stand-in drawer: the ids and the
  * `position: absolute` drawer-mode check are all it reads, and the media query
  * that produces that position headless can't be driven.
  * @module unit-tests/sidebar-drawer-test
  */
 
-import { assert } from '../utilities/test-helpers.js';
+import { assert, styledProbeFrame } from '../utilities/test-helpers.js';
 import UIEventManager from '../../js/services/ui-event-manager.js';
 import {
   isAnyPopupOpen,
@@ -333,6 +338,46 @@ export async function runTests() {
         `closing must push nothing further, got ${counts.push} pushes in all`);
     });
   }, { open: false });
+
+  // An open drawer must never cover the whole screen. The resize grip stores
+  // one sidebar width for every layout, so a sidebar widened on the desktop
+  // arrives on a phone as an inline width far wider than the viewport, and an
+  // inline width beats the drawer's own default. What must be left is a strip
+  // of scrim beside it: the only sign that the drawer is over something, and
+  // the tap target that dismisses it. 44px is the smallest target a finger is
+  // expected to hit.
+  //
+  // The drawer rules sit behind `@media (width <= 36rem)`, which a lane is too
+  // wide to match, so they are rendered in a phone-sized probe frame against
+  // plain elements wearing the drawer's tag — a child document never upgrades
+  // the custom element, and the rules select on the tag alone.
+  {
+    const label = 'an open drawer leaves a tappable strip of the page beside it';
+    const { doc, frame } = await styledProbeFrame(360, 480);
+    try {
+      doc.body.classList.add('sidebar-open');
+      const main = doc.createElement('div');
+      main.className = 'app-main';
+      main.style.cssText = 'position:relative;width:360px;height:480px';
+      doc.body.appendChild(main);
+
+      // The stylesheet default, then a width stored from a wide desktop sidebar.
+      for (const stored of ['', '30rem']) {
+        main.innerHTML = '<conversation-bar></conversation-bar>';
+        const bar = /** @type {HTMLElement} */ (main.firstElementChild);
+        bar.style.width = stored;
+        const strip = 360 - bar.getBoundingClientRect().right;
+        assert(strip >= 44,
+          `with ${stored ? `a stored width of ${stored}` : 'the default width'} the open drawer must leave at least 44px of the page beside it, left ${Math.round(strip)}px`);
+      }
+      passed++;
+    } catch (e) {
+      failed++;
+      errors.push(`${label}: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      frame.remove();
+    }
+  }
 
   return { passed, failed, errors };
 }
