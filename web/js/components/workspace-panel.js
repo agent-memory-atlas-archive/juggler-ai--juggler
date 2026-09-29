@@ -37,6 +37,7 @@ import { createFileActions } from '../utils/properties-panel-helpers.js';
 import { setupColumnResize, startingColumnWidth } from '../utils/column-resize.js';
 import { showConfirm, showNotice } from './modal-dialog.js';
 import { openWorkspaceFinish } from './workspace-finish-dialog.js';
+import { sameTree } from '../services/workspace-rebinding.js';
 
 /**
  * WorkspacePanel - the workspace the tab strip has selected, written out.
@@ -431,9 +432,17 @@ class WorkspacePanel extends HTMLElement {
     const create = document.createElement('button');
     create.type = 'button';
     create.className = 'workspace-panel-action workspace-panel-create';
+    // "Here" rather than the place's name, which the head above has already
+    // said. What the description says turns on the one thing a reader needs to
+    // know before pressing: where the new conversation's files and commands will
+    // be. A group is rooted at the project, and telling somebody starting one
+    // there that it works somewhere else would be the opposite of true.
+    const inProject = sameTree(this._session, this._workspace?.id ?? '', '');
     create.appendChild(this._actionLabel(
-      'Create a new conversation in this workspace',
-      'Its files and commands happen in this root, not the project’s.',
+      'Start a new conversation here',
+      inProject
+        ? 'It works in the project as usual, and is kept here with the others.'
+        : 'It works in this workspace’s own files, not the project’s.',
       'icon-plus'));
     create.addEventListener('click', () => this._create());
     rows.appendChild(create);

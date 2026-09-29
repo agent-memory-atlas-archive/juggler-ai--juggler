@@ -909,7 +909,11 @@ Three rules carry most of the weight.
 `finishOptions()` entry is shown with its `description` under it, and finishing
 bins every conversation that was working there — recoverably, but it takes them
 off the strip — so a description that stops at "removes the tree" leaves the
-reader guessing at the half they actually feel. An option that is *not* a way of being done — committing, pushing,
+reader guessing at the half they actually feel. An ending that leaves nothing
+behind the conversations were about returns `conversations: 'return'` alongside
+`done: true`, and the host moves them back to the workspace this one was made
+from instead of binning them (the group provider's "Ungroup" does this). An
+option that is *not* a way of being done — committing, pushing,
 reinstalling — sets `keepsWorkspace: true` and returns `done: false`; the host
 shows it apart from the endings, above the heading that warns what the rest of
 them are.

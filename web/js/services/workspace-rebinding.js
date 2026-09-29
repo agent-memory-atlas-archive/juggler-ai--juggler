@@ -67,6 +67,49 @@ export function whyNotRebind(conversation, workspaceId) {
 }
 
 /**
+ * Whether moving this conversation there is worth asking the user about first.
+ *
+ * A move is confirmed because it changes where a conversation's files and
+ * commands happen, under an agent that may be relying on them. Two workspaces
+ * that resolve to the same tree on the same machine — a group and the project
+ * it is rooted at, or two groups — share all of that, and a move between them
+ * changes only which box the tab is drawn in. Nothing about that needs a
+ * second look.
+ *
+ * Decided from the places rather than from their providers, so it answers for
+ * any pair of kinds, including ones an extension adds, without either having to
+ * declare anything. A place that cannot be resolved is always asked about: the
+ * dialog is where a move that is about to be refused says why.
+ * @param {any} conversation - The conversation that would move.
+ * @param {string} workspaceId - Where it would go; '' is the project.
+ * @returns {boolean} True when the move should be confirmed.
+ */
+export function moveNeedsConfirmation(conversation, workspaceId) {
+  return !sameTree(conversation?.session, conversation?.workspaceId || '', workspaceId || '');
+}
+
+/**
+ * Whether two workspaces are the same tree on the same machine — so that a
+ * conversation working in one is working on exactly the files it would be in
+ * the other. A group and the project it is rooted at are; a worktree and the
+ * repository it was made from are not.
+ * @param {any} session - The session both belong to.
+ * @param {string} a - One workspace id; '' is the project.
+ * @param {string} b - The other.
+ * @returns {boolean} True only when both resolve, to the same root, on the same machine.
+ */
+export function sameTree(session, a, b) {
+  if (a === b) return true;
+  const rootA = session?.workspaceRoot?.(a);
+  const rootB = session?.workspaceRoot?.(b);
+  if (!rootA || !rootB) return false;
+
+  // The same path on another machine is another tree.
+  const machine = (/** @type {string} */ id) => (id ? session?.getWorkspace?.(id)?.kind : '') || 'local';
+  return machine(a) === machine(b) && trimSlash(rootA) === trimSlash(rootB);
+}
+
+/**
  * Move a conversation to another workspace.
  *
  * Refused while the conversation has a turn in flight, for the reason finishing

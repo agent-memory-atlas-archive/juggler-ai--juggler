@@ -35,6 +35,17 @@ export const NEW_ROW_PREFIX = 'new:';
 export const ADOPT_ROW_PREFIX = 'adopt:';
 
 /**
+ * The kind that leads the list of ways to make one, whatever order the
+ * providers were loaded in.
+ *
+ * A special case on purpose. A group builds nothing and cannot surprise anyone,
+ * so it is the safest thing to be chosen by default, and leading the list is
+ * what makes it findable at all behind a button called "New workspace or
+ * group". Every other kind keeps the order it was loaded in.
+ */
+export const LEADING_PROVIDER_ID = 'group';
+
+/**
  * One row of the list of places.
  * @typedef {object} SetupRow
  * @property {'project'|'workspace'|'adopt'|'new'} kind - Which band it belongs to
@@ -125,7 +136,12 @@ export function setupRows(session) {
     });
   }
 
-  for (const providerId of workspaceProviderRegistry.getIds()) {
+  const providerIds = workspaceProviderRegistry.getIds();
+  const ordered = [
+    ...providerIds.filter((id) => id === LEADING_PROVIDER_ID),
+    ...providerIds.filter((id) => id !== LEADING_PROVIDER_ID)
+  ];
+  for (const providerId of ordered) {
     const provider = workspaceProviderRegistry.createProvider(providerId, session);
     if (!provider) continue;
     rows.push({

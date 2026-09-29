@@ -11,7 +11,10 @@
  * files and commands happen is not a thing to change by slipping. So a
  * cross-box drop asks: the move dialog opens on the place it was dropped in,
  * with the question about work left behind that a drag cannot ask, and the tab
- * goes straight back to the box it came from until an answer moves it.
+ * goes straight back to the box it came from until an answer moves it. A drop
+ * that leaves it working in the same tree — into or out of a group, which is
+ * rooted at the project — changes nothing the question is about, and is simply
+ * made (see `moveNeedsConfirmation`).
  *
  * The question is about the binding alone. Where in the strip the tab lands was
  * settled by the gesture, and an answered move puts it exactly there — asserted
@@ -39,6 +42,17 @@ import '../../js/components/conversation-bar.js';
  */
 function workspace(id, label) {
   return { id, root: `/tmp/${id}`, label, state: 'ready', available: true, providerId: '(none)' };
+}
+
+/**
+ * A workspace rooted at the project itself, as a group is: a box in the strip
+ * with no tree of its own behind it.
+ * @param {string} id - The workspace id.
+ * @param {string} label - What the box is named.
+ * @returns {any} The row.
+ */
+function group(id, label) {
+  return { ...workspace(id, label), root: '/tmp/project', providerId: 'group' };
 }
 
 /**
@@ -336,6 +350,55 @@ export async function runTests() {
         { description: 'the move dialog for a drop in the strip' });
       assert(destination() === '',
         `the strip outside every box is the project folder, got ${JSON.stringify(destination())}`);
+    } finally {
+      teardown();
+    }
+  });
+
+  await check('a move that leaves the conversation working in the same tree is not asked about', async () => {
+    // A group is rooted at the project, so moving a conversation out of one —
+    // or into one, or between two of them — changes which box it is drawn in
+    // and nothing about where its files and commands are. The dialog exists to
+    // stop that second thing happening by accident, so there is nothing to ask.
+    const out = mountBar([group('ws_g', 'my group')], [['c3', ''], ['c1', 'ws_g']]);
+    try {
+      dragOnto(out.bar, tabFor(out.bar, 'c1'), tabFor(out.bar, 'c3'));
+      await waitFor(() => out.session.conversations.get('c1').workspaceId === '',
+        { description: 'the conversation to be moved into the project without a question' });
+      assert(!document.querySelector('.workspace-move-dialog'),
+        'out of a group into the project is not asked about');
+      await waitFor(() => out.calls.length === 1,
+        { description: 'the strip to be arranged where the drop put the tab' });
+    } finally {
+      out.teardown();
+    }
+
+    const into = mountBar([group('ws_g', 'my group'), group('ws_h', 'another group')],
+      [['c1', 'ws_g'], ['c2', 'ws_h']]);
+    try {
+      dragOnto(into.bar, tabFor(into.bar, 'c2'), tabFor(into.bar, 'c1'));
+      await waitFor(() => into.session.conversations.get('c2').workspaceId === 'ws_g',
+        { description: 'a conversation to be moved between groups without a question' });
+      assert(!document.querySelector('.workspace-move-dialog'),
+        'and nor is from one group into another');
+    } finally {
+      into.teardown();
+    }
+  });
+
+  await check('a move into a different tree is still asked about, whatever it is next to', async () => {
+    // The other half of the rule: sharing nothing with the project, a tree of
+    // its own is exactly the move the dialog is for.
+    const { bar, session, teardown } = mountBar(
+      [group('ws_g', 'my group'), workspace('ws_b', 'scratch-2')],
+      [['c1', 'ws_g'], ['c2', 'ws_b']]
+    );
+    try {
+      dragOnto(bar, tabFor(bar, 'c1'), tabFor(bar, 'c2'));
+      await waitFor(() => !!document.querySelector('.workspace-move-dialog'),
+        { description: 'the move dialog for a drop from a group into a tree of its own' });
+      assert(session.conversations.get('c1').workspaceId === 'ws_g',
+        'and nothing has moved while the question is open');
     } finally {
       teardown();
     }

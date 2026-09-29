@@ -75,7 +75,8 @@ Distinguishing ideas:
   system prompt.
 - **Workspaces** — the place a conversation's tools actually run in: the project
   folder itself, or somewhere made for the purpose, such as a git worktree or a
-  throwaway copy. Several conversations can work in one workspace. See below.
+  throwaway copy. Several conversations can work in one workspace. A group is a
+  workspace that only organises conversations. See below.
 - **Pinboard** — a tabbed panel behind the right edge of the window, opened with
   the edge tab or its shortcut. Each tab is a "pin" supplied by an extension. The
   built-in ones keep a live file within reach, follow the current plan, todo list
@@ -218,6 +219,11 @@ A workspace is where a conversation's tools run — where bash executes, and wha
 read, write and edit are relative to. Every project already has one: itself. The
 others are made by workspace providers, and the built-in ones are:
 
+- **Group** — a named box to keep related conversations together, and nothing
+  else: conversations in a group work in the project exactly as they would
+  outside it, and nothing is created on disk. It is first in the list the "New
+  workspace or group" button opens. Ungrouping puts its conversations back in
+  the project; deleting it sends them to the Bin.
 - **Git Worktree** — another branch of the repository, checked out in a tree of
   its own. Best for work on a branch that should not disturb the tree you are
   looking at; not worth it for a quick edit to the branch you are already on. The
@@ -243,7 +249,8 @@ conversation already working there.
 Moving a single conversation is a tab action, not a box action, since a box of
 three conversations names none of them: use "Use a different workspace…" on the
 tab's context menu, or drag the tab to another box, which opens the same dialog
-rather than moving it silently.
+rather than moving it silently. A move that leaves it working in the same folder,
+such as into or out of a group, is made without asking.
 
 Finishing a workspace is the provider's business and the options are its own — a
 worktree offers to commit or to discard, and discarding deletes the tree and the

@@ -62,6 +62,14 @@ function makeSession(workspaces) {
      */
     getWorkspace(id) { return workspaces.find((row) => row.id === id) || null; },
     /**
+     * @param {string} id - Which workspace, '' for the project.
+     * @returns {string|null} Where it works.
+     */
+    workspaceRoot(id) {
+      if (!id) return this.projectPath;
+      return workspaces.find((row) => row.id === id)?.root ?? null;
+    },
+    /**
      * @returns {() => void} How to stop listening.
      */
     subscribe() { return () => {}; }
@@ -368,6 +376,33 @@ export async function runTests() {
         'while an action that leaves the workspace in use must not — nothing is being removed');
       assert(!!panel.querySelector('.workspace-panel-create .icon-plus'),
         'and the row that makes a new one of something wears the plus, as every other such row does');
+    } finally {
+      teardown();
+    }
+  });
+
+  check('the button that starts a conversation says truthfully where it will work', () => {
+    // A group is rooted at the project, so "not the project's" is exactly
+    // wrong there — and it is the sentence somebody reads to find out what a
+    // conversation started from this box will be working on.
+    const session = makeSession([
+      workspace('ws_a'),
+      { ...workspace('ws_g'), root: '/tmp/project', label: 'Group 1' }
+    ]);
+    const { panel, teardown } = mountPanel(session);
+    const said = () => String(panel.querySelector('.workspace-panel-create')?.textContent ?? '');
+    try {
+      session.selection = { kind: 'workspace', id: 'ws_a' };
+      panel._refresh();
+      assert(said().includes('Start a new conversation here') && !said().includes('ws_a'),
+        `the button says "here", leaving the naming to the head, got ${JSON.stringify(said())}`);
+      assert(/own files/.test(said()) && /not the project/.test(said()),
+        `and a tree of its own says the work happens there, got ${JSON.stringify(said())}`);
+
+      session.selection = { kind: 'workspace', id: 'ws_g' };
+      panel._refresh();
+      assert(/works in the project/.test(said()) && !/not the project/.test(said()),
+        `and one rooted at the project says it works in the project, got ${JSON.stringify(said())}`);
     } finally {
       teardown();
     }

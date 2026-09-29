@@ -285,9 +285,11 @@ conversation-bar .conversation-box .conversation-tab:not(.active) {
     border-color: var(--workspace-box-border);
 }
 
-/* The last row of the list, shown only while there is nothing above it. */
+/* The last row of the list, shown only while there is nothing above it.
+   Centred: it stands in for the box's contents rather than starting a list. */
 conversation-bar .conversation-box-empty {
     padding: 0.125rem 0.4rem 0.25rem;
+    text-align: center;
     font-size: 0.75rem;
     color: var(--text-tertiary);
 }

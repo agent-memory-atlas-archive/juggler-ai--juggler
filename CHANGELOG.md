@@ -5,6 +5,7 @@ of changes; this project follows semantic versioning.
 
 ## [Unreleased]
 
+- New workspace type "Group" for organising conversations, with no worktree or copy behind it
 - Usage meters now redden by pace against the window, not by how much of the quota is gone
 - The composer's "⋮" menu now appears on touch devices, where it had never been shown
 - On touch, strategy, model and permissions move to a line of text above the message box

@@ -23,6 +23,7 @@ import { createBoundOps } from '../../sdk/ops.js';
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
 import workspaceProviderRegistry from '../registries/workspace-provider-registry.js';
 import { registerWorkspace, patchWorkspace, unregisterWorkspace, isWorkspaceUsable } from './workspaces.js';
+import { rebindConversation } from './workspace-rebinding.js';
 
 /**
  * @typedef {object} ProvisionRequest
@@ -590,7 +591,8 @@ async function runFinish(provider, workspace, actionId, ctx) {
  * happens to the row afterwards is the host's: `done` tombstones it, which keeps
  * the id resolving to an attributable reason instead of turning every bound
  * conversation's next operation into an unknown-workspace error, and bins the
- * conversations that were working in it.
+ * conversations that were working in it — or, when the provider's result says
+ * `conversations: 'return'`, moves them back to the workspace it was made from.
  *
  * `closedBy` rides in `meta` beside the provider's own keys (the patch merges
  * key by key) so the banner a restored conversation meets can name who closed it.
@@ -625,7 +627,14 @@ export async function finishWorkspace(request) {
 
   if (!result?.done) return { done: false, message: result?.message };
 
-  // The conversations that were working here go to the bin, before the row is
+  // An ending that leaves nothing behind the conversations were about — a
+  // group being ungrouped — hands them back to the workspace this one was made
+  // from instead. Moved rather than re-pointed, so their grants and seeded
+  // instructions follow them (see `rebindConversation`), and moved before the
+  // row is tombstoned for the same reason the bin comes first below.
+  const returning = result.conversations === 'return';
+
+  // Otherwise the conversations that were working here go to the bin, before the row is
   // tombstoned so that nobody watches their own workspace close under them.
   // They are of the workspace rather than merely pointed at it: what they were
   // doing was the work in that tree, and left behind in the project they are a
@@ -644,13 +653,21 @@ export async function finishWorkspace(request) {
   // pressed by nobody in particular (see {@link workspaceFinishActor}).
   /** @type {string[]} */
   const stuck = [];
-  let binned = 0;
+  let moved = 0;
+  const home = workspace.baseWorkspaceId ?? '';
   for (const bound of [...(session?.conversations?.values?.() ?? [])]) {
     if ((bound.workspaceId || '') !== workspace.id) continue;
     const name = bound.name || bound.id;
     try {
-      if (await session.binConversation(bound.id)) binned++;
-      else stuck.push(`${name} couldn't be binned.`);
+      if (returning) {
+        const rebound = await rebindConversation(bound, home);
+        if (rebound.done) moved++;
+        else stuck.push(rebound.message ? `${name}: ${rebound.message}` : `${name} couldn't be moved.`);
+      } else if (await session.binConversation(bound.id)) {
+        moved++;
+      } else {
+        stuck.push(`${name} couldn't be binned.`);
+      }
     } catch (error) {
       stuck.push(`${name}: ${extractErrorMessage(error)}`);
     }
@@ -658,9 +675,10 @@ export async function finishWorkspace(request) {
   // Said by the host because it is the host that does it, and because how many
   // there were is not something a provider is in a position to know. The
   // provider's own message says what became of the tree, which is its half.
-  const wentWithIt = binned === 0
+  const where = returning ? (home ? 'back in the workspace it came from' : 'back in the project') : 'in the bin';
+  const wentWithIt = moved === 0
     ? ''
-    : `${binned === 1 ? 'Its conversation is' : `Its ${binned} conversations are`} in the bin.`;
+    : `${moved === 1 ? 'Its conversation is' : `Its ${moved} conversations are`} ${where}.`;
 
   const closed = await patchWorkspace(workspace.id, {
     state: 'closed',

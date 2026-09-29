@@ -18,7 +18,7 @@
 import { assert, waitFor } from '../utilities/test-helpers.js';
 import { createBoundOps } from '../../sdk/ops.js';
 import { unregisterWorkspace } from '../../js/services/workspaces.js';
-import { setupRows, probeSetupAdoptions, adoptSetupRow } from '../../js/services/workspace-places.js';
+import { setupRows, probeSetupAdoptions, adoptSetupRow, NEW_ROW_PREFIX } from '../../js/services/workspace-places.js';
 import {
   openWorkspaceCreate,
   workspaceCreatePlaces
@@ -87,6 +87,30 @@ function rowsOnScreen() {
 }
 
 /**
+ * Choose a kind in the rail by its provider, the way a click does.
+ *
+ * By id rather than by position: which kind the rail leads with is the host's
+ * decision and depends on what else the lane has registered, and a case about
+ * the fixture's form is not a case about the order of the list.
+ * @param {string} providerId - The kind to choose.
+ */
+function choose(providerId) {
+  const row = rowsOnScreen().find((candidate) => candidate.dataset.rowId === `${NEW_ROW_PREFIX}${providerId}`);
+  if (!row) throw new Error(`no row for ${providerId} on screen`);
+  if (row.getAttribute('aria-checked') !== 'true') row.click();
+}
+
+/**
+ * Put the fixture's form on screen in a dialog that has just been opened.
+ * @returns {Promise<void>} Once its field is there to type into.
+ */
+async function chooseFixture() {
+  await waitFor(() => rowsOnScreen().length > 0, 2000);
+  choose(FixtureProvider.MANIFEST.id);
+  await waitFor(() => document.querySelector('.workspace-create-overlay #fixture-dir') !== null, 2000);
+}
+
+/**
  * Fill the fixture provider's directory field and report the edit, the way a
  * keystroke does.
  * @param {string} dir - Where the workspace is going.
@@ -138,8 +162,9 @@ export async function runTests() {
 
     // Registered rather than reset into place, like the fixture: a reset would
     // take the real providers out from under whatever else is on this page, and
-    // an id nobody else uses needs no room made for it. It lands after the
-    // fixture, so the fixture stays the kind the dialog opens on.
+    // an id nobody else uses needs no room made for it. The cases choose the
+    // kind they are about by id (see `choose`), so which kind the dialog opens
+    // on is up to the rail's own order.
     if (!workspaceProviderRegistry.get(SecondKindProvider.MANIFEST.id)) {
       workspaceProviderRegistry.registerClass(SecondKindProvider, { extensionId: 'test', modulePath: '(test)' });
     }
@@ -176,10 +201,24 @@ export async function runTests() {
       const settled = openWorkspaceCreate(session);
       try {
         await waitFor(() => document.querySelector('.workspace-create-detail') !== null, 2000);
-        const detail = /** @type {HTMLElement} */ (document.querySelector('.workspace-create-detail'));
+        let detail = /** @type {HTMLElement} */ (document.querySelector('.workspace-create-detail'));
 
-        assert(detail.querySelector('.workspace-create-detail-title')?.textContent === FixtureProvider.MANIFEST.name,
+        // Whichever kind leads the rail is chosen on the way in, and its half
+        // is already filled.
+        const opened = rowsOnScreen().find((row) => row.getAttribute('aria-checked') === 'true');
+        assert(opened?.dataset.rowKind === 'new',
+          `the dialog opens on a kind, got ${JSON.stringify(opened?.dataset.rowId)}`);
+        const openedName = workspaceProviderRegistry
+          .createProvider(String(opened?.dataset.rowId).slice(NEW_ROW_PREFIX.length), session)
+          ?.getManifest().name;
+        assert(detail.querySelector('.workspace-create-detail-title')?.textContent === openedName,
           `the chosen kind names itself in its own half, got ${JSON.stringify(detail.textContent)}`);
+
+        choose(FixtureProvider.MANIFEST.id);
+        await waitFor(() => document.querySelector('.workspace-create-overlay #fixture-dir') !== null, 2000);
+        detail = /** @type {HTMLElement} */ (document.querySelector('.workspace-create-detail'));
+        assert(detail.querySelector('.workspace-create-detail-title')?.textContent === FixtureProvider.MANIFEST.name,
+          `and choosing another names that one instead, got ${JSON.stringify(detail.textContent)}`);
         // The point of splitting the dialog: what a provider says one of its
         // places is good and bad for is on screen while the form is filled in,
         // rather than behind the click that selects the row.
@@ -207,7 +246,7 @@ export async function runTests() {
       let made = null;
       const settled = openWorkspaceCreate(session);
       try {
-        await waitFor(() => document.querySelector('.workspace-create-overlay #fixture-dir') !== null, 2000);
+        await chooseFixture();
         typeDirectory(dir);
         press('.workspace-create-commit');
 
@@ -311,14 +350,14 @@ export async function runTests() {
       // them. So the dialog is given a size and each half scrolls inside it.
       const settled = openWorkspaceCreate(session);
       try {
-        await waitFor(() => rowsOnScreen().length > 1, 2000);
+        await chooseFixture();
         const measure = () => {
           const dialog = /** @type {HTMLElement} */ (document.querySelector('.workspace-create-dialog'));
           const rail = /** @type {HTMLElement} */ (document.querySelector('.workspace-create-rail'));
           return { dialog: dialog.getBoundingClientRect().height, rail: rail.getBoundingClientRect().height };
         };
         const before = measure();
-        rowsOnScreen()[1].click();
+        choose(SecondKindProvider.MANIFEST.id);
         const after = measure();
 
         // This browser's window is 450px tall, which is shorter than the dialog
@@ -377,7 +416,7 @@ export async function runTests() {
       // out is what somebody might actually copy: what they typed, and a path.
       const settled = openWorkspaceCreate(session);
       try {
-        await waitFor(() => document.querySelector('.workspace-create-overlay #fixture-dir') !== null, 2000);
+        await chooseFixture();
         const selects = (/** @type {string} */ selector) => {
           const element = /** @type {HTMLElement} */ (document.querySelector(`.workspace-create-overlay ${selector}`));
           if (!element) throw new Error(`no ${selector} on screen`);
@@ -479,7 +518,7 @@ export async function runTests() {
       const dir = `${projectPath}/${name}`;
       const settled = openWorkspaceCreate(session);
       try {
-        await waitFor(() => document.querySelector('.workspace-create-overlay #fixture-dir') !== null, 2000);
+        await chooseFixture();
         typeDirectory(dir);
         const stall = /** @type {HTMLInputElement} */ (
           document.querySelector('.workspace-create-overlay #fixture-stall'));
@@ -577,7 +616,7 @@ export async function runTests() {
       // arrived on its own.
       const settled = openWorkspaceCreate(session);
       try {
-        await waitFor(() => document.querySelector('.workspace-create-overlay #fixture-dir') !== null, 2000);
+        await chooseFixture();
         const field = /** @type {HTMLInputElement} */ (document.querySelector('.workspace-create-overlay #fixture-dir'));
         field.focus();
         typeDirectory(`${projectPath}/half-typed`);
@@ -597,10 +636,44 @@ export async function runTests() {
       }
     });
 
+    await run('Enter in a field presses Create, once Create can be pressed', async () => {
+      const name = 'create-dialog-enter';
+      const dir = `${projectPath}/${name}`;
+      /** @type {any} */
+      let made = null;
+      const settled = openWorkspaceCreate(session);
+      try {
+        await chooseFixture();
+        const field = /** @type {HTMLInputElement} */ (document.querySelector('.workspace-create-overlay #fixture-dir'));
+        const enter = () => field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+
+        // Empty, the form is not ready, and Enter is no way round the button.
+        enter();
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        assert(document.querySelector('.workspace-create-overlay #fixture-dir'),
+          'Enter with Create disabled does nothing');
+
+        typeDirectory(dir);
+        enter();
+        await waitFor(() => !document.querySelector('.workspace-create-overlay'),
+          { timeoutMs: 5000, description: 'Enter to press Create, which closes the dialog on what it made' });
+        made = await settled;
+        assert(made.created === true && (session.workspaces ?? []).some((/** @type {any} */ w) => w.id === made.workspaceId && w.root === dir),
+          `Enter made what the form described, got ${JSON.stringify(made)}`);
+      } finally {
+        if (!made) {
+          /** @type {HTMLElement|null} */ (document.querySelector('.workspace-create-overlay .workspace-create-backdrop'))?.click();
+          await settled;
+        }
+        if (made?.workspaceId) await unregisterWorkspace(made.workspaceId).catch(() => {});
+        await projectOps.shell({ command: `rm -rf ${name}` }).catch(() => {});
+      }
+    });
+
     await run('cancelling builds nothing', async () => {
       const before = (session.workspaces ?? []).length;
       const settled = openWorkspaceCreate(session);
-      await waitFor(() => document.querySelector('.workspace-create-overlay #fixture-dir') !== null, 2000);
+      await chooseFixture();
       typeDirectory(`${projectPath}/never-built`);
       press('.workspace-create-cancel');
 

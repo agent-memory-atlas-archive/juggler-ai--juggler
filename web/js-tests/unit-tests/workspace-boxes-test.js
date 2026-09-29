@@ -297,8 +297,10 @@ export async function runTests() {
         `the tree is still there to be worked in or finished with, so its box is too, got "${strip(bar)}"`);
       const empty = /** @type {HTMLElement|null} */ (
         bar.querySelector('.conversation-box[data-workspace-id="ws_a"] .conversation-box-empty'));
-      assert(empty?.hidden === false && empty?.textContent?.trim() === 'No conversations',
+      assert(empty?.hidden === false && empty?.textContent?.trim() === '(empty)',
         `an empty box says so rather than collapsing to a line, got ${JSON.stringify(empty?.textContent)} hidden=${empty?.hidden}`);
+      assert(empty && getComputedStyle(empty).textAlign === 'center',
+        `centred in the box, since it stands in for its contents rather than starting a list, got ${empty && getComputedStyle(empty).textAlign}`);
     });
 
     await check('an empty box is a grip all over, to a mouse', () => {
@@ -594,8 +596,8 @@ export async function runTests() {
         'and it is the last thing in the list, under the boxes it is the outline of');
 
       const button = /** @type {HTMLElement} */ (outlines[0].querySelector('button'));
-      assert(button.textContent === 'New workspace',
-        `it says what it makes, in the word the boxes above it are named by, got ${JSON.stringify(button.textContent)}`);
+      assert(button.textContent === 'New workspace or group',
+        `it says what it makes, in the words the boxes above it are named by, got ${JSON.stringify(button.textContent)}`);
 
       // A mark and a label, read as one phrase. The mark is drawn, not spelled:
       // a "+" in the text would be read out as one.
@@ -603,7 +605,7 @@ export async function runTests() {
       assert(mark?.getAttribute('aria-hidden') === 'true',
         'the mark is decoration beside the words, not part of what the button is called');
       const boxLabel = button.querySelector('.conversation-box-new-label');
-      assert(button.firstElementChild === mark && boxLabel?.textContent === 'New workspace',
+      assert(button.firstElementChild === mark && boxLabel?.textContent === 'New workspace or group',
         'it leads with the mark and follows with the label');
 
       // And the phrase starts where a tab's name starts. The mark belongs to the

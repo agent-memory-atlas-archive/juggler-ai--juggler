@@ -40,6 +40,12 @@ import {
 } from './workspace-setup-form.js';
 
 /**
+ * Input types where Enter means something other than "submit the form".
+ * @type {Set<string>}
+ */
+const NOT_SUBMITTING_INPUTS = new Set(['checkbox', 'radio', 'button', 'submit', 'reset', 'file']);
+
+/**
  * The ways a workspace could be made: one row per provider, then anything found
  * on the disk with no row of its own.
  *
@@ -432,6 +438,22 @@ export function openWorkspaceCreate(session) {
       actions.appendChild(make);
       return actions;
     };
+
+    // Enter in one of the form's fields presses Create, as it would in any form,
+    // once Create can be pressed. On the root, which outlives every redraw. A
+    // field that uses Enter for itself — a path field taking a completion from
+    // its menu — has already claimed the key by the time it gets here.
+    root.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' || event.defaultPrevented || event.isComposing) return;
+      if (event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
+      const field = /** @type {any} */ (event.target);
+      if (field?.tagName !== 'INPUT' || NOT_SUBMITTING_INPUTS.has(field.type)) return;
+      if (!field.closest('.workspace-create-detail')) return;
+      const button = /** @type {HTMLButtonElement|null} */ (root.querySelector('.workspace-create-commit'));
+      if (!button || button.disabled) return;
+      event.preventDefault();
+      void create();
+    });
 
     render();
     // The keyboard starts on the chosen kind, so that the rail is where the

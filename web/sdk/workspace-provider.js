@@ -189,6 +189,12 @@ import { validateManifest } from './lib/manifest.js';
  * @typedef {object} FinishResult
  * @property {boolean} done - Whether the workspace is finished with
  * @property {string} [message] - What to tell the user, done or not
+ * @property {'bin'|'return'} [conversations] - What becomes of the conversations
+ *   working here, once `done`. The default, `'bin'`, sends them to the bin with
+ *   the tree they were working in. `'return'` moves them back to the workspace
+ *   this one was made from — for an ending that leaves nothing behind that
+ *   they were about, such as ungrouping a group. The host carries it out and
+ *   says so; the provider's `message` is about its own half
  */
 
 /**

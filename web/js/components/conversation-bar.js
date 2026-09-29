@@ -41,7 +41,8 @@ import { openWorkspaceMove } from './workspace-move-dialog.js';
 import { openWorkspaceCreate } from './workspace-create-dialog.js';
 import JugglerElement from './juggler-element.js';
 import { showAlert, showNotice } from './modal-dialog.js';
-import { whyNotRebind } from '../services/workspace-rebinding.js';
+import { whyNotRebind, moveNeedsConfirmation, rebindConversation } from '../services/workspace-rebinding.js';
+import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
 import './bin-modal.js';
 import './info-rail.js';
 import './workspace-box-header.js';
@@ -933,8 +934,8 @@ class ConversationBar extends JugglerElement {
       newWorkspace.className = 'conversation-box-new';
       newWorkspace.innerHTML = `
         <button class="conversation-box-new-button" type="button"
-                title="Create a new workspace"
-                aria-label="New workspace">${ADD_ICON_SVG}<span class="conversation-box-new-label">New workspace</span></button>
+                 title="Create a new workspace, or a group to keep conversations together"
+                 aria-label="New workspace or group">${ADD_ICON_SVG}<span class="conversation-box-new-label">New workspace or group</span></button>
       `;
       this._cachedElements.set('new-workspace', newWorkspace);
       newWorkspace.querySelector('button')?.addEventListener('click', () => { void this._createWorkspace(); });
@@ -1083,7 +1084,7 @@ class ConversationBar extends JugglerElement {
                 title="New conversation in this workspace"
                 aria-label="New conversation in this workspace">+</button>
         <menu class="conversation-box-tabs">
-          <li class="conversation-box-empty" hidden>No conversations</li>
+          <li class="conversation-box-empty" hidden>(empty)</li>
         </menu>
       `;
       this._workspaceBoxes.set(workspace.id, box);
@@ -1934,7 +1935,7 @@ class ConversationBar extends JugglerElement {
    * No conversation is started in it. That is the point of being able to make
    * one from here: the place comes first, and what works in it arrives after —
    * started from the box's own "+", dragged into it, or moved there. The box that
-   * appears says `No conversations` until one does, which is the invitation.
+   * appears says `(empty)` until one does, which is the invitation.
    * @private
    */
   async _createWorkspace() {
@@ -2206,7 +2207,7 @@ class ConversationBar extends JugglerElement {
     // Every place a tab can land, top to bottom. The floating clone lives on
     // the host yet still carries the tab class, so it has to be kept out.
     //
-    // A box with nothing in it is a slot too. Its "No conversations" line sits
+    // A box with nothing in it is a slot too. Its "(empty)" line sits
     // exactly where its tabs would, and a drag lands in front of something —
     // without it, the workspace that outlived its conversations would be the
     // one box you could not put a conversation back into.
@@ -2282,7 +2283,21 @@ class ConversationBar extends JugglerElement {
             return;
           }
           const session = this._session;
-          void openWorkspaceMove(dragged, landedIn).then(({ moved }) => {
+          // A move that leaves it working in the same tree — into or out of a
+          // group — changes only the box it is drawn in, which is what the drop
+          // already showed, so it is simply made.
+          const moving = moveNeedsConfirmation(dragged, landedIn)
+            ? openWorkspaceMove(dragged, landedIn)
+            : rebindConversation(dragged, landedIn).then(
+              ({ done, message }) => {
+                if (!done) showNotice(message || `Couldn't move the conversation.`);
+                return { moved: done };
+              },
+              (/** @type {unknown} */ error) => {
+                showNotice(extractErrorMessage(error));
+                return { moved: false };
+              });
+          void moving.then(({ moved }) => {
             // A move declined, or refused when it came to be written, has moved
             // nothing: the strip is already back to what the session says, and
             // the arrangement goes with the question. A window that has moved
