@@ -64,16 +64,6 @@ type outboundMsg struct {
 	raw  []byte
 }
 
-// newClientMailbox builds one client's ordered delivery pipeline
-// (mailbox.Mailbox — never blocks the actor that enqueues, preserves enqueue
-// order). Both the viewerGroup and the clientHub fan out through it.
-// Streaming consumers depend on that ordering: a viewer's live
-// engine-bridge/action-progress chunks must arrive in order, or a later
-// snapshot is overtaken by an earlier one and the panel shows stale output.
-// (Foreground bash output no longer rides the viewer group — shell-output goes
-// straight to the requesting engine; see processShellRequest.) The delivery
-// goroutine is the only caller of the (possibly blocking) Sender; Stop discards
-// anything undelivered, which the departed client could no longer receive anyway.
 // viewerEntry is one joined viewer: the identity it named itself by (empty when
 // it named none, which addresses nothing) and its ordered delivery pipeline.
 type viewerEntry struct {
@@ -81,6 +71,16 @@ type viewerEntry struct {
 	mb       *mailbox.Mailbox[outboundMsg]
 }
 
+// newClientMailbox builds one client's ordered delivery pipeline
+// (mailbox.Mailbox — never blocks the actor that enqueues, preserves enqueue
+// order). Both the viewerGroup and the clientHub fan out through it.
+// Streaming consumers depend on that ordering: a viewer's live
+// engine-bridge/action-progress chunks must arrive in order, or a later
+// snapshot is overtaken by an earlier one and the panel shows stale output.
+// Foreground bash output does not ride the viewer group — shell-output goes
+// straight to the requesting engine; see processShellRequest. The delivery
+// goroutine is the only caller of the (possibly blocking) Sender; Stop discards
+// anything undelivered, which the departed client could no longer receive anyway.
 func newClientMailbox(sender Sender) *mailbox.Mailbox[outboundMsg] {
 	return mailbox.NewMailbox(func(v outboundMsg) {
 		if v.raw != nil {

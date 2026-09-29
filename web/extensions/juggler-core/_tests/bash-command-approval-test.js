@@ -20,7 +20,9 @@
  * @module unit-tests/bash-command-approval-unit-test
  */
 
-import { isCommandAutoApproved, isCatastrophicDeletion, suggestApprovalPatterns, tokenize, posixNormalize, matchesGlob, isGrantableRoot, isPathInsideAllowedRoots } from '../context-items/execute/command-approval.js';
+import { isCommandAutoApproved, isCatastrophicDeletion, suggestApprovalPatterns, matchesGlob } from '../context-items/execute/command-approval.js';
+import { tokenize } from '../context-items/execute/shell-tokenizer.js';
+import { posixNormalize, isGrantableRoot, isPathInsideAllowedRoots } from 'juggler/utils/path-containment';
 import ExecuteContextItem from '../context-items/execute-context-item.js';
 
 const PROJECT_ROOT = '/Users/jules/code/juggler';

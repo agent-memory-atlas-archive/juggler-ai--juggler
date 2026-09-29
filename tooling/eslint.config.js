@@ -129,7 +129,8 @@ export default [
       'valid-typeof': 'error',
 
       // JSDoc validation - enforce strong typing
-      // CRITICAL: These rules would have caught the wsService.send() bug
+      // A @param list that disagrees with the signature is an error, so a
+      // caller typed against a stale signature is caught at lint time.
       'jsdoc/check-param-names': ['error', {
         checkDestructured: false,  // Don't enforce destructured params
       }],

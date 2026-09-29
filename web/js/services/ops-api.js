@@ -321,7 +321,7 @@ export function __setOpCallTimeoutForTest(ms) {
  * @property {string} [path] - Directory path to search (default: project root)
  * @property {number} [maxResults] - Max results to return (default 100, max 1000)
  * @property {string} [filePattern] - File pattern filter (e.g., "*.js")
- * @property {boolean} [caseSensitive] - Case-sensitive search (default false)
+ * @property {boolean} [ignoreCase] - Case-insensitive search (default true)
  * @property {boolean} [noIgnore] - Include files ignored by .gitignore (default false)
  */
 

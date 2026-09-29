@@ -570,8 +570,8 @@ class ConversationTab extends JugglerElement {
   //      hand-back with a bubbling `restore-input-focus`, keeping the
   //      decision here rather than in the widget.
   //
-  // All focus changes go through _focusInput() or _blurInput() below,
-  // except action-confirmation which manages its own button focus.
+  // Focus is taken through _focusInput() below, except by
+  // action-confirmation, which manages its own button focus.
 
   /**
    * Focus an input column's textarea (enter typing mode).
@@ -636,16 +636,6 @@ class ConversationTab extends JugglerElement {
     // Keep watching even when focus currently looks right: a subsequent
     // re-render can still bounce it to <body> within this window.
     setTimeout(() => this._reassertInputFocus(target, staleCol, attempts - 1), 30);
-  }
-
-  /**
-   * Blur the textarea if it's currently focused (enter navigating mode).
-   * @private
-   */
-  _blurInput() {
-    if (document.activeElement?.tagName === 'TEXTAREA') {
-      /** @type {HTMLElement} */ (document.activeElement).blur();
-    }
   }
 
   /**

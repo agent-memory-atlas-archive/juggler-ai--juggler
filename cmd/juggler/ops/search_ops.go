@@ -77,15 +77,10 @@ func (ops *SearchOperations) grep(ctx context.Context, params map[string]any) (a
 		return nil, fmt.Errorf("invalid search pattern: %w", err)
 	}
 
-	// Handle case sensitivity (support both old and new param names)
-	// ignoreCase: true (new, grep -i style) = case insensitive (default)
-	// caseSensitive: true (old) = case sensitive
-	ignoreCase := true // Default: case insensitive (like grep -i)
+	// ignoreCase defaults to true, like grep -i.
+	ignoreCase := true
 	if ic, ok := params["ignoreCase"].(bool); ok {
 		ignoreCase = ic
-	} else if cs, ok := params["caseSensitive"].(bool); ok {
-		// Legacy param: invert logic
-		ignoreCase = !cs
 	}
 
 	var re *regexp.Regexp

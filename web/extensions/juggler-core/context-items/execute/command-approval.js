@@ -59,22 +59,12 @@
 
 import {
   posixNormalize,
-  isPathInsideAllowedRoots,
   resolveAgainstCwd,
   canonicalRoot,
-  isGrantableRoot,
   windowsToComparable,
 } from 'juggler/utils/path-containment';
 import { checkedAt, tokenize, SUBST_SENTINEL, TOP_LEVEL_SPLIT_OPS } from './shell-tokenizer.js';
 import { COMMAND_HANDLERS, pathAllowed } from './command-handlers.js';
-
-// The path-containment helpers used to live in this file; they now live in the
-// shared SDK module above so the file write/edit tools enforce containment with
-// the exact same logic. Re-export the ones that were historically public here
-// (bash-command-approval-unit-test.js and plugin code import them from this
-// module) so those callers keep resolving — as is `tokenize`, which moved to
-// ./shell-tokenizer.js.
-export { posixNormalize, isPathInsideAllowedRoots, canonicalRoot, isGrantableRoot, tokenize };
 
 /**
  * @typedef {import('./approval-types.js').WordToken} WordToken

@@ -1003,54 +1003,6 @@ class WebSocketService {
   }
 
   /**
-   * @typedef {object} ToolDefinition
-   * @property {string} name - Tool name
-   * @property {string} description - Tool description
-   * @property {object} input_schema - JSON Schema for parameters
-   */
-
-  /**
-   * @typedef {object} ModelConfig
-   * @property {string} [provider] - LLM provider name
-   * @property {string} [model] - LLM model name
-   */
-
-  /**
-   * Send an LLM request over the transport.
-   * @param {string} systemPrompt - System prompt with instructions
-   * @param {import('../../sdk/lib/message.js').Message[]} messages - Array of Message objects
-   * @param {ToolDefinition[]} tools - Tool definitions for LLM to use
-   * @param {string} conversationId - Conversation ID for routing responses
-   * @param {ModelConfig} modelConfig - Model configuration (provider and model)
-   * @param {string} [transactionId] - Transaction ID for tracking this LLM call
-   * @returns {boolean} True if message sent successfully, false otherwise
-   */
-  send(systemPrompt, messages, tools, conversationId, modelConfig, transactionId = '') {
-    if (!this.connected || !this._transport) {
-      console.error(`[ESSENTIAL] [WebSocket] Not connected, cannot send message`);
-      return false;
-    }
-
-    // Validate model configuration: a concrete (provider, model) pair must
-    // be present.
-    const hasConcrete = modelConfig && modelConfig.provider && modelConfig.model &&
-            modelConfig.provider.trim() !== '' && modelConfig.model.trim() !== '';
-    if (!modelConfig || !hasConcrete) {
-      console.error(`[ESSENTIAL] [WebSocket] Cannot send message without valid model configuration`);
-      return false;
-    }
-
-    return this._sendJson({
-      systemPrompt,
-      messages,
-      tools,
-      conversationId,
-      modelConfig,
-      transactionId: transactionId || '' // Ensure empty string if undefined/null
-    }, 'message');
-  }
-
-  /**
    * Send a shell-start request to execute a command with streaming output
    * @param {string} shellId - Unique ID for this shell execution
    * @param {string} convId - Conversation that owns this shell (spill-file bucket); '' when unknown

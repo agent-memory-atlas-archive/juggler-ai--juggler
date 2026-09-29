@@ -21,7 +21,6 @@ import {
   TOOL_STATES,
   ACTION_STATES,
   isToolActionMessage,
-  isAssistantMessage,
   isThreadMessage
 } from '../../sdk/lib/message.js';
 import strategyRegistry from '../registries/strategy-registry.js';
@@ -512,49 +511,6 @@ export default class MessageThread {
       // it as working for as long as it sits here.
       if (isThreadMessage(/** @type {Message} */ (m)) && !itemRunSettled(m, items)) {
         return true;
-      }
-    }
-    return false;
-  }
-
-  /**
-   * Check if there are other incomplete tool-actions in the same batch.
-   * A "batch" is all tool-actions since the last assistant text message.
-   * @param {string} excludeToolUseId - Tool use ID to exclude from check
-   * @returns {boolean} True if other incomplete actions exist (pending or cancelled)
-   */
-  hasOtherIncompleteActionsInBatch(excludeToolUseId) {
-    let toolIdx = -1;
-    for (let i = 0; i < this.items.length; i++) {
-      const item = /** @type {Message} */ (this.items[i]);
-      if (isToolActionMessage(item) && item.get('toolUseId') === excludeToolUseId) {
-        toolIdx = i;
-        break;
-      }
-    }
-
-    let lastAssistantIdx = -1;
-    for (let i = this.items.length - 1; i >= 0; i--) {
-      const item = /** @type {Message} */ (this.items[i]);
-      if (isAssistantMessage(item) && item.get('content')) {
-        lastAssistantIdx = i;
-        break;
-      }
-    }
-
-    if (toolIdx !== -1 && lastAssistantIdx !== -1 && toolIdx < lastAssistantIdx) {
-      return true;
-    }
-
-    for (let i = lastAssistantIdx + 1; i < this.items.length; i++) {
-      const item = /** @type {Message} */ (this.items[i]);
-      if (isToolActionMessage(item)) {
-        if (item.get('toolUseId') !== excludeToolUseId) {
-          const result = item.get('result');
-          if (result === null || result === undefined) return true;
-          const cancelled = result.get ? result.get('cancelled') : result.cancelled;
-          if (cancelled) return true;
-        }
       }
     }
     return false;

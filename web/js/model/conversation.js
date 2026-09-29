@@ -541,14 +541,6 @@ class Conversation {
   }
 
   /**
-   * Clear all history across the entire conversation (root context).
-   * Used for conversation-wide reset (e.g., /clear command without a worker).
-   */
-  clearAllHistory() {
-    this._rootMessageThread.clearHistory();
-  }
-
-  /**
    * Run a user-driven delete with full orchestration: cancels pending
    * approvals, stops processing, seals the undo group around the delete, and
    * announces a span removal so the column footer can offer an undo.

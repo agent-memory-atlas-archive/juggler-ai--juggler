@@ -7,8 +7,8 @@ import ContextItem from 'juggler/context-item';
 import { shellKill, MAX_EXEC_TIMEOUT_MS, DEFAULT_EXEC_TIMEOUT_MS } from 'juggler/ops';
 import { createHighlightedCode, createSummaryWithSubtitle } from 'juggler/ui';
 import { renderLiveTaskOutput } from '../../../sdk/lib/live-task-output.js';
-import { resolveAgainstCwd, posixNormalize } from 'juggler/utils/path-containment';
-import { isCommandAutoApproved, suggestApprovalPatterns, MAX_SUGGESTED_PATTERN_LENGTH, canonicalRoot, isGrantableRoot } from './execute/command-approval.js';
+import { resolveAgainstCwd, posixNormalize, canonicalRoot, isGrantableRoot } from 'juggler/utils/path-containment';
+import { isCommandAutoApproved, suggestApprovalPatterns, MAX_SUGGESTED_PATTERN_LENGTH } from './execute/command-approval.js';
 import { isShellCommandPermitted, isShellCommandCatastrophic } from './execute/command-permission.js';
 import { renderExecutePermissionSection } from './execute/permission-section.js';
 

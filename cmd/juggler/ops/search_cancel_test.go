@@ -36,9 +36,9 @@ func TestGrepHonorsContextCancellation(t *testing.T) {
 
 	// Baseline: a live context finds all matches.
 	full, err := ops.grep(context.Background(), map[string]any{
-		"pattern":       "needle",
-		"maxCount":      float64(1000),
-		"caseSensitive": true,
+		"pattern":    "needle",
+		"maxCount":   float64(1000),
+		"ignoreCase": false,
 	})
 	if err != nil {
 		t.Fatalf("grep(live): %v", err)
@@ -52,9 +52,9 @@ func TestGrepHonorsContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	got, err := ops.grep(ctx, map[string]any{
-		"pattern":       "needle",
-		"maxCount":      float64(1000),
-		"caseSensitive": true,
+		"pattern":    "needle",
+		"maxCount":   float64(1000),
+		"ignoreCase": false,
 	})
 	if err != nil {
 		t.Fatalf("grep(cancelled): %v", err)
@@ -76,10 +76,10 @@ func TestGrepGlobHonorsContextCancellation(t *testing.T) {
 
 	params := func() map[string]any {
 		return map[string]any{
-			"pattern":       "needle",
-			"path":          "*.txt", // glob path triggers searchGlobFiles
-			"maxCount":      float64(1000),
-			"caseSensitive": true,
+			"pattern":    "needle",
+			"path":       "*.txt", // glob path triggers searchGlobFiles
+			"maxCount":   float64(1000),
+			"ignoreCase": false,
 		}
 	}
 
