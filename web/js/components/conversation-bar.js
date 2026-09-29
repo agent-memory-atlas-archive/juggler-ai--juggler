@@ -52,6 +52,13 @@ import './workspace-box-header.js';
 // would spawn a second tab.
 const NEW_CONVERSATION_DEBOUNCE_MS = 500;
 
+// How long keyboard tab cycling waits for the keys to go quiet before showing
+// the conversation it has landed on. The strip's highlight moves on every press;
+// only the transcript, the expensive half, waits. Longer than key auto-repeat
+// and a quick tap-tap-tap, short enough that a single press still feels
+// immediate.
+export const CYCLE_SETTLE_MS = 150;
+
 // How far below a workspace box's top edge still counts as the strip above it
 // rather than the inside of it, while a drag is looking for somewhere to land
 // (see `_dropPlaceAt`). It is taken out of the header, which is a title and is
@@ -177,6 +184,20 @@ class ConversationBar extends JugglerElement {
     this._renderDeferred = false;
 
     /**
+     * Where keyboard cycling has moved the strip's highlight to, ahead of the
+     * conversation being shown (see {@link _switchAdjacentTab}). Null when no
+     * cycle is waiting to settle.
+     * @type {string|null} @private
+     */
+    this._cycleTargetId = null;
+
+    /** @type {number|null} @private Timer that shows {@link _cycleTargetId} once the keys settle */
+    this._cycleTimer = null;
+
+    /** @type {boolean} @private Whether the settled cycle should focus the composer */
+    this._cycleFocusInput = false;
+
+    /**
      * The box drawn for each workspace, by workspace id. Kept apart from
      * {@link _cachedElements}, which render()'s cleanup pass reads as "a tab,
      * unless it is named chrome" — a box is neither, and its lifetime is the
@@ -208,6 +229,7 @@ class ConversationBar extends JugglerElement {
       cancelAnimationFrame(this._renderFrame);
       this._renderFrame = null;
     }
+    this._cancelCycle();
     this._hideBinUndo();
   }
 
@@ -313,6 +335,7 @@ class ConversationBar extends JugglerElement {
           // Move right, out of the tab list and into the conversation — commit
           // the selection and focus its composer (same as _enterActiveTab).
           e.preventDefault();
+          this._flushCycle();
           this._enterActiveTab();
           break;
         case 'Escape':
@@ -324,6 +347,7 @@ class ConversationBar extends JugglerElement {
           // tab (Finder-style). Escape / ArrowRight remain the "leave tab-list
           // focus" affordances.
           e.preventDefault();
+          this._flushCycle();
           this._exitTabListFocus();
           this._enterRenameMode(this._session?.visibleConversationId || '');
           break;
@@ -408,6 +432,14 @@ class ConversationBar extends JugglerElement {
   }
 
   /**
+   * Step the selection to the adjacent tab from the keyboard.
+   *
+   * The strip's highlight moves at once, but the conversation is only shown
+   * once the keys have been quiet for {@link CYCLE_SETTLE_MS}. Showing one is
+   * the expensive half — its transcript is laid out and every session listener
+   * runs — and paying that for each tab a burst of presses merely passes
+   * through is what made rapid cycling judder. Each press steps from the
+   * highlight, so a burst lands where the presses add up to.
    * @param {number} step
    * @param {{focusInput?: boolean}} [options]
    * @private
@@ -421,14 +453,46 @@ class ConversationBar extends JugglerElement {
     // as from one on screen: there is no tab to step from while the panel has
     // the selection, and stepping from the one it was opened over is what the
     // keystroke is asking for.
-    const currentId = this._session.loadedConversationId;
+    const currentId = this._cycleTargetId ?? this._session.loadedConversationId;
     const currentIdx = currentId ? ids.indexOf(currentId) : -1;
     const nextIdx = ((currentIdx < 0 ? 0 : currentIdx + step) + ids.length) % ids.length;
     const nextId = ids[nextIdx];
-    if (nextId && nextId !== currentId) {
-      this._switchConversation(nextId, options);
-      requestAnimationFrame(() => this._scrollActiveTabIntoView());
+    if (!nextId || nextId === currentId) return;
+
+    this._cycleTargetId = nextId;
+    this._cycleFocusInput ||= Boolean(options.focusInput);
+    if (this._cycleTimer !== null) clearTimeout(this._cycleTimer);
+    this._cycleTimer = window.setTimeout(() => this._flushCycle(), CYCLE_SETTLE_MS);
+    this.render();
+  }
+
+  /**
+   * Show the conversation a keyboard cycle has landed on, now rather than when
+   * the keys settle. A no-op when no cycle is waiting.
+   * @private
+   */
+  _flushCycle() {
+    const id = this._cycleTargetId;
+    const focusInput = this._cycleFocusInput;
+    this._cancelCycle();
+    if (!id) return;
+    if (this._session?.conversations.has(id)) {
+      this._switchConversation(id, { focusInput });
+    } else {
+      // Gone while the keys were moving: put the highlight back on what is shown.
+      this.render();
     }
+  }
+
+  /**
+   * Drop a keyboard cycle that has not settled yet, without showing it.
+   * @private
+   */
+  _cancelCycle() {
+    if (this._cycleTimer !== null) clearTimeout(this._cycleTimer);
+    this._cycleTimer = null;
+    this._cycleTargetId = null;
+    this._cycleFocusInput = false;
   }
 
   /**
@@ -462,6 +526,7 @@ class ConversationBar extends JugglerElement {
       this._llmStateUnsubscribe = null;
     }
 
+    this._cancelCycle();
     this._session = session;
 
     // Seed the auto-naming setting cache (best-effort, fire-and-forget) so the
@@ -477,6 +542,13 @@ class ConversationBar extends JugglerElement {
 
     // Subscribe to session changes
     this._unsubscribe = session.subscribe(/** @param {SessionEvent} event */ (event) => {
+      // Something other than the cycle moved the selection (jump-to-attention,
+      // a workspace box, another path into the session): it overrides a cycle
+      // still settling, exactly as a click does.
+      if (event.type === 'conversation:switched' || event.type === 'workspace:selected') {
+        this._cancelCycle();
+      }
+
       if (event.type === 'conversation:created') {
         this._handleConversationCreated(event.data);
       } else if (event.type === 'conversation:deleted') {
@@ -809,8 +881,11 @@ class ConversationBar extends JugglerElement {
     // The strip draws what the session says is selected, and asks it once: a
     // box holding the selection is already why there is no visible
     // conversation, so there is nothing to reconcile between the two answers.
-    const selectedWorkspaceId = selectedWorkspace(this._session)?.id ?? null;
-    const visibleId = this._session.visibleConversationId;
+    // A keyboard cycle still settling is drawn as the selection already: the
+    // highlight follows every press, and only showing the conversation waits.
+    const cycling = this._cycleTargetId !== null && this._session.conversations.has(this._cycleTargetId);
+    const selectedWorkspaceId = cycling ? null : (selectedWorkspace(this._session)?.id ?? null);
+    const visibleId = cycling ? this._cycleTargetId : this._session.visibleConversationId;
 
     // Get or create add button (only created once) and pin it to the top
     let addButton = /** @type {HTMLElement|null} */ (this._cachedElements.get('add-button'));
@@ -1618,6 +1693,9 @@ class ConversationBar extends JugglerElement {
     if (!this._session) {
       return;
     }
+    // Any switch overrides a keyboard cycle still settling: a click mid-burst
+    // is the user's last word, and the cycle must not land on top of it.
+    this._cancelCycle();
 
     const success = this._session.switchConversation(conversationId);
     if (!success) {
