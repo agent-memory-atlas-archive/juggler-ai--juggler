@@ -48,6 +48,50 @@ export function isUsageStale(usage) {
 }
 
 /**
+ * Smallest elapsed fraction the pace calculation will divide by, as a
+ * percentage. Inside the opening stretch of a window a single large turn is many
+ * times the average rate, and a meter that opened red every window would say
+ * nothing; flooring the divisor means the first quarter warns only when the
+ * burst is large enough to exhaust the quota on its own.
+ */
+const PACE_FLOOR_PCT = 25;
+
+/** Fraction of the exhausting rate at which a meter starts to warn. */
+const PACE_WARN = 0.8;
+
+/**
+ * How far through its window a stat is.
+ * @param {import('../services/usage-stats-cache.js').UsageStat} stat
+ * @returns {number|null} Elapsed percentage, 0-100, or null when the stat
+ *   carries no window (a balance, or a provider that reports no reset).
+ */
+function elapsedPercent(stat) {
+  const windowSecs = Number(stat.windowSecs) || 0;
+  if (!stat.resetsAt || windowSecs <= 0) return null;
+  const windowMs = windowSecs * 1000;
+  const msElapsed = windowMs - (new Date(stat.resetsAt).getTime() - Date.now());
+  if (!Number.isFinite(msElapsed)) return null;
+  return Math.max(0, Math.min(100, msElapsed / windowMs * 100));
+}
+
+/**
+ * Warning level for a meter. What matters is not how much of the quota is gone
+ * but whether it is going faster than the clock: usage level with the elapsed
+ * fraction — the tick — is on course to run the quota out exactly at the reset,
+ * so that is the red line, and {@link PACE_WARN} of the way there is the
+ * warning. A stat with no window has no pace to judge, and falls back to
+ * absolute thresholds.
+ * @param {number} pct - Percentage of the quota used, 0-100.
+ * @param {number|null} timePct - Percentage of the window elapsed, or null.
+ * @returns {string} A modifier class for `.usage-stat-fill`, or '' for none.
+ */
+function usageLevel(pct, timePct) {
+  if (timePct === null) return pct > 80 ? 'usage-high' : (pct > 60 ? 'usage-medium' : '');
+  const pace = pct / Math.max(timePct, PACE_FLOOR_PCT);
+  return pace >= 1 ? 'usage-high' : (pace >= PACE_WARN ? 'usage-medium' : '');
+}
+
+/**
  * Render one usage signal. A stat with a percentage renders as a labelled meter;
  * one without (for example, a raw balance) renders its absolute value instead.
  * @param {import('../services/usage-stats-cache.js').UsageStat} stat
@@ -72,15 +116,10 @@ export function renderUsageRow(stat) {
   }
 
   const pct = Math.max(0, Math.min(100, Number(stat.usedPercent) || 0));
-  const level = pct > 80 ? 'usage-high' : (pct > 60 ? 'usage-medium' : '');
-  let timeMarker = '';
-  const windowSecs = Number(stat.windowSecs) || 0;
-  if (stat.resetsAt && windowSecs > 0) {
-    const msRemaining = new Date(stat.resetsAt).getTime() - Date.now();
-    const msElapsed = windowSecs * 1000 - msRemaining;
-    const timePct = Math.max(0, Math.min(100, msElapsed / (windowSecs * 1000) * 100));
-    timeMarker = `<div class="usage-stat-time-marker" style="left:${timePct.toFixed(1)}%" aria-hidden="true"></div>`;
-  }
+  const timePct = elapsedPercent(stat);
+  const level = usageLevel(pct, timePct);
+  const timeMarker = timePct === null ? ''
+    : `<div class="usage-stat-time-marker" style="left:${timePct.toFixed(1)}%" aria-hidden="true"></div>`;
 
   return `
             <div class="usage-stat">

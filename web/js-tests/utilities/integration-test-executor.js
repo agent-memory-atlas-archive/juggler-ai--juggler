@@ -255,6 +255,7 @@ import { runTests as runPinboardTests } from '../unit-tests/pinboard-test.js';
 import { runTests as runPinboardShellTests } from '../unit-tests/pinboard-shell-test.js';
 import { runTests as runUsageStatsCacheTests } from '../unit-tests/usage-stats-cache-test.js';
 import { runTests as runUsageCardProviderTests } from '../unit-tests/usage-card-provider-test.js';
+import { runTests as runUsageRendererTests } from '../unit-tests/usage-renderer-test.js';
 import { runTests as runThinkingCyclerTests } from '../unit-tests/thinking-cycler-test.js';
 import { runTests as runThinkingChipTests } from '../unit-tests/thinking-chip-test.js';
 import { runTests as runServiceTierControlTests } from '../unit-tests/service-tier-control-test.js';
@@ -445,6 +446,7 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:pinboard-shell', run: runPinboardShellTests, needsExclusiveRun: true },
   { name: 'unit:usage-stats-cache', run: runUsageStatsCacheTests },
   { name: 'unit:usage-card-provider', run: runUsageCardProviderTests },
+  { name: 'unit:usage-renderer', run: runUsageRendererTests },
   { name: 'unit:thinking-cycler', run: runThinkingCyclerTests },
   { name: 'unit:thinking-chip', run: runThinkingChipTests },
   { name: 'unit:service-tier-control', run: runServiceTierControlTests },

@@ -760,11 +760,14 @@ model-tuning:empty {
     pointer-events: none;
 }
 
+/* The fill warns about pace, not depletion: usage-renderer.js sets the modifier
+   by how close the fill is to the tick, so a bar reaching the tick is red at any
+   width. Windowless stats have no tick and keep absolute thresholds. */
 .usage-stat-fill {
     height: 100%;
     border-radius: 0.1875rem;
     background: var(--text-tertiary);
-    transition: width 200ms ease;
+    transition: width 200ms ease, background 200ms ease;
 }
 
 .usage-stat-fill.usage-medium {

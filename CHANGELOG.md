@@ -5,6 +5,8 @@ of changes; this project follows semantic versioning.
 
 ## [Unreleased]
 
+- Usage meters now redden by pace against the window, not by how much of the quota is gone
+
 ## [0.7.2] - 2026-09-28
 
 - A first launch with no provider now walks you through setup, finding what is already installed
