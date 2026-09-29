@@ -52,6 +52,9 @@
  *                                          the call is Object.assign(el, …) the
  *                                          tag is el's, named in the same
  *                                          expression
+ *   const li = renderItem(item)            the tag every `return` of every
+ *                                          renderItem in the tree hands back,
+ *                                          when they all hand back the same one
  *
  * Variables are resolved through eslint-scope, so two `const row`s in different
  * functions stay different elements. Fields on `this` are keyed per file, which
@@ -103,6 +106,7 @@ class Element {
 		this.open = false;     // something unreadable goes inside it
 		this.tagOpen = false;  // its own tag could not be read
 		this.complete = true;  // we have read every class it carries
+		this.origins = new Set(); // names of the functions that handed it back
 	}
 
 	/** Fold in one class attribute or className value. */
@@ -227,6 +231,35 @@ function* walkAST(node, parent = null) {
 			for (const child of value) if (child && typeof child.type === 'string') yield* walkAST(child, node);
 		} else if (value && typeof value.type === 'string') {
 			yield* walkAST(value, node);
+		}
+	}
+}
+
+const FUNCTION_TYPES = /^(FunctionDeclaration|FunctionExpression|ArrowFunctionExpression)$/;
+
+/**
+ * The expressions this function hands back — the argument of every `return` in
+ * its own body, and an expression-bodied arrow's body. Returns belonging to a
+ * function nested inside it are skipped along with the rest of that subtree: a
+ * click handler's `return false` is not what the outer function produces, and
+ * counting it would say the outer function's element is unreadable.
+ */
+function* returnedExpressions(fn) {
+	if (fn.type === 'ArrowFunctionExpression' && fn.body.type !== 'BlockStatement') {
+		yield fn.body;
+		return;
+	}
+	const stack = [fn.body];
+	while (stack.length) {
+		const node = stack.pop();
+		if (!node || typeof node.type !== 'string') continue;
+		if (node !== fn.body && FUNCTION_TYPES.test(node.type)) continue;
+		if (node.type === 'ReturnStatement') { yield node.argument; continue; }
+		for (const key of Object.keys(node)) {
+			if (key === 'parent' || key === 'loc' || key === 'range') continue;
+			const value = node[key];
+			if (Array.isArray(value)) stack.push(...value);
+			else stack.push(value);
 		}
 	}
 }
@@ -550,6 +583,20 @@ function harvestJS(source, file, espree, eslintScope, evidence, extended = new S
 	};
 	const note = (element) => evidence.add(element);
 
+	/**
+	 * The tag an expression creates, and nothing else: undefined when it creates
+	 * no element, null when it creates one whose tag is the caller's to name.
+	 * `created` below answers the same question and records the element's classes
+	 * on the way past, which is not wanted when all that is being read is a tag.
+	 */
+	const createdTag = (node) => {
+		if (!node || node.type !== 'CallExpression') return undefined;
+		const name = memberName(node.callee) ?? (node.callee.type === 'Identifier' ? node.callee.name : null);
+		if (name === 'createElement' && node.callee.type === 'MemberExpression') return literalString(node.arguments[0]);
+		if (name && ELEMENT_HELPERS.has(name)) return literalString(node.arguments[0]);
+		return undefined;
+	};
+
 	/** The element an expression creates, if it creates one. */
 	const created = (node) => {
 		if (!node || node.type !== 'CallExpression') return null;
@@ -787,6 +834,89 @@ function harvestJS(source, file, espree, eslintScope, evidence, extended = new S
 		parseFragment(text, note);
 	}
 
+	// ---------------------------------------------------------------------
+	// Elements handed back by a named function
+	// ---------------------------------------------------------------------
+	//
+	// `const li = provider.renderItem(item); li.classList.add('menu-item')` puts
+	// a class on an element built behind a callback. The dual of the class text
+	// `classFromReturn` reads: there the function names the class and the call
+	// site names the tag, here the call site names the class and the function
+	// names the tag.
+	//
+	// Both halves are read here and joined by the model at finish(), because the
+	// function that builds the element is usually in another file — and the
+	// element a `return` hands back is only known once this file's walk has
+	// finished building it.
+
+	/** Fold what one `return` hands back into `into`, or admit we cannot see it. */
+	const readReturned = (node, into, depth = 0) => {
+		if (!node) return; // `return;` hands back no element, so it says nothing
+		if (depth > 4) { into.unknown = true; return; }
+		if (node.type === 'ConditionalExpression') {
+			readReturned(node.consequent, into, depth + 1);
+			readReturned(node.alternate, into, depth + 1);
+			return;
+		}
+		if (node.type === 'CallExpression') {
+			const tag = createdTag(node);
+			if (tag !== undefined) {
+				if (tag) into.tags.add(tag);
+				else into.unknown = true;  // createElement(tag, …) — the caller's tag
+				return;
+			}
+			// `return renderSkillMenuItem(skill)` — whatever that hands back.
+			const name = memberName(node.callee) ?? (node.callee.type === 'Identifier' ? node.callee.name : null);
+			if (name) into.via.add(name);
+			else into.unknown = true;
+			return;
+		}
+		// A variable or a field: the element the walk built for it. An identifier
+		// eslint-scope could not resolve is refused — keyOf falls back to merging
+		// every same-named variable in the file, which is generous in the right
+		// direction for classes and the wrong one for a claim about one tag.
+		const element = node.type === 'Identifier' && !resolved.has(node) ? null : elements.get(keyOf(node));
+		if (element && element.tag && !element.tagOpen) { into.tags.add(element.tag); return; }
+		// A row the walk never had reason to build an element for — nothing put a
+		// class on it here, it was handed straight back. What built it is in its
+		// initialiser, and only a const can stand in for its value.
+		if (!element && node.type === 'Identifier') {
+			const def = resolved.get(node)?.defs?.[0];
+			if (def?.type === 'Variable' && def.parent?.kind === 'const' && def.node.init) {
+				readReturned(def.node.init, into, depth + 1);
+				return;
+			}
+		}
+		into.unknown = true;
+	};
+
+	const returnedElements = new Map();
+	for (const [node] of walkAST(ast)) {
+		if (!FUNCTION_TYPES.test(node.type)) continue;
+		const name = functionName(node);
+		if (!name) continue;
+		const into = returnedElements.get(name)
+			?? { tags: new Set(), via: new Set(), unknown: false };
+		for (const returned of returnedExpressions(node)) readReturned(returned, into);
+		returnedElements.set(name, into);
+	}
+	for (const [name, into] of returnedElements) evidence.addReturnedElement(name, into);
+
+	// The other half: which variables hold an element some named function built.
+	// Read after the walk, so the only candidates are variables something has
+	// already treated as an element.
+	for (const [node] of walkAST(ast)) {
+		if (node.type !== 'VariableDeclarator' && !(node.type === 'AssignmentExpression' && node.operator === '=')) continue;
+		const value = node.type === 'VariableDeclarator' ? node.init : node.right;
+		if (!value || value.type !== 'CallExpression') continue;
+		const name = memberName(value.callee) ?? (value.callee.type === 'Identifier' ? value.callee.name : null);
+		if (!name) continue;
+		const key = keyOf(node.type === 'VariableDeclarator' ? node.id : node.left);
+		const element = key === null ? null : elements.get(key);
+		if (!element || element.tag) continue;
+		element.origins.add(name);
+	}
+
 	for (const element of elements.values()) note(element);
 }
 
@@ -808,6 +938,7 @@ class MarkupModel {
 		this.elements = new Set();    // a Set: the walk reports some twice
 		this.classParams = new Map(); // "fn#index" → tags it becomes a class on
 		this.callSites = new Map();   // "fn#index" → literals passed there
+		this.returns = new Map();     // fn → the elements it hands back
 	}
 
 	add(element) {
@@ -826,6 +957,64 @@ class MarkupModel {
 		const key = `${name}#${index}`;
 		if (!this.callSites.has(key)) this.callSites.set(key, new Set());
 		this.callSites.get(key).add(value);
+	}
+
+	/**
+	 * What a function called `name` hands back: the tags it builds directly, the
+	 * functions it delegates to, and whether any of its returns was unreadable.
+	 *
+	 * Keyed by name across the whole tree, because the call is usually
+	 * `provider.renderItem(item)` and the object behind it is not knowable. Two
+	 * functions sharing a name contribute both their answers, so a collision can
+	 * only add a tag or an `unknown` — and either makes the model say less.
+	 */
+	addReturnedElement(name, { tags, via, unknown }) {
+		const entry = this.returns.get(name) ?? { tags: new Set(), via: new Set(), unknown: false };
+		for (const tag of tags) entry.tags.add(tag);
+		for (const other of via) entry.via.add(other);
+		if (unknown) entry.unknown = true;
+		this.returns.set(name, entry);
+	}
+
+	/**
+	 * Every tag a call to `name` can hand back, or null when that cannot be
+	 * known: one unreadable return anywhere, or a delegation to a function the
+	 * harvest never saw, and the whole answer is withheld rather than guessed.
+	 */
+	#returnedTags(name, seen = new Set()) {
+		const entry = this.returns.get(name);
+		if (!entry || entry.unknown) return null;
+		if (seen.has(name)) return new Set(); // recursion: the base cases carry the tags
+		seen.add(name);
+		const tags = new Set(entry.tags);
+		for (const other of entry.via) {
+			const delegated = this.#returnedTags(other, seen);
+			if (delegated === null) return null;
+			for (const tag of delegated) tags.add(tag);
+		}
+		return tags;
+	}
+
+	/**
+	 * Give each element a named function handed back the tag that function
+	 * builds. Only when every function involved builds the same one: two
+	 * possible tags is a fact this model has no way to hold, and holding one of
+	 * them would be a claim the code does not make.
+	 */
+	#resolveOrigins() {
+		const resolved = new Map();
+		for (const element of this.elements) {
+			if (element.tag || element.tagOpen || !element.origins.size) continue;
+			const tags = new Set();
+			let known = true;
+			for (const origin of element.origins) {
+				if (!resolved.has(origin)) resolved.set(origin, this.#returnedTags(origin));
+				const found = resolved.get(origin);
+				if (found === null) { known = false; break; }
+				for (const tag of found) tags.add(tag);
+			}
+			if (known && tags.size === 1) [element.tag] = tags;
+		}
 	}
 
 	/** Turn class-name arguments into the elements their factories build. */
@@ -847,6 +1036,7 @@ class MarkupModel {
 	/** Fold every element that was added into the lookup tables. */
 	finish() {
 		this.#foldParameters();
+		this.#resolveOrigins();
 		for (const element of this.elements) {
 			for (const cls of element.classes) {
 				this.seen.add(cls);

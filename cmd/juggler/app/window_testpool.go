@@ -292,8 +292,8 @@ func runTestPoolWindowApp(srv *server.Server, devMode bool, headless bool, testI
 	// Initial NSWindow background. The page CSS at :root defaults to the dark
 	// theme (--bg-primary: #0d1117), so we paint the window dark on startup;
 	// the page emits 'juggler:theme' on toggle which re-runs applyWindowChrome
-	// with the new colour. Light = #ffffff. Keep these in sync with
-	// web/css/tokens/theme-dark.css :root[data-theme="light"|"dark"] --bg-primary.
+	// with the new colour. Light = #ffffff. Keep these in sync with --bg-primary
+	// in web/css/tokens/theme-dark.css and web/css/tokens/theme-light.css.
 	const (
 		themeDark  = "dark"
 		themeLight = "light"

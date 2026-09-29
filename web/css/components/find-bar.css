@@ -1,0 +1,118 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+::highlight(find-match) {
+    /* Subtle translucent yellow — reads as a muted tint over both the dark and
+       light message surfaces while leaving the underlying text colour intact. */
+    background-color: rgb(255 213 0 / 32%);
+}
+
+::highlight(find-match-current) {
+    /* The active match: a stronger, opaque warm-yellow fill with near-black
+       text. --notice-bg is a light yellow in both themes, so dark text stays
+       readable on it either way. */
+    background-color: var(--notice-bg, #e6b93f);
+    color: #1a1a1a;
+}
+
+/* ── Find (⌘F) bar ─────────────────────────────────────────────────────────
+   The presentational bar driven by find-bar.js. Mounted as an absolutely-
+   positioned overlay inside whichever panel is being searched — the `mount` of
+   that panel's getFindTarget(), always a positioned box — and pinned top-right
+   above that panel's scroller. Sits at --z-controls: above the content and the
+   scroll-controls (z-index 2) it overlaps, but below dropdowns and modals.
+   Visual language mirrors .scroll-control-btn — same surface, border, radius
+   tokens — so it reads as part of the same control family in both themes.
+
+   The max-width matters on the narrow panels: properties and the pinboard are
+   resized to whatever the user can spare, and a bar wider than its panel would
+   hang off the edge rather than shrink. The input gives up the width. */
+
+.find-bar {
+    position: absolute;
+    top: 0.5rem;
+    right: 1.25rem;
+    z-index: var(--z-controls, 100);
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    max-width: calc(100% - 2rem);
+    padding: 0.25rem;
+    border: 0.0625rem solid var(--border-color);
+    border-radius: var(--radius-xl, 0.5rem);
+    background: var(--bg-secondary, #161b22);
+    color: var(--text-primary, #e6edf3);
+    box-shadow: var(--shadow-md, 0 0.125rem 0.5rem rgb(0 0 0 / 20%));
+}
+
+.find-bar__input {
+    flex: 0 1 11rem;
+    min-width: 3rem;
+    padding: 0.25rem 0.5rem;
+    border: 0.0625rem solid var(--border-color);
+    border-radius: var(--radius-lg, 0.375rem);
+    background: var(--bg-primary, #0d1117);
+    color: var(--text-primary, #e6edf3);
+    font: inherit;
+    font-size: 0.8125rem;
+    outline: none;
+}
+
+.find-bar__input:focus {
+    border-color: var(--accent-blue, #58a6ff);
+}
+
+.find-bar__counter {
+    min-width: 4.25rem;
+    padding: 0 0.25rem;
+    color: var(--text-secondary, #8b949e);
+    font-size: 0.75rem;
+    text-align: right;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.find-bar__counter--empty {
+    color: var(--notice-bg, #e6b93f);
+}
+
+.find-bar__btn {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    padding: 0;
+    border: 0.0625rem solid transparent;
+    border-radius: var(--radius-lg, 0.375rem);
+    background: transparent;
+    color: var(--text-secondary, #8b949e);
+    cursor: pointer;
+    font-size: 0.75rem;
+    line-height: 1;
+    transition: color 0.2s, background-color 0.2s, border-color 0.2s;
+}
+
+.find-bar__btn svg {
+    width: 1rem;
+    height: 1rem;
+}
+
+.find-bar__btn:hover {
+    color: var(--accent-blue, #58a6ff);
+    background: var(--bg-tertiary, #282e33);
+}
+
+.find-bar__toggle {
+    font-weight: 600;
+}
+
+.find-bar__toggle.is-active {
+    color: var(--accent-blue, #58a6ff);
+    border-color: var(--accent-blue, #58a6ff);
+    background: var(--bg-tertiary, #282e33);
+}

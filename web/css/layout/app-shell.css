@@ -12,16 +12,6 @@ app-container {
     inset: 0;
 }
 
-.app-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    /* stylelint-disable-next-line rem-over-px/rem-over-px, unit-disallowed-list */
-    padding: 12px 20px;
-    flex-shrink: 0;
-    gap: 1.5rem;
-}
-
 .logo {
     display: flex;
     align-items: center;
@@ -49,7 +39,7 @@ app-container {
    position them.
 
    The `.app-header` prefix is load-bearing: the button also carries
-   `.btn-icon-header` (utilities.css), which sets `display: flex` at the same
+   `.btn-icon-header` (patterns/buttons.css), which sets `display: flex` at the same
    specificity and loads AFTER this file — so a bare `.sidebar-toggle-button`
    hide rule would lose the cascade and the burger would always show. The
    descendant prefix raises specificity above the utility. */
@@ -73,7 +63,7 @@ app-container {
     display: none;
 }
 
-/* Header icon buttons use .btn-icon-header utility (see utilities.css)
+/* Header icon buttons use the .btn-icon-header pattern (see patterns/buttons.css)
    Theme button uses inline SVG, plugins/settings use ::before pseudo-elements */
 
 /* Zoom Out Button - mask icon */
@@ -256,7 +246,7 @@ column-container {
    overlay that fades out at rest, so a chain wider than the window sits there
    presenting itself as the whole chain. So the container softens whichever edge
    it is hiding columns behind — the same affordance, and the same shape of one,
-   as the settings tab strip (.settings-tabs-scroll in components/settings-2.css).
+   as the settings tab strip (.settings-tabs-scroll in components/settings.css).
 
    Keyed to real overflow by _updateColumnOverflow in conversation-tab.js, which
    toggles .overflow-start / .overflow-end from the scroll position: a chain that

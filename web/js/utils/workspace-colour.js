@@ -17,8 +17,9 @@
  * workspaces can land on one hue — which is a nuisance and not a bug, the name
  * being what actually identifies a box.
  *
- * The colours themselves are `--workspace-tint-N` in `css/tokens/theme-dark.css`,
- * one set per theme so a hue keeps its identity and changes only its depth. This
+ * The colours themselves are `--workspace-tint-N` in `css/tokens/theme-dark.css`
+ * and `theme-light.css`, one set per theme so a hue keeps its identity and
+ * changes only its depth. This
  * file picks a slot and knows nothing about what is in it.
  * @module utils/workspace-colour
  */

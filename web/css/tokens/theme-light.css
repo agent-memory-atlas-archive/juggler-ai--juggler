@@ -1,0 +1,266 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+/* Light Theme */
+:root[data-theme="light"] {
+    /* Pair with the light variable set so Chromium draws dark (visible) native
+       cursors/scrollbars/widgets against the light theme (see tokens/theme-dark.css). */
+    color-scheme: light;
+
+    /* Font weights - single source of truth */
+    --font-weight-normal: 400;
+    --font-weight-medium: 500;
+    --font-weight-semibold: 600;
+    --font-weight-bold: 700;
+
+    /* Background colors */
+    --bg-primary: #f6f8fa;
+    --bg-secondary: #fff;
+    --bg-raised: #e1e3e6;
+    --border-color: #d0d7de;        /* Base: inline element borders (inputs, buttons, cards, code) */
+    --border-divider: #d0d7de;      /* Separators/dividers between regions on a solid surface */
+    --border-floating: #d0d7de;     /* Outline of floating surfaces (menus, dropdowns, modal windows) — light borders already read well */
+    --resize-handle-bg: #e6ebf0;
+
+    /* Text colors */
+    --text-primary: #1f2328;
+    --text-secondary: #656d76;
+    --text-tertiary: #8c959f;
+
+    /* Accent colors */
+    --accent-blue: #0969da;
+    --accent-green: #1a7f37;
+    --accent-yellow: #9a6700;
+    --accent-orange: #bf8700;
+    --accent-red: #d1242f;
+    --accent-purple: #8250df;
+
+    /* Text-selection highlight (see TEXT SELECTION POLICY). The colour WebKit
+       paints for a light-appearance selection on macOS: over white it settles
+       at the familiar #b3d7ff, and over a darker surface it stays a tint. */
+    --selection-bg: rgb(128 188 254 / 60%);
+
+    /* showNotice toast — a prominent warm-yellow fill with dark text. */
+    --notice-bg: #ffdf7e;
+    --notice-text: #3d2c00;
+
+    /* Approval-button keyboard-focus ring (action-confirmation ↑/↓ cursor).
+       Greens rather than a harsh near-black outline: a solid green reads on the
+       light secondary buttons, a pale green rings the green primary fill. */
+    --approval-focus-ring: var(--accent-green);
+    --approval-focus-ring-on-green: color-mix(in srgb, var(--accent-green) 28%, #fff);
+
+    /* Tab "awaiting your input" pulse. */
+    --tab-awaiting: #ffe16f;
+
+    /* A workspace's box (see tokens/theme-dark.css). Light needs far less of it: a
+       white tray on the grey strip already reads as a surface, so only the
+       edge is firmed up, enough to tell two adjacent boxes apart. */
+    --workspace-box-bg: #fff;
+    --workspace-box-border: #c2ccd6;
+
+    /* The same eight hues as the dark theme, at this theme's depth: a workspace
+       keeps the hue it is known by when the theme is switched, and only the
+       lightness moves. Same order, so the hash keeps pointing at the same one. */
+    --workspace-tint-1: #0969da;
+    --workspace-tint-2: #1b7c83;
+    --workspace-tint-3: #1a7f37;
+    --workspace-tint-4: #5c7a1e;
+    --workspace-tint-5: #9a6700;
+    --workspace-tint-6: #bc4c00;
+    --workspace-tint-7: #bf3989;
+    --workspace-tint-8: #8250df;
+
+    /* Light needs far less, for the same reason the box itself does. */
+    --workspace-tint-fill: 7%;
+    --workspace-tint-edge: 45%;
+    --workspace-tint-text: 40%;
+
+    /* ANSI foreground palette (light) — tuned to read well on the light
+       --bg-primary. Mirrors GitHub's light ANSI colours. Backgrounds use the
+       theme-independent --ansi-bg-* palette (see :root). */
+    --ansi-fg-black: #24292f;
+    --ansi-fg-red: #cf222e;
+    --ansi-fg-green: #116329;
+    --ansi-fg-yellow: #4d2d00;
+    --ansi-fg-blue: #0969da;
+    --ansi-fg-magenta: #8250df;
+    --ansi-fg-cyan: #1b7c83;
+    --ansi-fg-white: #6e7781;
+    --ansi-fg-bright-black: #57606a;
+    --ansi-fg-bright-red: #a40e26;
+    --ansi-fg-bright-green: #1a7f37;
+    --ansi-fg-bright-yellow: #633c01;
+    --ansi-fg-bright-blue: #218bff;
+    --ansi-fg-bright-magenta: #a475f9;
+    --ansi-fg-bright-cyan: #3192aa;
+    --ansi-fg-bright-white: #8c959f;
+    --ansi-fg-default: var(--text-primary);
+    --ansi-bg-default: var(--bg-primary);
+
+    /* Message bubble colors (subtle grey, semi-transparent for selection to show through) */
+    --bubble-user-bg: rgb(232 236 240 / 70%);
+    --bubble-user-bg-hover: rgb(232 236 240);
+    --bubble-user-text: #1f2328;
+    --bubble-assistant-bg: transparent;
+    --bubble-assistant-text: #1f2328;
+    --bubble-content-bg: #f0f3f6;
+
+    /* --- PLUGIN TIER variables below --- */
+
+    /* Context item color presets - 20 distinct colors (light theme) */
+    --ci-preset-slate: #cbd5e1;      /* Neutral gray-blue (default) */
+    --ci-preset-blue: #dbeafe;       /* Classic blue */
+    --ci-preset-indigo: #e0e7ff;     /* Deep indigo */
+    --ci-preset-purple: #f3e8ff;     /* Purple/violet */
+    --ci-preset-magenta: #fae8ff;    /* Bright magenta */
+    --ci-preset-pink: #fce7f3;       /* Pink */
+    --ci-preset-red: #fee2e2;        /* Red */
+    --ci-preset-orange: #fed7aa;     /* Orange */
+    --ci-preset-amber: #fef3c7;      /* Amber/gold */
+    --ci-preset-yellow: #fef9c3;     /* Yellow */
+    --ci-preset-lime: #ecfccb;       /* Lime green */
+    --ci-preset-green: #d1fae5;      /* Green */
+    --ci-preset-emerald: #ccfbef;    /* Emerald green */
+    --ci-preset-teal: #ccfbf1;       /* Teal */
+    --ci-preset-cyan: #cffafe;       /* Cyan */
+    --ci-preset-sky: #e0f2fe;        /* Sky blue */
+    --ci-preset-brown: #fde8d0;      /* Brown */
+    --ci-preset-stone: #e7e5e4;      /* Warm gray */
+    --ci-preset-zinc: #e4e4e7;       /* Cool gray */
+    --ci-preset-crimson: #fecaca;    /* Deep red */
+
+    /* Context item badge colors - saturated mid-tones for light theme (white text readable on these) */
+    --ci-preset-badge-slate:   #475569bb;
+    --ci-preset-badge-blue:    #2563ebbb;
+    --ci-preset-badge-indigo:  #4f46e5bb;
+    --ci-preset-badge-purple:  #9333eabb;
+    --ci-preset-badge-magenta: #c026d3bb;
+    --ci-preset-badge-pink:    #db2777bb;
+    --ci-preset-badge-red:     #dc2626bb;
+    --ci-preset-badge-orange:  #ea580cbb;
+    --ci-preset-badge-amber:   #d97706bb;
+    --ci-preset-badge-yellow:  #ca8a04bb;
+    --ci-preset-badge-lime:    #65a30dbb;
+    --ci-preset-badge-green:   #16a34abb;
+    --ci-preset-badge-emerald: #059669bb;
+    --ci-preset-badge-teal:    #0d9488bb;
+    --ci-preset-badge-cyan:    #0891b2bb;
+    --ci-preset-badge-sky:     #0284c7bb;
+    --ci-preset-badge-brown:   #92400ebb;
+    --ci-preset-badge-stone:   #57534ebb;
+    --ci-preset-badge-zinc:    #52525bbb;
+    --ci-preset-badge-crimson: #b91c1cbb;
+
+    /* Context item text colors (dark for light backgrounds) */
+    --ci-text: #1f2328;
+    --ci-text-secondary: #656d76;
+
+    /* Context item semantic families (light theme). Base tints alias the light
+       presets; badge mid-tones alias saturated presets so white glyphs remain
+       readable. */
+    --ci-family-read: var(--ci-preset-cyan);
+    --ci-family-search: var(--ci-preset-emerald);
+    --ci-family-web: var(--ci-preset-sky);
+    --ci-family-edit: var(--ci-preset-amber);
+    --ci-family-memory: var(--ci-preset-orange);
+    --ci-family-execute: var(--ci-preset-purple);
+    --ci-family-plan: var(--ci-preset-indigo);
+    --ci-family-meta: var(--ci-preset-slate);
+    --ci-family-system: var(--ci-family-meta);
+    --ci-family-ask: var(--ci-preset-yellow);
+    --ci-family-thread: var(--ci-preset-magenta);
+    --ci-family-todo: var(--ci-family-plan);
+
+    /* badge mid-tones (saturated; white glyphs readable) */
+    --ci-family-badge-read: var(--ci-preset-badge-cyan);
+    --ci-family-badge-search: var(--ci-preset-badge-emerald);
+    --ci-family-badge-web: var(--ci-preset-badge-sky);
+    --ci-family-badge-edit: var(--ci-preset-badge-amber);
+    --ci-family-badge-memory: var(--ci-preset-badge-orange);
+    --ci-family-badge-execute: var(--ci-preset-badge-purple);
+    --ci-family-badge-plan: var(--ci-preset-badge-indigo);
+    --ci-family-badge-meta: var(--ci-preset-badge-slate);
+    --ci-family-badge-system: var(--ci-family-badge-meta);
+    --ci-family-badge-ask: var(--ci-preset-badge-yellow);
+    --ci-family-badge-thread: var(--ci-preset-badge-magenta);
+    --ci-family-badge-todo: var(--ci-family-badge-plan);
+
+    /* Code block specific colors */
+    --bg-code-dark: #f6f8fa;
+    --bg-code-medium: #f0f3f6;
+    --border-code: #d0d7de;
+    --text-code: #1f2328;
+
+    /* Additional background/border colors (light theme) */
+    --bg-tertiary: #eaeef2;
+    --bg-dark-alt: #eaeef2;
+    --border-subtle: rgb(0 0 0 / 8%);
+    --error-color: var(--accent-red);
+    --accent-text: var(--accent-blue);
+    --accent-green-muted: #1a7f37;
+    --accent-blue-light: #0969da;
+    --accent-green-bright: #1a7f37;
+    --accent-red-soft: #d1242f;
+
+    /* Overlay colors — inverted for light backgrounds so hover/active states remain visible */
+    --overlay-light-5: rgb(0 0 0 / 3%);
+    --overlay-light-8: rgb(0 0 0 / 5%);
+    --overlay-light-10: rgb(0 0 0 / 8%);
+    --overlay-light-20: rgb(0 0 0 / 12%);
+    --overlay-light-30: rgb(0 0 0 / 18%);
+    --item-selected-bg: rgb(0 0 0 / 8%);
+
+    /* Scrollbar colours for light theme. The metrics are in tokens/scale.css. */
+    --scrollbar-track-bg: rgb(0 0 0 / 5%);
+    --scrollbar-thumb-bg: rgb(0 0 0 / 20%);
+    --scrollbar-thumb-hover-bg: rgb(0 0 0 / 35%);
+
+    /* Tooltips (light) — a clean white surface lifted off the page by its
+       shadow, dark text to match the theme. */
+    --tooltip-bg: #fff;
+    --tooltip-text: var(--text-primary);
+    --tooltip-shadow: 0 0.5rem 1.25rem rgb(0 0 0 / 22%);
+
+    /* Diff highlighting (light theme) */
+    --diff-removed-text: #cf222e;
+    --diff-added-text: #1a7f37;
+    --diff-added-bg: #dafbe1;
+    --diff-removed-bg: #ffebe9;
+    --diff-neutral-text: #1f2328;
+    --diff-warning-text: #9a6700;
+
+    /* Diff viewer (inline) line + intra-line backgrounds (GitHub light) */
+    --diff-line-add-bg: #e6ffec;
+    --diff-line-remove-bg: #ffebe9;
+    --diff-char-add-bg: #abf2bc;
+    --diff-char-add-text: #1a7f37;
+    --diff-char-remove-bg: #ffc9c9;
+    --diff-char-remove-text: #cf222e;
+
+    /* Syntax highlighting colors (light theme) */
+    --syntax-comment: #6e7781;
+    --syntax-punctuation: #24292f;
+    --syntax-tag: #cf222e;
+    --syntax-function: #8250df;
+    --syntax-number: #0550ae;
+    --syntax-property: #953800;
+    --syntax-keyword: #cf222e;
+    --syntax-string: #0a3069;
+    --syntax-operator: #0550ae;
+    --bash-segment-0-head: #0550ae;
+    --bash-segment-0-arg: #356fa8;
+    --bash-segment-1-head: #8250df;
+    --bash-segment-1-arg: #986ee6;
+    --bash-segment-2-head: #116329;
+    --bash-segment-2-arg: #2f7d43;
+    --bash-segment-3-head: #953800;
+    --bash-segment-3-arg: #b05c1f;
+    --bash-segment-4-head: #cf222e;
+    --bash-segment-4-arg: #d94d56;
+    --bash-segment-5-head: #0969da;
+    --bash-segment-5-arg: #388bfd;
+}

@@ -12,10 +12,13 @@
  * subset into styled DOM spans and drops the non-display escapes so the
  * properties panel shows colours the way a terminal would.
  *
- * Colours resolve to `--ansi-fg-*` / `--ansi-bg-*` CSS custom properties
- * (defined per theme in tokens/theme-dark.css), so the palette stays theme-aware and a
- * colour reads correctly whether it paints text or a background. 256-colour and
- * 24-bit truecolor escapes resolve to literal `rgb()` values.
+ * Colours resolve to `--ansi-fg-*` / `--ansi-bg-*` CSS custom properties: the
+ * foregrounds and the two `default` roles per theme in
+ * tokens/theme-{dark,light}.css, the sixteen background fills once in
+ * tokens/scale.css, being vivid enough for either theme. So the palette stays
+ * theme-aware and a colour reads correctly whether it paints text or a
+ * background. 256-colour and 24-bit truecolor escapes resolve to literal
+ * `rgb()` values.
  * @module utils/ansi
  */
 

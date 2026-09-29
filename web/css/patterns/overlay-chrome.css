@@ -47,25 +47,6 @@
    ================================================================== */
 
 /* ===================================================================
-   Reusable Close Button
-   Standard close button for panels and modals.
-   Usage: Add class "close-button" to any button element.
-   Chrome (transparent rest, hover fill + hairline border, press dip) comes
-   from the shared .btn-ghost house style in utilities.css, which lists
-   .close-button alongside it; this rule owns only the box. The × itself is
-   an .icon-close span, so it centres on geometry rather than font metrics.
-   ================================================================== */
-.close-button {
-    padding: 0;
-    width: 2rem;
-    height: 2rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-}
-
-/* ===================================================================
    Shared Modal Styles
    Common backdrop and panel styling for all modals and overlays.
    ================================================================== */

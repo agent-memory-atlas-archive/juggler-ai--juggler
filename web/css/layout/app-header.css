@@ -4,6 +4,18 @@
  *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
  */
 
+/* The strip itself: one row, its ends pinned, and the padding every header
+   control sits inside. */
+.app-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    /* stylelint-disable-next-line rem-over-px/rem-over-px, unit-disallowed-list */
+    padding: 12px 20px;
+    flex-shrink: 0;
+    gap: 1.5rem;
+}
+
 :where(.app-header) project-path-display {
     display: flex;
     align-items: center;
@@ -16,7 +28,7 @@
 
 /* The chip: a button styled to signpost "click to change project". Border,
    background and hover chrome come from the shared .btn-ghost house style
-   (utilities.css); this owns only the chip's layout (path + folder/chevron
+   (patterns/buttons.css); this owns only the chip's layout (path + folder/chevron
    icons) and typography. */
 :where(.app-header) .ppd-chip {
     display: inline-flex;

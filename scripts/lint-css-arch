@@ -157,10 +157,12 @@ function unwrapGrouping(selector) {
  * `.badge`.
  */
 function rootOf(selectorPart) {
-	const compounds = unwrapGrouping(selectorPart)
-		.trim()
-		.split(/\s+|\s*[>+~]\s*/)
-		.filter(Boolean);
+	// parseComplex splits at top-level combinators only, so a functional
+	// pseudo-class keeps its whole argument list inside one compound. A
+	// multi-argument `:is(.markdown, pre, code)` names no single root, and a
+	// plain whitespace split would read `pre` out of the middle of the list and
+	// file the rule under whichever alternative happened to come second.
+	const compounds = parseComplex(unwrapGrouping(selectorPart)).map((c) => c.text);
 	for (const compound of compounds) {
 		const m = compound.match(/^([.#]?[a-zA-Z][\w-]*)/);
 		if (!m) continue;
@@ -520,7 +522,42 @@ function sheetFiles(manifest) {
 }
 
 /**
- * ownership: a selector lives in the file that owns its root.
+ * Does this sheet own the thing the selector is *about* — its subject, the last
+ * compound? Any name on that compound counts: a tag, an id, or any of its
+ * classes, because `.dropdown-menu.permissions-popup` is a permissions popup
+ * that happens to be built out of a dropdown menu.
+ */
+function ownsSubject(sheet, selectorPart) {
+	const compounds = parseComplex(unwrapGrouping(selectorPart));
+	const subject = compounds[compounds.length - 1];
+	if (!subject) return false;
+	const names = [subject.tag, subject.id, ...subject.classes].filter(Boolean);
+	// `*` would own every name there is, so it says nothing about the subject.
+	const patterns = (sheet.owns || []).filter((p) => p !== '*');
+	return names.some((name) => patterns.some((pattern) => globToRegExp(pattern).test(name)));
+}
+
+/**
+ * ownership: a selector lives in the file that owns its root — or the one that
+ * owns its subject.
+ *
+ * Both homes are defensible, and which one is right differs case by case, so
+ * the check accepts either. `rootOf` answers with the leading compound, so a
+ * selector naming two sheets' roots is attributed to the scope and never the
+ * subject: `composer-box .model-selector-button` reads as composer's when it is
+ * plainly the model picker's, and `[data-view="pinboard"] conversation-bar`
+ * reads as pinboard's, which it is. Nothing in the selector says which of the
+ * two the rule is a decision about — only a person can, and both answers keep a
+ * rule beside code that has a reason to hold it.
+ *
+ * What this still catches is the rule that names neither: the selector filed in
+ * a sheet with no claim on its scope OR its subject, which is how a rule gets
+ * stranded when a file is split.
+ *
+ * The other failure below — no sheet owns the root at all — is a claim about
+ * the manifest rather than about filing, so owning the subject is no answer to
+ * it: every root is meant to have exactly one owner, and an unclaimed root is a
+ * gap wherever its rule happens to sit.
  *
  * A sheet marked `enumerates` in the manifest is exempt, because naming other
  * groups' roots is its whole job: one policy stated once across every surface
@@ -545,7 +582,7 @@ function checkOwnership(manifest, sheets, sources) {
 				if (!root) continue;
 				const owner = owners.find((o) => o.re.test(root));
 				if (owner) {
-					if (owner.file !== sheet.file) {
+					if (owner.file !== sheet.file && !ownsSubject(sheet, part)) {
 						failures.push({
 							item: `${sheet.file}:${root}`,
 							message: `${sheet.file}:${rule.line} — "${root}" is owned by ${owner.file}`,
@@ -633,12 +670,15 @@ function checkTokenParity(manifest, sheets, sources) {
 		}
 	}
 
-	// Theme membership, from the :root blocks that carry a data-theme.
+	// Theme membership, from the blocks that carry a data-theme. A plain `:root`
+	// block belongs to neither: a token declared there has one value for both
+	// themes, which is what tokens/scale.css is, and parity is not a question
+	// you can ask of it.
 	for (const sheet of sheets) {
 		const clean = stripComments(sources.get(sheet.file) || '');
 		for (const rule of parseRules(clean)) {
 			const isLight = /data-theme\s*=\s*["']?light/.test(rule.selector);
-			const isDark = /:root(?!\[)/.test(rule.selector) || /data-theme\s*=\s*["']?dark/.test(rule.selector);
+			const isDark = /data-theme\s*=\s*["']?dark/.test(rule.selector);
 			if (!isLight && !isDark) continue;
 			const body = blockBodyAt(clean, rule.line);
 			for (const m of body.matchAll(/(--[\w-]+)\s*:/g)) {
@@ -654,7 +694,7 @@ function checkTokenParity(manifest, sheets, sources) {
 		}
 	}
 	for (const name of themes.dark) {
-		if (!themes.light.has(name) && !usedWithFallback.has(name) && !isScaleToken(name)) {
+		if (!themes.light.has(name) && !usedWithFallback.has(name)) {
 			failures.push({ item: name, message: `${name} is defined for the dark theme only` });
 		}
 	}
@@ -664,15 +704,6 @@ function checkTokenParity(manifest, sheets, sources) {
 		}
 	}
 	return dedupe(failures);
-}
-
-/**
- * Theme-independent scales currently share the dark `:root` block. Step 7 of
- * the CSS restructure moves them to tokens/scale.css; until then they are not
- * a parity failure.
- */
-function isScaleToken(name) {
-	return /^--(spacing|font-size|font-weight|radius|z|shadow|transition|leading|scrollbar|popup|message-icon|task|cursor|ansi|font|wails)/.test(name);
 }
 
 function blockBodyAt(clean, line) {

@@ -71,6 +71,12 @@ element name or class of the selector — `composer-box .send-button` is owned b
 `composer-box`, not by `.send-button`. Find the group that owns that root in
 `manifest.json` and put the rule there, with the rest of its group.
 
+When a selector names two groups' roots — one owning the scope, one owning the
+subject — both files are defensible, and the check accepts either. File it with
+whichever the rule is a decision *about*: `composer-box .model-selector-button`
+belongs to the model picker, `[data-view="pinboard"] conversation-bar` to the
+board.
+
 Three corollaries, and they are the whole discipline:
 
 - **A rule never goes "at the end of the file".** That habit is what produced a
@@ -167,7 +173,7 @@ it comes back with a use.
 
 | Check | What fails it |
 |---|---|
-| ownership | A selector in a file that does not own its root. |
+| ownership | A selector in a file that owns neither its root nor its subject. |
 | dead selectors | A class in the CSS that appears in no JS, HTML or extension, and matches no `dynamicClasses` pattern. |
 | token parity | A colour token defined for one theme only without the fallback idiom; a `var()` that resolves to nothing. |
 | link parity | `index.html` and `headless-test.html` disagreeing on the sheet list. |

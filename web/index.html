@@ -181,7 +181,9 @@
          sheet declares its @layer. base/fonts.css is linked further up, ahead
          of the theme paint, and holds nothing but @font-face. -->
     <!-- Tokens -->
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/tokens/scale.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/tokens/theme-dark.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/tokens/theme-light.css">
 
     <!-- Element defaults -->
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/base/reset.css">
@@ -208,10 +210,8 @@
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/inline-rename.css">
 
     <!-- The feature groups -->
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/messages-1.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/messages-2.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/messages.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/project-setup.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/messages-3.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/conversation-bar.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/strategy-bar.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/onboarding.css">
@@ -220,13 +220,13 @@
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/model-picker.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/diff-viewer.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/composer.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/approvals-1.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/settings-1.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/about-modal.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/settings-2.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/approvals-2.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/approvals.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/overlays-and-updates.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/settings-3.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/settings.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/find-bar.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/slash-commands.css">
+    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/workspace-dialogs.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/pinboard.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/context-items.css">
     <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/plugin-catalog.css">

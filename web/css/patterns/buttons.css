@@ -154,6 +154,21 @@
     transform: scale(0.95);
 }
 
+/* The close button's box, the one part of it that is not the ghost chrome
+   above: a fixed 2rem square that centres its ×. The × is an .icon-close
+   span, so it centres on geometry rather than on font metrics. Add
+   "close-button" to any button in a panel or modal and it gets both.
+   ========================================================================== */
+.close-button {
+    padding: 0;
+    width: 2rem;
+    height: 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
 /* Light theme keeps the shape; the hover fill flips to a near-white wash. The
    resting reset matches the (0,3,0) specificity of the size co-classes'
    light-theme fills so header buttons stay transparent at rest. */

@@ -1,0 +1,216 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+/* ============================================================================
+   SCALE TOKENS
+
+   Everything a value is the same in both themes: geometry, type, timing, the
+   z-index ramp, and the colours that are not theme colours — black overlays,
+   the modal scrim, the ANSI backgrounds. One definition, applying to both
+   themes, which is what tells them apart from tokens/theme-*.css: a token
+   here is a decision about shape, a token there is a decision about paint.
+
+   A theme may still override one (see the Windows cursor block at the bottom,
+   which overrides by platform rather than by theme).
+   ============================================================================ */
+
+:root {
+    /* Font families - single source of truth */
+    --font-mono: 'Cousine', 'Andale Mono', 'Courier New', monospace;
+    --font-sans: 'Inter', 'Segoe UI', 'Roboto', sans-serif;
+    --font-ui: var(--font-sans); /* Font for menus, settings panels, and UI elements */
+
+    /* Icon-row geometry, shared by every surface that puts a round icon (and,
+       usually, a type lozenge) beside a title: the conversation rows, the
+       properties-panel header, the thread tile. The title row is given
+       --message-icon-row-height and centred, so every item type aligns its
+       title to the icon identically; change these to move them all. Declared
+       here rather than on the row so a block BELOW a row can indent itself to
+       the icon column. */
+    --message-icon-size: 0.875rem;
+    --message-icon-pad: 0.3rem;
+    --message-icon-row-height: calc(var(--message-icon-size) + 2 * var(--message-icon-pad));
+    --message-icon-badge-gap: 1rem;
+
+    /* Left gutter that lines a block up with the type lozenge rather than the
+       tile edge: one icon column plus the badge group's gap. Applied by the
+       .message-row-body utility; see it for when a block wants this. */
+    --message-icon-indent: calc(var(--message-icon-row-height) + var(--message-icon-badge-gap));
+
+    /* Z-Index Scale - use these instead of arbitrary values */
+    --z-base: 1;           /* Default stacking */
+    --z-raised: 10;        /* Slightly elevated elements */
+    --z-controls: 100;     /* Fixed controls, headers */
+    --z-dropdown: 1000;    /* Dropdowns, popovers */
+    --z-modal: 10000;      /* Modals, dialogs */
+    --z-above-modal: 10001; /* Dropdowns that must appear above modals (e.g. path completions) */
+    --z-toast: 10001;      /* Toast notifications (above modals) */
+
+    /* ANSI background palette (utils/ansi.js) — theme-independent and vivid so
+       an author's paired foreground (e.g. black on a yellow highlight) reads on
+       it in both themes. Foregrounds are theme-tuned separately (--ansi-fg-*);
+       backgrounds establish their own contrast, so they don't need darkening. */
+    --ansi-bg-black: #484f58;
+    --ansi-bg-red: #ff7b72;
+    --ansi-bg-green: #3fb950;
+    --ansi-bg-yellow: #d29922;
+    --ansi-bg-blue: #58a6ff;
+    --ansi-bg-magenta: #bc8cff;
+    --ansi-bg-cyan: #39c5cf;
+    --ansi-bg-white: #b1bac4;
+    --ansi-bg-bright-black: #6e7681;
+    --ansi-bg-bright-red: #ffa198;
+    --ansi-bg-bright-green: #56d364;
+    --ansi-bg-bright-yellow: #e3b341;
+    --ansi-bg-bright-blue: #79c0ff;
+    --ansi-bg-bright-magenta: #d2a8ff;
+    --ansi-bg-bright-cyan: #56d4dd;
+    --ansi-bg-bright-white: #f0f6fc;
+
+    /* Mouse-cursor variables. Native keywords everywhere by default; only the
+       Windows workaround block below overrides them (see it for why). */
+    --cursor-text: text;
+    --cursor-col-resize: col-resize;
+    --cursor-row-resize: ns-resize;
+
+    /* Markdown task-list states (`- [/] step`). Box fill and glyph are separate
+       variables so a theme can retint either without touching the geometry.
+       Every value derives from an accent the light theme also defines, so these
+       follow the theme automatically and need no per-theme set at all. Done, in
+       progress and failed are filled; skipped and pending are outlines, drawn in
+       text rather than border colour so an empty box is actually visible. */
+    --task-box-size: 0.875rem;
+    --task-box-gap: 0.4375rem;
+    --task-mark-on-fill: #fff;
+    --task-done-box: var(--accent-green);
+    --task-done-mark: var(--task-mark-on-fill);
+    --task-progress-box: var(--accent-yellow);
+    --task-progress-mark: var(--task-mark-on-fill);
+    --task-failed-box: var(--accent-red);
+    --task-failed-mark: var(--task-mark-on-fill);
+    --task-skipped-border: var(--text-secondary);
+    --task-skipped-mark: var(--text-secondary);
+    --task-pending-border: var(--text-secondary);
+
+    /* The dim behind a modal surface — every scrim in the app, whether it is
+       the shared <modal-backdrop> element or a panel's own overlay div: the
+       settings/about/bin/confirm modals, the project picker, the command
+       editor, the drawer sidebar and the touch sheets. It is a role, not a rung
+       on the ramp below: modals stack (the command editor opens over its own
+       manager), so a panel that picks a heavier value by eye compounds with the
+       one under it into near-black. Reach for this, never --overlay-dark-*,
+       which are button fills and shadow colours. */
+    --modal-scrim: rgb(0 0 0 / 50%);
+
+    /* Overlay fills and shadow colours, black at five strengths. Not scrims:
+       see --modal-scrim above. */
+    --overlay-dark-70: rgb(0 0 0 / 70%);
+    --overlay-dark-50: rgb(0 0 0 / 50%);
+    --overlay-dark-25: rgb(0 0 0 / 25%);
+    --overlay-dark-15: rgb(0 0 0 / 15%);
+    --overlay-dark-10: rgb(0 0 0 / 10%);
+
+    /* Spacing scale */
+    --spacing-xs: 0.375rem;   /* 6px */
+    --spacing-sm: 0.5rem;     /* 8px */
+    --spacing-md: 0.75rem;    /* 12px */
+    --spacing-lg: 1rem;       /* 16px */
+    --spacing-xl: 1.5rem;     /* 24px */
+    --spacing-2xl: 2rem;      /* 32px */
+
+    /* Font size scale */
+    --font-size-2xs: 0.625rem;   /* 10px */
+    --font-size-xs: 0.6875rem;   /* 11px */
+    --font-size-sm: 0.75rem;     /* 12px */
+    --font-size-base: 0.8125rem; /* 13px */
+    --font-size-md: 0.875rem;    /* 14px */
+    --font-size-lg: 1rem;        /* 16px */
+    --font-size-xl: 1.125rem;    /* 18px */
+
+    /* Border radius scale */
+    --radius-sm: 0.1875rem;  /* 3px */
+    --radius-md: 0.25rem;    /* 4px */
+    --radius-lg: 0.375rem;   /* 6px */
+    --radius-xl: 0.5rem;     /* 8px */
+
+    /* Popup / menu / modal surface — the single set of knobs every transient
+       surface (anchored dropdowns, pickers, centred dialogs) shares. Tune the
+       whole family here; see the shared `.dropdown-menu, .pp-panel, modal-panel`
+       chrome rule in the MENU UTILITY SYSTEM section. */
+    --radius-popup: 1.5rem;          /* large rounded outer corner */
+    --radius-popup-item: 0.875rem; /* inset interactive rows within a popup */
+
+    /* A popup's inset is NOT square, and the corner radius is why. The curve
+       eats the surface from the sides, so content held only --popup-padding in
+       reads as falling off the edge there while looking fine top and bottom —
+       and a row with its own --radius-popup-item corner gets that corner cut by
+       the surface's `overflow: hidden`. So the inline inset is a full radius and
+       the block inset stays tight: a popup can afford width, but height is what
+       the list inside it wants.
+
+       Every surface in the `.dropdown-menu, .pp-panel, modal-panel` family takes
+       both, and any surface that overrides its padding must keep the inline half
+       — that is the whole point of the token. */
+    --popup-padding: 1rem;             /* block: breathing room above and below */
+    --popup-padding-inline: 1.5rem;    /* inline: one --radius-popup, to clear the curve */
+    --popup-shadow: 0 1rem 3rem var(--overlay-dark-50);
+
+    /* Line height scale */
+    --leading-tight: 1.4;
+    --leading-normal: 1.5;
+    --leading-relaxed: 1.6;
+
+    /* Transition timing */
+    --transition-fast: 100ms ease;
+    --transition-base: 150ms ease;
+    --transition-slow: 200ms ease;
+
+    /* Shadows */
+    --shadow-sm: 0 0.0625rem 0.125rem rgb(0 0 0 / 10%);
+    --shadow-md: 0 0.125rem 0.5rem rgb(0 0 0 / 20%);
+    --shadow-lg: 0 0.25rem 1rem rgb(0 0 0 / 30%);
+    --shadow-xl: 0 0.5rem 1.5rem rgb(0 0 0 / 40%);
+
+    /* Scrollbar metrics. The colours are per theme. */
+    --scrollbar-size-thin: 0.375rem;
+    --scrollbar-size-medium: 0.5rem;
+    --scrollbar-thumb-radius: 0.25rem;
+}
+
+/* ─── TEMPORARY: Windows-only white-cursor workaround ──────────────────────
+   BUG: On Windows, WebView2/Chromium draws the native i-beam and resize
+   cursors as solid white, so they're invisible on the light theme. Those are
+   monochrome *inverting* system cursors that Windows XORs against the pixels
+   behind them; under the DirectComposition / multi-plane-overlay presentation
+   path the GPU can drop the layer the cursor should invert against, so the
+   inversion resolves to white. It is a platform bug, not ours.
+
+   Things that do NOT fix it (all tried): `color-scheme` (only steers
+   scrollbars/form widgets, never the system cursor); the WebView2 flag
+   `--disable-features=UseMultiPlaneOverlay` (no such Chromium feature name — it
+   is silently ignored). The real Chromium lever, `--disable-direct-composition`,
+   would work but is heavy: the vendored Wails leans on DirectComposition for the
+   frameless Windows window (transparency, hit-testing, chrome), so disabling it
+   risks regressing the window itself.
+
+   WORKAROUND: substitute full-colour SVG cursors, which the browser rasterises
+   itself and never hands to the OS as inverting cursors, so the compositor
+   can't blank them. Shapes mirror the native Windows cursors: a thin serifed
+   i-beam (black stroke + white halo, so it reads on either theme) and
+   white-filled, black-outlined double-headed resize arrows (the same
+   white-body/black-edge as the OS cursors). The native keyword after the
+   hotspot coords stays as the fallback. Gated on `data-os="windows"` (set on
+   <html> at startup in index.html) so macOS/Linux keep their pixel-perfect
+   native cursors untouched.
+
+   REMOVE THIS BLOCK (and the `data-os` marker in index.html, and revert the
+   `var(--cursor-*)` consumers to plain keywords) once WebView2 fixes the
+   compositor cursor bug or a safe DirectComposition opt-out exists. */
+:root[data-os="windows"] {
+    --cursor-text: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='24'><g fill='none' stroke-linecap='round' stroke-linejoin='round'><path d='M5 3.5 Q7 3.5 8 5 Q9 3.5 11 3.5 M8 5 L8 19 M5 20.5 Q7 20.5 8 19 Q9 20.5 11 20.5' stroke='white' stroke-width='3'/><path d='M5 3.5 Q7 3.5 8 5 Q9 3.5 11 3.5 M8 5 L8 19 M5 20.5 Q7 20.5 8 19 Q9 20.5 11 20.5' stroke='black' stroke-width='1.25'/></g></svg>") 8 12, text;
+    --cursor-col-resize: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='16'><path d='M2 8 L7 4 L7 6.4 L17 6.4 L17 4 L22 8 L17 12 L17 9.6 L7 9.6 L7 12 Z' fill='white' stroke='black' stroke-width='1.1' stroke-linejoin='round'/></svg>") 12 8, col-resize;
+    --cursor-row-resize: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='24'><path d='M8 2 L4 7 L6.4 7 L6.4 17 L4 17 L8 22 L12 17 L9.6 17 L9.6 7 L12 7 Z' fill='white' stroke='black' stroke-width='1.1' stroke-linejoin='round'/></svg>") 8 12, ns-resize;
+}

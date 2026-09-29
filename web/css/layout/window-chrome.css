@@ -4,6 +4,26 @@
  *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
  */
 
+/* The header is the drag region for moving the window; everything interactive
+   inside it opts back out below. */
+.window-mode .app-header {
+    --wails-draggable: drag;
+
+    cursor: default;
+}
+
+/* macOS draws the native traffic lights over the top-left of the webview, so
+   the header reserves room for them. Windows/Linux have no such overlay (they
+   put their own caption buttons on the right instead — see below).
+
+   Fullscreen takes the traffic lights away, leaving the gutter as a gap to the
+   left of the logo, so the rule drops out and the header falls back to its
+   ordinary padding. The flag is set by utils/window-fullscreen.js. */
+:root[data-window-platform="mac"]:not([data-window-fullscreen="1"]) .window-mode .app-header {
+    /* stylelint-disable-next-line rem-over-px/rem-over-px, unit-disallowed-list */
+    padding-left: 80px; /* clear macOS traffic lights */
+}
+
 :where(.window-mode) .logo {
     cursor: default;
 }

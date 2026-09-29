@@ -10,11 +10,16 @@
 		"vendor",
 		"utilities"
 	],
-	"$sheets": "Every stylesheet, in <link> order, which is layer order — a sheet's directory is its layer, and the groups appear in the order above. The one exception is base/fonts.css, linked ahead of the theme paint for the fetch and holding nothing but @font-face, which the cascade never arbitrates. Each entry carries the layer it declares and the selector roots it owns. A root is the bare name of a selector's subject, as scripts/lint-css-arch computes it: the leading element, class or id with its punctuation dropped, skipping :root/html/body when the selector descends past them. A `*` in a pattern is a glob. Numbered sheets (messages-1, settings-2) are runs of one group the old files had scattered; defragmenting them merges each set into one.",
+	"$sheets": "Every stylesheet, in <link> order, which is layer order — a sheet's directory is its layer, and the groups appear in the order above. The one exception is base/fonts.css, linked ahead of the theme paint for the fetch and holding nothing but @font-face, which the cascade never arbitrates. Each entry carries the layer it declares and the selector roots it owns. A root is the bare name a selector leads with, as scripts/lint-css-arch computes it: the leading element, class or id with its punctuation dropped, skipping :root/html/body when the selector descends past them. A selector that names two sheets' roots — the scope it leads with, and a name on the subject compound it ends with — may be filed under either. A `*` in a pattern is a glob. One group is one sheet — a group's rules are never spread across two of them.",
 	"sheets": [
 		{
 			"file": "base/fonts.css",
 			"layer": "base",
+			"owns": []
+		},
+		{
+			"file": "tokens/scale.css",
+			"layer": "tokens",
 			"owns": []
 		},
 		{
@@ -23,6 +28,11 @@
 			"owns": [
 				"ci-text-block"
 			]
+		},
+		{
+			"file": "tokens/theme-light.css",
+			"layer": "tokens",
+			"owns": []
 		},
 		{
 			"file": "base/reset.css",
@@ -40,11 +50,6 @@
 				"body",
 				"button",
 				"input",
-				"text-blue",
-				"text-green",
-				"text-red",
-				"text-secondary",
-				"text-yellow",
 				"strong",
 				"textarea"
 			]
@@ -69,15 +74,8 @@
 				"conversation-message-list-wrapper",
 				"conversation-tab-loading-overlay",
 				"conversation-tabs-container",
-				"find-bar",
-				"juggler-context-menu",
 				"logo",
-				"menu-reset-icon",
-				"modal-panel",
 				"network-button",
-				"pinboard-content__body",
-				"pinboard-placeholder__error",
-				"pp-panel",
 				"settings-button",
 				"sidebar-backdrop",
 				"tool-grouping-button",
@@ -126,9 +124,7 @@
 				"menu-header",
 				"menu-item",
 				"menu-item-icon",
-				"menu-settings-icon",
-				"open-settings-item",
-				"set-default-model-item"
+				"menu-settings-icon"
 			]
 		},
 		{
@@ -156,6 +152,7 @@
 				"code-block",
 				"image-lightbox",
 				"modal-backdrop",
+				"modal-panel",
 				"token-display"
 			]
 		},
@@ -204,23 +201,7 @@
 			]
 		},
 		{
-			"file": "components/messages-1.css",
-			"layer": "components",
-			"owns": [
-				"conversation-empty-hint",
-				"conversation-footer",
-				"conversation-message-list",
-				"conversation-message-list-inner",
-				"empty-*",
-				"footer-*",
-				"llm-busy-text",
-				"llm-iteration-counter",
-				"llm-next-steps",
-				"scroll-*"
-			]
-		},
-		{
-			"file": "components/messages-2.css",
+			"file": "components/messages.css",
 			"layer": "components",
 			"owns": [
 				"article",
@@ -229,8 +210,17 @@
 				"collapsible-toggle",
 				"color-*",
 				"context-item-message",
+				"conversation-empty-hint",
+				"conversation-footer",
+				"conversation-message-list",
+				"conversation-message-list-inner",
 				"conversation-workspace-banner",
+				"empty-*",
 				"error-*",
+				"footer-*",
+				"llm-busy-text",
+				"llm-next-steps",
+				"message-action-btn",
 				"message-content-box",
 				"message-copy-button",
 				"message-icon-*",
@@ -238,7 +228,11 @@
 				"message-text",
 				"message-with-icon",
 				"notice-message",
+				"pending-messages",
+				"pending-messages-label",
+				"scroll-*",
 				"thinking-message",
+				"thread-*",
 				"tool-action-message",
 				"tool-group-message",
 				"user-message"
@@ -253,17 +247,6 @@
 			]
 		},
 		{
-			"file": "components/messages-3.css",
-			"layer": "components",
-			"owns": [
-				"message-action-btn",
-				"message-actions",
-				"pending-messages",
-				"pending-messages-label",
-				"thread-*"
-			]
-		},
-		{
 			"file": "components/conversation-bar.css",
 			"layer": "components",
 			"owns": [
@@ -271,8 +254,7 @@
 				"bin-modal",
 				"conversation-bar",
 				"conversation-tab",
-				"info-cards-menu__check",
-				"workspace-menu"
+				"info-cards-menu__check"
 			]
 		},
 		{
@@ -280,7 +262,6 @@
 			"layer": "components",
 			"owns": [
 				"commands-menu",
-				"context-item-context-menu",
 				"strategy-dropdown",
 				"strategy-info-button",
 				"strategy-item",
@@ -400,18 +381,6 @@
 			]
 		},
 		{
-			"file": "components/approvals-1.css",
-			"layer": "components",
-			"owns": [
-				"permissions-popup"
-			]
-		},
-		{
-			"file": "components/settings-1.css",
-			"layer": "components",
-			"owns": []
-		},
-		{
 			"file": "components/about-modal.css",
 			"layer": "components",
 			"owns": [
@@ -419,36 +388,24 @@
 			]
 		},
 		{
-			"file": "components/settings-2.css",
-			"layer": "components",
-			"owns": [
-				"settings-panel"
-			]
-		},
-		{
-			"file": "components/approvals-2.css",
+			"file": "components/approvals.css",
 			"layer": "components",
 			"owns": [
 				"action-*",
 				"approval-*",
 				"ask-user-question-details",
-				"collapsed-badge",
-				"context-item-badge",
 				"context-preview-modal",
 				"llm-description",
 				"multi-*",
 				"option-*",
 				"pattern-*",
 				"pending-approval-label",
-				"preformatted-output",
+				"permissions-popup",
 				"question-custom-*",
 				"question-group",
 				"question-option-btn",
 				"question-options",
-				"summary-*",
-				"text-muted",
-				"text-primary",
-				"transaction-summary"
+				"summary-*"
 			]
 		},
 		{
@@ -456,6 +413,7 @@
 			"layer": "components",
 			"owns": [
 				"completions-menu",
+				"juggler-context-menu",
 				"juggler-context-menu-*",
 				"loading-overlay",
 				"loading-overlay__content",
@@ -464,7 +422,6 @@
 				"loading-overlay__info",
 				"loading-overlay__info--visible",
 				"loading-overlay__message",
-				"message-edit-textarea",
 				"path-*",
 				"pp-body",
 				"pp-btn",
@@ -472,8 +429,8 @@
 				"pp-footer",
 				"pp-header",
 				"pp-input-row",
-				"pp-name-input",
 				"pp-overlay",
+				"pp-panel",
 				"pp-panel-popup",
 				"pp-path-input",
 				"pp-recent-item",
@@ -490,17 +447,37 @@
 			]
 		},
 		{
-			"file": "components/settings-3.css",
+			"file": "components/settings.css",
 			"layer": "components",
 			"owns": [
-				"command-*",
 				"escape-arm-cue",
+				"settings-panel"
+			]
+		},
+		{
+			"file": "components/find-bar.css",
+			"layer": "components",
+			"owns": [
+				"find-bar",
 				"find-bar__btn",
 				"find-bar__counter",
 				"find-bar__counter--empty",
 				"find-bar__input",
-				"find-bar__toggle",
-				"slash-*",
+				"find-bar__toggle"
+			]
+		},
+		{
+			"file": "components/slash-commands.css",
+			"layer": "components",
+			"owns": [
+				"command-*",
+				"slash-*"
+			]
+		},
+		{
+			"file": "components/workspace-dialogs.css",
+			"layer": "components",
+			"owns": [
 				"workspace-create-*",
 				"workspace-finish-*",
 				"workspace-move-*"
@@ -513,6 +490,7 @@
 				"app-header__board-*",
 				"pinboard-add-*",
 				"pinboard-content",
+				"pinboard-content__body",
 				"pinboard-content__placeholder",
 				"pinboard-content__slot",
 				"pinboard-empty",
@@ -523,6 +501,7 @@
 				"pinboard-panel",
 				"pinboard-panel__status",
 				"pinboard-placeholder",
+				"pinboard-placeholder__error",
 				"pinboard-placeholder__line",
 				"pinboard-placeholder__note",
 				"pinboard-resize-handle",
@@ -548,47 +527,21 @@
 			"file": "components/context-items.css",
 			"layer": "components",
 			"owns": [
-				"ci-badge",
 				"ci-badge-*",
-				"ci-btn",
 				"ci-code-*",
-				"ci-collapsed-content",
-				"ci-empty",
-				"ci-empty-icon",
-				"ci-error",
 				"ci-error-*",
 				"ci-expanded",
-				"ci-expanded-content",
 				"ci-file-*",
 				"ci-line",
 				"ci-line-spacer",
-				"ci-list",
-				"ci-list-item",
-				"ci-loading",
-				"ci-metadata",
-				"ci-output-label",
-				"ci-remove-btn",
 				"ci-search-*",
 				"ci-section",
 				"ci-section-*",
-				"ci-stat",
 				"ci-stat-*",
-				"ci-stats",
-				"ci-success",
-				"ci-warning",
-				"collapsed-content",
-				"collapsed-main",
-				"collapsed-meta",
-				"collapsed-preview",
-				"collapsed-subtitle",
-				"collapsed-title",
 				"expanded-*",
-				"question-answer-ci",
-				"response-json",
 				"skill-ci-expanded",
 				"skill-load-*",
 				"skill-panel-*",
-				"system-ci",
 				"thinking-block",
 				"thinking-block-*"
 			]
@@ -603,8 +556,6 @@
 				"catalog-*",
 				"ext-*",
 				"extension-*",
-				"llm-guidance-content",
-				"llm-instructions-box",
 				"operation-*",
 				"operations-*",
 				"permission-badge",
@@ -625,12 +576,9 @@
 				"tool-param-*",
 				"tool-params-list",
 				"tool-schema",
-				"tool-schema-header",
 				"tools-list",
-				"tradeoff-item",
 				"tradeoffs-*",
-				"trigger-*",
-				"usage-content"
+				"trigger-*"
 			]
 		},
 		{

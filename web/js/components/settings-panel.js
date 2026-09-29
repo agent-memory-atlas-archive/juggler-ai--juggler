@@ -359,7 +359,7 @@ class SettingsPanel extends HTMLElement {
 
     // Drive the tab strip's edge-fade affordance from its actual scroll state,
     // so a left/right fade appears only when there really are tabs hidden past
-    // that edge (see .settings-tabs-scroll in components/settings-2.css). The
+    // that edge (see .settings-tabs-scroll in components/settings.css). The
     // ResizeObserver recomputes when the panel is first shown (0→real width) or
     // the viewport changes; the scroll listener handles swiping and
     // scrollIntoView jumps.

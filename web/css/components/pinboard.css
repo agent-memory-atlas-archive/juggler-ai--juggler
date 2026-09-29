@@ -4,6 +4,23 @@
  *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
  */
 
+/* ============================================================================
+   PINBOARD (web/js/components/pinboard-*.js)
+
+   The board overlays the right of the working area rather than taking width
+   from it: the conversation columns are wide, horizontally scrolling, and full
+   of held scroll positions, and narrowing them to show something beside them
+   would move the thing being read.
+
+   <pinboard-shell> spans .app-main but is inert to the pointer, so only the
+   scrim and the panel catch anything. Closed, the panel is `visibility: hidden`
+   and translated off the right edge — out of the tab order and out of the
+   accessibility tree, with no attribute to keep in step.
+
+   The control that opens it is .pinboard-header-button, in the header bar with
+   the window's other controls, at every width.
+   ========================================================================== */
+
 pinboard-shell {
     /* Named once: the slide's duration is also the delay before the panel is
        hidden on the way out, and the two must agree. */

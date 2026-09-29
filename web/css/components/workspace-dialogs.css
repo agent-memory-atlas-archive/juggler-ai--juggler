@@ -1,0 +1,505 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+/* ============================================================================
+   WORKSPACE DIALOGS
+   Making a workspace, moving a conversation into one, and ending one —
+   workspace-create-dialog.js, workspace-move-dialog.js,
+   workspace-finish-dialog.js. workspace-reconnect-dialog.js wears the move
+   dialog's chrome, so the .workspace-move-* rules are not the move dialog's
+   alone.
+   ============================================================================ */
+
+/* Whether a conversation dragged somewhere else should really work there: a
+   move, confirmed. Built from the house modal parts — the shared scrim on
+   modal-backdrop, the shared card on modal-panel — so it is the same object as
+   the bin, the about box and the settings panel rather than a second kind of
+   dialog. Only the measure and the rhythm are set here. The reconnect dialog
+   wears this chrome too, so nothing below is the move dialog's alone. */
+
+.workspace-move-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-modal, 1000);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+}
+
+/* Wider than a message-and-two-buttons dialog, because what is in it is two
+   places to compare, each a name over a full address. Cut to the narrower
+   measure the addresses wrap to three lines, and a path that has to be
+   reassembled by eye is no longer the thing that settles which tree this is. */
+
+.workspace-move-dialog {
+    width: min(36rem, 100%);
+    max-height: 85vh;
+}
+
+/* The modal-dialog rhythm, in a dialog that is not one: hairline under the
+   header, hairline over the buttons, and the body scrolling between them so a
+   long list never carries the title or the buttons off the screen. */
+
+.workspace-move-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    flex-shrink: 0;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 0.0625rem solid var(--border-divider);
+}
+
+.workspace-move-title {
+    margin: 0;
+    font-size: 1.125rem;
+    color: var(--text-primary);
+}
+
+/* Pulled into the padding so the button's box hangs off the corner while its
+   icon stays optically aligned with the title. */
+
+.workspace-move-close {
+    margin: -0.5rem -0.5rem -0.5rem 0;
+}
+
+.workspace-move-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    min-height: 0;
+    padding: 1.25rem 1.5rem;
+    overflow-y: auto;
+}
+
+.workspace-move-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    flex-shrink: 0;
+    padding: 1rem 1.5rem;
+    border-top: 0.0625rem solid var(--border-divider);
+}
+
+/* The two ends of the move, set identically — name over address — because the
+   reader's whole job here is to compare them, and two places written down two
+   ways have to be translated before they can be compared. */
+
+.workspace-move-now {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+}
+
+.workspace-move-now-lead {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-tertiary);
+}
+
+.workspace-move-now-label {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+/* The address takes a line to itself and is shown whole, with the two things
+   worth doing to a path beside it. It is the part of this a reader may want out
+   of the dialog — into a terminal, or open beside it — and a path cut to fit is
+   a path that cannot be used for either. No box is drawn round it: a framed
+   line with two buttons on the end of it is how this app draws a field, and
+   there is nothing here to type into. */
+
+.workspace-move-now-path-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.375rem;
+    margin-top: 0.125rem;
+}
+
+.workspace-move-now-path {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    line-height: 1.5;
+    color: var(--text-tertiary);
+    overflow-wrap: anywhere;
+    user-select: text;
+}
+
+/* Lifted half the difference between a 1.5rem button and a 1.125rem line, so
+   the icons centre on the path's first line rather than on the block of them. */
+
+.workspace-move-now .properties-panel-filepath-actions {
+    margin-top: -0.1875rem;
+}
+
+/* What a dialog on this surface has to say in prose before its buttons. The
+   reconnect dialog is built from it. */
+
+.workspace-move-work {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    color: var(--text-secondary);
+}
+
+.workspace-move-work-lead {
+    color: var(--text-primary);
+}
+
+/* Making a workspace. The same scrim and the same card as the move dialog —
+   they are two questions about the same kind of thing and must not look like
+   two applications — and the same header, lead and footer rhythm. What differs
+   is inside: this one is read across rather than down, because the choice and
+   what the choice needs are on screen together. */
+
+.workspace-create-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-modal, 1000);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+}
+
+/* Wider than the move dialog, and for the opposite reason: not a long list to
+   compare, but two columns that have to sit side by side without either being
+   cut to a column of single words.
+
+   A size of its own rather than one taken from whatever is inside it. Every
+   provider's form is a different length, and a note appearing under a field is
+   another, so a dialog sized to its contents changed size while being read and
+   again while being typed into — moving the buttons out from under the pointer
+   aimed at them. Given a height, the halves scroll and nothing moves. */
+
+.workspace-create-dialog {
+    width: min(46rem, 100%);
+    height: min(30rem, 85vh);
+
+    /* Chrome, by the policy in layout/app-shell.css: this is a question, not a
+       document. A title, a column of names to pick between, a form's labels and
+       two buttons — every drag across them is a mis-aimed click, and the blue
+       it left behind was noise. The carve-outs are below. */
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+/* What somebody might actually copy out of it: what they typed, the reason a
+   build did not happen, and a path — where the thing would be built, and where
+   a step is happening while it is. */
+
+.workspace-create-dialog input,
+.workspace-create-dialog textarea,
+.workspace-create-dialog .setup-error,
+.workspace-create-dialog .setup-field-note,
+.workspace-create-dialog .setup-progress-detail {
+    -webkit-user-select: text;
+    user-select: text;
+}
+
+.workspace-create-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    flex-shrink: 0;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 0.0625rem solid var(--border-divider);
+}
+
+.workspace-create-title {
+    margin: 0;
+    font-size: 1.125rem;
+    color: var(--text-primary);
+}
+
+.workspace-create-close {
+    margin: -0.5rem -0.5rem -0.5rem 0;
+}
+
+/* The one sentence saying what is being made. Above the split rather than
+   inside either half, because it is true of both of them. */
+
+.workspace-create-lead {
+    flex-shrink: 0;
+    margin: 0;
+    padding: 1rem 1.5rem 0;
+    color: var(--text-secondary);
+}
+
+/* The split. The rail is given a fixed share and the detail the rest: a rail
+   that grew with the longest provider name would move the form every time an
+   extension was installed. */
+
+.workspace-create-body {
+    display: grid;
+    grid-template-columns: minmax(0, 14rem) minmax(0, 1fr);
+    gap: 1.25rem;
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 1.25rem 1.5rem;
+
+    /* The two halves scroll; the split does not. Scrolling the body scrolled
+       the kinds away with the form, which is the one thing in this dialog that
+       has to stay where it is. */
+    overflow: hidden;
+}
+
+/* While something is being built there are no halves — one block, in the room
+   the two columns had. It starts at the top-left, where text starts: centred in
+   a half-empty box, four lines of progress read as a placeholder waiting for the
+   real contents, and a line too long for the box hung off the left edge of it. */
+
+.workspace-create-body.workspace-create-building {
+    display: block;
+}
+
+/* The steps at the top and the way out at the bottom, so Cancel stands where the
+   footer's buttons stood rather than halfway up the dialog under the last line
+   that happened to be written. */
+
+.workspace-create-building .setup-progress {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.workspace-create-building .setup-actions {
+    margin-top: auto;
+}
+
+/* A sidebar and a pane, drawn as the settings panel draws them: a rule down the
+   edge of the list, so the two halves read as master and detail rather than as
+   two lists that happen to be side by side. */
+
+.workspace-create-rail {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 0;
+    min-height: 0;
+    padding-right: 1.25rem;
+    border-right: 0.0625rem solid var(--border-divider);
+    overflow-y: auto;
+}
+
+/* Bands of rows are parted by a line rather than by a caption: the kinds are a
+   list of names and say what they are by being one, and a tree already on the
+   disk says so in its own row, which carries what to do with it and where it
+   is. A heading over either would be the same thing said twice, once badly. */
+
+.workspace-create-rail .setup-rows + .setup-rows {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 0.0625rem solid var(--border-divider);
+}
+
+.workspace-create-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    min-width: 0;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.workspace-create-detail-head {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.workspace-create-detail-title {
+    margin: 0;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.workspace-create-detail-meaning {
+    margin: 0;
+    color: var(--text-secondary);
+}
+
+.workspace-create-empty {
+    margin: 0;
+    color: var(--text-tertiary);
+}
+
+.workspace-create-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    flex-shrink: 0;
+    padding: 1rem 1.5rem;
+    border-top: 0.0625rem solid var(--border-divider);
+}
+
+/* Under the measure the two columns need, they stack: the kinds, then the one
+   that is chosen. The order is already right in the markup. */
+
+@media (width <= 40rem) {
+    .workspace-create-body {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    /* Stacked, the rule belongs under the kinds rather than beside them. */
+    .workspace-create-rail {
+        padding: 0 0 1rem;
+        border-right: 0;
+        border-bottom: 0.0625rem solid var(--border-divider);
+    }
+}
+
+/* What an ending asks for before it runs (web/js/components/workspace-finish-dialog.js).
+   The move dialog's shell, whole: same scrim, same card, same header and footer
+   rhythm, because the two are the same object asked two questions. Only what
+   goes between the hairlines is set here. */
+
+/* Tighter than the move dialog's, which stacks two blocks that must not be read
+   as one. This stacks a sentence, a list, a field and its alternative, all of
+   them about the same act. */
+
+.workspace-finish-body {
+    gap: 1rem;
+}
+
+.workspace-finish-about {
+    margin: 0;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+/* What the host has to say about this tree before it goes — in practice the one
+   sentence about unsaved work — set apart from the provider's own description of
+   the ending. */
+
+.workspace-finish-warning {
+    font-size: 0.875rem;
+    color: var(--warning-color, var(--error-color));
+    line-height: 1.5;
+}
+
+/* The setup panel's field furniture, without its grid: that one sets a label in
+   a narrow column beside a one-line box, for a name or a path read across. This
+   holds a commit message, which is prose — label above, box below, the whole
+   width, and tall enough to see a paragraph of it at once. */
+
+.workspace-finish-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.workspace-finish-field .setup-field-input {
+    width: 100%;
+    padding: 0.5rem 0.625rem;
+    font-family: inherit;
+    font-size: 0.875rem;
+}
+
+.workspace-finish-field textarea.setup-field-input {
+    resize: vertical;
+    min-height: 6.5rem;
+    line-height: 1.5;
+}
+
+/* What is about to be committed, path by path. A box of its own with its own
+   scroll: it is the longest thing in the dialog and the only part whose length
+   is the user's rather than ours, so it is the part that gives way — everything
+   below it, the field and the buttons, stays where it was. */
+
+.workspace-finish-work {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.workspace-finish-work-count {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+}
+
+.workspace-finish-work-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    max-height: 9rem;
+    padding: 0.4rem 0.5rem;
+    overflow-y: auto;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.4rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+}
+
+.workspace-finish-work-row {
+    display: flex;
+    gap: 0.5rem;
+    min-width: 0;
+}
+
+/* One column wide whatever the word is, so the paths line up and the eye can
+   run down them. */
+
+.workspace-finish-work-state {
+    flex: 0 0 5rem;
+    color: var(--text-tertiary);
+}
+
+.workspace-finish-work-path {
+    min-width: 0;
+    color: var(--text-primary);
+    overflow-wrap: anywhere;
+}
+
+.workspace-finish-work-rest {
+    padding-top: 0.15rem;
+    color: var(--text-secondary);
+}
+
+/* The way through that is not typing, under the box it is an alternative to.
+   Set like the workspace panel's own action rows — full width, its label over a
+   line saying what will happen — because that is what it is: one of the things
+   you can do to this place, offered where the deciding happens. It stays out of
+   the footer, which answers the title and holds two buttons the same size. */
+
+.workspace-finish-alternative {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    width: 100%;
+    padding: 0.6rem 0.75rem;
+    background: var(--bg-secondary);
+    border: 0.0625rem solid var(--border-color);
+    border-radius: 0.5rem;
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 0.875rem;
+    text-align: left;
+}
+
+.workspace-finish-alternative:hover {
+    background: var(--bg-raised);
+    border-color: var(--accent-blue);
+}
+
+/* What the other button does, on the button itself: a second line under its
+   label, the way the panel's own rows carry theirs. */
+
+.workspace-finish-alternative-note {
+    display: block;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    line-height: 1.45;
+}
