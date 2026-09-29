@@ -75,18 +75,20 @@ func (a *appState) revealInitialWindowWhenReady(e *winEntry) {
 // undermined afterwards, as when Wails maximises a window and then moves it to
 // the saved coordinates anyway.
 //
-// It is asked again whenever this window's geometry settles, because a window
-// does not only strand at startup. Un-maximising is the sharpest case: Windows
-// returns the window to the frame it held before it was maximised, so a window
-// maximised to escape a stale position drops straight back onto it the moment
-// the user touches the restore button. Asking on the settled frame rather than
-// on each move keeps this clear of a drag in progress — and a drag cannot
-// strand a window anyway, since Windows will not let go of its title bar.
+// A maximised window is judged by the frame it will restore to as well as the
+// one it shows: it opens onto a real display whatever the saved frame
+// underneath says, and Windows returns an un-maximised window to exactly that
+// frame, however stale. See windowgeom.RescueTarget.
 //
-// Runs on the main thread, at startup before the window is revealed, so a
-// rescue is not a visible jump. Must not run before the native frame exists:
-// Position and Size answer zeros until then, which reads as a window with
-// nothing to judge. Reports whether it moved anything.
+// Startup only. Once a window is up, where it goes is somebody's decision — the
+// user's, the OS's when a display goes away, or a tiling window manager's that
+// hides a window by parking it off every display — and second-guessing those
+// fights them.
+//
+// Runs on the main thread, before the window is revealed, so a rescue is not a
+// visible jump. Must not run before the native frame exists: Position and Size
+// answer zeros until then, which reads as a window with nothing to judge.
+// Reports whether it moved anything.
 func (a *appState) rescueStrandedWindow(e *winEntry) bool {
 	if e.win.IsMinimised() {
 		return false
@@ -97,23 +99,28 @@ func (a *appState) rescueStrandedWindow(e *winEntry) bool {
 		return false
 	}
 	live := core.WindowState{X: x, Y: y, Width: width, Height: height, HasPos: true}
+	maximised := e.win.IsMaximised()
+	var restore core.WindowState
+	if maximised {
+		restore = e.geom.RestoreFrame()
+	}
 	screens := a.app.Screen.GetAll()
-	rescued, moved := windowgeom.RescueFrame(live, screens)
+	rescued, moved := windowgeom.RescueTarget(live, restore, screens)
 	if !moved {
 		return false
 	}
-	logf("window %s came up unreachable at %s (screens %s); moving it to %s",
-		e.id, describeFrame(live), describeScreens(screens), describeFrame(rescued))
+	logf("window %s came up unreachable at %s, restoring to %s (screens %s); moving it to %s",
+		e.id, describeFrame(live), describeFrame(restore), describeScreens(screens), describeFrame(rescued))
 	// A maximised window cannot simply be moved. Windows maximises onto whichever
 	// display the window is on and holds it there — SetWindowPos on a WS_MAXIMIZE
 	// window is not reliably honoured, and the maximised rect wins back anything
 	// that is. Drop it to a normal frame, move that onto the primary display, and
-	// maximise it again once it is there.
-	maximised := e.win.IsMaximised()
+	// maximise it again once it is there. Its normal size is the restore frame's,
+	// not the live one's, so it is always set.
 	if maximised {
 		e.win.Restore()
 	}
-	if rescued.Width != live.Width || rescued.Height != live.Height {
+	if maximised || rescued.Width != live.Width || rescued.Height != live.Height {
 		e.win.SetSize(rescued.Width, rescued.Height)
 	}
 	e.win.SetPosition(rescued.X, rescued.Y)
@@ -207,18 +214,6 @@ func (a *appState) fitWindowToScreens(e *winEntry) bool {
 	capped := a.capOversizedWindow(e)
 	rescued := a.rescueStrandedWindow(e)
 	return sized || capped || rescued
-}
-
-// rescueIfStranded hops onto the main thread to ask rescueStrandedWindow, for a
-// caller that is not already there. The native getters it reads are only
-// answered correctly on the main thread.
-func (a *appState) rescueIfStranded(e *winEntry) {
-	done := make(chan struct{})
-	application.InvokeAsync(func() {
-		defer close(done)
-		a.rescueStrandedWindow(e)
-	})
-	<-done
 }
 
 // describeFrame renders a frame as one log token.

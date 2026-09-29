@@ -334,6 +334,48 @@ func TestRescueFrameLeavesAReachableWindowAlone(t *testing.T) {
 	}
 }
 
+// A window that opens maximised shows a frame on a real display whatever frame
+// it will restore to, so the frame underneath has to be judged as well: left
+// alone, the first press of the restore button drops the window where nobody
+// can see it.
+func TestRescueTargetJudgesTheFrameAMaximisedWindowRestoresTo(t *testing.T) {
+	maximised := core.WindowState{X: 0, Y: 0, Width: 1920, Height: 1040, HasPos: true}
+	stranded := core.WindowState{X: 4000, Y: 200, Width: 1000, Height: 800, HasPos: true}
+
+	got, moved := RescueTarget(maximised, stranded, testScreens())
+	if !moved {
+		t.Fatal("RescueTarget() moved = false, want the stranded restore frame rescued")
+	}
+	if got.Width != 1000 || got.Height != 800 || got.X != (1920-1000)/2 || got.Y != (1040-800)/2 {
+		t.Errorf("RescueTarget() = %+v, want the restore frame's size centred on the primary", got)
+	}
+}
+
+// Everything else is exactly the live-frame rescue it always was: a window with
+// nothing underneath is judged as it stands, and a reachable pair is left be.
+func TestRescueTargetLeavesEverythingElseToTheLiveFrame(t *testing.T) {
+	screens := testScreens()
+	reachable := core.WindowState{X: 100, Y: 100, Width: 800, Height: 600, HasPos: true}
+	parked := core.WindowState{X: -32000, Y: -32000, Width: 800, Height: 600, HasPos: true}
+	maximised := core.WindowState{X: 0, Y: 0, Width: 1920, Height: 1040, HasPos: true}
+
+	for _, tc := range []struct {
+		name          string
+		live, restore core.WindowState
+		want          bool
+	}{
+		{"a normal window, reachable", reachable, core.WindowState{}, false},
+		{"a normal window, stranded", parked, core.WindowState{}, true},
+		{"maximised over a reachable frame", maximised, reachable, false},
+		{"maximised over a centred placement", maximised, core.WindowState{Width: 800, Height: 600}, false},
+		{"maximised and itself stranded", parked, reachable, true},
+	} {
+		if _, moved := RescueTarget(tc.live, tc.restore, screens); moved != tc.want {
+			t.Errorf("%s: RescueTarget() moved = %v, want %v", tc.name, moved, tc.want)
+		}
+	}
+}
+
 // Seeding the tracker from the saved frame rather than the placement is what
 // let a rescued window write back the frame it was rescued from. A refused
 // frame becomes a centred placement, which seeds a size and no position.

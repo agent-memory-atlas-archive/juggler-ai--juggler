@@ -10,6 +10,7 @@ of changes; this project follows semantic versioning.
 - On touch, strategy, model and permissions move to a line of text above the message box
 - A very narrow column no longer pushes the model and send buttons off its edge
 - On a phone the tab drawer always leaves a strip of page to tap it away
+- Windows no longer fight tiling window managers that park them off-screen
 
 ## [0.7.2] - 2026-09-28
 

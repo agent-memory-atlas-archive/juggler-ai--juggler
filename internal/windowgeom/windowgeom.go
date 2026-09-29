@@ -142,6 +142,13 @@ func (t *Tracker) Reseed(frame core.WindowState) {
 	t.lastPos = frame
 }
 
+// RestoreFrame is the remembered normal-state frame: what a maximised window
+// will return to when it is restored. It has no position when nothing true is
+// known about one — see Seed.
+func (t *Tracker) RestoreFrame() core.WindowState {
+	return t.lastPos
+}
+
 // stranded reports whether a frame is unrecoverable on the displays present
 // right now, and false whenever there is no way to tell.
 func (t *Tracker) stranded(frame core.WindowState) bool {
@@ -482,6 +489,23 @@ func RescueFrame(frame core.WindowState, screens []*application.Screen) (core.Wi
 	frame.X = area.X + (area.Width-frame.Width)/2
 	frame.Y = area.Y + (area.Height-frame.Height)/2
 	return frame, true
+}
+
+// RescueTarget is RescueFrame for a window that may be showing one frame over
+// another: live is the frame it shows, and restore the frame it will return to
+// when un-maximised, or the zero frame for a window that is not maximised.
+//
+// A maximised window shows a frame on a real display whatever it will restore
+// to, so judging live alone passes a window whose restore frame is on a display
+// that has gone — and the first press of the restore button strands it. The
+// restore frame is judged first, because rescuing it gives a normal-sized frame
+// for the window to return to, where rescuing the live one would give a
+// display-sized one.
+func RescueTarget(live, restore core.WindowState, screens []*application.Screen) (core.WindowState, bool) {
+	if rescued, moved := RescueFrame(restore, screens); moved {
+		return rescued, true
+	}
+	return RescueFrame(live, screens)
 }
 
 // frameOf reads a placement back as the frame it will put on screen, so the
