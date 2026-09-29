@@ -143,6 +143,7 @@ class PinToPinboardContextItem extends ContextItem {
     const description = [
       'Attach something to the user’s Pinboard and bring it into view. This is a one-way display action: you cannot list or read the user’s existing pins, and repeating a request reveals the existing pin instead of adding another.',
       'Choose the type that is *for* the thing you are showing, not the one that will accept it — several types accept a path, and the specific one knows how to run, render or summarize what is at the end of it.',
+      'It is also how to show the user something you have made rather than describe it: write it to a file in the project and pin that file. An HTML file is shown as the rendered page, scripts running, with its source a click away — so a report, chart or mock-up can be looked at, not just read.',
       listed ? `Installed types:\n${listed}` : '',
       'A type installed after this list was built is accepted too: use its id and give it whatever parameters it expects, and it will validate its own config.',
     ].filter(Boolean).join('\n\n');

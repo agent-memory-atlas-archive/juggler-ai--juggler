@@ -92,7 +92,12 @@ Distinguishing ideas:
   once it ends, each row offering a Stop and a way back to the action that started
   it. Pins belong to the project session, so every viewer sees the same board. A
   pin is only a view: unlike a context item, pinning a file shows it to you and
-  not to the model.
+  not to the model. An HTML file is shown as the page it describes, wherever a
+  file is displayed (a pin, a read or write result, a dropped file): it runs in a
+  sandboxed frame that cannot reach Juggler itself, with a Source button for the
+  markup. A partial read, or a file the server will not serve, is shown as source.
+  So the agent can show you a report or mock-up by writing it to an HTML file in
+  the project and pinning it.
 
 ## Tools the agent can use
 
