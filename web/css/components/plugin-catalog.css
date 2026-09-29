@@ -919,11 +919,6 @@ plugin-catalog {
   color: var(--accent-green);
 }
 
-.ext-source-project {
-  background: rgb(167 139 250 / 15%);
-  color: #a78bfa;
-}
-
 .ext-card-error-msg {
   padding: 0.5rem 0.75rem;
   background: rgb(248 81 73 / 12%);

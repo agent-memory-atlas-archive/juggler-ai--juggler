@@ -16,6 +16,31 @@
     gap: 1.5rem;
 }
 
+/* Sidebar drawer toggle (hamburger) is only meaningful on narrow viewports,
+   where the conversation sidebar collapses to an off-canvas drawer (its scrim
+   is in layout/app-shell.css). Hidden everywhere else.
+
+   The `.app-header` prefix is load-bearing: the button also carries
+   `.btn-icon-header` (patterns/buttons.css), which sets `display: flex` at the same
+   specificity and loads AFTER this file — so a bare `.sidebar-toggle-button`
+   hide rule would lose the cascade and the burger would always show. The
+   descendant prefix raises specificity above the pattern. */
+.app-header .sidebar-toggle-button {
+    display: none;
+    flex-shrink: 0;
+}
+
+/* …and revealed again on a phone, where the sidebar collapses to a drawer.
+   Gated on viewport width ONLY — it appears in any context (browser tab or
+   native window). Same specificity as the hide rule above and later in the
+   file, so it wins while the query is active. */
+@media (width <= 36rem) {
+    .app-header .sidebar-toggle-button {
+        display: flex;
+        order: -1;
+    }
+}
+
 :where(.app-header) project-path-display {
     display: flex;
     align-items: center;
@@ -122,32 +147,6 @@
 :where(.app-header) .ppd-clients-indicator:hover:not(:disabled),
 :where(.app-header) .ppd-clients-indicator:active:not(:disabled) {
     color: var(--accent-blue, #58a6ff);
-}
-
-/* With no project loaded there are no conversations, so the sidebar and the
-   tab column have nothing to show and the overlay gets the whole main area.
-   <no-project-overlay> toggles `no-project` on <body>; the layout consequence
-   is stated here once rather than as inline styles written onto two siblings
-   from the outside. (The overlays themselves are styled in
-   components/onboarding.css.) */
-body.no-project conversation-bar,
-body.no-project conversation-tabs-container {
-    display: none;
-}
-
-/* Same mechanism, one state along: a project is loaded and the sidebar must
-   stay — it holds the "+" that ends this state — but the tab column has no
-   tabs to hold, so <no-conversations-overlay> takes the room it would claim. */
-body.no-conversations conversation-tabs-container {
-    display: none;
-}
-
-/* Same mechanism again, for a state that is chosen rather than arrived at: a
-   workspace box in the strip holds the selection, so <workspace-panel> is what
-   is on screen instead of a conversation. The sidebar stays — it is what the
-   selection was made in, and clicking a tab is the way back. */
-body.workspace-selected conversation-tabs-container {
-    display: none;
 }
 
 /* Header Actions Container

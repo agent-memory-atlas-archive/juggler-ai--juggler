@@ -769,7 +769,7 @@ class DiffViewer extends HTMLElement {
     html += lineNumberCell(side, number);
     html += this.renderAnchor(side, number);
     html += `<span class="line-prefix">${prefix}</span>`;
-    html += `<span class="line-content">${this.renderLineWithCharChanges(line)}</span>`;
+    html += `<span class="line-content">${this.lineMarkup(line)}</span>`;
     html += '</div>';
     return html;
   }
@@ -796,7 +796,7 @@ class DiffViewer extends HTMLElement {
     html += numbers;
     html += this.renderAnchor(side, side === 'old' ? line.oldLineNum : line.newLineNum);
     html += `<span class="line-prefix">${prefix}</span>`;
-    html += `<span class="line-content">${this.renderLineWithCharChanges(line)}</span>`;
+    html += `<span class="line-content">${this.lineMarkup(line)}</span>`;
     html += '</div>';
     return html + this.renderLineComments(line);
   }
@@ -954,62 +954,6 @@ class DiffViewer extends HTMLElement {
       if (side.source[index] === line.content) return side.markup[index] ?? escapeHtml(line.content);
     }
     return escapeHtml(line.content);
-  }
-
-  /**
-   * Render a line, applying character highlights if present.
-   *
-   * The character ranges and the syntax tokens are two layers over the same
-   * text, so the marks go onto the *rendered* line rather than being spliced
-   * into the source: the line is parsed, its text nodes are walked to find the
-   * range, and only that run is wrapped. A range straddling a token boundary
-   * therefore yields one `<mark>` per token instead of breaking either layer.
-   * @param {DiffLine} line
-   * @returns {string} HTML string of the line with character changes highlighted.
-   * @private
-   */
-  renderLineWithCharChanges(line) {
-    const html = this.lineMarkup(line);
-    const changes = line.charChanges;
-    if (!changes || changes.length === 0) return html;
-
-    const template = document.createElement('template');
-    template.innerHTML = html;
-
-    /** @type {{node: Text, start: number}[]} */
-    const nodes = [];
-    let offset = 0;
-    const walker = document.createTreeWalker(template.content, NodeFilter.SHOW_TEXT);
-    while (walker.nextNode()) {
-      const node = /** @type {Text} */ (walker.currentNode);
-      nodes.push({ node, start: offset });
-      offset += node.data.length;
-    }
-
-    for (const { node, start } of nodes) {
-      const end = start + node.data.length;
-      // Clipped to this text node, then applied right to left: splitting keeps
-      // the head in `node`, so every range still to come stays addressable.
-      const ranges = changes
-        .map((change) => ({
-          from: Math.max(change.start, start) - start,
-          to: Math.min(change.start + change.length, end) - start,
-          type: change.type,
-        }))
-        .filter((range) => range.to > range.from)
-        .sort((a, b) => b.from - a.from);
-
-      for (const range of ranges) {
-        node.splitText(range.to);
-        const changed = node.splitText(range.from);
-        const mark = document.createElement('mark');
-        mark.className = `char-${range.type}`;
-        changed.parentNode?.insertBefore(mark, changed);
-        mark.appendChild(changed);
-      }
-    }
-
-    return template.innerHTML;
   }
 
   /**

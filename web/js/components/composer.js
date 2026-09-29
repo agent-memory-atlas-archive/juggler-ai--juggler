@@ -103,9 +103,6 @@ class Composer extends HTMLElement {
     /** @type {boolean} @private */
     this.disabled = false;
 
-    /** @type {boolean} @private */
-    this.confirmationPending = false;
-
     // Whether the send is held while the box itself stays live, and what it is
     // waiting for.
     /** @type {boolean} @private */
@@ -1371,13 +1368,12 @@ class Composer extends HTMLElement {
     // message, exactly like a caption-less image attachment.
     const hasAttachments = this._resolvedAttachments().length > 0 || this._pendingTextFiles.length > 0;
 
-    // Block sending while confirmation is pending. An image-only message (no
-    // text but staged attachments) is a valid send: the worker treats an
-    // attachment-bearing message as non-empty (UserMessageInput.isEmpty) and
-    // each provider omits the empty text block on the wire, so nothing forces
-    // the user to type a caption.
-    if ((!message && !hasAttachments) || this.disabled || this.confirmationPending) {
-      return 'empty, disabled, or confirmation pending';
+    // An image-only message (no text but staged attachments) is a valid send:
+    // the worker treats an attachment-bearing message as non-empty
+    // (UserMessageInput.isEmpty) and each provider omits the empty text block on
+    // the wire, so nothing forces the user to type a caption.
+    if ((!message && !hasAttachments) || this.disabled) {
+      return 'empty or disabled';
     }
 
     // Nowhere to send it yet. The box is deliberately still live — the message
@@ -1596,23 +1592,6 @@ class Composer extends HTMLElement {
     const textarea = this.querySelector('textarea');
 
     if (textarea) textarea.disabled = disabled;
-  }
-
-  /**
-   * Set confirmation pending state
-   * @param {boolean} pending - Whether a confirmation is pending
-   */
-  setConfirmationPending(pending) {
-    this.confirmationPending = pending;
-    const textarea = this.querySelector('textarea');
-
-    if (textarea) {
-      if (pending) {
-        textarea.setAttribute('data-confirmation-pending', 'true');
-      } else {
-        textarea.removeAttribute('data-confirmation-pending');
-      }
-    }
   }
 
   /**

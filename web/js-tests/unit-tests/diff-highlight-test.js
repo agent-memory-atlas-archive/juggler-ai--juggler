@@ -5,9 +5,9 @@
 /**
  * Syntax highlighting in `<diff-viewer>`.
  *
- * A diff line carries two independent layers over the same text — syntax tokens
- * and character-level change marks — so these cases pin that adding the first
- * did not cost the second, and that neither changes what the line says.
+ * These cases pin that a diff is tokenised in its file's language, and that the
+ * tokens change nothing the diff says: each line's text, prefix and number, and
+ * the added/removed counts.
  * @module unit-tests/diff-highlight-test
  */
 
@@ -68,17 +68,6 @@ export async function runTests(_ctx) {
    */
   const lineTexts = (el) => [...el.querySelectorAll('.line-content')].map((n) => n.textContent || '');
 
-  /**
-   * @param {any} el - A rendered diff viewer
-   * @param {object} line - A synthetic diff line to render
-   * @returns {HTMLElement} A holder containing the rendered line
-   */
-  const renderLine = (el, line) => {
-    const holder = document.createElement('div');
-    holder.innerHTML = el.renderLineWithCharChanges(line);
-    return holder;
-  };
-
   run('a typescript diff is tokenised', () => {
     const el = render(OLD_TS, NEW_TS, '/src/main.ts');
     assert(el.querySelector('.line-content .token') !== null, 'expected syntax tokens in the diff');
@@ -113,55 +102,6 @@ export async function runTests(_ctx) {
     assert(el.querySelector('script') === null, 'a script element must never be created');
     assert(lineTexts(el).some((t) => t.includes('<script>alert(1)</script>')),
       'the markup should read back as text');
-  });
-
-  run('character marks and tokens coexist', () => {
-    const el = render(OLD_TS, NEW_TS, '/src/main.ts');
-    // charChanges are computed elsewhere; drive the renderer directly so this
-    // pins the layering rather than the diff algorithm.
-    const holder = renderLine(el, {
-      type: 'remove',
-      content: 'const a: number = 1;',
-      oldLineNum: 1,
-      newLineNum: null,
-      charChanges: [{ start: 18, length: 1, type: 'remove' }],
-    });
-    assert(holder.querySelector('mark.char-remove') !== null, 'the character mark was lost');
-    assert(holder.querySelector('mark.char-remove')?.textContent === '1', 'the wrong range was marked');
-    assert(holder.querySelector('.token') !== null, 'the syntax tokens were lost');
-    assert(holder.textContent === 'const a: number = 1;', 'the line text changed');
-  });
-
-  run('a mark spanning a token boundary keeps the whole range marked', () => {
-    const el = render(OLD_TS, NEW_TS, '/src/main.ts');
-    const holder = renderLine(el, {
-      type: 'remove',
-      content: 'const a: number = 1;',
-      oldLineNum: 1,
-      newLineNum: null,
-      // Spans "a: number" — several tokens.
-      charChanges: [{ start: 6, length: 9, type: 'remove' }],
-    });
-    const marked = [...holder.querySelectorAll('mark.char-remove')].map((n) => n.textContent).join('');
-    assert(marked === 'a: number', `the marked range should be complete, got "${marked}"`);
-    assert(holder.textContent === 'const a: number = 1;', 'the line text changed');
-  });
-
-  run('two separate marks on one line both land', () => {
-    const el = render(OLD_TS, NEW_TS, '/src/main.ts');
-    const holder = renderLine(el, {
-      type: 'remove',
-      content: 'const a: number = 1;',
-      oldLineNum: 1,
-      newLineNum: null,
-      charChanges: [
-        { start: 6, length: 1, type: 'remove' },
-        { start: 18, length: 1, type: 'remove' },
-      ],
-    });
-    const marked = [...holder.querySelectorAll('mark.char-remove')].map((n) => n.textContent);
-    assert(marked.join('') === 'a1', `expected both ranges marked, got "${marked.join('|')}"`);
-    assert(holder.textContent === 'const a: number = 1;', 'the line text changed');
   });
 
   run('a diff that starts partway through a file indexes the right lines', () => {

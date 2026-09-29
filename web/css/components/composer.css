@@ -266,6 +266,85 @@ composer-box .attachment-chip .attachment-remove:hover {
     color: var(--text-primary);
 }
 
+/* ==========================================================================
+   Control buttons (.input-ctrl-btn)
+   The same ghost chrome patterns/buttons.css gives .btn-ghost, restated here
+   because inside the composer the class belongs to this component, and every
+   rule that refines it here is in this file. The class is scoped to
+   composer-box: a model chip or a permissions-popup button elsewhere is dressed
+   by its own sheet.
+
+   Smaller and shorter than the header buttons. The icon-only buttons after this
+   section narrow its padding at the same specificity, so it comes first.
+   ========================================================================== */
+
+composer-box .input-ctrl-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    flex-shrink: 0;
+    height: 1.5rem;
+    white-space: nowrap;
+    border: 0.0625rem solid transparent;
+    border-radius: 1rem;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background var(--transition-base), border-color var(--transition-base), color var(--transition-base), transform var(--transition-base);
+}
+
+composer-box .input-ctrl-btn:hover:not(:disabled) {
+    background: var(--overlay-dark-70);
+    border-color: var(--overlay-light-30);
+    color: var(--text-primary);
+    transform: none;
+}
+
+composer-box .input-ctrl-btn:active {
+    transform: scale(0.95);
+}
+
+/* A disabled control button (e.g. the schedule button over an empty box) reads
+   as inert: dimmed, default cursor, no hover/active affordance. */
+composer-box .input-ctrl-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+:root[data-theme="light"] composer-box .input-ctrl-btn:hover:not(:disabled) {
+    background: rgb(255 255 255 / 95%);
+    border-color: var(--text-tertiary);
+}
+
+/* Commands button - icon-only, centered */
+composer-box .commands-button {
+    justify-content: center;
+    padding: 0.125rem 0.5rem;
+}
+
+composer-box .commands-button .icon-slash {
+    width: 0.75rem;
+    height: 0.75rem;
+}
+
+/* Skill button - icon-only, centered (mirrors the commands button). Its glyph is
+   the `$` skill-mention trigger, just as the commands button shows the `/` slash
+   trigger — a text character rather than a mask icon, so it stays crisp at any
+   zoom and follows currentcolor for free. */
+composer-box .skill-button {
+    justify-content: center;
+    padding: 0.125rem 0.5rem;
+}
+
+composer-box .skill-button .skill-glyph {
+    font-family: var(--font-mono, monospace);
+    font-size: 0.875rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
 /* Attach-image button — icon-only, matching the commands button. */
 composer-box .attach-image-btn {
     justify-content: center;
@@ -349,46 +428,6 @@ composer-box .paste-mirror .paste-token.expanding {
     box-shadow: 0 0 0 0.0625rem color-mix(in srgb, var(--accent-blue) 65%, transparent);
 }
 
-/* ==========================================================================
-   Control buttons (.input-ctrl-btn)
-   The same ghost chrome patterns/buttons.css gives .btn-ghost, restated here
-   because the class belongs to this component: composer-box is its only user,
-   and every rule that refines it is in this file. Filed in patterns it would
-   be chrome nothing here could override; filed in utilities, as it was, it
-   would be chrome nothing anywhere could override.
-   ========================================================================== */
-
-composer-box .input-ctrl-btn {
-    border: 0.0625rem solid transparent;
-    border-radius: 1rem;
-    background: transparent;
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: background var(--transition-base), border-color var(--transition-base), color var(--transition-base), transform var(--transition-base);
-}
-
-composer-box .input-ctrl-btn:hover:not(:disabled) {
-    background: var(--overlay-dark-70);
-    border-color: var(--overlay-light-30);
-    color: var(--text-primary);
-    transform: none;
-}
-
-composer-box .input-ctrl-btn:active {
-    transform: scale(0.95);
-}
-
-/* A disabled control button (e.g. the schedule button over an empty box) reads
-   as inert: dimmed, default cursor, no hover/active affordance. */
-composer-box .input-ctrl-btn:disabled {
-    opacity: 0.4;
-    cursor: default;
-}
-
-:root[data-theme="light"] composer-box .input-ctrl-btn:hover:not(:disabled) {
-    background: rgb(255 255 255 / 95%);
-    border-color: var(--text-tertiary);
-}
 
 /* Strategy selector shares the .input-ctrl-btn ghost-pill style; only its
    slightly smaller label and the chevron affordance are unique. The min-width

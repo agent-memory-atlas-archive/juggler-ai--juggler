@@ -361,6 +361,13 @@
   color: var(--text-tertiary);
 }
 
+/* Only on the skill load panel's copy of this card (skill-context-item.js): the
+   skill is already in the conversation. */
+.skills-badge.loaded {
+  background: color-mix(in srgb, var(--accent-green) 16%, transparent);
+  color: var(--accent-green);
+}
+
 .skills-scope-badge {
   font-size: 0.68rem;
   font-family: var(--font-mono);

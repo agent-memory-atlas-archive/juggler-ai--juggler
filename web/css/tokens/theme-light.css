@@ -170,10 +170,8 @@
     --ci-family-execute: var(--ci-preset-purple);
     --ci-family-plan: var(--ci-preset-indigo);
     --ci-family-meta: var(--ci-preset-slate);
-    --ci-family-system: var(--ci-family-meta);
     --ci-family-ask: var(--ci-preset-yellow);
     --ci-family-thread: var(--ci-preset-magenta);
-    --ci-family-todo: var(--ci-family-plan);
 
     /* badge mid-tones (saturated; white glyphs readable) */
     --ci-family-badge-read: var(--ci-preset-badge-cyan);
@@ -184,10 +182,8 @@
     --ci-family-badge-execute: var(--ci-preset-badge-purple);
     --ci-family-badge-plan: var(--ci-preset-badge-indigo);
     --ci-family-badge-meta: var(--ci-preset-badge-slate);
-    --ci-family-badge-system: var(--ci-family-badge-meta);
     --ci-family-badge-ask: var(--ci-preset-badge-yellow);
     --ci-family-badge-thread: var(--ci-preset-badge-magenta);
-    --ci-family-badge-todo: var(--ci-family-badge-plan);
 
     /* Code block specific colors */
     --bg-code-dark: #f6f8fa;
@@ -233,13 +229,9 @@
     --diff-neutral-text: #1f2328;
     --diff-warning-text: #9a6700;
 
-    /* Diff viewer (inline) line + intra-line backgrounds (GitHub light) */
+    /* Diff viewer (inline) line backgrounds (GitHub light) */
     --diff-line-add-bg: #e6ffec;
     --diff-line-remove-bg: #ffebe9;
-    --diff-char-add-bg: #abf2bc;
-    --diff-char-add-text: #1a7f37;
-    --diff-char-remove-bg: #ffc9c9;
-    --diff-char-remove-text: #cf222e;
 
     /* Syntax highlighting colors (light theme) */
     --syntax-comment: #6e7781;

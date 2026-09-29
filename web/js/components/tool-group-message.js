@@ -15,7 +15,7 @@ const GROUP_ICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" height="14" view
 
 const FAMILY_COLORS = new Set([
   'read', 'search', 'web', 'edit', 'memory', 'execute',
-  'plan', 'meta', 'system', 'ask', 'thread', 'todo',
+  'plan', 'meta', 'ask', 'thread',
 ]);
 
 const PRESET_COLORS = new Set([
@@ -32,8 +32,6 @@ const PRESET_COLORS = new Set([
  * @returns {string} A supported colour name.
  */
 function canonicalBadgeColor(color) {
-  if (color === 'system') return 'meta';
-  if (color === 'todo') return 'plan';
   if (FAMILY_COLORS.has(color) || PRESET_COLORS.has(color)) return color;
   return 'slate';
 }

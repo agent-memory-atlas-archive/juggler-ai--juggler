@@ -33,32 +33,10 @@ app-container {
     flex-shrink: 0;
 }
 
-/* Sidebar drawer toggle (hamburger) and its scrim are only meaningful on
-   narrow viewports, where the conversation sidebar collapses to an off-canvas
-   drawer. Hidden everywhere else; the narrow-viewport rules below reveal and
-   position them.
-
-   The `.app-header` prefix is load-bearing: the button also carries
-   `.btn-icon-header` (patterns/buttons.css), which sets `display: flex` at the same
-   specificity and loads AFTER this file — so a bare `.sidebar-toggle-button`
-   hide rule would lose the cascade and the burger would always show. The
-   descendant prefix raises specificity above the utility. */
-.app-header .sidebar-toggle-button {
-    display: none;
-    flex-shrink: 0;
-}
-
-/* …and revealed again on a phone, where the sidebar collapses to a drawer.
-   Gated on viewport width ONLY — it appears in any context (browser tab or
-   native window). Same specificity as the hide rule above and later in the
-   file, so it wins while the query is active. */
-@media (width <= 36rem) {
-    .app-header .sidebar-toggle-button {
-        display: flex;
-        order: -1;
-    }
-}
-
+/* The sidebar drawer's scrim is only meaningful on narrow viewports, where the
+   conversation sidebar collapses to an off-canvas drawer. Hidden everywhere
+   else; the narrow-viewport rules below reveal and position it. The drawer's
+   toggle is in layout/app-header.css. */
 .sidebar-backdrop {
     display: none;
 }
@@ -211,7 +189,36 @@ conversation-tabs-container {
     position: relative;
 }
 
-/* Conversation Tab - isolated DOM for each conversation */
+/* The tab column gives way in three states, each a class on <body> toggled by
+   the element that takes its room. The consequence is stated here rather than
+   as inline styles written onto a sibling from the outside. (The overlays are
+   styled in components/onboarding.css.)
+
+   No project loaded: there are no conversations either, so <no-project-overlay>
+   gets the whole main area. The sidebar answers the same state in
+   components/conversation-bar.css. */
+body.no-project conversation-tabs-container {
+    display: none;
+}
+
+/* One state along: a project is loaded and the sidebar must stay — it holds the
+   "+" that ends this state — but the tab column has no tabs to hold, so
+   <no-conversations-overlay> takes the room it would claim. */
+body.no-conversations conversation-tabs-container {
+    display: none;
+}
+
+/* A state that is chosen rather than arrived at: a workspace box in the strip
+   holds the selection, so <workspace-panel> is what is on screen instead of a
+   conversation. The sidebar stays — it is what the selection was made in, and
+   clicking a tab is the way back. */
+body.workspace-selected conversation-tabs-container {
+    display: none;
+}
+
+/* Conversation Tab - isolated DOM for each conversation. The container stacks
+   them all in one place and shows the active one; conversation-tab.js sets
+   `active` / `hidden` on itself. Its own UI is components/conversation-tab.css. */
 conversation-tab {
     display: none; /* Hidden by default */
     flex: 1;
@@ -368,6 +375,13 @@ conversation-area[data-hide-input] reply-suggestions {
     display: none;
 }
 
+/* The composer and the suggestion row above it are fixed furniture at the foot
+   of the column; only the transcript above them gives way. */
+conversation-area composer-box,
+conversation-area reply-suggestions {
+    flex-shrink: 0;
+}
+
 /* Properties panel: when last, grow to fill remaining space. */
 column-container properties-panel {
     flex: 1;
@@ -431,7 +445,7 @@ column-container > properties-panel.column-rightmost col-resize-handle {
     display: none;
 }
 
-/* Conversation Area - takes remaining space (now inside conversation-tab) */
+/* Conversation Area - one column of a conversation-tab; takes remaining space */
 conversation-tab conversation-area,
 conversation-area {
     display: flex;
@@ -479,6 +493,19 @@ conversation-message-list-wrapper {
     flex-direction: column;
     cursor: var(--cursor-text);
     position: relative;
+}
+
+/* A file dragged anywhere over the column washes the transcript, while the
+   composer below takes the drop ring (components/composer.css): the wash says
+   the whole panel will accept the drop, the ring says where the file lands.
+   The drag state is a context qualifier, so it carries no weight. */
+:where(conversation-area.file-drag-over) conversation-message-list-wrapper::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--accent-blue);
+    opacity: 0.06;
+    pointer-events: none;
 }
 
 /* The wordmark shrinks with the header's padding at the same breakpoint. */

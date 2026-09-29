@@ -131,47 +131,6 @@ strategy-selector[hidden] {
     line-height: 1.4;
 }
 
-/* Input-controls buttons share the .btn-ghost house style (chrome lives in
-   utilities.css, keyed off `composer-box .input-ctrl-btn`); this owns only their
-   size and layout — smaller and shorter than the header buttons. */
-composer-box .input-ctrl-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.25rem 0.5rem;
-    font-size: 0.75rem;
-    flex-shrink: 0;
-    height: 1.5rem;
-    white-space: nowrap;
-}
-
-/* Commands button - icon-only, centered */
-composer-box .commands-button {
-    justify-content: center;
-    padding: 0.125rem 0.5rem;
-}
-
-composer-box .commands-button .icon-slash {
-    width: 0.75rem;
-    height: 0.75rem;
-}
-
-/* Skill button - icon-only, centered (mirrors the commands button). Its glyph is
-   the `$` skill-mention trigger, just as the commands button shows the `/` slash
-   trigger — a text character rather than a mask icon, so it stays crisp at any
-   zoom and follows currentcolor for free. */
-composer-box .skill-button {
-    justify-content: center;
-    padding: 0.125rem 0.5rem;
-}
-
-composer-box .skill-button .skill-glyph {
-    font-family: var(--font-mono, monospace);
-    font-size: 0.875rem;
-    font-weight: 700;
-    line-height: 1;
-}
-
 /* Commands menu - two-column grid so command names and their descriptions
    line up vertically. Each menu-item spans both columns and adopts them via
    subgrid, so the row still highlights on hover as one unit. */

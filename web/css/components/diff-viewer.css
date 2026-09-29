@@ -4,80 +4,6 @@
  *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
  */
 
-.menu-item-hint {
-    cursor: default;
-    padding: 0.75rem 1rem;
-}
-
-.menu-item-hint:hover {
-    background: transparent;
-}
-
-.menu-hint-text {
-    color: var(--text-secondary);
-    font-size: 0.8125rem;
-    line-height: 1.5;
-    text-align: center;
-    display: block;
-}
-
-/* Recommended model styling */
-.menu-item.recommended {
-    color: var(--accent-text);
-    font-weight: 500;
-}
-
-.menu-item-note {
-    color: var(--text-secondary);
-    font-size: 0.75rem;
-    margin-left: 0.35rem;
-}
-
-/* Provider section header: name on the left, tri-state list toggle on the right. */
-.menu-header.provider-menu-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-}
-
-/* Tri-state list toggle ("none" / "top" / "all") in a provider header bar. */
-.provider-view-toggle {
-    flex-shrink: 0;
-    appearance: none;
-    border: 0.0625rem solid var(--border-color);
-    background: var(--bg-primary);
-    color: var(--text-secondary);
-    font: inherit;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    line-height: 1;
-    min-width: 2.75rem;
-    text-align: center;
-    padding: 0.2rem 0.45rem;
-    border-radius: 0.3125rem;
-    cursor: pointer;
-    transition: border-color 0.1s ease, color 0.1s ease, background-color 0.1s ease;
-}
-
-.provider-view-toggle:hover {
-    background-color: var(--bg-raised);
-    border-color: var(--accent-blue);
-    color: var(--accent-blue);
-}
-
-.provider-view-toggle:active {
-    background-color: var(--bg-primary);
-}
-
-.provider-view-toggle:focus-visible {
-    outline: none;
-    border-color: var(--accent-blue);
-    box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--accent-blue) 25%, transparent);
-}
-
 /* Diff Viewer Component - Inline View */
 
 /* The code rows are as wide as the longest line and scroll sideways inside the
@@ -369,23 +295,6 @@ diff-viewer .line-content {
     padding: 0 0.75rem;
     white-space: pre;
     color: var(--diff-neutral-text);
-}
-
-/* Character-level highlighting (GitHub style). Line content is syntax-
-   highlighted, so a mark can contain `.token` spans: the mark supplies the
-   background while each token keeps its own colour, which is what lets a changed
-   identifier still read as an identifier. The `color` below therefore reaches
-   only the parts of the range that carry no token of their own. */
-diff-viewer .line-content mark.char-add {
-    background: var(--diff-char-add-bg);
-    color: var(--diff-char-add-text);
-    padding: 0.0625rem 0;
-}
-
-diff-viewer .line-content mark.char-remove {
-    background: var(--diff-char-remove-bg);
-    color: var(--diff-char-remove-text);
-    padding: 0.0625rem 0;
 }
 
 diff-viewer diff-stats {

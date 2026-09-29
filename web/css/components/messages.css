@@ -57,18 +57,6 @@
     margin-bottom: auto;
 }
 
-/* A file dragged anywhere over the column washes the transcript, while the
-   composer below takes the drop ring (see components.css): the wash says the
-   whole panel will accept the drop, the ring says where the file lands. */
-conversation-area.file-drag-over conversation-message-list-wrapper::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: var(--accent-blue);
-    opacity: 0.06;
-    pointer-events: none;
-}
-
 /* The starting hint for a conversation with no history yet (see
    conversation-area's _updateEmptyHint / _positionEmptyHint). It is laid OVER
    the empty background rather than placed in the transcript: an
@@ -217,12 +205,6 @@ conversation-empty-hint.no-room {
     display: none;
 }
 
-/* The composer and the suggestion row above it are fixed furniture at the foot
-   of the column; only the transcript above them gives way. */
-conversation-area composer-box,
-conversation-area reply-suggestions {
-    flex-shrink: 0;
-}
 
 /* Conversation Footer - Shows spinner when processing, continue button when idle */
 conversation-footer {
@@ -856,11 +838,6 @@ tool-action-message {
     --preset-badge-bg: var(--ci-family-badge-meta, var(--ci-family-meta));
 }
 
-.color-system {
-    --preset-bg: var(--ci-family-system);
-    --preset-badge-bg: var(--ci-family-badge-system, var(--ci-family-system));
-}
-
 .color-ask {
     --preset-bg: var(--ci-family-ask);
     --preset-badge-bg: var(--ci-family-badge-ask, var(--ci-family-ask));
@@ -869,11 +846,6 @@ tool-action-message {
 .color-thread {
     --preset-bg: var(--ci-family-thread);
     --preset-badge-bg: var(--ci-family-badge-thread, var(--ci-family-thread));
-}
-
-.color-todo {
-    --preset-bg: var(--ci-family-todo);
-    --preset-badge-bg: var(--ci-family-badge-todo, var(--ci-family-todo));
 }
 
 /* Apply preset background to icon boxes and context item containers */

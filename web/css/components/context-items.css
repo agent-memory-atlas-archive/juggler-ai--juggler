@@ -364,13 +364,6 @@
     margin-top: 0.25rem;
 }
 
-/* An "already loaded / scripts" style badge to sit alongside the reused
-   .skills-badge variants from the settings page. */
-.skills-badge.loaded {
-    background: color-mix(in srgb, var(--accent-green) 16%, transparent);
-    color: var(--accent-green);
-}
-
 .skill-load-note {
     font-size: 0.8rem;
     line-height: 1.4;

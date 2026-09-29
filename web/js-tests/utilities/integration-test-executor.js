@@ -296,6 +296,7 @@ import { runTests as runStrategyOrderTests } from '../unit-tests/strategy-order-
 import { runTests as runStrategyMenuRefreshTests } from '../unit-tests/strategy-menu-refresh-test.js';
 import { runTests as runPermissionPopupRefreshTests } from '../unit-tests/permission-popup-refresh-test.js';
 import { runTests as runClipboardTests } from '../unit-tests/clipboard-test.js';
+import { runTests as runCopyButtonTests } from '../unit-tests/copy-button-test.js';
 import { runTests as runConnectivityTests } from '../unit-tests/connectivity-test.js';
 import { runTests as runLogsTests } from '../unit-tests/logs-test.js';
 import { runTests as runUpdatesSettingsTests } from '../unit-tests/updates-settings-test.js';
@@ -690,6 +691,7 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:strategy-menu-refresh', run: runStrategyMenuRefreshTests },
   { name: 'unit:permission-popup-refresh', run: runPermissionPopupRefreshTests },
   { name: 'unit:clipboard', run: runClipboardTests },
+  { name: 'unit:copy-button', run: runCopyButtonTests },
   { name: 'unit:connectivity', run: runConnectivityTests },
   { name: 'unit:logs', run: runLogsTests },
   { name: 'unit:updates-settings', run: runUpdatesSettingsTests },

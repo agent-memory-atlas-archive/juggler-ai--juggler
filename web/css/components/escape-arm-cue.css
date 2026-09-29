@@ -1,0 +1,59 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+/* ============================================================================
+   ESCAPE ARM CUE (web/js/services/escape-behaviour.js)
+
+   Shown under the "press Escape twice to stop" preference, for the moment
+   between the two presses. Without it the first press looks like the key doing
+   nothing at all, which reads as a bug rather than as a safety catch.
+
+   Deliberately NOT a popup: it is appended straight to <body> and never
+   registered with popup-manager, because a registered popup would make the
+   SECOND Escape dismiss this cue instead of stopping the turn. It is inert to
+   the pointer for the same reason — clicking it must not be a way to arm or
+   cancel anything.
+   ========================================================================== */
+
+.escape-arm-cue {
+    position: fixed;
+    left: 50%;
+    bottom: 6rem;
+    transform: translateX(-50%);
+    z-index: var(--z-toast);
+    padding: 0.5rem 0.875rem;
+    background: var(--tooltip-bg);
+    color: var(--tooltip-text);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--tooltip-shadow);
+    font-family: var(--font-ui);
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--leading-tight);
+    white-space: nowrap;
+    pointer-events: none;
+    -webkit-user-select: none;
+    user-select: none;
+    animation: escape-arm-cue-in 0.12s ease-out;
+}
+
+@keyframes escape-arm-cue-in {
+    from {
+        opacity: 0;
+        transform: translate(-50%, 0.375rem);
+    }
+
+    to {
+        opacity: 1;
+        transform: translate(-50%, 0);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .escape-arm-cue {
+        animation: none;
+    }
+}

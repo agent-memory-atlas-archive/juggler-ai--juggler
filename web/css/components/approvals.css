@@ -948,12 +948,6 @@ action-confirmation:focus {
     color: var(--accent-red, #dc2626);
 }
 
-/* Composer with confirmation pending */
-textarea[data-confirmation-pending="true"] {
-    opacity: 0.6;
-    cursor: not-allowed;
-}
-
 /* ===================================================================
    Multi-Question Form (AskUserQuestion with multiple questions)
    ================================================================== */
@@ -1274,42 +1268,6 @@ textarea[data-confirmation-pending="true"] {
     margin-left: auto;
     white-space: nowrap;
 }
-
-/* ==========================================================================
-   Dropdown Menu List
-   ========================================================================== */
-
-.dropdown-menu menu {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-}
-
-.dropdown-menu .category-header {
-    font-weight: 600;
-    font-size: 0.6875rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-tertiary);
-    cursor: default;
-    padding: 0.375rem 0.75rem;
-}
-
-.dropdown-menu .menu-item-name {
-    flex: 1;
-}
-
-/* ==========================================================================
-   Semantic Badge Colors
-   ========================================================================== */
-
-/* ==========================================================================
-   Action Result Status Colors
-   ========================================================================== */
-
-/* ==========================================================================
-   Preformatted Output (scrollable monospace text block)
-   ========================================================================== */
 
 /* ==========================================================================
    Ask User Question Details

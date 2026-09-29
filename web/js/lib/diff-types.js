@@ -8,16 +8,11 @@
  */
 
 /**
- * @typedef {{start: number, length: number, type: 'add'|'remove'}} CharChange
- */
-
-/**
  * @typedef {{
  *   type: 'add'|'remove'|'equal',
  *   content: string,
  *   oldLineNum: number|null,
- *   newLineNum: number|null,
- *   charChanges?: CharChange[]
+ *   newLineNum: number|null
  * }} DiffLine
  */
 

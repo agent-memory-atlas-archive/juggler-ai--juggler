@@ -25,9 +25,7 @@
 		{
 			"file": "tokens/theme-dark.css",
 			"layer": "tokens",
-			"owns": [
-				"ci-text-block"
-			]
+			"owns": []
 		},
 		{
 			"file": "tokens/theme-light.css",
@@ -37,9 +35,7 @@
 		{
 			"file": "base/reset.css",
 			"layer": "base",
-			"owns": [
-				"select"
-			]
+			"owns": []
 		},
 		{
 			"file": "base/elements.css",
@@ -50,6 +46,7 @@
 				"body",
 				"button",
 				"input",
+				"select",
 				"strong",
 				"textarea"
 			]
@@ -67,19 +64,17 @@
 				"app-container",
 				"app-main",
 				"bell-button",
-				"bin-panel",
 				"col-resize-handle",
 				"column-container",
 				"conversation-area",
 				"conversation-message-list-wrapper",
-				"conversation-tab-loading-overlay",
+				"conversation-tab",
 				"conversation-tabs-container",
 				"logo",
 				"network-button",
 				"settings-button",
 				"sidebar-backdrop",
 				"tool-grouping-button",
-				"update-notice__status-text",
 				"zoom-*"
 			]
 		},
@@ -109,6 +104,13 @@
 			]
 		},
 		{
+			"file": "patterns/copy-button.css",
+			"layer": "patterns",
+			"owns": [
+				"copy-button"
+			]
+		},
+		{
 			"file": "patterns/popup-surface.css",
 			"layer": "patterns",
 			"enumerates": true,
@@ -122,7 +124,9 @@
 				"menu-divider",
 				"menu-group",
 				"menu-header",
+				"menu-hint-text",
 				"menu-item",
+				"menu-item-hint",
 				"menu-item-icon",
 				"menu-settings-icon"
 			]
@@ -252,9 +256,16 @@
 			"owns": [
 				"bin-empty-menu",
 				"bin-modal",
+				"bin-panel",
 				"conversation-bar",
-				"conversation-tab",
 				"info-cards-menu__check"
+			]
+		},
+		{
+			"file": "components/conversation-tab.css",
+			"layer": "components",
+			"owns": [
+				"conversation-tab-loading-*"
 			]
 		},
 		{
@@ -344,7 +355,9 @@
 			"file": "components/model-picker.css",
 			"layer": "components",
 			"owns": [
+				"menu-item-note",
 				"model-*",
+				"provider-view-toggle",
 				"pulse",
 				"recent-*",
 				"thinking-mini",
@@ -360,11 +373,7 @@
 			"layer": "components",
 			"owns": [
 				"diff-viewer",
-				"menu-hint-text",
-				"menu-item-hint",
-				"menu-item-note",
 				"properties-panel-diff",
-				"provider-view-toggle",
 				"review-*"
 			]
 		},
@@ -374,6 +383,7 @@
 			"owns": [
 				"actions-sheet",
 				"composer-box",
+				"composer-box-wrapper",
 				"new-thread-btn",
 				"permission-controls",
 				"reply-suggestions",
@@ -441,17 +451,23 @@
 				"pp-subtitle",
 				"pp-title",
 				"skill-menu",
-				"transaction-band-*",
 				"update-button",
-				"update-notice"
+				"update-notice",
+				"update-notice__status-text"
 			]
 		},
 		{
 			"file": "components/settings.css",
 			"layer": "components",
 			"owns": [
-				"escape-arm-cue",
 				"settings-panel"
+			]
+		},
+		{
+			"file": "components/escape-arm-cue.css",
+			"layer": "components",
+			"owns": [
+				"escape-arm-cue"
 			]
 		},
 		{
@@ -527,18 +543,12 @@
 			"file": "components/context-items.css",
 			"layer": "components",
 			"owns": [
-				"ci-badge-*",
 				"ci-code-*",
-				"ci-error-*",
 				"ci-expanded",
-				"ci-file-*",
 				"ci-line",
 				"ci-line-spacer",
-				"ci-search-*",
 				"ci-section",
-				"ci-section-*",
-				"ci-stat-*",
-				"expanded-*",
+				"ci-text-block",
 				"skill-ci-expanded",
 				"skill-load-*",
 				"skill-panel-*",
@@ -551,18 +561,13 @@
 			"layer": "components",
 			"owns": [
 				"approach-text",
-				"backend-*",
-				"capability-*",
 				"catalog-*",
 				"ext-*",
 				"extension-*",
-				"operation-*",
-				"operations-*",
 				"permission-badge",
 				"permission-explained-*",
 				"permissions-explained",
 				"plugin-*",
-				"preview-*",
 				"recommendation-*",
 				"strategy-guidance-*",
 				"strategy-recommendations",
@@ -576,9 +581,7 @@
 				"tool-param-*",
 				"tool-params-list",
 				"tool-schema",
-				"tools-list",
-				"tradeoffs-*",
-				"trigger-*"
+				"tools-list"
 			]
 		},
 		{
@@ -613,15 +616,11 @@
 		}
 	],
 	"$enumerates": "A sheet whose job is to state ONE policy across every surface it applies to, rather than to own a group of its own: base/text-selection.css (what a mouse drag may select) and patterns/popup-surface.css (the outer card every transient surface wears). Their selectors name roots other sheets own, and that is the point — the alternative is the same declaration copied into a dozen component files, where nobody can see it is one decision. The ownership check skips them. They earn it by being small, by holding one policy each, and by sitting in the lowest layer that can state it, so any component can still override its own case.",
-	"$dynamicClasses": "Class names assembled in JS, so no literal exists to find. Each pattern below was proven by locating the composing expression (e.g. `color-${…}`) in web/js. Keep them tight: a pattern broad enough to cover a whole family stops the dead-selector check from seeing anything in it.",
+	"$dynamicClasses": "Class names assembled in JS, so no literal exists to find. Each pattern below was proven by locating the composing expression (e.g. `color-${…}`) in web/js or web/sdk. Keep them tight: a pattern broad enough to cover a whole family stops the dead-selector check from seeing anything in it.",
 	"dynamicClasses": [
-		"file-drop-target-active",
 		"color-*",
 		"status-*",
 		"origin-*",
-		"badge-*",
-		"toggle-*",
-		"char-*",
 		"ext-source-*",
 		"ext-cap-type-*",
 		"tool-category-*",

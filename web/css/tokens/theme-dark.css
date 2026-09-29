@@ -156,8 +156,7 @@
     --ci-text-secondary: rgb(255 255 255 / 70%);
 
     /* Context item semantic families. Tool badges describe the consequence of an
-       item; icons and labels carry the finer distinction. Compatibility aliases
-       keep existing extensions using `system` or `todo` on the same vocabulary. */
+       item; icons and labels carry the finer distinction. */
     --ci-family-read: var(--ci-preset-cyan);
     --ci-family-search: var(--ci-preset-emerald);
     --ci-family-web: var(--ci-preset-sky);
@@ -166,10 +165,8 @@
     --ci-family-execute: var(--ci-preset-purple);
     --ci-family-plan: var(--ci-preset-indigo);
     --ci-family-meta: var(--ci-preset-slate);
-    --ci-family-system: var(--ci-family-meta);
     --ci-family-ask: var(--ci-preset-yellow);
     --ci-family-thread: var(--ci-preset-magenta);
-    --ci-family-todo: var(--ci-family-plan);
 
     /* Syntax highlighting colors (dark theme) */
     --syntax-comment: #8b949e;
@@ -215,13 +212,9 @@
     --diff-neutral-text: #c9d1d9;
     --diff-warning-text: #f0c674;
 
-    /* Diff viewer (inline) line + intra-line backgrounds */
+    /* Diff viewer (inline) line backgrounds */
     --diff-line-add-bg: rgb(30 110 55 / 45%);
     --diff-line-remove-bg: rgb(140 35 30 / 45%);
-    --diff-char-add-bg: rgb(30 110 55 / 65%);
-    --diff-char-add-text: #aff5b4;
-    --diff-char-remove-bg: rgb(140 35 30 / 65%);
-    --diff-char-remove-text: #ffdcd7;
 
     /* UI component colors */
     --bg-dark-alt: #21262d;           /* Darker alternative for borders/backgrounds */

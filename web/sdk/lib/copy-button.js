@@ -22,9 +22,14 @@ export const COPY_ICON_HTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="
 /**
  * Create our standard copy-to-clipboard icon button. Clicking copies the text
  * and flashes a transient `.copied` state.
+ *
+ * Every button made here carries `copy-button` as well as `className`, and the
+ * "Copied" bubble (css/patterns/copy-button.css) keys on that class alone — so a
+ * copy button gets its confirmation by being made here, whatever else it is
+ * called. Make copy buttons with this rather than by hand.
  * @param {string | (() => string)} text - Text to copy, or a getter resolved at
  *   click time (use a getter when the underlying value can change).
- * @param {string} [className] - CSS class(es) for the button.
+ * @param {string} [className] - CSS class(es) for the button's own look.
  * @param {string} [label] - Override for the tooltip/aria-label (defaults to
  *   "Copy to clipboard"). Use this when a more specific copy action should be
  *   advertised, e.g. "Copy path to clipboard" for a file-path row.
@@ -34,6 +39,7 @@ export function createCopyButton(text, className = 'properties-panel-inline-copy
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = className;
+  btn.classList.add('copy-button');
   btn.title = label;
   btn.setAttribute('aria-label', label);
   btn.innerHTML = COPY_ICON_HTML;

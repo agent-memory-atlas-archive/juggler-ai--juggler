@@ -536,6 +536,65 @@ model-tuning:empty {
     padding-top: 0;
 }
 
+/* Provider section header: name on the left, tri-state list toggle on the right. */
+:where(.model-picker-rows) .menu-header.provider-menu-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+/* Tri-state list toggle ("none" / "top" / "all") in a provider header bar. */
+.provider-view-toggle {
+    flex-shrink: 0;
+    appearance: none;
+    border: 0.0625rem solid var(--border-color);
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    line-height: 1;
+    min-width: 2.75rem;
+    text-align: center;
+    padding: 0.2rem 0.45rem;
+    border-radius: 0.3125rem;
+    cursor: pointer;
+    transition: border-color 0.1s ease, color 0.1s ease, background-color 0.1s ease;
+}
+
+.provider-view-toggle:hover {
+    background-color: var(--bg-raised);
+    border-color: var(--accent-blue);
+    color: var(--accent-blue);
+}
+
+.provider-view-toggle:active {
+    background-color: var(--bg-primary);
+}
+
+.provider-view-toggle:focus-visible {
+    outline: none;
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--accent-blue) 25%, transparent);
+}
+
+/* A provider's recommended models. */
+:where(.model-picker-rows) .menu-item.recommended {
+    color: var(--accent-text);
+    font-weight: 500;
+}
+
+/* The muted suffix after a model's name: "hidden", or why its provider is
+   unavailable. */
+.menu-item-note {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    margin-left: 0.35rem;
+}
+
 /* The row states, shared by the list's rows and the left column's Recent rows —
    the two live in different columns but are the same kind of thing, and the
    keyboard cursor walks straight from one into the other.
