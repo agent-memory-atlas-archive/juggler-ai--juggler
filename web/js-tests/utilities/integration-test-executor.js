@@ -219,6 +219,7 @@ import { runTests as runPinboardGitReviewTests } from '../unit-tests/pinboard-gi
 import { runTests as runReviewDraftTests } from '../unit-tests/review-draft-test.js';
 import { runTests as runReviewSendTests } from '../unit-tests/review-send-test.js';
 import { runTests as runPinboardRetentionTests } from '../unit-tests/pinboard-retention-test.js';
+import { runTests as runWsListenerIsolationTests } from '../unit-tests/ws-listener-isolation-test.js';
 import { runTests as runPinboardSatelliteTests } from '../unit-tests/pinboard-satellite-test.js';
 import { runTests as runScrollAwayAutofollowTests } from '../unit-tests/scroll-away-autofollow-test.js';
 import { runTests as runScrollToTopTests } from '../unit-tests/scroll-to-top-test.js';
@@ -626,6 +627,7 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:review-draft', run: runReviewDraftTests },
   { name: 'unit:review-send', run: runReviewSendTests },
   { name: 'unit:pinboard-retention', run: runPinboardRetentionTests },
+  { name: 'unit:ws-listener-isolation', run: runWsListenerIsolationTests },
   // Exclusive: it puts the whole document into pinboard mode for the length of
   // a case, and a suite sharing the lane would boot into the wrong shell.
   { name: 'unit:pinboard-satellite', run: runPinboardSatelliteTests, needsExclusiveRun: true },

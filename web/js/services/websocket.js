@@ -7,6 +7,7 @@ import { isEngine } from '../../sdk/lib/client-role.js';
 import { fetchJson } from './http.js';
 import { WSChunkReassembler, WS_CHUNK_KIND_TEXT } from '../utils/ws-chunk.js';
 import { viewerId } from '../utils/viewer-id.js';
+import { reportFault } from '../utils/fault-report.js';
 
 const WEBRTC_CHUNK_TYPE = '__juggler_dc_chunk';
 const WEBRTC_CHUNK_SIZE = 16 * 1024;
@@ -1290,14 +1291,26 @@ class WebSocketService {
   }
 
   /**
-   * Emit an event to all registered listeners
+   * Emit an event to all registered listeners.
+   *
+   * Each listener is contained: its throw is reported and the fan-out carries
+   * on. The subscribers to one event are independent of each other, so one
+   * failing costs that one its update and nothing else — and nothing reaches
+   * the caller, which for an inbound message is the receive path, whose catch
+   * would otherwise log a listener's bug as a message that failed to parse.
    * @param {WSEventType} event - Event type
    * @param {any} data - Event data
    * @private
    */
   _emit(event, data) {
     if (this._listeners[event]) {
-      this._listeners[event].forEach(callback => callback(data));
+      this._listeners[event].forEach(callback => {
+        try {
+          callback(data);
+        } catch (err) {
+          reportFault(`ws-listener:${event}`, err);
+        }
+      });
     }
   }
 
