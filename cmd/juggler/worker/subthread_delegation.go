@@ -248,8 +248,8 @@ func (r *run) tryDelegateTool(toolUseID, toolName string, toolInput json.RawMess
 	// flagged RequiresDelegation has no inline path and is answered instead.
 	// Refusing both would overrule the person who asked — this gate is reachable
 	// only from the root thread and from threads a human steers (they are the only
-	// ones ever offered a delegating tool; spendCeilingStopsRun withholds tools
-	// from the rest), so it lands squarely on work somebody is watching. A ceiling
+	// ones ever offered a delegating tool; spendCeilingStopsRun lands the rest and
+	// refuses their calls), so it lands squarely on work somebody is watching. A ceiling
 	// may stop that work growing a transcript nobody is watching; it may not take
 	// a fetch away from the person who typed the question.
 	if r.spendCeilingReached() {

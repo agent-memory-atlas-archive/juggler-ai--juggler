@@ -215,10 +215,11 @@ func (w *ConversationWorker) spendCeilingReached() bool {
 	return in >= ceiling
 }
 
-// spendCeilingStopsRun reports whether the ceiling takes the TOOLS off the run
-// in hand — one of the two things the ceiling does, and the narrower.
+// spendCeilingStopsRun reports whether the ceiling lands the run in hand — asks
+// it to report and refuses its further tool calls (landing) — one of the two
+// things the ceiling does, and the narrower.
 //
-// Here it governs exactly what the turn budget governs (runBudgetSpent), and for
+// Here it governs exactly what the run budget governs (runBudgetSpent), and for
 // the same argument: a leaf worker an LLM opened, never the root thread, never a
 // thread a person created or has since taken over. A human watching their own
 // thread can see it running and stop it; having the work they are watching go
@@ -251,13 +252,13 @@ func (r *run) spendCeilingStopsRun() bool {
 const spendCeilingNoticeMarker = "spend ceiling"
 
 // spendCeilingNotice is what a delegated run is told at the boundary where the
-// ceiling lands on it. It asks for the report rather than announcing a stop: the
-// tools are withheld in the same breath (filterToolsForThread), so this turn has
-// to answer, and what it answers is what the caller gets. Naming the figures
+// ceiling lands on it. It asks for the report rather than announcing a stop: any
+// tool call this turn makes is refused (processLLMResponse), so this turn has to
+// answer, and what it answers is what the caller gets. Naming the figures
 // keeps the model able to explain the ending to the person reading it.
 func spendCeilingNotice(spent, ceiling int64) string {
-	return fmt.Sprintf("This conversation has spent %s input tokens, past its %s %s, so no further "+
-		"tools will be offered. Give your report now from what you already have: answer what you can, "+
+	return fmt.Sprintf("This conversation has spent %s input tokens, past its %s %s, so any tool "+
+		"you call now will be refused. Give your report now from what you already have: answer what you can, "+
 		"and say plainly what you could not finish and what you would do next.",
 		formatTokenCount(spent), formatTokenCount(ceiling), spendCeilingNoticeMarker)
 }
@@ -281,7 +282,7 @@ func (r *run) announceSpendCeiling() {
 		Source:    spendCeilingNoticeMarker,
 		Timestamp: time.Now().Format(time.RFC3339),
 	})
-	r.log.Info("[worker] thread %s stopped at the conversation spend ceiling (%d of %d input tokens) — tools withheld, asked to report",
+	r.log.Info("[worker] thread %s stopped at the conversation spend ceiling (%d of %d input tokens) — asked to report",
 		r.t.thread.itemID, spent, r.spendCeiling())
 }
 

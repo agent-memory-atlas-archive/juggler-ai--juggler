@@ -204,18 +204,20 @@ func (r *run) buildLLMRequestWithIntent(ctxResult *ContextResult, tools []ToolDe
 // names in a sub-agent's strategy: that strategy only filters when it actually
 // applied, so a child whose strategy went missing would otherwise be handed a
 // tool that could only fail.
-// 3. A run that has spent its turn budget, or that the conversation's spend
-// ceiling has landed on, is offered NOTHING: the same withhold-don't-refuse rule
-// taken to its limit, since a turn with no tool to call has to answer, and
-// answering is the report its caller is parked on. The child is told why in the
-// same breath (announceRunBudgetSpent, announceSpendCeiling), because tools
-// vanishing without explanation is a puzzle rather than an instruction. The two
-// limits bound different things — how far one run goes, and what the whole
-// conversation has spent — and withhold from exactly the same threads.
+// 3. A run that has spent its run budget, or that the conversation's spend
+// ceiling has landed on, is the one exception to withhold-don't-refuse. It keeps
+// its tools, because removing them changes the prompt prefix every provider
+// caches on and makes the report turn a full cache rewrite; it is told to report
+// (announceRunBudgetSpent, announceSpendCeiling) and any call it makes anyway is
+// refused (processLLMResponse). Only a run that has had a call refused is
+// offered NOTHING (landingRefusesTools), since a turn with no tool to call has
+// to answer, and answering is the report its caller is parked on. The two limits
+// bound different things — how far one run goes, and what the whole
+// conversation has spent — and land on exactly the same threads.
 //
 // The spend ceiling also refuses calls that would OPEN a thread, on threads this
 // rule exempts (spendCeilingReached, used by executeCreateThread and
-// tryDelegateTool). The turn budget has no such second half. Nothing here needs
+// tryDelegateTool). The run budget has no such second half. Nothing here needs
 // to know that, but "the two behave alike" is only true of this filter.
 //
 // That rule lives HERE rather than in filterToolsForThreadID below, because a
@@ -223,7 +225,7 @@ func (r *run) buildLLMRequestWithIntent(ctxResult *ContextResult, tools []ToolDe
 // hand. The by-id form is also called for somebody else's thread (compaction
 // asks for the parent's tools), where this run's count would be meaningless.
 func (r *run) filterToolsForThread(tools []ToolDefinition) []ToolDefinition {
-	if r.runBudgetSpent() || r.spendCeilingStopsRun() {
+	if r.landingRefusesTools() {
 		return nil
 	}
 	return r.filterToolsForThreadID(tools, r.t.thread.itemID)

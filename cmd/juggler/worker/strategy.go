@@ -220,20 +220,20 @@ func (r *run) runOneTurn(st *strategyRunState, explicitContinuation bool) turnVe
 	// every way a run can end.
 	r.syncRunBudget()
 
-	// A leaf child that has used its run budget is told so before this turn's
-	// context is gathered, so the notice is IN the request whose tools have been
-	// withheld (filterToolsForThreadID) rather than arriving a turn later to
-	// explain a turn that already went wrong. Placed after the promotion above so
-	// it lands at the end of the transcript, behind anything the user just sent.
-	// A no-op for every thread the budget does not govern.
+	// A leaf child nearing or past its run budget is told so before this turn's
+	// context is gathered, so the notice is IN the request it governs — the one
+	// whose tool calls will be refused (processLLMResponse) — rather than arriving
+	// a turn later to explain a turn that already went wrong. Placed after the
+	// promotion above so it lands at the end of the transcript, behind anything
+	// the user just sent. A no-op for every thread the budget does not govern.
 	r.announceRunBudgetSpent()
 
 	// The conversation's spend ceiling lands the same way, at the same boundary,
 	// on the same kind of thread: a delegated run past the ceiling is told so
-	// here and offered no tools below, so this turn is its report. Separate from
-	// the turn budget because they bound different things — one run's length
+	// here and has its tool calls refused, so this turn is its report. Separate
+	// from the run budget because they bound different things — one run's length
 	// versus everything this conversation has spent — and a child well inside its
-	// turn budget is exactly who a runaway fan-out is made of.
+	// run budget is exactly who a runaway fan-out is made of.
 	r.announceSpendCeiling()
 
 	userMsgToStamp := r.findUnstampedUserMsgID()
@@ -581,12 +581,13 @@ func (r *run) runOneTurn(st *strategyRunState, explicitContinuation bool) turnVe
 		response.OutputTokens, cacheWrite, response.StopReason,
 		duration.Round(time.Millisecond))
 
-	// One completed round-trip is one turn of this run's budget. Charged here
-	// because here is where a turn is known to have HAPPENED: the request went
-	// out, the provider answered, and the tokens above were spent. Counting at
-	// the top of a turn would charge for attempts that never reached a provider,
-	// and counting after processLLMResponse would miss the turns that end in one.
-	r.noteRunTurn()
+	// One completed round-trip is charged to this run's budget, turn and tokens.
+	// Charged here because here is where a turn is known to have HAPPENED: the
+	// request went out, the provider answered, and the tokens above were spent.
+	// Counting at the top of a turn would charge for attempts that never reached
+	// a provider, and counting after processLLMResponse would miss the turns that
+	// end in one.
+	r.noteRunTurn(response)
 
 	shouldContinue, err := r.processLLMResponse(response)
 	r.t.txnID = ""
@@ -1279,7 +1280,17 @@ func (r *run) processLLMResponse(response *LLMResponse) (bool, error) {
 	//   create_thread → creates thread item, returns immediately (reducer dispatches child)
 	//   Async tools   → tool-action created, browser executes (bash, glob, etc.)
 	hasAsyncTools := false
+	landing := r.landing()
 	for _, block := range toolUseBlocks {
+		// A delegated run told to report may still reach for a tool, since the
+		// tools stay in its request to keep the prompt cache (landingRefusesTools).
+		// The call is answered, not run, and the next turn offers no tools.
+		if landing {
+			r.addMetaToolResult(block.ID, block.Name, block.Input, landingRefusal, true)
+			r.t.runBudget.refused = true
+			continue
+		}
+
 		if !r.toolWasOfferedThisTurn(block.Name) {
 			content := fmt.Sprintf("Tool %q wasn't available in this thread, so it wasn't run.", block.Name)
 			r.addMetaToolResult(block.ID, block.Name, block.Input, content, true)

@@ -255,8 +255,8 @@ func TestCreateThreadRefusedPastSpendCeiling(t *testing.T) {
 // sitting in front of, leaving them no way on but the settings panel, is the
 // tool overruling its user. An agent nobody is watching has no such brake.
 //
-// It lands the way the turn budget lands: the tools go, so the turn has to
-// answer, and that answer is the report the caller is parked on.
+// How it lands — the tools kept, a late call refused — is shared with the run
+// budget and pinned in TestBudgetLandingKeepsToolsAndRefusesCalls.
 func TestSpendCeilingGovernsOnlyLeafChildren(t *testing.T) {
 	tools := []ToolDefinition{{Name: "read"}, {Name: "grep"}}
 
@@ -288,12 +288,14 @@ func TestSpendCeilingGovernsOnlyLeafChildren(t *testing.T) {
 				t.Fatalf("spendCeilingStopsRun() = %v, want %v", got, tc.wantStopped)
 			}
 
-			got := r.filterToolsForThread(tools)
-			if tc.wantStopped && len(got) != 0 {
-				t.Errorf("tools offered = %d past the ceiling, want none — a child handed tools keeps working", len(got))
+			// The landing turn keeps its tools on every thread, so the prompt
+			// prefix stays cached; what differs is whether calls are refused.
+			r.announceSpendCeiling()
+			if got := r.filterToolsForThread(tools); len(got) != len(tools) {
+				t.Errorf("tools offered = %d, want all %d", len(got), len(tools))
 			}
-			if !tc.wantStopped && len(got) != len(tools) {
-				t.Errorf("tools offered = %d, want all %d: the ceiling must not touch this thread", len(got), len(tools))
+			if got := r.landing(); got != tc.wantStopped {
+				t.Errorf("landing() = %v, want %v", got, tc.wantStopped)
 			}
 		})
 	}
