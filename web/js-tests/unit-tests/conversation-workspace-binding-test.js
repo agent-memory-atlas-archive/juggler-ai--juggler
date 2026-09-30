@@ -525,6 +525,35 @@ export async function runTests() {
       }
     });
 
+    await run('a turn in flight does not stop a move that stays in the same tree', async () => {
+      // The hazard a running turn poses is its next operation landing in another
+      // tree. A group is rooted at the project, so moving into or out of one
+      // leaves every operation exactly where it was — and a conversation parked
+      // on an approval is "in a turn" for as long as the user takes to answer.
+      const made = await fetchJson('/api/session/workspaces', {
+        method: 'POST',
+        body: { root: projectPath, label: 'a group, rooted at the project', state: 'ready' }
+      });
+      const id = made.workspace.id;
+      const saved = session.workspaces;
+      session.workspaces = [...saved, made.workspace];
+      try {
+        const busy = await makeConversation(session, 'busy-into-a-group');
+        release(busy);
+        Object.defineProperty(busy, 'isProcessing', { get: () => true, configurable: true });
+
+        const into = await rebindConversation(busy, id);
+        assert(into.done && busy.workspaceId === id,
+          `a busy conversation moves into a group of its own tree, got ${JSON.stringify(into)}`);
+        const out = await rebindConversation(busy, '');
+        assert(out.done && (busy.workspaceId || '') === '',
+          `and back out of it, got ${JSON.stringify(out)}`);
+      } finally {
+        session.workspaces = saved;
+        await fetchJson(`/api/session/workspaces/${id}`, { method: 'DELETE', fallback: null });
+      }
+    });
+
     await run('a sandboxed script is told the tree its conversation works in', async () => {
       // query_code's `projectRoot` is the one root the model is handed rather
       // than confined by: nothing downstream checks the paths a script builds

@@ -53,9 +53,13 @@ export function whyNotRebind(conversation, workspaceId) {
 
   // Going nowhere is refused by nothing: the move is already true.
   const target = workspaceId || '';
-  if ((conversation.workspaceId || '') === target) return '';
+  const from = conversation.workspaceId || '';
+  if (from === target) return '';
 
-  if (conversation.isProcessing === true) {
+  // A running turn is refused only a move that changes its tree. Into or out of
+  // a group, its next operation lands exactly where it would have — and a turn
+  // parked on an approval is "running" for as long as the user takes to answer.
+  if (conversation.isProcessing === true && !sameTree(session, from, target)) {
     return `Couldn't move the conversation: it's in the middle of a turn.`;
   }
 
@@ -114,7 +118,8 @@ export function sameTree(session, a, b) {
  *
  * Refused while the conversation has a turn in flight, for the reason finishing
  * with a workspace is: the running turn's next operation would land in a tree it
- * never agreed to work in. Refused, too, for a target that cannot be worked in —
+ * never agreed to work in — unless the move stays in the same tree, where it
+ * would not (see `sameTree`). Refused, too, for a target that cannot be worked in —
  * moving a conversation from one unusable place to another is not a way out.
  * Both refusals are `whyNotRebind`'s, so that what is checked here and what a
  * caller can check before asking the user are the same rules.
@@ -131,7 +136,16 @@ export async function rebindConversation(conversation, workspaceId) {
   if (refusal) return { done: false, message: refusal };
 
   const target = workspaceId || '';
-  if ((conversation.workspaceId || '') === target) return { done: true };
+  const from = conversation.workspaceId || '';
+  if (from === target) return { done: true };
+
+  // Within one tree there is nothing to catch up on: the grants already name
+  // it and every snapshot was taken from it. Leaving them alone is also what
+  // lets such a move happen mid-turn without editing the context under it.
+  if (sameTree(conversation.session, from, target)) {
+    conversation.workspaceId = target;
+    return { done: true };
+  }
 
   const leaving = conversation.rootMessageThread?.getWorkingRoot?.() ?? null;
   conversation.workspaceId = target;
