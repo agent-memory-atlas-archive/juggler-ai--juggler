@@ -35,6 +35,17 @@ import { isWorkspaceUsable, patchWorkspace, reorderWorkspaces } from '../service
 import { workspaceInstructionRoots, placeForNewConversation, placementForNewConversation, takesTheHead } from '../services/workspace-provisioning.js';
 import { BUILTIN_DEFAULT_ID } from '../../sdk/lib/system-prompt-registry.js';
 
+/**
+ * The rename route's documented refusals (PATCH
+ * /api/session/conversations/{id}/name), keyed by HTTP status, as the `.code`
+ * renameConversation tags its error with. Any other status carries no code.
+ * @type {ReadonlyMap<number, 'INVALID'|'NOT_FOUND'|'COLLISION'>}
+ */
+const RENAME_ERROR_CODES = new Map(/** @type {const} */ ([
+  [400, 'INVALID'],
+  [404, 'NOT_FOUND'],
+  [409, 'COLLISION'],
+]));
 
 /**
  * @typedef {object} ApiService
@@ -2956,11 +2967,13 @@ class Session {
     try {
       result = await this._apiService.renameConversation(conversationId, newName.trim());
     } catch (e) {
+      // The code comes from the response status (HttpError.status), never from
+      // the message: the server's 500 quotes the OS error, which names both
+      // folders and so the new name, and a name may well contain "409".
       const msg = String(/** @type {any} */ (e)?.message || e);
-      const tagged = new Error(msg);
-      if (msg.includes('409')) /** @type {any} */ (tagged).code = 'COLLISION';
-      else if (msg.includes('400')) /** @type {any} */ (tagged).code = 'INVALID';
-      else if (msg.includes('404')) /** @type {any} */ (tagged).code = 'NOT_FOUND';
+      const tagged = new Error(msg, { cause: e });
+      const code = RENAME_ERROR_CODES.get(/** @type {any} */ (e)?.status);
+      if (code) /** @type {any} */ (tagged).code = code;
       throw tagged;
     }
 

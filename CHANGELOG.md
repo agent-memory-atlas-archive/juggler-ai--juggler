@@ -14,6 +14,7 @@ of changes; this project follows semantic versioning.
 - Windows no longer fight tiling window managers that park them off-screen
 - An @-mentioned file is frozen as sent, so editing it no longer re-reads the conversation
 - Shift+Page Up and Shift+Page Down move the current conversation up or down the list
+- A failed rename to a name containing "409" or "400" now reports the real error
 
 ## [0.7.2] - 2026-09-28
 
