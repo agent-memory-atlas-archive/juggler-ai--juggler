@@ -68,6 +68,8 @@ export const labeledSubsection = () => domUnavailable('labeledSubsection');
 export const addFilePath = () => domUnavailable('addFilePath');
 export const createFileActions = () => domUnavailable('createFileActions');
 export const pinFile = () => domUnavailable('pinFile');
+export const showPin = () => domUnavailable('showPin');
+export const createShowPinControl = () => domUnavailable('createShowPinControl');
 export const addDiffViewer = () => domUnavailable('addDiffViewer');
 export const createDiffViewer = () => domUnavailable('createDiffViewer');
 export const createReviewPanel = () => domUnavailable('createReviewPanel');

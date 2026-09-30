@@ -470,8 +470,9 @@ export function renderToolAction(host, container, toolAction) {
   const isRunning = !toolAction.get('result') && toolAction.get('toolUseId')
         && toolAction.get('state') !== TOOL_STATES.PENDING;
 
+  const controls = host._renderToolActionControls(toolAction);
   const wrapper = host._createSectionWithControls(
-    badge.typeName, badge, host._renderToolActionControls(toolAction),
+    badge.typeName, badge, controls,
     statusText, toolAction.get('transactionId'), toolAction.get('timestamp') || undefined
   );
 
@@ -495,7 +496,7 @@ export function renderToolAction(host, container, toolAction) {
   // Tool-specific input section via plugin polymorphism. Tool-name branching
   // belongs INSIDE plugin classes — see ContextItem.renderToolActionDetails.
 
-  /** @type {{ skipResultSection?: boolean } | void} */
+  /** @type {{ skipResultSection?: boolean, controls?: HTMLElement[] } | void} */
   let renderResult = undefined;
   if (actionInstance) {
     renderResult = /** @type {any} */ (actionInstance).renderToolActionDetails(wrapper, {
@@ -514,6 +515,11 @@ export function renderToolAction(host, container, toolAction) {
       panelHelpers.addSubsection(wrapper, 'Input', inputText, 'properties-panel-code', { language: 'json' });
     }
   }
+
+  // A plugin's own controls lead the block: they act on what this call made,
+  // and the framework's (Re-run, Delete) act on the call itself.
+  const extraControls = (renderResult?.controls || []).filter(Boolean);
+  if (extraControls.length) controls.prepend(...extraControls);
 
   if (!renderResult?.skipResultSection) {
     const resultLabel = ActionClass

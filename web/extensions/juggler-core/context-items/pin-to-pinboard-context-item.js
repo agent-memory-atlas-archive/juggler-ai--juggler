@@ -5,6 +5,27 @@
 
 import ContextItem from 'juggler/context-item';
 import { pinToPinboard, loadPinAgentDescriptors } from 'juggler/pinboard';
+import { createShowPinControl, injectStylesOnce, showPin } from 'juggler/ui';
+
+// The card's label is a link to the pin: it reads as the summary text it
+// replaces until the pointer is over it.
+injectStylesOnce('pin-to-pinboard-styles', `
+.pinned-summary-link {
+  all: unset;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.pinned-summary-link:hover {
+  text-decoration: underline;
+}
+.pinned-summary-link:focus-visible {
+  outline: 2px solid var(--accent-color, currentColor);
+  outline-offset: 1px;
+}
+`);
 
 /**
  * The installed pinboard item types that describe themselves to the agent, by id.
@@ -81,6 +102,28 @@ function describeParameters(schema) {
 }
 
 /**
+ * The config a pin is stored with: the type's own parameters, marked as having
+ * come from the agent rather than from a user gesture.
+ * @param {Record<string, any>} parameters - Normalized parameters.
+ * @returns {Record<string, any>} The pin's config.
+ */
+function pinConfig(parameters) {
+  return { ...parameters, agentRequested: true };
+}
+
+/**
+ * The pin a completed call made, from its recorded result, or null when the
+ * result does not name one.
+ * @param {any} result - The call's result (`{pin, type, parameters}`).
+ * @returns {import('../../../js/utils/properties-panel-helpers.js').PinRef|null} The pin, or null.
+ */
+function pinRefOf(result) {
+  if (!result || typeof result.pin !== 'string' || typeof result.type !== 'string') return null;
+  const parameters = result.parameters && typeof result.parameters === 'object' ? result.parameters : {};
+  return { pin: result.pin, type: result.type, config: pinConfig(parameters) };
+}
+
+/**
  * Mint the stable id for an agent-requested pin. A repeated call with the same
  * normalized request is the same id, so the server's idempotent add cannot stack
  * copies if a response was lost or the model asks twice.
@@ -115,6 +158,16 @@ class PinToPinboardContextItem extends ContextItem {
 
   static getTypeName() {
     return 'Pin to Pinboard';
+  }
+
+  /**
+   * Re-running would ask for the pin the call already made — same id, same
+   * config — so there is nothing new to see. What the user wants from a past
+   * call is the pin itself, which the panel's Show on Pinboard control opens.
+   * @returns {boolean} False — re-running this item type is a no-op.
+   */
+  static isRerunnable() {
+    return false;
   }
 
   /**
@@ -196,7 +249,7 @@ class PinToPinboardContextItem extends ContextItem {
     const parameters = normalizeParameters(descriptor, params.parameters);
     if (!parameters) throw new Error(`${params.type} parameters are invalid`);
 
-    const config = { ...parameters, agentRequested: true };
+    const config = pinConfig(parameters);
     const pin = await pinIdFor(params.type, identityOf(descriptor, parameters));
     const from = this.conversation?.id || '';
     if (!from) throw new Error('No conversation available to attribute the Pinboard request');
@@ -240,21 +293,41 @@ class PinToPinboardContextItem extends ContextItem {
     }
     if (actionStatus.success) {
       const result = /** @type {{type?: string, parameters?: Record<string, any>}} */ (actionStatus.result || {});
-      const summary = result.type ? pinLabel(result.type, result.parameters) : '';
-      return { typeName, summary: summary || 'item', status: 'success' };
+      const label = (result.type ? pinLabel(result.type, result.parameters) : '') || 'item';
+      const ref = pinRefOf(result);
+      return { typeName, summary: ref ? this.createPinLink(label, ref) : label, status: 'success' };
     }
     const terminal = this.resolveTerminalStatus(actionStatus, 'Could not pin that');
     return { typeName, summary: terminal.summary, status: terminal.status };
   }
 
   /**
+   * The card's label, as a link that opens the Pinboard on the pin. A button
+   * rather than a span with a handler, so the conversation treats a click on it
+   * as a control rather than as nothing more than selecting the card.
+   * @param {string} label - What the pin is called.
+   * @param {import('../../../js/utils/properties-panel-helpers.js').PinRef} ref - The pin to show.
+   * @returns {HTMLElement} The link.
+   */
+  createPinLink(label, ref) {
+    const link = document.createElement('button');
+    link.type = 'button';
+    link.className = 'pinned-summary-link';
+    link.textContent = label;
+    link.title = 'Show on Pinboard';
+    link.addEventListener('click', () => { void showPin(ref); });
+    return link;
+  }
+
+  /**
    * Properties panel for a `pin_to_pinboard` action. Show the pin type and one
    * labeled row per argument the type was given, rather than the raw tool-call
    * JSON. Owns its whole display, so the generic Result section is suppressed.
+   * A pin that was made gets a control to open the Pinboard on it.
    * @override
    * @param {HTMLElement} wrapper - Section wrapper to append details into
    * @param {import('juggler/context-item').ToolActionRenderContext} ctx - Render context
-   * @returns {{skipResultSection: boolean}} Suppress the generic result dump
+   * @returns {{skipResultSection: boolean, controls: HTMLElement[]}} Suppress the generic result dump; add Show on Pinboard
    */
   renderToolActionDetails(wrapper, ctx) {
     const { input, helpers, toolAction } = ctx;
@@ -282,7 +355,8 @@ class PinToPinboardContextItem extends ContextItem {
       }
     }
 
-    return { skipResultSection: true };
+    const show = createShowPinControl(pinRefOf(data));
+    return { skipResultSection: true, controls: show ? [show] : [] };
   }
 }
 

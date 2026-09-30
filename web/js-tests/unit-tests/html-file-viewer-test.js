@@ -117,6 +117,11 @@ export async function runTests() {
       `the preview must never share the app's origin, sandbox was ${JSON.stringify(tokens)}`, errors));
     tally(check(frame?.getAttribute('src') === SERVED_URL,
       `the frame should load the source's URL, got ${frame?.getAttribute('src')}`, errors));
+    // The user's pointer lives inside the page, so a title would hover over it constantly.
+    tally(check(!!frame && !frame.hasAttribute('title'),
+      `the preview frame must not carry a title tooltip, got ${JSON.stringify(frame?.getAttribute('title'))}`, errors));
+    tally(check(!!frame?.getAttribute('aria-label'),
+      'the preview frame should still have an accessible name', errors));
 
     // The header toggle shows the markup instead, and back again.
     const toggle = /** @type {HTMLButtonElement|null} */ (served.header.querySelector('button'));

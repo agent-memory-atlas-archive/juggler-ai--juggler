@@ -964,6 +964,10 @@ class ContextItem {
    * the action data) — the framework will then skip the generic Result
    * section that normally follows the input.
    *
+   * Return `{ controls: [element, …] }` to add buttons of your own to the
+   * panel's controls block, ahead of the framework's Re-run and Delete — for
+   * an action on what the call produced rather than on the call itself.
+   *
    * IMPORTANT: this is the polymorphism boundary that keeps tool-name
    * branching out of generic UI code. If you find yourself adding
    * `if (toolName === 'foo')` to a component, override this method instead.
@@ -971,7 +975,7 @@ class ContextItem {
    * [Context: viewer]
    * @param {HTMLElement} wrapper - Section wrapper to append details into
    * @param {ToolActionRenderContext} ctx
-   * @returns {{ skipResultSection?: boolean }|void} Render result; set skipResultSection to true when output is rendered inline
+   * @returns {{ skipResultSection?: boolean, controls?: HTMLElement[] }|void} Render result; set skipResultSection to true when output is rendered inline, and controls to add buttons to the controls block
    */
   renderToolActionDetails(wrapper, ctx) {
     const inputText = JSON.stringify(ctx.input ?? {}, null, 2);

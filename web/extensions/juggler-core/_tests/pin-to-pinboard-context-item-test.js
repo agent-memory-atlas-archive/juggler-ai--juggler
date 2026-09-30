@@ -5,6 +5,8 @@
 
 import PinToPinboardContextItem from '../context-items/pin-to-pinboard-context-item.js';
 import { assert } from '../../../js-tests/utilities/test-helpers.js';
+import pinboardStore from '../../../js/services/pinboard-store.js';
+import pinboardView from '../../../js/services/pinboard-view.js';
 
 /**
  * Test the agent-facing contract and its realm-neutral pinboard request.
@@ -140,6 +142,100 @@ export async function runTests(_ctx) {
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+
+  await test('a past call offers no Re-run', () => {
+    assert(PinToPinboardContextItem.isRerunnable() === false,
+      're-running asks for the pin the call already made, so the control would do nothing');
+  });
+
+  /**
+   * Run `fn` against a board the fake server holds, with a clean viewer state
+   * either side, capturing every batch of operations sent.
+   * @param {Array<{id: string, type: string, config: Record<string, any>}>} board - Starting pins.
+   * @param {(sent: any[][]) => Promise<void>} fn - The test body.
+   * @returns {Promise<void>} Resolves when done.
+   */
+  async function withBoard(board, fn) {
+    const originalFetch = globalThis.fetch;
+    /** @type {any[]} */
+    let pins = board.map((pin) => ({ ...pin }));
+    /** @type {any[][]} */
+    const sent = [];
+    globalThis.fetch = /** @type {any} */ (async (_url, options) => {
+      const body = options?.body ? JSON.parse(options.body) : null;
+      if (body?.operations) {
+        sent.push(body.operations);
+        for (const op of body.operations) {
+          if (op.op === 'add' && !pins.some((pin) => pin.id === op.id)) {
+            pins = [...pins, { id: op.id, type: op.type, config: op.config }];
+          }
+        }
+      }
+      return { ok: true, json: async () => ({ pins }) };
+    });
+    pinboardStore.reset();
+    pinboardView.reset();
+    try {
+      await pinboardStore.load();
+      sent.length = 0;
+      await fn(sent);
+    } finally {
+      globalThis.fetch = originalFetch;
+      pinboardStore.reset();
+      pinboardView.reset();
+    }
+  }
+
+  const made = { pin: 'agent_made', type: 'not-installed-here', parameters: { thing: 'synths/pluck' } };
+  const madeConfig = { thing: 'synths/pluck', agentRequested: true };
+
+  await test('the card\'s label opens the Pinboard on the pin', async () => {
+    await withBoard([{ id: 'other', type: 'git', config: {} }, { id: made.pin, type: made.type, config: madeConfig }], async (sent) => {
+      const ui = item.getStatusUI(/** @type {any} */ ({ success: true, result: made }));
+      const link = /** @type {HTMLElement} */ (ui.summary);
+      assert(link instanceof HTMLElement && link.tagName === 'BUTTON',
+        'the label should be a button, so the conversation treats a click on it as a control');
+      assert(link.textContent === made.type, 'the link should still read as the pin\'s label');
+      link.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      assert(pinboardView.isOpen(), 'clicking the label should open the Pinboard');
+      assert(pinboardView.getActivePinId() === made.pin, 'and select the pin the call made');
+      assert(sent.length === 0, 'a pin still on the board should be revealed, not added again');
+    });
+  });
+
+  await test('showing a pin the user removed puts it back under the same id', async () => {
+    await withBoard([], async (sent) => {
+      const ui = item.getStatusUI(/** @type {any} */ ({ success: true, result: made }));
+      /** @type {HTMLElement} */ (ui.summary).click();
+      for (let i = 0; i < 20 && !pinboardView.isOpen(); i++) await new Promise((resolve) => setTimeout(resolve, 10));
+      const [add] = sent.flat();
+      assert(add?.op === 'add' && add.id === made.pin && add.type === made.type,
+        'the pin should be restored with its own id, so the next click finds it');
+      assert(JSON.stringify(add.config) === JSON.stringify(madeConfig),
+        'and with the config the agent made it with, agentRequested included');
+      assert(pinboardView.getActivePinId() === made.pin, 'the restored pin should be the one shown');
+    });
+  });
+
+  await test('the properties panel offers Show on Pinboard for a pin that was made', async () => {
+    const wrapper = document.createElement('div');
+    const toolAction = { get: (/** @type {string} */ key) => (key === 'result' ? { fullResult: { result: made } } : null) };
+    const out = item.renderToolActionDetails(wrapper, /** @type {any} */ ({
+      input: { type: made.type, parameters: made.parameters },
+      helpers: { addSubsection: () => {} },
+      toolAction,
+    }));
+    const [control] = out.controls;
+    assert(control?.textContent?.includes('Show on Pinboard'), 'the panel should carry a Show on Pinboard control');
+
+    const unmade = item.renderToolActionDetails(wrapper, /** @type {any} */ ({
+      input: { type: made.type, parameters: made.parameters },
+      helpers: { addSubsection: () => {} },
+      toolAction: { get: () => ({ isError: true, fullResult: {} }) },
+    }));
+    assert(unmade.controls.length === 0, 'a call that made no pin has nothing to show');
   });
 
   return { passed, failed, errors };

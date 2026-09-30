@@ -324,6 +324,44 @@ export function createPinControl(source) {
   return button;
 }
 
+/** What revealing an existing pin is called, wherever it is offered. */
+const SHOW_PIN_LABEL = 'Show on Pinboard';
+
+/**
+ * A pin put on the board earlier, identified well enough to find it again or
+ * put it back if the user has removed it since.
+ * @typedef {object} PinRef
+ * @property {string} pin - The pin's id.
+ * @property {string} type - Its item-type id.
+ * @property {Record<string, any>} config - Its config.
+ */
+
+/**
+ * Open the Pinboard on a pin that was put there earlier.
+ * @param {PinRef} ref - The pin to show.
+ * @returns {Promise<boolean>} True when the board is now showing it.
+ */
+export async function showPin(ref) {
+  if (!ref?.pin || !ref.type) return false;
+  return pinboardView.show(ref.pin, ref.type, ref.config || {});
+}
+
+/**
+ * The labelled control that opens the Pinboard on an existing pin, for the
+ * panel's controls block beside Delete.
+ * @param {PinRef|null} ref - The pin to show.
+ * @returns {HTMLElement|null} The control, or null when there is no pin to show.
+ */
+export function createShowPinControl(ref) {
+  if (!ref?.pin || !ref.type) return null;
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'properties-panel-btn';
+  button.innerHTML = `${PIN_SVG} ${SHOW_PIN_LABEL}`;
+  button.addEventListener('click', () => { void showPin(ref); });
+  return button;
+}
+
 /**
  * Append a diff viewer if the tool-action has a diffData snapshot.
  *

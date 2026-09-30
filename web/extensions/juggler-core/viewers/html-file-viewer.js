@@ -181,7 +181,9 @@ class HtmlFileViewer extends FileViewer {
       frame.className = 'html-view-frame';
       frame.setAttribute('sandbox', SANDBOX);
       frame.setAttribute('referrerpolicy', 'no-referrer');
-      frame.title = source.path || 'HTML preview';
+      // aria-label, not title: the pointer spends its time inside the page, where
+      // a title would hover as a tooltip over whatever the user is doing.
+      frame.setAttribute('aria-label', source.path || 'HTML preview');
       frame.src = url;
       host.appendChild(frame);
     };

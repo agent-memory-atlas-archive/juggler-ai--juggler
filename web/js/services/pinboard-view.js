@@ -355,6 +355,38 @@ const pinboardView = {
     this.open();
   },
 
+  /**
+   * Open the board on a pin put there earlier — by the agent, say — whose id
+   * the caller kept. A pin the user has since removed is put back under the same
+   * id and config, unless the board already shows the same thing under another,
+   * in which case that one is revealed instead.
+   * @param {string} pinId - The pin's id.
+   * @param {string} typeId - Its item-type id, for putting it back.
+   * @param {Record<string, any>} config - Its config, for putting it back.
+   * @returns {Promise<boolean>} True when the board is now showing it.
+   */
+  async show(pinId, typeId, config) {
+    if (!pinboardStore.getPin(pinId)) {
+      const type = pinboardItemRegistry.getType(typeId);
+      let normalized = config;
+      try {
+        normalized = type?.normalizeConfig(config) ?? config;
+      } catch (err) {
+        console.error(`[Pinboard] Item type "${typeId}" failed to normalize a config:`, err);
+      }
+      const existing = findDuplicate(typeId, normalized);
+      if (existing) {
+        this.reveal(existing.id);
+        return true;
+      }
+      const pins = await attempt("Couldn't put that pin back.",
+        () => pinboardStore.applyOperations([{ op: 'add', id: pinId, type: typeId, config }]));
+      if (!pins?.some((/** @type {Pin} */ pin) => pin.id === pinId)) return false;
+    }
+    this.reveal(pinId);
+    return true;
+  },
+
   /** @returns {string} The last edit's complaint, or '' when there is nothing to say. */
   getStatus() {
     return _status;
