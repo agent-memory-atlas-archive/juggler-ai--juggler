@@ -245,6 +245,14 @@ class Composer extends HTMLElement {
     /** @type {(() => void)|null} @private - presentPopup release for the open commands menu. */
     this._popupCleanup = null;
 
+    // Skill picker menu state
+    /** @type {HTMLElement|null} @private */
+    this._skillMenu = null;
+    /** @type {boolean} @private */
+    this._skillMenuOpen = false;
+    /** @type {(() => void)|null} @private - presentPopup release for the open skill picker. */
+    this._skillPopupCleanup = null;
+
     // Touch-only "⋮" actions sheet state (commands / attach / new thread).
     /** @type {HTMLElement|null} @private */
     this._actionsSheet = null;
@@ -305,6 +313,8 @@ class Composer extends HTMLElement {
       this._popupCleanup();
       this._popupCleanup = null;
     }
+    // Tear down an open skill picker likewise.
+    this._closeSkillMenu();
     // Tear down an open actions sheet likewise.
     if (this._actionsSheetCleanup) {
       this._actionsSheetCleanup();
@@ -2226,6 +2236,9 @@ class Composer extends HTMLElement {
     const button = this.querySelector('#skill-button');
     if (!button) return;
     const skills = await getThreadSkillSnapshot(this._messageThread);
+    // The snapshot is awaited, so the box may have detached meanwhile (nothing
+    // would then release the popup), or a second click may have opened it.
+    if (!this.isConnected || this._skillMenuOpen) return;
 
     this._createSkillMenu(Array.isArray(skills) ? skills : []);
     if (!this._skillMenu) return;

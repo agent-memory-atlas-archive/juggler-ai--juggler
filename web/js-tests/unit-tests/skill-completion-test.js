@@ -21,7 +21,9 @@
  *      empty state plus the "Manage skills…" route to the Skills page;
  *   6. sending `$tdd do it` loads the `tdd` skill via executeContextItem and
  *      dispatches the trigger-stripped prose "do it"; a bare `$tdd` is a preload
- *      (skill loaded, box cleared, no turn dispatched).
+ *      (skill loaded, box cleared, no turn dispatched);
+ *   7. detaching the composer releases an open picker, and an open still
+ *      awaiting the snapshot when the box detaches presents nothing.
  * @module unit-tests/skill-completion-test
  */
 
@@ -323,6 +325,50 @@ export async function runTests() {
       failed++;
       errors.push('skill-send-path: ' + (e instanceof Error ? e.message : String(e)));
     } finally {
+      box._completions?.close();
+      container.remove();
+    }
+  }
+
+  // ── Test 7: detaching the composer tears down an open picker ──────────────
+  // presentPopup appends the menu to <body> and wires dismissal and a
+  // reposition observer there, so none of it goes away with the composer. The
+  // box must release it on disconnect — both when the picker is already up and
+  // when the detach lands while the open is still awaiting the skill snapshot.
+  {
+    const { box, container } = mountComposer();
+    /** @type {HTMLElement|null} */
+    let opened = null;
+    try {
+      const { thread } = makeStubThread();
+      box._messageThread = thread;
+
+      await box._openSkillMenu();
+      opened = box._skillMenu;
+      assert(!!opened && opened.isConnected, 'the picker must be presented in the document');
+      container.remove();
+      assert(!opened.isConnected,
+        'detaching the composer must remove its open skill picker from the document');
+      assert(box._skillPopupCleanup === null && box._skillMenu === null && box._skillMenuOpen === false,
+        'detaching the composer must reset the skill picker state');
+
+      // Detach while the open is suspended on the snapshot: it must not present
+      // a popup for a composer that is no longer in the document.
+      document.body.appendChild(container);
+      const pending = box._openSkillMenu();
+      container.remove();
+      await pending;
+      const stray = document.querySelector('#skill-menu');
+      assert(stray === null && box._skillMenu === null,
+        'an open that resolves after the composer detached must present nothing');
+      passed++;
+    } catch (e) {
+      failed++;
+      errors.push('composer-box-skill-picker-detach: ' + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      box._closeSkillMenu();
+      opened?.remove();
+      document.querySelector('#skill-menu')?.remove();
       box._completions?.close();
       container.remove();
     }
