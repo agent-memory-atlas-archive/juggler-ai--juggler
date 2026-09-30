@@ -17,12 +17,17 @@
  * The active pin is reconciled here rather than in the panel, because the board
  * changes for reasons this viewer had nothing to do with: another viewer removing
  * the pin you were reading must land you on its neighbour, not on the empty state.
+ *
+ * A board window also remembers its active pin across launches, as a preference
+ * of that window ({@link ACTIVE_PREF}). The window that reopens it at launch
+ * knows which board it was but not which tab it was showing.
  * @module services/pinboard-view
  */
 
 import pinboardStore from './pinboard-store.js';
 import pinboardItemRegistry from '../registries/pinboard-item-registry.js';
 import { initialPinId, isPinboardView } from '../utils/view-mode.js';
+import { cachedWindowPref, getWindowPref, setWindowPref } from './prefs.js';
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
 
 /** @typedef {import('./pinboard-store.js').Pin} Pin */
@@ -51,6 +56,40 @@ let _activeIndex = 0;
  */
 let _seedSpent = false;
 
+/**
+ * The window preference a board window keeps its active pin under. It is kept
+ * per window role, so each board window has its own. The docked panel does not
+ * keep one: every Juggler window of a project shares the 'main' role, and they
+ * would overwrite each other's.
+ */
+const ACTIVE_PREF = 'juggler-pinboard-active';
+
+/**
+ * Whether the active pin was chosen by something newer than the remembered one:
+ * the pin a pop-out named, or the user picking a tab. Once true, the remembered
+ * pin is not applied even if it arrives later.
+ * @type {boolean}
+ */
+let _chosen = false;
+
+/**
+ * Whether the session has answered with the remembered pin. Until it does, the
+ * first tab is only a placeholder and is not saved, because saving it would
+ * overwrite the value that is still on its way.
+ * @type {boolean}
+ */
+let _recalled = false;
+
+/** @type {string|null} The pin last written to {@link ACTIVE_PREF}. */
+let _remembered = null;
+
+/**
+ * Incremented on each {@link pinboardView.reset}. A session read started before
+ * the reset compares against it and applies nothing to the new state.
+ * @type {number}
+ */
+let _generation = 0;
+
 /** @type {string} */
 let _status = '';
 
@@ -71,6 +110,7 @@ const _subscribers = new Set();
  * @returns {void}
  */
 function notify() {
+  rememberActive();
   for (const fn of _subscribers) {
     try {
       fn();
@@ -98,14 +138,23 @@ function reconcileActive(pins) {
     _activeIndex = 0;
     return had;
   }
-  // A board window opens on the pin the user was reading, which is knowable
-  // before its first board arrives and forgotten the moment it does.
+  // A board window opens on the pin it was popped out on, if any. Failing that,
+  // it opens on the pin it remembers from its last run. Both seeds are used
+  // once, when the first board arrives, and then discarded.
   if (!_seedSpent) {
     _seedSpent = true;
+    recallActive();
     const seeded = pins.findIndex((p) => p.id === initialPinId());
     if (seeded >= 0) {
+      _chosen = true;
       _activePinId = /** @type {Pin} */ (pins[seeded]).id;
       _activeIndex = seeded;
+      return true;
+    }
+    const remembered = pins.findIndex((p) => p.id === rememberedPinId());
+    if (remembered >= 0) {
+      _activePinId = /** @type {Pin} */ (pins[remembered]).id;
+      _activeIndex = remembered;
       return true;
     }
   }
@@ -113,6 +162,61 @@ function reconcileActive(pins) {
   _activePinId = /** @type {Pin} */ (pins[next]).id;
   _activeIndex = next;
   return true;
+}
+
+/**
+ * The pin this board window remembers, read from cache without waiting for the
+ * session. The cache is localStorage, which is keyed by port, so after a
+ * relaunch on another port it may be empty; {@link recallActive} then supplies
+ * the value from the session.
+ * @returns {string} The pin id, or '' outside a board window or when none is known.
+ */
+function rememberedPinId() {
+  if (!isPinboardView()) return '';
+  const pinId = cachedWindowPref(ACTIVE_PREF, '');
+  return typeof pinId === 'string' ? pinId : '';
+}
+
+/**
+ * Ask the session which pin this board window remembers, and switch to it when
+ * the answer arrives, unless the pin has been chosen since or is no longer on the
+ * board.
+ * @returns {void}
+ */
+function recallActive() {
+  if (!isPinboardView()) return;
+  const generation = _generation;
+  void getWindowPref(ACTIVE_PREF, null).then((pinId) => {
+    if (generation !== _generation) return;
+    _recalled = true;
+    if (typeof pinId === 'string') _remembered = pinId;
+    if (_chosen || typeof pinId !== 'string' || pinId === _activePinId) {
+      // The active pin may have changed while the read was in flight, and was
+      // not saved because _recalled was still false. Save it now.
+      rememberActive();
+      return;
+    }
+    const index = pinboardStore.get().findIndex((p) => p.id === pinId);
+    if (index < 0) {
+      rememberActive();
+      return;
+    }
+    _activePinId = pinId;
+    _activeIndex = index;
+    notify();
+  });
+}
+
+/**
+ * Save the active pin as this board window's preference, once it counts as a
+ * choice (see {@link _chosen} and {@link _recalled}) and only if it changed.
+ * @returns {void}
+ */
+function rememberActive() {
+  if (!isPinboardView() || !(_chosen || _recalled)) return;
+  if (!_activePinId || _activePinId === _remembered) return;
+  _remembered = _activePinId;
+  void setWindowPref(ACTIVE_PREF, _activePinId);
 }
 
 pinboardStore.subscribe((pins) => {
@@ -313,7 +417,11 @@ const pinboardView = {
    * @returns {void}
    */
   setActivePin(pinId) {
-    if (_activePinId === pinId) return;
+    _chosen = true;
+    if (_activePinId === pinId) {
+      rememberActive();
+      return;
+    }
     _activePinId = pinId;
     const index = pinboardStore.get().findIndex((pin) => pin.id === pinId);
     if (index >= 0) _activeIndex = index;
@@ -549,6 +657,10 @@ const pinboardView = {
     _activePinId = null;
     _activeIndex = 0;
     _seedSpent = false;
+    _chosen = false;
+    _recalled = false;
+    _remembered = null;
+    _generation++;
     _status = '';
   },
 };

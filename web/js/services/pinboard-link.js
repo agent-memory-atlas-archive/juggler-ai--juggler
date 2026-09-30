@@ -364,8 +364,8 @@ export const ownerLink = {
       return 0;
     }
     for (const board of boards) {
-      // No pin: which tab was selected is presentation, which the board has
-      // never stored. It opens on the first one, as any other new view would.
+      // No pin: this window doesn't know which tab the board was showing. The
+      // board window stores that as its own preference and reopens on it.
       this.openBoardWindow(board.id, '', board.conversation);
     }
     return boards.length;

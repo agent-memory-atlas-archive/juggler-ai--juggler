@@ -36,7 +36,7 @@ import {
   __setViewModeForTests, isPinboardView, ownerViewerId, initialPinId, boardConversationId,
   viewMode, windowRole, VIEW_MAIN, VIEW_PINBOARD,
 } from '../../js/utils/view-mode.js';
-import { scopedKey } from '../../js/services/prefs.js';
+import { scopedKey, __resetPrefsForTests } from '../../js/services/prefs.js';
 import PinboardItemType from 'juggler/pinboard-item-type';
 import '../../js/components/pinboard-shell.js';
 import '../../js/components/conversation-bar.js';
@@ -360,17 +360,37 @@ function stubActiveTab(conversationId = 'conv_main') {
  * `left` is what the server says was open when it was last shut, and it is
  * handed over once: the real one answers the claim once too, because the answer
  * is an instruction to open windows and every main window asks.
+ *
+ * It answers this window's own preferences too, since a board window keeps which
+ * tab it was showing there, and a case that fell through to the real server would
+ * write that into the test server's session for the next suite to find. A read is
+ * held until `prefsGate` settles, so a case can decide what arrives first.
  * @param {any[]} pins - The board the fake server holds.
  * @param {any[]} [left] - The detached boards outliving the last run.
- * @returns {{urls: string[], restore: () => void}} The URLs asked for, and its restore.
+ * @param {Record<string, any>} [prefs] - This window's stored preferences.
+ * @param {Promise<void>} [prefsGate] - What a preferences read waits for.
+ * @returns {{urls: string[], prefWrites: any[], restore: () => void}} The URLs
+ *   asked for, the preference patches written, and its restore.
  */
-function stubBoard(pins, left = []) {
+function stubBoard(pins, left = [], prefs = {}, prefsGate = Promise.resolve()) {
   const original = window.fetch;
   /** @type {string[]} */
   const urls = [];
+  /** @type {any[]} */
+  const prefWrites = [];
   let claimed = false;
   window.fetch = /** @type {any} */ (async (/** @type {any} */ url, /** @type {any} */ opts) => {
     const asked = String(url);
+    if (asked.includes('/api/session/ui-prefs')) {
+      urls.push(asked);
+      if (opts?.method === 'PUT') {
+        const body = typeof opts.body === 'string' ? JSON.parse(opts.body) : opts.body;
+        prefWrites.push(body?.ui ?? {});
+        return { ok: true, json: async () => ({}) };
+      }
+      await prefsGate;
+      return { ok: true, json: async () => ({ ui: prefs }) };
+    }
     if (asked.includes('/api/session/pinboard')) {
       urls.push(asked);
       if (asked.includes('/boards/restore')) {
@@ -382,7 +402,7 @@ function stubBoard(pins, left = []) {
     }
     return original(url, opts);
   });
-  return { urls, restore: () => { window.fetch = original; } };
+  return { urls, prefWrites, restore: () => { window.fetch = original; } };
 }
 
 /**
@@ -400,15 +420,20 @@ function stubBoard(pins, left = []) {
  * @param {string} [options.viewerId] - What this viewer's own id is.
  * @param {any} [options.session] - The session to hand the shell.
  * @param {any[]} [options.left] - The detached boards the server says outlived the last run.
+ * @param {Record<string, any>} [options.prefs] - This window's stored preferences.
+ * @param {Promise<void>} [options.prefsGate] - What a read of them waits for.
  * @returns {Promise<{shell: any, panel: any, session: any, relay: any, board: any, teardown: () => void}>} The mounted shell.
  */
-async function mountShell({ pins = [], search = BOARD_SEARCH, viewerId = 'v_self', session, left } = {}) {
+async function mountShell({
+  pins = [], search = BOARD_SEARCH, viewerId = 'v_self', session, left, prefs, prefsGate,
+} = {}) {
   pinboardStore.reset();
   pinboardView.reset();
   ownerLink.reset();
   satelliteLink.reset();
+  forgetRememberedPins();
   __setViewModeForTests(search);
-  const board = stubBoard(pins, left);
+  const board = stubBoard(pins, left, prefs, prefsGate);
   const relay = stubRelay();
   const previousViewerId = wsService.viewerId;
   wsService.viewerId = viewerId;
@@ -433,9 +458,25 @@ async function mountShell({ pins = [], search = BOARD_SEARCH, viewerId = 'v_self
       __setViewModeForTests();
       pinboardStore.reset();
       pinboardView.reset();
+      forgetRememberedPins();
       lastPinContext = null;
     },
   };
+}
+
+/** The window preference a board window keeps its showing tab under. */
+const ACTIVE_PREF = 'juggler-pinboard-active';
+
+/**
+ * Forget every window's remembered tab, in the prefs cache and in its
+ * localStorage mirror, so no case opens on a tab an earlier one chose.
+ * @returns {void}
+ */
+function forgetRememberedPins() {
+  __resetPrefsForTests();
+  for (const key of Object.keys(localStorage)) {
+    if (key.startsWith(ACTIVE_PREF)) localStorage.removeItem(key);
+  }
 }
 
 /**
@@ -855,6 +896,104 @@ export async function runTests() {
           `the tab that slid into its place — a seed still held would drag the user back to where the window opened, long after they had moved on, got ${pinboardView.getActivePinId()}`);
       } finally {
         teardown();
+      }
+    });
+
+    // A board window reopened at launch is asked for with no pin, because the
+    // window that reopens it has no idea what it was showing. The window does:
+    // the tab is kept under its own role, the slot its frame and theme live in.
+    await run('a reopened board window comes back on the tab it was showing', async () => {
+      asDesktopWindow(true);
+      const { panel, teardown } = await mountShell({
+        pins: PROBE_BOARD,
+        prefs: { [ACTIVE_PREF]: 'pin_b' },
+      });
+      try {
+        await waitFor(() => pinboardView.getActivePinId() === 'pin_b',
+          `the remembered tab, not the first one (got ${pinboardView.getActivePinId()})`);
+        await waitFor(() => panel.textContent.includes('probe:beta'),
+          'the panel to show the remembered pin');
+      } finally {
+        teardown();
+        asDesktopWindow(false);
+      }
+    });
+
+    await run('a board window remembers the tab the user moves to', async () => {
+      asDesktopWindow(true);
+      const { board, teardown } = await mountShell({ pins: PROBE_BOARD });
+      try {
+        await waitFor(() => pinboardView.getActivePinId() === 'pin_a', 'the board to open');
+        pinboardView.setActivePin('pin_b');
+        await waitFor(() => board.prefWrites.some((ui) => ui[ACTIVE_PREF] === 'pin_b'),
+          `the choice to be written to this window's preferences, got ${JSON.stringify(board.prefWrites)}`);
+        assert(board.urls.some((url) => url.includes(`role=${encodeURIComponent(`pinboard:${BOARD_ID}`)}`)),
+          'under this board window\u2019s role, not the main window\u2019s');
+      } finally {
+        teardown();
+        asDesktopWindow(false);
+      }
+    });
+
+    await run('a board window opened on a pin shows that pin, whatever it remembers', async () => {
+      asDesktopWindow(true);
+      const { board, teardown } = await mountShell({
+        pins: PROBE_BOARD,
+        search: `${BOARD_SEARCH}&pin=pin_a`,
+        prefs: { [ACTIVE_PREF]: 'pin_b' },
+      });
+      try {
+        await waitFor(() => board.urls.some((url) => url.includes('/api/session/ui-prefs')),
+          'the window to ask what it remembers');
+        for (let i = 0; i < 5; i++) await settle();
+        assert(pinboardView.getActivePinId() === 'pin_a',
+          `a pop-out names the pin the user was reading, and that is newer than anything remembered, got ${pinboardView.getActivePinId()}`);
+      } finally {
+        teardown();
+        asDesktopWindow(false);
+      }
+    });
+
+    await run('a remembered tab that has left the board is a stale selection', async () => {
+      asDesktopWindow(true);
+      const { board, teardown } = await mountShell({
+        pins: PROBE_BOARD,
+        prefs: { [ACTIVE_PREF]: 'pin_since_removed' },
+      });
+      try {
+        await waitFor(() => board.urls.some((url) => url.includes('/api/session/ui-prefs')),
+          'the window to ask what it remembers');
+        for (let i = 0; i < 5; i++) await settle();
+        assert(pinboardView.getActivePinId() === 'pin_a',
+          `the board falls back to its first tab, got ${pinboardView.getActivePinId()}`);
+      } finally {
+        teardown();
+        asDesktopWindow(false);
+      }
+    });
+
+    await run('a tab picked before the memory answers is not taken back', async () => {
+      asDesktopWindow(true);
+      /** @type {() => void} */
+      let answer = () => {};
+      const gate = new Promise((resolve) => { answer = () => resolve(undefined); });
+      const { board, teardown } = await mountShell({
+        pins: [...PROBE_BOARD, { id: 'pin_c', type: 'satellite-probe', config: { label: 'gamma' } }],
+        prefs: { [ACTIVE_PREF]: 'pin_c' },
+        prefsGate: /** @type {Promise<void>} */ (gate),
+      });
+      try {
+        await waitFor(() => pinboardView.getActivePinId() === 'pin_a', 'the board to open');
+        pinboardView.setActivePin('pin_b');
+        answer();
+        await waitFor(() => board.urls.some((url) => url.includes('/api/session/ui-prefs')),
+          'the window to ask what it remembers');
+        for (let i = 0; i < 5; i++) await settle();
+        assert(pinboardView.getActivePinId() === 'pin_b',
+          `a slow session must not move a user who has already chosen, got ${pinboardView.getActivePinId()}`);
+      } finally {
+        teardown();
+        asDesktopWindow(false);
       }
     });
 
@@ -1471,7 +1610,7 @@ export async function runTests() {
         assert(first.searchParams.get('owner') === 'v_self',
           'and answering to the window that reopened it, which is the only owner that exists this run');
         assert(!first.searchParams.has('pin'),
-          'which tab was selected is presentation, which a board has never stored — it opens on the first');
+          'the window reopening a board has no idea which tab it was showing — the board window remembers that itself');
 
         // The claim is spent, so a second window of the same project opens
         // nothing rather than a second copy of each.
