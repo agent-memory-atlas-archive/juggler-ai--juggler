@@ -131,20 +131,20 @@ function itemSignature(item) {
  * sizes its re-read slice too.
  *
  * This weighs `data.content`, which means it sees exactly the items that keep
- * their bytes in the document — a dropped file, and an auto-seeded agents file
- * once it has frozen (`file-content-context-item.js`). Those are the ones whose
- * content can change between sends without the conversation moving, so they are
- * the ones worth signing.
+ * their bytes in the document — a dropped file, and an `@`-mentioned or
+ * auto-seeded file once it has frozen (`file-content-context-item.js`). Those are
+ * the ones whose content can change between sends without the conversation
+ * moving, so they are the ones worth signing.
  *
- * KNOWN BLIND SPOT: a live pin (a `file-content` item with no `seeded` flag)
+ * KNOWN BLIND SPOT: a live pin (a `file-content` item that is not frozen)
  * persists only a path, so it signs as `~0` no matter what the file says, and a
  * change to its bytes is invisible here. That is not an oversight to tidy up
  * cheaply — closing it needs a content signal this module can read synchronously,
  * and the pin deliberately has no watcher (nothing re-reads the file between
  * sends), so there would frequently be nothing current to read. The cost is
- * bounded by the fact that pinning a file is a deliberate act on a file the user
- * is thinking about, whereas the seeded files — which nobody chose — are frozen
- * and therefore cannot drift silently at all.
+ * bounded by the fact that only the file picker makes a live pin — a deliberate
+ * act on a file the user wants kept current — whereas mentioned and seeded files
+ * are frozen and therefore cannot drift silently at all.
  * @param {{id?: string, type?: string, data?: {content?: unknown}}} ci - A context item instance
  * @returns {string} The context-item signature
  */

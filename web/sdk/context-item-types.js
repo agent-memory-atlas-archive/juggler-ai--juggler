@@ -265,8 +265,9 @@
  *   - `'prefix'` (default): leading user-role messages placed BEFORE the
  *     conversation history, so the content rides inside the cached prefix. An
  *     unchanged render is byte-identical each turn → the cache hits; a genuine
- *     change busts from that point (adding/removing one cold-starts once). For a
- *     deliberately-current file pin (dropped/pinned file contents).
+ *     change busts from that point (adding/removing one cold-starts once). For
+ *     file contents: a deliberately-current pin, or a frozen snapshot (a dropped
+ *     file, an `@`-mention, a seeded agents file).
  *   - `'none'`: not injected into the request at all; the item's state already
  *     lives durably in the model's own tool_use/tool_result history (todo, plan).
  *
@@ -274,8 +275,8 @@
  *   cacheable (system/prefix) or lives in tool history (none). Genuinely-volatile
  *   per-turn content that changes every turn is an anti-pattern — it would bust
  *   the cache each turn; put such state in a tool result instead. One-shot file
- *   content (an `@`-mention, a read) belongs in the append-only history as a read,
- *   not as a standing context item.
+ *   content never re-renders: a read lives in the append-only history, and an
+ *   `@`-mention freezes at the send that carried it.
  * @property {boolean} [watchesFileChanges] - React to file modifications (default: false)
  * @property {string} [idPrefix] - **@internal** (outside the engineApi compat promise; used by core, third-party support not guaranteed). Prefix for generated IDs (e.g., 'ITEM', 'RULE'). Defaults to 'ITEM'
  * @property {string} [author] - Author name (e.g., 'Juggler Team')

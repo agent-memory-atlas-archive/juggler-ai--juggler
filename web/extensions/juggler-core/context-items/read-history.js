@@ -23,9 +23,10 @@
  *    carry `contentHash` — the SHA-256 of the file's raw on-disk bytes that the
  *    backend echoes from every read and mutation — which is compared against
  *    the file's current hash to detect out-of-band change;
- *  - a pinned / at-mentioned file-content context item for the path. Pins are
+ *  - a pinned / at-mentioned file-content context item for the path. A pin is
  *    re-rendered into context at send time, so a pinned file is always treated
- *    as fresh.
+ *    as fresh. A mention (or a seeded agents file) is a frozen snapshot that
+ *    records no hash, so it counts as seen-but-unverifiable.
  *
  * Because the transcript is durable and shared, freshness survives app
  * relaunch, engine restarts, and additional clients attaching, and reads the
@@ -268,7 +269,7 @@ function opsPayload(result) {
 /**
  * @typedef {object} SeenState
  * @property {boolean} seen - The model has seen this path this session
- * @property {boolean} pinned - A pinned/at-mentioned item covers the path (always fresh)
+ * @property {boolean} pinned - A live pin covers the path (always fresh)
  * @property {Set<string>} hashes - Content hashes the model has seen for the path
  * @property {boolean} unverified - Some matching record carries no hash, so staleness can't be proven
  */
@@ -291,13 +292,17 @@ function seenState(conversation, session, path) {
   const threads = /** @type {any} */ (conversation).getAllMessageThreads?.() || [];
   for (const thread of threads) {
     // 1) User-surfaced context items (pins, at-mentions) carrying a path — in
-    //    ANY thread, since subthreads can hold their own pins. Their bytes are
-    //    rendered into context at send time, so they always count as fresh.
+    //    ANY thread, since subthreads can hold their own pins. A live pin's bytes
+    //    are rendered into context at send time, so it always counts as fresh; a
+    //    frozen one (a mention, a seeded file) is a snapshot with no recorded
+    //    hash, so it proves the file was seen but not what it holds now.
     for (const item of thread.contextItems || []) {
-      const p = /** @type {any} */ (item)?.data?.path;
+      const data = /** @type {any} */ (item)?.data;
+      const p = data?.path;
       if (p && pathMatchKey(session, p) === target) {
         state.seen = true;
-        state.pinned = true;
+        if (data.frozen === true || data.seeded === true) state.unverified = true;
+        else state.pinned = true;
       }
     }
 

@@ -127,9 +127,10 @@ func (r *run) buildLLMRequestWithIntent(ctxResult *ContextResult, tools []ToolDe
 	// Each rides at the position its item stands in (buildMessages), inside the
 	// cached prefix — so an item whose rendered bytes change between sends busts
 	// the cache from its own position. That is why the frontend freezes the agents
-	// files it seeds itself rather than rendering them live
-	// (file-content-context-item.js): seeded items stand at the head, where a
-	// re-render would cost the whole conversation.
+	// files it seeds itself and the files a user @-mentions rather than rendering
+	// them live (file-content-context-item.js): seeded items stand at the head,
+	// where a re-render would cost the whole conversation, and a mentioned file is
+	// the one the agent is about to edit.
 	systemPrompt := ctxResult.SystemPrompt
 
 	request := map[string]any{

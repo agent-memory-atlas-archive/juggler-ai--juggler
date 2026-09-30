@@ -1439,9 +1439,13 @@ class Composer extends HTMLElement {
       // queue (ahead of the worker's queued user message), so promotePendingItems
       // moves the reads and the message into items together, as a contiguous group.
       //
-      // Dropped files go through the same path as mentions, differing only in that
-      // they carry inline content (a `dropped-file` snapshot) rather than a path
-      // the server re-reads.
+      // A mention is FROZEN (`frozen: true`): the model is handed the file as it
+      // stands when this message is sent, and editing it afterwards does not
+      // rewrite that — a live pin near the head of the conversation would
+      // cold-start the whole cached prefix on every edit to the very file the
+      // user mentioned for the agent to work on. Dropped files are snapshots
+      // too, differing only in that they carry the bytes inline (a
+      // `dropped-file`) rather than a path read at the first send.
       // The prose actually sent: the typed text with any `$name` skill triggers
       // removed (they become tool-calls, never prose). Reassigned in the thread
       // block below; equals `message` when there is no thread or no `$name`.
@@ -1478,8 +1482,8 @@ class Composer extends HTMLElement {
         this._pendingTextFiles = [];
         if (paths.length > 0 || textFiles.length > 0) {
           const runFile = busy
-            ? (/** @type {string} */ p) => mt.executeContextItemIntoPending('file-content', { path: p })
-            : (/** @type {string} */ p) => mt.executeContextItem('file-content', { path: p });
+            ? (/** @type {string} */ p) => mt.executeContextItemIntoPending('file-content', { path: p, frozen: true })
+            : (/** @type {string} */ p) => mt.executeContextItem('file-content', { path: p, frozen: true });
           const runDropped = busy
             ? (/** @type {{filename:string,content:string}} */ t) =>
               mt.executeContextItemIntoPending('dropped-file', { filename: t.filename, content: t.content })

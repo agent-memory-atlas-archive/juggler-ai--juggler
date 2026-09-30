@@ -29,35 +29,36 @@ import { fetchLiveFile, liveFileSource, liveFileInfo, renderLiveFileBody } from 
 const MAX_PINNED_FILE_CHARS = 2_000_000;
 
 /**
- * Ceiling (characters) on the snapshot a SEEDED item freezes into `this.data`.
+ * Ceiling (characters) on the snapshot a FROZEN item stores in `this.data`.
  * Far tighter than {@link MAX_PINNED_FILE_CHARS}, and for a different reason:
  * that one is a send-time bound on a body that is never persisted, whereas this
  * text is written into the Yjs document, so it is replicated to every peer and
- * kept for the life of the conversation. An agents file is prose measured in
- * kilobytes; anything past this is not one, and truncating it beats syncing it.
+ * kept for the life of the conversation. Truncating a file this large beats
+ * syncing it; a file that needs to be seen whole is one to `read`.
  */
-const MAX_SEEDED_SNAPSHOT_CHARS = 256_000;
+const MAX_FROZEN_SNAPSHOT_CHARS = 256_000;
 
 // ============================================================================
 // Type Definitions
 // ============================================================================
 
 /**
- * Persisted Yjs shape for a pinned or seeded file/directory.
+ * Persisted Yjs shape for a pinned, mentioned or seeded file/directory.
  *
  * For a PIN this is deliberately minimal: only the path and a directory marker.
  * The bytes are resolved live at send time (see {@link FetchResult}) and never
  * round-tripped through Yjs — a pin means "this file, kept current", so there is
  * nothing to freeze.
  *
- * A SEEDED item (`seeded: true`) is the other case, and it does persist bytes:
- * `content` holds the snapshot taken at the first transaction, bounded by
- * {@link MAX_SEEDED_SNAPSHOT_CHARS}.
+ * A FROZEN item (an `@`-mention, or a seeded agents file) is the other case, and
+ * it does persist bytes: `content` holds the snapshot taken at its first
+ * transaction, bounded by {@link MAX_FROZEN_SNAPSHOT_CHARS}.
  * @typedef {object} FileContentData
  * @property {string} path - File or directory path (trailing "/" for dirs)
  * @property {boolean} [isDirectory] - True when path refers to a directory
- * @property {boolean} [seeded] - Added by the session, not the user; freezes at the first transaction
- * @property {string} [content] - Frozen snapshot; seeded items only
+ * @property {boolean} [frozen] - Snapshots at its first transaction and never re-reads (an `@`-mention)
+ * @property {boolean} [seeded] - Added by the session, not the user; implies frozen
+ * @property {string} [content] - Frozen snapshot; frozen items only
  */
 
 /** @typedef {import('../lib/live-file.js').LiveFileResult} LiveFileResult */
@@ -67,41 +68,48 @@ const MAX_SEEDED_SNAPSHOT_CHARS = 256_000;
 // ============================================================================
 
 /**
- * FileContentContextItem - a "keep this file current" pin, or a frozen seed.
+ * FileContentContextItem - a "keep this file current" pin, or a frozen snapshot.
  *
  * SEMANTICS (see docs/extension_guide.md §"Pinned file content"):
- *  - Every USER-driven file reference is this item: the file picker / paperclip,
- *    and an `@file` mention (composer.js and scheduled-send-service.js both create
- *    one per mention). What is NOT this is a `read` TOOL CALL — that is
- *    ReadFileContextItem, an immutable record of bytes the model saw at one turn,
- *    living in the append-only history. The split is who asked, not how casually.
- *  - `data.seeded` splits this class in two, on exactly that question:
+ *  - `data.frozen` splits this class in two:
  *
- *    A PIN (no flag) is LIVE. It persists only a `path`; file bytes are NEVER
- *    persisted. Content is resolved from disk on every render. It rides
+ *    A PIN (no flag) is LIVE — the DELIBERATE pin only: the file picker /
+ *    paperclip. It persists only a `path`; file bytes are NEVER persisted.
+ *    Content is resolved from disk on every render. It rides
  *    `contextPosition:'prefix'`, rendered at the point in the conversation where
  *    it was added, so the render is byte-identical while the file is unchanged →
  *    the prompt cache hits and the pin is paid for once; a real change busts the
- *    cache from the pin's own position (one cold start, and the further down the
- *    conversation it sits the cheaper that is) — which is exactly the point of a
- *    pin. No watcher: nothing is in flight between sends.
+ *    cache from the pin's own position (one cold start, and the further up the
+ *    conversation it sits the dearer that is) — which is the price of asking for
+ *    a file to be kept current. No watcher: nothing is in flight between sends.
  *
- *    A SEEDED item is FROZEN — the CLAUDE.md / AGENTS.md a session adds to
- *    itself (session.js `addAIAssistantFiles`). Nobody asked for it, so it may
- *    not spend the user's time: it snapshots once into `data.content` and serves
- *    that for the life of the conversation. Live would be the expensive default
- *    here, because the agent editing its own agents file is routine — the file
- *    it is most often asked to update — and every such edit would cold-start the
- *    whole cached prefix. Freezing also stops the same bytes being sent twice:
- *    after such an edit they are already in the history, verbatim, in the
- *    tool_use pair that wrote them. Skills and memory freeze for the sibling
- *    reason (memory-context-item.js).
- *  - The snapshot is taken at the FIRST TRANSACTION, not at add-time: a
- *    conversation can sit open for an hour before its first send, and what
- *    belongs in context is what was true when work began. `contextParams.forRequest`
+ *    A FROZEN item snapshots once into `data.content` and serves that for the
+ *    life of the conversation. Two things create one:
+ *     - an `@file` mention (composer.js and scheduled-send-service.js, one per
+ *       mentioned path): a one-shot "here is this file", the user's counterpart
+ *       of a `read`. The file is mentioned so the agent can work on it, so live
+ *       would be the expensive default: every edit the agent then made would
+ *       change a message near the head of the conversation and cold-start the
+ *       whole cached prefix.
+ *     - a SEEDED item (`seeded`, which implies frozen) — the CLAUDE.md /
+ *       AGENTS.md a session adds to itself (session.js `addAIAssistantFiles`).
+ *       Nobody asked for it, and the agent editing its own agents file is
+ *       routine, so the same cold start would recur for nothing.
+ *    Freezing also stops the same bytes being sent twice: after an edit they are
+ *    already in the history, verbatim, in the tool_use pair that wrote them.
+ *    Skills and memory freeze for the sibling reason (memory-context-item.js).
+ *  - The snapshot is taken at the FIRST TRANSACTION, not at add-time: a seeded
+ *    conversation can sit open for an hour before its first send, and a mention
+ *    made while a turn runs waits in the pending queue. What belongs in context
+ *    is what was true when the model was handed it. `contextParams.forRequest`
  *    is what distinguishes a dispatch render from a properties-panel one.
+ *  - A mention never merges into an existing item: a later mention of the same
+ *    file is the file as it stands at THAT send, which an earlier snapshot is not.
+ *  - What is NOT this class is a `read` TOOL CALL — ReadFileContextItem, an
+ *    immutable record of bytes the model saw at one turn, living in the
+ *    append-only history.
  *  - The properties panel always reads LIVE. For a pin there is nothing to be
- *    stale against; for a seeded item it is deliberately showing the file rather
+ *    stale against; for a frozen item it is deliberately showing the file rather
  *    than the snapshot, says so, and offers a refresh that re-freezes on demand.
  * @class
  * @augments ContextItem
@@ -121,9 +129,21 @@ class FileContentContextItem extends ContextItem {
     exampleData: {
       path: 'src/main.go',
       isDirectory: false,
+      frozen: false,
       seeded: false
     }
   };
+
+  /**
+   * Whether an item's data describes a frozen snapshot rather than a live pin.
+   * A seeded item is frozen without saying so: `frozen` postdates `seeded`, and
+   * conversations seeded before it carry only the older flag.
+   * @param {Record<string, any>|undefined} data - Item data or tool params
+   * @returns {boolean} True for a mention or a seeded item
+   */
+  static isFrozen(data) {
+    return data?.frozen === true || data?.seeded === true;
+  }
 
   /** @returns {{color: string, icon?: string}} Badge options */
   static getBadgeOptions() {
@@ -180,14 +200,19 @@ class FileContentContextItem extends ContextItem {
   /**
    * Check if new params can be merged with an existing item
    *
-   * Files with the same path are deduplicated - reuse existing item.
+   * Files with the same path are deduplicated — reuse the existing item — with
+   * one exception: a mention (`frozen`) never merges, either way round. A
+   * mention is the file as it stands at its own send, which an earlier snapshot
+   * is not and a live pin does not keep; and a pin adopting a mention would hand
+   * a snapshot back to someone who asked for the file kept current. Seeding
+   * still dedups by path: adding the agents files again must not add them twice.
    * @static
    * @param {Record<string, any>} newParams - Parameters for the new item request
    * @param {ContextItem[]} existingItems - All existing items of this type
    * @returns {import('juggler/context-item').MergeOrReplaceResult|null} Merge result or null if no merge possible
    */
   static mergeOrReplace(newParams, existingItems) {
-    if (!newParams.path) {
+    if (!newParams.path || newParams.frozen === true) {
       return null;
     }
 
@@ -196,6 +221,7 @@ class FileContentContextItem extends ContextItem {
 
     const existing = existingItems.find(f => {
       const data = /** @type {FileContentData} */ (f.data);
+      if (data.frozen === true) return false;
       const existingPath = (data.path || '').replace(/^\/+/, '');
       return existingPath === newPath;
     });
@@ -244,7 +270,7 @@ class FileContentContextItem extends ContextItem {
    * Remove legacy/transient snapshot fields from a data object in place.
    *
    * `content` is stripped for a PIN, whose footprint is a path and nothing else,
-   * and kept for a SEEDED item, where it is the live snapshot rather than a
+   * and kept for a FROZEN item, where it is the live snapshot rather than a
    * leftover. Getting that exception wrong is silent: the item would reload with
    * no snapshot, take a fresh one, and behave as a live pin again — which is the
    * whole bug this split exists to prevent. The other fields are stale companions
@@ -255,17 +281,17 @@ class FileContentContextItem extends ContextItem {
   static _stripLegacyFields(data) {
     const dead = ['language', 'size', 'totalLines', 'lineOffset',
       'lineCount', 'exists', 'warning', 'readMode'];
-    if (!data.seeded) dead.push('content');
+    if (!FileContentContextItem.isFrozen(data)) dead.push('content');
     for (const k of dead) {
       if (k in data) delete data[k];
     }
   }
 
   /**
-   * Execute tool call - record the path, and whether this was seeded.
+   * Execute tool call - record the path, and whether this was mentioned or seeded.
    *
    * No content fetch here, for either kind. A pin resolves live at send time; a
-   * seeded item takes its snapshot at the first transaction, which is later than
+   * frozen item takes its snapshot at the first transaction, which is later than
    * this and deliberately so (see the class comment). The properties panel and
    * any UI badge that needs a line count will fetch on demand.
    * @param {string} _toolName - Tool name (unused, only one tool)
@@ -277,6 +303,7 @@ class FileContentContextItem extends ContextItem {
       throw new Error('Missing required parameter: path');
     }
     this.data.path = params.path;
+    if (params.frozen) this.data.frozen = true;
     if (params.seeded) this.data.seeded = true;
   }
 
@@ -405,7 +432,7 @@ class FileContentContextItem extends ContextItem {
    * Create properties panel view.
    *
    * The panel always shows LIVE disk contents. For a pin that is simply the
-   * truth — there is no snapshot to be stale against. For a seeded item it is a
+   * truth — there is no snapshot to be stale against. For a frozen item it is a
    * deliberate mismatch: the panel is the curation UI, so it must show what the
    * file actually says, not what this conversation happens to be reading. A note
    * states the difference and offers the refresh, because a panel that silently
@@ -452,15 +479,16 @@ class FileContentContextItem extends ContextItem {
       const absolute = this.getAbsolutePath() || r.path || '';
       addFilePath(headerHost, absolute || 'No file', liveFileInfo(r), { pin: absolute });
 
-      if (this.data.seeded) {
+      const frozen = FileContentContextItem.isFrozen(this.data);
+      if (frozen) {
         body.replaceChildren();
-        body.appendChild(this._buildSeededNote(container));
+        body.appendChild(this._buildFrozenNote(container));
       }
 
       // The header above already carries the path and the current stats, so the
       // body renders content alone.
-      const fileBody = this.data.seeded ? createElement('div') : body;
-      if (this.data.seeded) body.appendChild(fileBody);
+      const fileBody = frozen ? createElement('div') : body;
+      if (frozen) body.appendChild(fileBody);
       renderLiveFileBody(fileBody, r, {
         absolutePath: this.getAbsolutePath() || r.path || this.data.path,
         conversationId: this.conversation?.id,
@@ -482,8 +510,8 @@ class FileContentContextItem extends ContextItem {
    * file renders byte-identically each turn → the prompt cache hits; only a
    * genuine change busts it. Disk bytes are never persisted to Yjs.
    *
-   * A SEEDED item serves its frozen snapshot, and takes that snapshot here on
-   * the first render where `contextParams.forRequest` is set — the first actual
+   * A FROZEN item serves its snapshot, and takes that snapshot here on the
+   * first render where `contextParams.forRequest` is set — the first actual
    * transaction. Display renders (the properties panel's token chip) deliberately
    * do not latch it, so looking at the item cannot decide what it is going to say.
    * @param {import('juggler/context-item').ContextParams} [contextParams] - Context parameters
@@ -494,12 +522,13 @@ class FileContentContextItem extends ContextItem {
       return '';
     }
 
-    if (this.data.seeded) {
+    if (FileContentContextItem.isFrozen(this.data)) {
       if (typeof this.data.content === 'string') return this.data.content;
       const text = FileContentContextItem._boundSnapshot(await this._renderLive());
       // Latch only on a real request. Until one arrives this renders live, so a
       // conversation left open all morning still snapshots the file as it stands
-      // when work starts rather than as it stood when the tab was opened.
+      // when work starts rather than as it stood when the tab was opened, and a
+      // mention queued behind a running turn is the file as the model receives it.
       //
       // The announcement is what makes the snapshot a snapshot. This instance is
       // a transient wrapper and its `data` a detached copy of what the document
@@ -522,15 +551,15 @@ class FileContentContextItem extends ContextItem {
   /**
    * Take the snapshot again, from the file as it stands now.
    *
-   * The only way a seeded item's frozen bytes are ever replaced: the properties
-   * panel's Update and a conversation moving to another tree both arrive here,
-   * so neither can produce bytes the other would not have. An item that has not
-   * latched anything yet is left alone — it renders live until its first
+   * The only way a frozen item's bytes are ever replaced: the properties panel's
+   * Update and a seeded item's conversation moving to another tree both arrive
+   * here, so neither can produce bytes the other would not have. An item that has
+   * not latched anything yet is left alone — it renders live until its first
    * transaction, which will snapshot the right tree by itself.
    * @returns {Promise<boolean>} Whether the snapshot changed.
    */
   async refreezeSnapshot() {
-    if (!this.data.seeded || typeof this.data.content !== 'string') return false;
+    if (!FileContentContextItem.isFrozen(this.data) || typeof this.data.content !== 'string') return false;
     // A file that is not there reads as "File does not exist", which is an
     // answer and not a snapshot. Writing it over the real one would destroy the
     // conversation's only copy of something its user may well still want, so a
@@ -555,10 +584,13 @@ class FileContentContextItem extends ContextItem {
    * beside it resolves live, so after a move the item already names the right
    * file in the new tree while serving the bytes of the old one — the model
    * reading one tree's instructions while working in another.
+   *
+   * A mention stays as it is: it records what the user handed the model, which
+   * the move does not change.
    * @returns {Promise<void>} When the snapshot is of the tree it now works in.
    */
   async onWorkspaceChanged() {
-    await this.refreezeSnapshot();
+    if (this.data.seeded) await this.refreezeSnapshot();
   }
 
   /**
@@ -573,7 +605,7 @@ class FileContentContextItem extends ContextItem {
    * @private
    */
   static _boundSnapshot(text) {
-    const { content, truncated } = smartTruncate(text, { maxChars: MAX_SEEDED_SNAPSHOT_CHARS });
+    const { content, truncated } = smartTruncate(text, { maxChars: MAX_FROZEN_SNAPSHOT_CHARS });
     return truncated
       ? content + `\n\n(Truncated from ${text.length} to ${content.length} chars)`
       : text;
@@ -582,7 +614,7 @@ class FileContentContextItem extends ContextItem {
   /**
    * Render the file's current contents as LLM context text.
    *
-   * The shared body of a pin's every-turn render, a seeded item's one-off
+   * The shared body of a pin's every-turn render, a frozen item's one-off
    * snapshot, and the re-snapshot behind the properties panel's refresh — so all
    * three are byte-identical for the same file, and a refresh cannot quietly
    * produce something a send would have rendered differently.
@@ -638,7 +670,7 @@ class FileContentContextItem extends ContextItem {
   }
 
   /**
-   * Build the note that explains a seeded item's frozen state, and the update
+   * Build the note that explains a frozen item's state, and the update
    * affordance when there is something to update to.
    *
    * The update control appears only once the file has actually diverged from the
@@ -649,17 +681,20 @@ class FileContentContextItem extends ContextItem {
    * @returns {HTMLElement} The note element
    * @private
    */
-  _buildSeededNote(container) {
+  _buildFrozenNote(container) {
     const note = createElement('div', 'file-content-seeded-note');
+    const seeded = this.data.seeded === true;
 
     if (typeof this.data.content !== 'string') {
-      note.appendChild(createElement('div', 'file-content-seeded-line',
-        'Added at the start of this conversation. It is frozen as it stands when the first message is sent.'));
+      note.appendChild(createElement('div', 'file-content-seeded-line', seeded
+        ? 'Added at the start of this conversation. It is frozen as it stands when the first message is sent.'
+        : 'Mentioned in a message. It is frozen as it stands when that message is sent.'));
       return note;
     }
 
-    note.appendChild(createElement('div', 'file-content-seeded-line',
-      'Added at the start of this conversation and frozen when it began, so that editing this file does not make the conversation re-read itself. The file below is live.'));
+    note.appendChild(createElement('div', 'file-content-seeded-line', seeded
+      ? 'Added at the start of this conversation and frozen when it began, so that editing this file does not make the conversation re-read itself. The file below is live.'
+      : 'Mentioned in a message and frozen when it was sent, so that editing this file does not make the conversation re-read itself. The file below is live.'));
 
     // Offer the update only against a real difference.
     this._renderLive().then(live => {

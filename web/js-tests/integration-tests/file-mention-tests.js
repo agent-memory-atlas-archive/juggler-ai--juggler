@@ -5,12 +5,14 @@
 /**
  * Integration Tests: @ File Mention
  *
- * Tests that selecting a file via the at-sign completion menu immediately adds a
- * file-content context item and removes the typed path text from the textarea.
+ * An `@`-mention turns each mentioned path into a FROZEN file-content context
+ * item when the message is sent: the model is handed the file as it stood at
+ * that send, and later edits to the file never change it. A deliberate pin (the
+ * file picker) is the live case.
  * @module integration-tests/file-mention-tests
  */
 
-import { textResponse } from '../utilities/integration-test-runner.js';
+import { textResponse, toolUseResponse, testDirFor } from '../utilities/integration-test-runner.js';
 
 // ============================================================================
 // TEST DEFINITIONS
@@ -131,16 +133,50 @@ export const sendMessageCreatesFileItemsForAllMentions = {
       throw new Error(`Expected file-content paths ${want} but got ${actual}`);
     }
 
-    // Pin items persist only path (+ isDirectory). Content is resolved live at
-    // send time and must NOT be written into Yjs data.
-    const allowed = new Set(['path', 'isDirectory']);
     for (const f of /** @type {any[]} */ (fileItems)) {
-      const leaked = Object.keys(f.data).filter(k => !allowed.has(k));
-      if (leaked.length > 0) {
-        throw new Error(`file-content item for "${f.data.path}" leaked snapshot fields into Yjs: ${leaked.join(', ')}`);
+      if (f.data.frozen !== true) {
+        throw new Error(`a mention must be frozen, but the item for "${f.data.path}" is a live pin`);
       }
     }
   }
+};
+
+// The case the freeze exists for: the user mentions a file so the agent can work
+// on it, and the agent rewrites it within the same turn. The request after the
+// rewrite must carry the mention exactly as it was sent — a live render would
+// change a message near the head of the conversation and cold-start the whole
+// cached prefix. The rewritten bytes are not lost to the model: they are in the
+// history, in the write that produced them.
+const TD_frozen = testDirFor('at-mention-is-frozen-at-send');
+/** @type {import('../utilities/integration-test-runner.js').IntegrationTestDefinition} */
+export const atMentionIsFrozenAtSend = {
+  name: 'at-mention-is-frozen-at-send',
+  description: 'A file the agent rewrites after it was @-mentioned still reaches the model as it was when mentioned',
+  fixture: 'unit-test-fixture',
+
+  setupFiles: {
+    [`${TD_frozen}/plan.md`]: 'AS-MENTIONED-MARKER\n'
+  },
+
+  llmResponses: [
+    toolUseResponse(
+      'call_1',
+      'write',
+      { file_path: `${TD_frozen}/plan.md`, content: 'REWRITTEN-MARKER\n' },
+      'Rewriting it.'
+    ),
+    textResponse('Rewritten.')
+  ],
+
+  operations: [
+    { type: 'send-message', message: `Rewrite @${TD_frozen}/plan.md please` },
+    // The last transaction is the request made AFTER the write landed.
+    { type: 'validate-context-snapshot', expectedContent: ['AS-MENTIONED-MARKER'] }
+  ],
+
+  fileAssertions: [
+    { path: `${TD_frozen}/plan.md`, content: 'REWRITTEN-MARKER\n' }
+  ]
 };
 
 // Trailing sentence punctuation after an unquoted path should be stripped so
@@ -175,7 +211,7 @@ export const sendMessageHandlesPunctuationAndBareAt = {
   }
 };
 
-// A deliberate pin must:
+// A deliberate pin (the file picker) must:
 //   (a) reach the LLM with the file's current on-disk bytes (resolved live), and
 //   (b) leave no copy of those bytes in the Yjs document (only the path).
 // A pin is "kept current": it renders live each turn, and because it rides the
@@ -192,24 +228,21 @@ export const pinResolvesLiveAndPersistsNoBytes = {
   ],
 
   operations: [
-    { type: 'at-mention-file', path: 'src/main.go' },
-    { type: 'send-message', message: '@src/main.go look at this' },
+    // Pins README.md the way the file picker does.
+    { type: 'add-context-item-to-root' },
+    { type: 'send-message', message: 'look at the pinned file' },
     // Live read: the actual file bytes must appear in the outgoing context.
-    { type: 'validate-context-snapshot', expectedContent: ['Hello, World!'] }
+    { type: 'validate-context-snapshot', expectedContent: ['A simple test fixture used for integration tests.'] }
   ],
 
   customAssertions(conversation) {
     const fileItems = conversation.rootMessageThread.contextItems.filter(
-      item => item.type === 'file-content'
+      item => item.type === 'file-content' && /** @type {any} */ (item).data.path === 'README.md'
     );
     if (fileItems.length !== 1) {
-      throw new Error(`Expected exactly 1 file-content item, got ${fileItems.length}`);
+      throw new Error(`Expected exactly 1 README.md pin, got ${fileItems.length}`);
     }
     const data = /** @type {any} */ (fileItems[0]).data;
-
-    if (data.path !== 'src/main.go') {
-      throw new Error(`Expected path "src/main.go", got "${data.path}"`);
-    }
 
     // Hard invariant: no bytes leak into Yjs — a pin persists only its path.
     const allowedKeys = new Set(['path', 'isDirectory']);
@@ -219,7 +252,7 @@ export const pinResolvesLiveAndPersistsNoBytes = {
         `Pin must persist only {path, isDirectory} but Yjs data also carried: ${leaked.join(', ')}`
       );
     }
-    if (JSON.stringify(data).includes('Hello, World!')) {
+    if (JSON.stringify(data).includes('A simple test fixture')) {
       throw new Error('File content bytes leaked into the pin\'s Yjs data');
     }
   }
@@ -253,6 +286,7 @@ export const tests = [
   atMentionDeduplicates,
   sendMessageCreatesFileItemsForAllMentions,
   sendMessageHandlesPunctuationAndBareAt,
+  atMentionIsFrozenAtSend,
   pinResolvesLiveAndPersistsNoBytes,
   sendMessageTreatsDirectoryMentionWithoutTrailingSlashAsFolder
 ];

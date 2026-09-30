@@ -1075,46 +1075,54 @@ Juggler distinguishes two ways a file's contents reach the model:
 | Item | Role | Content read | Placement |
 |------|------|--------------|-----------|
 | `ReadFileContextItem` | Immutable record of a `read` tool call | Once, at call time | conversation history (part of the transcript) |
-| `FileContentContextItem` | A user's "keep this file current" pin | Live, every turn | `contextPosition: 'prefix'` (before history) |
+| `FileContentContextItem` | A user's "keep this file current" pin (the file picker) | Live, every turn | `contextPosition: 'prefix'` (before history) |
+| `FileContentContextItem` with `data.frozen` | An `@`-mention | Once, at the send that carried it | `contextPosition: 'prefix'` (before history) |
 | `FileContentContextItem` with `data.seeded` | An agents file the session added to itself | Once, at the first transaction | `contextPosition: 'prefix'` (before history) |
 
-The split is **who asked**. A **read** is the model's: it lands in the
-append-only history as a `tool_use`/`tool_result` pair and never moves, so it is
-inside the byte-stable cached prefix and is paid for **once**.
+A **read** is the model's: it lands in the append-only history as a
+`tool_use`/`tool_result` pair and never moves, so it is inside the byte-stable
+cached prefix and is paid for **once**.
 
-Everything the **user** points at is a pin — the file picker and an `@`-mention
-(the composer creates one pin per mentioned path). An `@`-mention is not a read,
-and is not a one-shot: a mentioned file is as live as any other pin.
+An **`@`-mention** is the user's counterpart of a read: a one-shot "here is this
+file", frozen at the send that carried it. The composer creates one frozen item
+per mentioned path, and a later mention of the same file adds a fresh snapshot
+rather than reusing the old one. A mentioned file is usually mentioned so the
+agent can work on it, so it must not re-render when the agent does — see
+[Frozen items](#seeded-agents-files-and-mentions-freeze) below.
 
-A **pin** means "this file, kept current." It persists only a `path` in Yjs (no
+A **pin** — the file picker — is the deliberate exception, and the only live
+case. It means "this file, kept current." It persists only a `path` in Yjs (no
 bytes), and `createContextText()` resolves the live file every turn. Because a pin
 rides the leading, cached prefix (`contextPosition: 'prefix'`), an *unchanged* file
 renders byte-identically each turn → the prompt cache hits and the pin is paid for
 once; only a *genuine change* to the file busts the cache from that point — which
-is exactly the point of a pin. There is no watcher (nothing is in flight between
-sends) and no bytes in the document (pinning a 5 MB file doesn't bloat Yjs).
+is the price of asking for the file to be kept current. There is no watcher
+(nothing is in flight between sends) and no bytes in the document (pinning a 5 MB
+file doesn't bloat Yjs).
 
-### Seeded agents files are the exception, and they freeze
+### Seeded agents files and mentions freeze
 
-The `CLAUDE.md` / `AGENTS.md` / `.cursorrules` a session seeds itself with
-(`session.js` `addAIAssistantFiles`) are the same class with `data.seeded` set,
-and they are **frozen**, not live. Nobody pinned them, so they may not spend the
-user's time: they snapshot once into `data.content` and serve that for the life of
+An `@`-mention (`data.frozen`) and the `CLAUDE.md` / `AGENTS.md` /
+`.cursorrules` a session seeds itself with (`session.js` `addAIAssistantFiles`,
+`data.seeded`, which implies frozen) are the same class, and they are **frozen**,
+not live: they snapshot once into `data.content` and serve that for the life of
 the conversation.
 
-Live would be the expensive default here, and for a reason specific to what these
-files are. The agent editing its own agents file is *routine* — it is the file it
-is most often asked to update — and because the item leads the cached prefix, a
-live re-read would cold-start the entire conversation every time it did so. Worse,
-it would be paying that cold start to tell the model something it already knows:
-right after such an edit the new bytes are in the history anyway, verbatim, in the
-`tool_use` pair that wrote them.
+Live would be the expensive default for both, for the same reason. The agent
+editing the file it was handed is *routine* — a file is mentioned so the agent can
+work on it, and an agents file is the one it is most often asked to update — and
+because the item sits in the cached prefix, a live re-read would cold-start the
+conversation from that point every time it did so. Worse, it would be paying that
+cold start to tell the model something it already knows: right after such an edit
+the new bytes are in the history anyway, verbatim, in the `tool_use` pair that
+wrote them.
 
 Two details matter if you write another item like this:
 
 - **Freeze at the first transaction, not at add-time.** A conversation can sit
-  open for an hour before its first send, and what belongs in context is what was
-  true when work began. `contextParams.forRequest` marks the dispatch render; a
+  open for an hour before its first send, and a mention made while a turn runs
+  waits in the pending queue; what belongs in context is what was true when the
+  model was handed it. `contextParams.forRequest` marks the dispatch render; a
   properties-panel render does not carry it, so merely *looking* at an item can
   never decide what it is going to say.
 - **Give the user the live view and a way back.** The properties panel reads the

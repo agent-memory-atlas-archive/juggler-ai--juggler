@@ -12,6 +12,7 @@ of changes; this project follows semantic versioning.
 - A very narrow column no longer pushes the model and send buttons off its edge
 - On a phone the tab drawer always leaves a strip of page to tap it away
 - Windows no longer fight tiling window managers that park them off-screen
+- An @-mentioned file is frozen as sent, so editing it no longer re-reads the conversation
 
 ## [0.7.2] - 2026-09-28
 

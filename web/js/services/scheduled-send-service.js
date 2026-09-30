@@ -349,15 +349,16 @@ class ScheduledSendService {
       // reads must ride the same pendingItems queue (via executeContextItemIntoPending)
       // to stay grouped with the message on promotion rather than landing in the
       // live items array now while the message is promoted later. Asked of the
-      // thread being sent to, exactly as sendMessage decides to queue.
+      // thread being sent to, exactly as sendMessage decides to queue. A mention
+      // is frozen at its send, as the composer's is.
       const busy = thread.isProcessing ||
         (typeof thread.hasBusyItems === 'function' && thread.hasBusyItems());
       const paths = await extractFileMentionsAsync(text);
       if (paths.length > 0 || textFiles.length > 0) {
         await Promise.all([
           ...paths.map((p) => busy
-            ? thread.executeContextItemIntoPending('file-content', { path: p })
-            : thread.executeContextItem('file-content', { path: p })),
+            ? thread.executeContextItemIntoPending('file-content', { path: p, frozen: true })
+            : thread.executeContextItem('file-content', { path: p, frozen: true })),
           ...textFiles.map((t) => busy
             ? thread.executeContextItemIntoPending('dropped-file', { filename: t.filename, content: t.content })
             : thread.executeContextItem('dropped-file', { filename: t.filename, content: t.content })),

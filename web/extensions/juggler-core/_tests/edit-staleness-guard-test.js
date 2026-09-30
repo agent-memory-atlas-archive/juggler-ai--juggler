@@ -200,8 +200,8 @@ export async function runTests(_ctx) {
   });
 
   // =========================================================================
-  // Pinned / at-mentioned file-content items ALLOW the edit — pins are
-  // re-rendered into context at send time, so they always count as fresh.
+  // Pinned file-content items ALLOW the edit — pins are re-rendered into
+  // context at send time, so they always count as fresh.
   // =========================================================================
   await test('pinned file allows edit', async () => {
     const conversation = await createTestConversation(session);
@@ -211,6 +211,18 @@ export async function runTests(_ctx) {
     const edit = mkItem(EditClass, conversation);
     const res = await edit.validate({ file_path: 'guard-pin.txt', old_string: 'world', new_string: 'there' });
     assert(res.valid === true, `pinned-then-edit must be allowed, got ${JSON.stringify(res)}`);
+  });
+
+  // An @-mention is a frozen snapshot with no recorded hash: it proves the file
+  // was seen, so the edit is allowed as seen-but-unverifiable.
+  await test('mentioned file allows edit', async () => {
+    const conversation = await createTestConversation(session);
+    await writeFileOp({ path: 'guard-mention.txt', content: 'hello world\n' });
+    await conversation.rootMessageThread.executeContextItem('file-content', { path: 'guard-mention.txt', frozen: true });
+
+    const edit = mkItem(EditClass, conversation);
+    const res = await edit.validate({ file_path: 'guard-mention.txt', old_string: 'world', new_string: 'there' });
+    assert(res.valid === true, `mentioned-then-edit must be allowed, got ${JSON.stringify(res)}`);
   });
 
   // =========================================================================

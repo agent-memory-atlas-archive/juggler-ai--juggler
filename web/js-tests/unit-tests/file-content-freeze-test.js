@@ -4,19 +4,20 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * Freeze-at-first-transaction tests for auto-seeded FileContentContextItems.
+ * Freeze-at-first-transaction tests for FileContentContextItems.
  *
- * Two kinds of item share this class, and the split is `data.seeded`:
+ * Two kinds of item share this class, and the split is `data.frozen`:
  *
- *  - A USER pin (file picker, paperclip, `@file`) is LIVE: it resolves from disk
- *    on every render, because a pin means "this file, kept current". These tests
- *    hold that behaviour down so the freeze below cannot quietly generalise onto
- *    it.
- *  - A SEEDED item (the CLAUDE.md / AGENTS.md a session adds to itself) is
- *    FROZEN: nobody asked for it, so it snapshots once and holds that snapshot
- *    for the life of the conversation. It rides `contextPosition:'prefix'`, so a
- *    live re-read would cold-start the whole conversation every time the agent
- *    edited the very file it is most often asked to edit.
+ *  - A PIN (file picker, paperclip) is LIVE: it resolves from disk on every
+ *    render, because a pin means "this file, kept current". These tests hold
+ *    that behaviour down so the freeze below cannot quietly generalise onto it.
+ *  - A FROZEN item snapshots once and holds that snapshot for the life of the
+ *    conversation. Two things create one: an `@file` mention (the file as it
+ *    stood when the message was sent), and a SEEDED item (the CLAUDE.md /
+ *    AGENTS.md a session adds to itself, which carries `seeded` and implies
+ *    `frozen`). Both ride `contextPosition:'prefix'`, so a live re-read would
+ *    cold-start the whole conversation every time the agent edited the file it
+ *    was handed — which is what it is usually handed it for.
  *
  * The snapshot is taken on the first REQUEST render, not at add-time: a
  * conversation can sit open for an hour before its first send, and what belongs
@@ -234,6 +235,80 @@ export async function runTests(_ctx) {
     assert(!next.includes('rule two'), 'the new bytes do not reach this conversation');
   });
 
+  // ---- @-MENTIONS FREEZE --------------------------------------------------
+
+  await test('a mention snapshots on its first request render and ignores later edits', async () => {
+    const { item, setBody, announced } = makeItem('as mentioned\n');
+    await item.onToolCall('file-content', { path: 'plan.md', frozen: true });
+    assert(item.data.frozen === true, 'frozen flag recorded on the item');
+    assert(item.data.seeded === undefined, 'a mention is not a seeded item');
+    const sent = await item.createContextText(REQUEST);
+    assert(sent.includes('as mentioned'), 'first render carries the file body');
+    assert(item.data.content === sent, 'the stored snapshot is exactly what was sent');
+    assert(announced() === 1, `the snapshot is announced once, got ${announced()}`);
+
+    // The agent rewrites the file it was handed.
+    setBody('rewritten\n');
+    const next = await item.createContextText(REQUEST);
+    assert(next === sent, 'the prefix is byte-identical, so the cache still hits');
+    assert(!next.includes('rewritten'), 'the rewrite does not reach the mention');
+  });
+
+  await test('a frozen mention survives fromJSON', async () => {
+    const { item } = makeItem('as mentioned\n');
+    await item.onToolCall('file-content', { path: 'plan.md', frozen: true });
+    const sent = await item.createContextText(REQUEST);
+
+    const { item: reloaded } = makeItem('rewritten\n');
+    reloaded.fromJSON({
+      id: 'FILE_1',
+      type: 'file-content',
+      data: { path: 'plan.md', isDirectory: false, frozen: true, content: sent },
+    });
+    assert(reloaded.data.content === sent,
+      'a mention\'s snapshot must not be stripped as a legacy field, or it silently turns live');
+    assert(await reloaded.createContextText(REQUEST) === sent,
+      'a reloaded mention still serves its snapshot');
+  });
+
+  await test('a mention never reuses an item already holding the path', async () => {
+    // A second mention of the same file, later on, is the file as it stands at
+    // THAT send — folding it into the earlier snapshot would hand the model the
+    // old bytes a second time. A mention does not borrow a live pin either.
+    const { item: earlier } = makeItem('v1\n');
+    await earlier.onToolCall('file-content', { path: 'plan.md', frozen: true });
+    const { item: pin } = makeItem('v1\n');
+    await pin.onToolCall('file-content', { path: 'plan.md' });
+    assert(FileContentContextItem.mergeOrReplace({ path: 'plan.md', frozen: true }, [earlier]) === null,
+      'a mention must not reuse an earlier mention');
+    assert(FileContentContextItem.mergeOrReplace({ path: 'plan.md', frozen: true }, [pin]) === null,
+      'a mention must not reuse a live pin');
+  });
+
+  await test('a pin reuses a pin, but not a frozen item', async () => {
+    const { item: mention } = makeItem('v1\n');
+    await mention.onToolCall('file-content', { path: 'plan.md', frozen: true });
+    const { item: pin } = makeItem('v1\n');
+    await pin.onToolCall('file-content', { path: 'plan.md' });
+    assert(FileContentContextItem.mergeOrReplace({ path: 'plan.md' }, [mention]) === null,
+      'pinning a file that was mentioned must add a live pin, not adopt the snapshot');
+    const merged = FileContentContextItem.mergeOrReplace({ path: 'plan.md' }, [pin]);
+    assert(merged?.action === 'reuse' && merged.item === pin, 'pinning a pinned file reuses the pin');
+  });
+
+  await test('the panel says a mention was frozen when it was sent', async () => {
+    const { item } = makeItem('as mentioned\n');
+    await item.onToolCall('file-content', { path: 'plan.md', frozen: true });
+    await item.createContextText(REQUEST);
+    const panel = item.createPropertiesPanelElement();
+    document.body.appendChild(panel);
+    await new Promise(r => setTimeout(r, 0));
+    assert(panel.textContent.includes('frozen'), 'the panel states that the mention is frozen');
+    assert(!panel.textContent.includes('start of this conversation'),
+      'and does not describe it as a file the session added to itself');
+    panel.remove();
+  });
+
   // ---- THE PANEL MUST NOT FREEZE ------------------------------------------
 
   await test('a properties-panel render does not take the snapshot', async () => {
@@ -398,7 +473,7 @@ export async function runTests(_ctx) {
       data: { path: 'src/main.go', isDirectory: false, content: 'stale bytes' },
     });
     assert(item.data.content === undefined,
-      'a pin with no seeded flag keeps its bounded path-only footprint');
+      'a pin with no frozen flag keeps its bounded path-only footprint');
     const text = await item.createContextText(REQUEST);
     assert(text.includes('v1'), 'and renders live rather than serving the stale snapshot');
   });
