@@ -31,6 +31,13 @@ export async function runTests() {
   /** @returns {HTMLElement|null} The open about panel, if there is one. */
   const panel = () => /** @type {HTMLElement|null} */ (modal.querySelector('.about-container'));
 
+  // The throw is skipped under reduced motion, which CI desktops commonly ask
+  // for, so the machine's setting is answered as "no" unless a check says otherwise.
+  const realMatchMedia = window.matchMedia;
+  /** @type {any} */ (window).matchMedia = (/** @type {string} */ q) => (q === '(prefers-reduced-motion: reduce)'
+    ? { matches: false, media: q, addEventListener() {}, removeEventListener() {} }
+    : realMatchMedia.call(window, q));
+
   try {
     // --- 1: nothing is shown until something asks for it ---------------------
     assert(!panel(), 'the about box was open before anything opened it');
@@ -138,6 +145,7 @@ export async function runTests() {
     const close = /** @type {HTMLElement|null} */ (modal.querySelector('#about-close'));
     if (close) close.click();
     modal.remove();
+    window.matchMedia = realMatchMedia;
   }
 
   return { passed, failed, errors };
