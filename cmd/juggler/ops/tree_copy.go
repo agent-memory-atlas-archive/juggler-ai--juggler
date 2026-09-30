@@ -122,8 +122,8 @@ func (ops *TreeOperations) copyTree(ctx context.Context, params map[string]any) 
 		if abs == toRoot {
 			return nil, fmt.Errorf("refusing to remove %q: it is the destination itself, not something in it", rel)
 		}
-		if err := os.RemoveAll(abs); err != nil {
-			return nil, fmt.Errorf("could not remove %s: %w", rel, err)
+		if err := removeTree(ctx, abs, rel); err != nil {
+			return nil, err
 		}
 		deleted++
 	}
@@ -282,6 +282,75 @@ func (ops *TreeOperations) compareTrees(ctx context.Context, params map[string]a
 		"removed":   capPaths(removed),
 		"truncated": truncated,
 	}, nil
+}
+
+// removeRetryDelays are the pauses between attempts at a removal that failed,
+// about three quarters of a second in all. Long enough for a process that was
+// just stopped to be gone and for a file manager to finish with a folder it was
+// showing; short enough that a removal which will never succeed says so promptly.
+var removeRetryDelays = []time.Duration{
+	50 * time.Millisecond, 100 * time.Millisecond, 200 * time.Millisecond, 400 * time.Millisecond,
+}
+
+// taskStopGrace is how long a background task running in a tree being removed
+// is given to stop politely before its process group is taken.
+const taskStopGrace = 250 * time.Millisecond
+
+// removeTree deletes abs and everything in it, `rel` being how the caller named
+// it.
+//
+// A removal is only as good as the tree holding still while it runs: RemoveAll
+// empties a directory and then removes it, and one file arriving in between
+// fails the whole thing with "directory not empty". The writer is nearly always
+// something running IN the tree — a dev server or a watch build started in a
+// sandbox — so those are stopped first, which they would need to be anyway:
+// left alone, they run on in a directory that no longer exists. What is left
+// after that is transient, and is ridden out by trying again.
+//
+// A removal that still fails says what it could not remove, because RemoveAll's
+// own error names one directory and not the file in it that identifies whoever
+// kept writing.
+func removeTree(ctx context.Context, abs, rel string) error {
+	stopBackgroundTasksWithin(abs, fmt.Sprintf("Stopped when %s was removed", rel), taskStopGrace)
+
+	err := os.RemoveAll(abs)
+	for _, delay := range removeRetryDelays {
+		if err == nil {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(delay):
+		}
+		err = os.RemoveAll(abs)
+	}
+	if err == nil {
+		return nil
+	}
+	if left := leftIn(abs, 5); len(left) > 0 {
+		return fmt.Errorf("could not remove %s: %w (still there: %s)", rel, err, strings.Join(left, ", "))
+	}
+	return fmt.Errorf("could not remove %s: %w", rel, err)
+}
+
+// leftIn lists up to limit of the files a failed removal left behind, relative
+// to the directory it was removing and slash-separated.
+func leftIn(dir string, limit int) []string {
+	var left []string
+	_ = filepath.WalkDir(dir, func(abs string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		if rel, relErr := filepath.Rel(dir, abs); relErr == nil {
+			left = append(left, filepath.ToSlash(rel))
+		}
+		if len(left) >= limit {
+			return fs.SkipAll
+		}
+		return nil
+	})
+	return left
 }
 
 // resolveEnds reads the two ends of a copy or a comparison, each contained

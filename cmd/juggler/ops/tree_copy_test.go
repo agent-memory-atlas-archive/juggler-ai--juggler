@@ -6,10 +6,12 @@ package ops
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -281,6 +283,135 @@ func TestCopyTreeDeletesWithoutCopying(t *testing.T) {
 
 	if _, err := ops.Execute(context.Background(), "copy", map[string]any{"to": "."}); err == nil {
 		t.Fatal("a copy with nothing to copy and nothing to delete was accepted")
+	}
+}
+
+// startWritingTask spawns a background task rooted at dir that creates files in
+// it for as long as it runs — a dev server or a watch build, as far as a removal
+// can tell — and waits until it is up.
+func startWritingTask(t *testing.T, dir string) string {
+	t.Helper()
+	res, err := NewShellOperations(NewPathScope(dir, nil)).startBackground(map[string]any{
+		"command": `echo ready; i=0; while :; do i=$((i+1)); true > "w$i" 2>/dev/null || sleep 0.05; done`,
+		"conv_id": "conv-sandbox",
+	})
+	if err != nil {
+		t.Fatalf("startBackground failed: %v", err)
+	}
+	id, _ := res.(map[string]any)["task_id"].(string)
+	if id == "" {
+		t.Fatalf("startBackground returned no task_id: %+v", res)
+	}
+	t.Cleanup(func() { KillTask(id) })
+	waitForOutput(t, id, "ready", 5*time.Second)
+	return id
+}
+
+// TestCopyTreeDeletionStopsTasksRunningInIt asserts that removing a tree stops
+// the background tasks running in it first. A task started in a sandbox keeps
+// writing there while the removal runs, so a removal that leaves it alone fails
+// with "directory not empty" — and a removal that succeeded would leave it
+// running in a directory that no longer exists.
+func TestCopyTreeDeletionStopsTasksRunningInIt(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX-only shell command")
+	}
+	root := t.TempDir()
+	doomed := filepath.Join(root, "sandboxes", "try-it", "work")
+	if err := os.MkdirAll(doomed, 0o755); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	writer := startWritingTask(t, doomed)
+	// The project's own task stands above the tree being removed, not in it.
+	spared := startTestTask(t, root, "conv-project")
+
+	ops := NewTreeOperations(NewPathScope(root, nil))
+	if _, err := ops.Execute(context.Background(), "copy", map[string]any{
+		"to":     ".",
+		"delete": []any{"sandboxes/try-it"},
+	}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "sandboxes", "try-it")); !os.IsNotExist(err) {
+		t.Fatalf("the directory is still there: %v", err)
+	}
+	if s := TaskState(writer); s.Status != "failed" {
+		t.Fatalf("the task running in the removed tree is %q, want it stopped", s.Status)
+	} else if !strings.Contains(s.Error, "sandboxes/try-it") {
+		t.Fatalf("the stop reason should name what was removed, got %q", s.Error)
+	}
+	if s := TaskState(spared); s.Status != "running" {
+		t.Fatalf("a task outside the removed tree must keep running, got %q", s.Status)
+	}
+}
+
+// TestCopyTreeDeletionOutlastsABriefWriter asserts that a removal rides out a
+// writer that stops on its own a moment later — the last write of a process
+// that is exiting, or a file manager dropping its metadata in a folder it was
+// showing — rather than failing on the first entry that arrived mid-removal.
+func TestCopyTreeDeletionOutlastsABriefWriter(t *testing.T) {
+	root := t.TempDir()
+	doomed := filepath.Join(root, "sandboxes", "try-it")
+	if err := os.MkdirAll(doomed, 0o755); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	stopAt := time.Now().Add(150 * time.Millisecond)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; time.Now().Before(stopAt); i++ {
+			_ = os.WriteFile(filepath.Join(doomed, fmt.Sprintf("late-%d", i)), nil, 0o644)
+		}
+	}()
+	t.Cleanup(func() { <-done })
+
+	ops := NewTreeOperations(NewPathScope(root, nil))
+	if _, err := ops.Execute(context.Background(), "copy", map[string]any{
+		"to":     ".",
+		"delete": []any{"sandboxes/try-it"},
+	}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	<-done
+	if _, err := os.Stat(doomed); !os.IsNotExist(err) {
+		t.Fatalf("the directory is still there: %v", err)
+	}
+}
+
+// TestCopyTreeDeletionNamesWhatWouldNotGo asserts that a removal that cannot
+// finish says what was still there. The error the removal itself gives names
+// one path, which for a tree that kept being written to is only the directory
+// that was not empty — not what was in it, which is what identifies the writer.
+func TestCopyTreeDeletionNamesWhatWouldNotGo(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("directory permissions do not stop a removal on Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root removes from a read-only directory")
+	}
+	root := t.TempDir()
+	locked := filepath.Join(root, "sandboxes", "try-it", "locked")
+	if err := os.MkdirAll(locked, 0o755); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(locked, "stubborn"), nil, 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if err := os.Chmod(locked, 0o555); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+
+	ops := NewTreeOperations(NewPathScope(root, nil))
+	_, err := ops.Execute(context.Background(), "copy", map[string]any{
+		"to":     ".",
+		"delete": []any{"sandboxes/try-it"},
+	})
+	if err == nil {
+		t.Fatal("a removal that could not remove everything reported success")
+	}
+	if !strings.Contains(err.Error(), "still there: locked/stubborn") {
+		t.Fatalf("the error should name what was left, got %q", err)
 	}
 }
 

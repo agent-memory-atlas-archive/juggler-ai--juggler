@@ -81,8 +81,22 @@ func TaskState(taskID string) TaskSnapshot {
 // Blocks for at most grace between the polite signal and taking the process
 // group, so a caller on the shutdown path pays a bounded, known cost.
 func StopBackgroundTasks(projectRoot, reason string, grace time.Duration) int {
+	return stopMatchingTasks(registryOp{projectRoot: projectRoot}, reason, grace)
+}
+
+// stopBackgroundTasksWithin stops every running background task rooted at dir or
+// anywhere under it — the third moment a task's handle stops being useful, when
+// the directory it runs in is about to be deleted. dir must be symlink-resolved.
+func stopBackgroundTasksWithin(dir, reason string, grace time.Duration) int {
+	return stopMatchingTasks(registryOp{projectRoot: dir, within: true}, reason, grace)
+}
+
+// stopMatchingTasks is both stops: the registry signals whatever the op matches,
+// and the escalation happens here, off the registry goroutine.
+func stopMatchingTasks(op registryOp, reason string, grace time.Duration) int {
 	resp := make(chan registryResp, 1)
-	registryCh <- registryOp{kind: regKillMatching, projectRoot: projectRoot, errMsg: reason, resp: resp}
+	op.kind, op.errMsg, op.resp = regKillMatching, reason, resp
+	registryCh <- op
 	result := <-resp
 	stopping := result.stopping
 	if len(stopping) == 0 {

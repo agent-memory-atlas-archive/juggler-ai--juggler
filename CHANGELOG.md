@@ -16,6 +16,7 @@ of changes; this project follows semantic versioning.
 - Shift+Page Up and Shift+Page Down move the current conversation up or down the list
 - A failed rename to a name containing "409" or "400" now reports the real error
 - Long sub-thread answers are trimmed according to the caller's context window, not a fixed 24k characters
+- Deleting a sandbox stops tasks running in it, fixing "directory not empty" errors
 
 ## [0.7.2] - 2026-09-28
 

@@ -7,6 +7,7 @@ package ops
 import (
 	"context"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -109,7 +110,10 @@ type registryOp struct {
 	shell       *BackgroundShell
 	convID      string
 	projectRoot string
-	observer    BackgroundTaskObserver
+	// within widens regKillMatching from the tasks rooted at projectRoot to every
+	// task rooted anywhere under it.
+	within   bool
+	observer BackgroundTaskObserver
 	// updateCmd/updateStatus fields
 	cmd      *exec.Cmd
 	status   string
@@ -214,8 +218,9 @@ func runShellRegistry() {
 			op.resp <- registryResp{shells: result}
 
 		case regKillMatching:
-			// Stop every running task under a project, or under all of them when
-			// no root is named. The records stay in the map: a task that was
+			// Stop every running task under a project — or rooted anywhere below a
+			// directory, when `within` is set — or under all of them when no root
+			// is named. The records stay in the map: a task that was
 			// stopped is a task that ended, and its terminal state is what the
 			// snapshot observer and any later read should see.
 			var stopping []stoppingTask
@@ -224,7 +229,13 @@ func runShellRegistry() {
 				if shell.status != "running" {
 					continue
 				}
-				if op.projectRoot != "" && !sameProject(shell.ProjectRoot, op.projectRoot) {
+				switch {
+				case op.projectRoot == "":
+				case op.within:
+					if !rootedWithin(shell.ProjectRoot, op.projectRoot) {
+						continue
+					}
+				case !sameProject(shell.ProjectRoot, op.projectRoot):
 					continue
 				}
 				// A task registered a moment ago may not have reached cmd.Start
@@ -512,4 +523,22 @@ func sameProject(a, b string) bool {
 		return p
 	}
 	return trim(a) == trim(b)
+}
+
+// rootedWithin reports whether a task's root is dir or somewhere under it. dir
+// arrives symlink-resolved (it is what a removal is about to delete), and the
+// task's root is resolved here to match: a scope root is stored as given, and on
+// macOS the same temp directory is both /var/… and /private/var/….
+func rootedWithin(taskRoot, dir string) bool {
+	if taskRoot == "" {
+		return false
+	}
+	if real, err := filepath.EvalSymlinks(taskRoot); err == nil {
+		taskRoot = real
+	}
+	rel, err := filepath.Rel(dir, taskRoot)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
