@@ -24,6 +24,7 @@
 
 import Session from '../../js/model/session.js';
 import apiService from '../../js/services/api.js';
+import { apiUrl } from '../../js/utils/api-url.js';
 
 /**
  * Stable per-lane id for the test pool. Lazily generated once per page
@@ -188,7 +189,7 @@ async function reconcileServerOwnedConversations(reason) {
   /** @type {any} */ const owned = /** @type {any} */ (window).__ownConversationIds;
   const mine = laneId();
   try {
-    const resp = await fetch('/api/test/conversation-owners');
+    const resp = await fetch(apiUrl('/test/conversation-owners'));
     if (!resp.ok) return;
     const body = await resp.json();
     const owners = body?.owners ?? {};

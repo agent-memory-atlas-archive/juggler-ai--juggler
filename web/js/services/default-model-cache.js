@@ -21,6 +21,7 @@
  */
 
 import { fetchJson } from './http.js';
+import { apiUrl } from '../utils/api-url.js';
 
 /** @typedef {{ provider: string, model: string, thinking?: string, serviceTier?: string, explicit: boolean }} DefaultModel */
 
@@ -68,7 +69,7 @@ const defaultModelCache = {
 
     _inFlight = (async () => {
       try {
-        const data = await fetchJson('/api/default-model', { fallback: null });
+        const data = await fetchJson(apiUrl('/default-model'), { fallback: null });
         if (data && typeof data.provider === 'string') {
           _cache = {
             provider: data.provider,

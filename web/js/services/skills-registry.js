@@ -23,6 +23,7 @@
  */
 
 import { fetchJson, HttpError } from './http.js';
+import { apiUrl } from '../utils/api-url.js';
 
 /**
  * @typedef {object} CatalogInstalled
@@ -87,7 +88,7 @@ export async function fetchCatalog({ force = false, refresh = false } = {}) {
   if (cachedCatalog && !force && !refresh) {
     return cachedCatalog;
   }
-  const url = refresh ? '/api/skills/catalog?refresh=1' : '/api/skills/catalog';
+  const url = refresh ? apiUrl('/skills/catalog?refresh=1') : apiUrl('/skills/catalog');
   const data = await fetchJson(url, { errorPrefix: 'Failed to load skill catalog' });
   cachedCatalog = {
     entries: Array.isArray(data?.entries) ? data.entries : [],
@@ -108,7 +109,7 @@ export function resetCatalogCache() {
  * @returns {Promise<{ entry: CatalogEntry, body: string, files: Array<{path:string,size:number,runs:boolean}> }>} The entry, its SKILL.md body, and file manifest.
  */
 export async function fetchCatalogEntry(source, path) {
-  const url = `/api/skills/catalog/entry?source=${encodeURIComponent(source)}&path=${encodeURIComponent(path)}`;
+  const url = apiUrl(`/skills/catalog/entry?source=${encodeURIComponent(source)}&path=${encodeURIComponent(path)}`);
   return await fetchJson(url, { errorPrefix: 'Failed to load skill preview' });
 }
 
@@ -128,7 +129,7 @@ export async function fetchCatalogEntry(source, path) {
 export async function installSkill(req) {
   let result;
   try {
-    result = await fetchJson('/api/skills/install', {
+    result = await fetchJson(apiUrl('/skills/install'), {
       method: 'POST',
       body: { mode: 'install', ...req },
       errorPrefix: 'Install failed',
@@ -158,7 +159,7 @@ export async function installSkill(req) {
  * @returns {Promise<void>} Resolves once removed.
  */
 export async function uninstallSkill(scope, source, name) {
-  const url = `/api/skills/${encodeURIComponent(scope)}/${encodeURIComponent(source)}/${encodeURIComponent(name)}`;
+  const url = apiUrl(`/skills/${encodeURIComponent(scope)}/${encodeURIComponent(source)}/${encodeURIComponent(name)}`);
   await fetchJson(url, { method: 'DELETE', errorPrefix: 'Uninstall failed' });
   resetCatalogCache();
 }
@@ -170,7 +171,7 @@ export async function uninstallSkill(scope, source, name) {
  * @returns {Promise<CatalogSourceStatus>} The added source status.
  */
 export async function addSource(url, label) {
-  const source = await fetchJson('/api/skills/registries', {
+  const source = await fetchJson(apiUrl('/skills/registries'), {
     method: 'POST',
     body: { url, label },
     errorPrefix: 'Could not add source',
@@ -185,7 +186,7 @@ export async function addSource(url, label) {
  * @returns {Promise<Array<{id:string,label:string,repo:string,trust:string}>>} The default sources.
  */
 export async function fetchDefaultSources() {
-  return await fetchJson('/api/skills/registries/defaults', {
+  return await fetchJson(apiUrl('/skills/registries/defaults'), {
     errorPrefix: 'Could not load default sources',
   });
 }
@@ -197,7 +198,7 @@ export async function fetchDefaultSources() {
  * @returns {Promise<{id:string,label:string,repo:string,trust:string}>} The restored source.
  */
 export async function restoreDefaultSource(id) {
-  const source = await fetchJson(`/api/skills/registries/defaults/${encodeURIComponent(id)}`, {
+  const source = await fetchJson(apiUrl(`/skills/registries/defaults/${encodeURIComponent(id)}`), {
     method: 'POST',
     errorPrefix: 'Could not add source',
   });
@@ -212,7 +213,7 @@ export async function restoreDefaultSource(id) {
  * @returns {Promise<void>} Resolves once removed.
  */
 export async function removeSource(id) {
-  await fetchJson(`/api/skills/registries/${encodeURIComponent(id)}`, {
+  await fetchJson(apiUrl(`/skills/registries/${encodeURIComponent(id)}`), {
     method: 'DELETE',
     errorPrefix: 'Could not remove source',
   });

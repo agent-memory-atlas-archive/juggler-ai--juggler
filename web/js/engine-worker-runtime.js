@@ -17,10 +17,11 @@
  */
 
 import { createSandboxBridge } from './engine-worker-sandbox.js';
+import { apiUrl, isApiUrl } from './utils/api-url.js';
 
 // Mark this global BEFORE the engine graph loads so client-role.isEngine() makes
 // the real wsService connect as role=engine from inside the worker. The import
-// above is a leaf module with no bare specifiers and no load-time side effects,
+// above are leaf modules with no bare specifiers and no load-time side effects,
 // so hoisting it ahead of this assignment changes nothing; the engine graph
 // itself still loads through the /worker-module loader below, which is what
 // resolves its `juggler/*` specifiers.
@@ -33,7 +34,7 @@ globalThis.JUGGLER_ENGINE = true;
  * @param {Record<string, any>} [payload]
  */
 function report(event, payload) {
-  fetch('/api/client/report', {
+  fetch(apiUrl('/client/report'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ event, ...payload })
@@ -86,18 +87,11 @@ self.addEventListener('error', (event) => {
 function installAPITokenFetchShim(token) {
   if (!token || typeof globalThis.fetch !== 'function') return;
   const origFetch = globalThis.fetch.bind(globalThis);
-  const origin = globalThis.location?.origin || '';
-  /**
-   * @param {string} u
-   * @returns {boolean} True when the URL targets the same-origin /api surface.
-   */
-  const isApi = (u) => typeof u === 'string' &&
-    (u.startsWith('/api/') || Boolean(origin && u.startsWith(origin + '/api/')));
   globalThis.fetch = (input, init) => {
     try {
       const inputAny = /** @type {any} */ (input);
       const url = typeof input === 'string' ? input : (inputAny && inputAny.url) || '';
-      if (isApi(url)) {
+      if (typeof url === 'string' && isApiUrl(url)) {
         init = { ...(init || {}) };
         const headers = new globalThis.Headers(
           init.headers ||
@@ -134,6 +128,7 @@ self.onmessage = (event) => {
 
   if (data.type !== 'start') return;
   /** @type {any} */ (globalThis).__assetPrefix = data.assetPrefix || '';
+  /** @type {any} */ (globalThis).__jugglerBase = data.apiBase || '';
   /** @type {any} */ (globalThis).__jugglerToken = data.apiToken || '';
   installAPITokenFetchShim(/** @type {any} */ (globalThis).__jugglerToken);
 

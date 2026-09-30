@@ -34,6 +34,7 @@ import {
 } from '../../services/ops-api.js';
 import { ConfigTabController, makeNameValidator } from '../config-tab.js';
 import { isMcpExtensionDisabled, MCP_DISABLED_NOTICE } from '../../services/mcp-availability.js';
+import { apiUrl } from '../../utils/api-url.js';
 
 /** Polling interval (ms) for refreshing the MCP servers tab while it's open. */
 const MCP_POLL_MS = 2000;
@@ -324,7 +325,7 @@ export function acpDotClass(status) {
  */
 async function ensureAcpProviderEnabled() {
   try {
-    await fetchJson('/api/config/provider-enabled', {
+    await fetchJson(apiUrl('/config/provider-enabled'), {
       method: 'POST',
       body: { provider: 'acp', enabled: true },
     });

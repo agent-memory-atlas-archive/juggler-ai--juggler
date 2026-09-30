@@ -28,6 +28,7 @@ import { askForMoreTime, resetPatience, patienceGranted, whyGivingUp } from './t
 import { fetchProjectSize, projectSizeLines } from './project-size.js';
 import { fetchMachineLoad, measureTimerGrid, machineLoadLines } from './machine-load.js';
 import { lastConfirmGiveUp } from './ui-operation-executor.js';
+import { apiUrl } from '../../js/utils/api-url.js';
 
 /**
  * Race a promise against a timeout so a wedged/slow server can never hang the
@@ -514,7 +515,7 @@ async function _fetchWorkerTape(convId) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 1500);
   try {
-    const resp = await fetch(`/api/test/dump-tape?convId=${encodeURIComponent(convId)}`, { signal: ctrl.signal });
+    const resp = await fetch(apiUrl(`/test/dump-tape?convId=${encodeURIComponent(convId)}`), { signal: ctrl.signal });
     if (!resp.ok) return [];
     const body = await resp.json();
     return Array.isArray(body?.entries) ? body.entries : [];
@@ -844,7 +845,7 @@ export async function runIntegrationTest(testDef, ctx) {
   // per-test would delete other tests' in-flight files. In single-window
   // mode this is unchanged.
   if (!window.parent || window.parent === window) {
-    const resetUrl = `/api/test/reset-fixture?fixture=${encodeURIComponent(testDef.fixture)}&dir=${encodeURIComponent(ctx.fixtureDir)}`;
+    const resetUrl = apiUrl(`/test/reset-fixture?fixture=${encodeURIComponent(testDef.fixture)}&dir=${encodeURIComponent(ctx.fixtureDir)}`);
     logger.info(`Resetting fixture for ${testDef.name}`);
     const resetResp = await fetch(resetUrl, { method: 'POST' });
     if (!resetResp.ok) {
@@ -856,7 +857,7 @@ export async function runIntegrationTest(testDef, ctx) {
 
   // Create the per-test sandbox dir. mkdir -p semantics; idempotent.
   if (ctx.fixtureDir) {
-    const mkUrl = `/api/test/mkdir?dir=${encodeURIComponent(ctx.fixtureDir)}&path=${encodeURIComponent(testDir)}`;
+    const mkUrl = apiUrl(`/test/mkdir?dir=${encodeURIComponent(ctx.fixtureDir)}&path=${encodeURIComponent(testDir)}`);
     const mkResp = await fetch(mkUrl, { method: 'POST' });
     if (!mkResp.ok) {
       const errText = await mkResp.text();
@@ -1005,7 +1006,7 @@ export async function runIntegrationTest(testDef, ctx) {
     // guarded by /api/test/delete-file (uses os.RemoveAll). This is the
     // catch-all for tests using the testDir convention.
     if (ctx.fixtureDir) {
-      const url = `/api/test/delete-file?dir=${encodeURIComponent(ctx.fixtureDir)}&path=${encodeURIComponent(testDir)}`;
+      const url = apiUrl(`/test/delete-file?dir=${encodeURIComponent(ctx.fixtureDir)}&path=${encodeURIComponent(testDir)}`);
       await _withDeadline(
         fetch(url, { method: 'POST' }),
         3000,
@@ -1024,7 +1025,7 @@ export async function runIntegrationTest(testDef, ctx) {
       await _withDeadline(
         Promise.allSettled(
           Object.keys(testDef.setupFiles).map((/** @type {string} */ path) => {
-            const url = `/api/test/delete-file?dir=${encodeURIComponent(ctx.fixtureDir)}&path=${encodeURIComponent(path)}`;
+            const url = apiUrl(`/test/delete-file?dir=${encodeURIComponent(ctx.fixtureDir)}&path=${encodeURIComponent(path)}`);
             return fetch(url, { method: 'POST' });
           })
         ),

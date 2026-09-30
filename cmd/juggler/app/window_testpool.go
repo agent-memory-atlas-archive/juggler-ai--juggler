@@ -235,7 +235,7 @@ func (a *windowApp) persistNow() {
 // own goroutine (HandleWindowEvent), so calling app.Quit() inline would race
 // Wails' own built-in window-destroy listener for the same event. Routing
 // through done makes a single goroutine own persist+quit.
-func runTestPoolWindowApp(srv *server.Server, devMode bool, headless bool, testIframes int, done <-chan struct{}, teardownDone <-chan struct{}, requestQuit func(), onWindowReady func(*application.App, *application.WebviewWindow)) {
+func runTestPoolWindowApp(srv *server.Server, devMode bool, headless bool, testIframes int, testWindowURL string, done <-chan struct{}, teardownDone <-chan struct{}, requestQuit func(), onWindowReady func(*application.App, *application.WebviewWindow)) {
 	// testMode is always true on this path (the dispatcher only routes here in
 	// test mode); kept as a local so the shared windowApp logic reads
 	// consistently.
@@ -364,9 +364,14 @@ func runTestPoolWindowApp(srv *server.Server, devMode bool, headless bool, testI
 	//  - --test --test-iframes=N: the tiled iframe pool host
 	//  - --test (no iframes): the production app, which sees
 	//    JUGGLER_TEST_MODE=true and self-redirects to /headless-test
+	//  - --test --test-window-url=U: U — the production app served from
+	//    elsewhere, e.g. this server's session behind a machine server's proxy
 	mainURL := "http://" + srv.GetAddr() + "/?window=1"
 	if headless && testMode && testIframes > 1 {
 		mainURL = fmt.Sprintf("http://%s/test-pool?n=%d", srv.GetAddr(), testIframes)
+	}
+	if testWindowURL != "" {
+		mainURL = testWindowURL
 	}
 	// Production wants the frameless / draggable title bar; the test-iframe
 	// host window is just a visible WebKit surface — let it have a normal

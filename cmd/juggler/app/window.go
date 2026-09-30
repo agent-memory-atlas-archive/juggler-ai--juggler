@@ -47,9 +47,9 @@ const (
 // native quit; requestQuit triggers the single serialized shutdown path;
 // onWindowReady hands the caller the *App (and main window, when there is one)
 // once launched.
-func runWindowApp(srv *server.Server, devMode bool, headless bool, testMode bool, testIframes int, selected selectedEngineHost, done <-chan struct{}, teardownDone <-chan struct{}, requestQuit func(), onWindowReady func(*application.App, *application.WebviewWindow)) {
+func runWindowApp(srv *server.Server, devMode bool, headless bool, testMode bool, testIframes int, testWindowURL string, selected selectedEngineHost, done <-chan struct{}, teardownDone <-chan struct{}, requestQuit func(), onWindowReady func(*application.App, *application.WebviewWindow)) {
 	if testMode {
-		runTestPoolWindowApp(srv, devMode, headless, testIframes, done, teardownDone, requestQuit, onWindowReady)
+		runTestPoolWindowApp(srv, devMode, headless, testIframes, testWindowURL, done, teardownDone, requestQuit, onWindowReady)
 		return
 	}
 	runHeadlessServerApp(srv, selected, done, teardownDone, requestQuit, onWindowReady)

@@ -38,6 +38,7 @@ import wsService from './websocket.js';
 import { fetchJson } from './http.js';
 import { applyPinboardOperations } from './pinboard-operations-api.js';
 import { boardId } from '../utils/view-mode.js';
+import { apiUrl } from '../utils/api-url.js';
 
 /**
  * One pin: a configured instance of a pinboard item type.
@@ -210,7 +211,7 @@ const pinboardStore = {
    * @returns {Promise<Pin[]>} The pins, in board order.
    */
   async load() {
-    const data = await fetchJson(`/api/session/pinboard?board=${encodeURIComponent(boardId())}`, {
+    const data = await fetchJson(apiUrl(`/session/pinboard?board=${encodeURIComponent(boardId())}`), {
       errorPrefix: '[Pinboard] Failed to load the pinboard',
     });
     const pins = sanitize(data?.pins);
@@ -264,7 +265,7 @@ const pinboardStore = {
    * @returns {Promise<boolean>} True when this viewer should furnish the board.
    */
   async claimSeed() {
-    const data = await fetchJson(`/api/session/pinboard/seed?board=${encodeURIComponent(boardId())}`, {
+    const data = await fetchJson(apiUrl(`/session/pinboard/seed?board=${encodeURIComponent(boardId())}`), {
       method: 'POST',
       errorPrefix: '[Pinboard] Could not ask whether to furnish the board',
     });
@@ -350,7 +351,7 @@ const pinboardStore = {
    * @returns {Promise<void>} Resolves once the server has it.
    */
   async createBoard(boardID, conversationId, pins) {
-    await fetchJson('/api/session/pinboard/boards', {
+    await fetchJson(apiUrl('/session/pinboard/boards'), {
       method: 'POST',
       body: { id: boardID, conversation: conversationId, pins },
       errorPrefix: '[Pinboard] Could not record the board',
@@ -364,7 +365,7 @@ const pinboardStore = {
    * @returns {Promise<void>} Resolves once it is gone.
    */
   async deleteBoard(boardID) {
-    await fetchJson(`/api/session/pinboard/boards?board=${encodeURIComponent(boardID)}`, {
+    await fetchJson(apiUrl(`/session/pinboard/boards?board=${encodeURIComponent(boardID)}`), {
       method: 'DELETE',
       errorPrefix: '[Pinboard] Could not forget the board',
     });
@@ -380,7 +381,7 @@ const pinboardStore = {
    * @returns {Promise<Array<{id: string, conversation: string, pins: Pin[]}>>} The boards to reopen.
    */
   async claimDetachedBoards() {
-    const data = await fetchJson('/api/session/pinboard/boards/restore', {
+    const data = await fetchJson(apiUrl('/session/pinboard/boards/restore'), {
       method: 'POST',
       errorPrefix: '[Pinboard] Could not ask which boards were open',
     });

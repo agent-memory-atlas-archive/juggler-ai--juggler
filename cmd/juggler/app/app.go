@@ -28,6 +28,7 @@ type appFlags struct {
 	portSet        bool                // true if --port was passed (allows --port 0 = OS-assigned)
 	testMode       bool                // --test enables test API routes and prints JUGGLER_ADDR
 	testIframes    int                 // --test-iframes N: open viewer at /test-pool?n=N (tiled iframe lanes)
+	testWindowURL  string              // --test-window-url: the page the test window loads, in place of this server's own (a machine server's proxy for its test children)
 	public         bool                // --public: open LAN access on startup
 	publicSet      bool                // true if --public was passed (an explicit value overrides the direct-terminal LAN default)
 	startupWAN     []server.TunnelMode // WAN tunnel modes whose startup flag was passed, in registration order (flags are registered per tunnel-mode spec)

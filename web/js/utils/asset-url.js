@@ -11,6 +11,8 @@
  * @module utils/asset-url
  */
 
+import { serverPath } from './api-url.js';
+
 /** URL prefixes whose files are served straight from disk (no cache-busting). */
 const DISK_SERVED_PREFIXES = ['/user-extensions/'];
 
@@ -24,16 +26,18 @@ export function isDiskServedPath(url) {
 }
 
 /**
- * Resolve a server-relative module URL to a fetchable one, applying the
- * versioned asset prefix to embedded builtin paths (cache busting) while
- * leaving disk-served and already-absolute paths untouched.
+ * Resolve a server-relative module URL to a fetchable one: embedded builtin
+ * paths take the versioned asset prefix (cache busting, and already under the
+ * page's base path), disk-served paths take the base path alone, and
+ * already-absolute URLs are left untouched.
  * @param {string} url - Server-relative module URL (e.g. '/extensions/x/y.js')
  * @returns {string} The resolved URL to import/fetch
  */
 export function resolveAssetUrl(url) {
+  if (!url.startsWith('/')) return url;
+  if (isDiskServedPath(url)) return serverPath(url);
   const assetPrefix = /** @type {any} */ (globalThis).__assetPrefix;
-  const needsPrefix = assetPrefix && url.startsWith('/') && !isDiskServedPath(url);
-  return needsPrefix ? assetPrefix + url : url;
+  return assetPrefix ? assetPrefix + url : url;
 }
 
 /**
@@ -49,6 +53,9 @@ export function resolveAssetUrl(url) {
  */
 export function importModuleUrl(resolvedUrl) {
   if (typeof document === 'undefined') {
+    // No base path: only the engine worker has no document, and the engine's
+    // hidden webview loads /engine from its own server directly, never through
+    // a proxy that mounts it under one.
     return import(/* @vite-ignore */ `/worker-module?url=${encodeURIComponent(resolvedUrl)}`);
   }
   return import(/* @vite-ignore */ resolvedUrl);

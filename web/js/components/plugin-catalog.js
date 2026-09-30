@@ -21,6 +21,7 @@ import { addFilePath } from '../utils/properties-panel-helpers.js';
 import JugglerElement from './juggler-element.js';
 import { renderMarkdown, looksLikeMarkdown } from '../../sdk/lib/markdown.js';
 import { ExtensionSettingsEditor } from './settings/extensions-settings.js';
+import { apiUrl } from '../utils/api-url.js';
 
 /**
  * @typedef {object} CapCard
@@ -531,7 +532,7 @@ class PluginCatalog extends JugglerElement {
    * @returns {Promise<void>}
    */
   async _persist(disabledList, attribution = {}) {
-    await fetchJson('/api/config/plugins', {
+    await fetchJson(apiUrl('/config/plugins'), {
       method: 'PUT',
       body: { disabled: disabledList, attribution },
       errorPrefix: 'Failed to save extension config',
@@ -544,7 +545,7 @@ class PluginCatalog extends JugglerElement {
    * @returns {Promise<{active: boolean, conversationIds: string[]}>} Active flag and active conversation IDs
    */
   async _fetchActiveHealth() {
-    const data = await fetchJson('/api/health/active', { fallback: null });
+    const data = await fetchJson(apiUrl('/health/active'), { fallback: null });
     if (!data) return { active: false, conversationIds: [] };
     return {
       active: !!data.active,
@@ -737,7 +738,7 @@ class PluginCatalog extends JugglerElement {
     // would race the broadcast and swallow the very refresh this asked for.
     button.disabled = true;
     try {
-      await fetchJson('/api/extensions/reload', { method: 'POST' });
+      await fetchJson(apiUrl('/extensions/reload'), { method: 'POST' });
     } catch (err) {
       showNotice(`Couldn't reload extensions. ${httpErrorText(err)}`);
     } finally {

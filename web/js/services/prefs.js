@@ -59,6 +59,7 @@ import { fetchJson } from './http.js';
 import wsService from './websocket.js';
 import { windowRole, WINDOW_ROLE_MAIN } from '../utils/view-mode.js';
 import { isDesktopWindow } from '../../sdk/lib/window-control.js';
+import { apiUrl } from '../utils/api-url.js';
 
 /**
  * How long a write waits for its neighbours before going to the server.
@@ -84,15 +85,15 @@ const WRITE_DELAY_MS = 300;
  */
 const REALMS = {
   window: {
-    url: () => `/api/session/ui-prefs?role=${encodeURIComponent(windowRole())}`,
+    url: () => apiUrl(`/session/ui-prefs?role=${encodeURIComponent(windowRole())}`),
     key: (name) => scopedKey(name),
   },
   project: {
-    url: () => '/api/session/ui-prefs?scope=project',
+    url: () => apiUrl('/session/ui-prefs?scope=project'),
     key: (name) => (projectKey() ? `${name}:${projectKey()}` : name),
   },
   user: {
-    url: () => '/api/settings',
+    url: () => apiUrl('/settings'),
     key: (name) => name,
   },
 };

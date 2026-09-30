@@ -1,0 +1,411 @@
+//     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+//     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+//   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+
+package integration_test
+
+import (
+	"encoding/json"
+	"io"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/gorilla/websocket"
+
+	"juggler/cmd/juggler/machineserver"
+	"juggler/cmd/juggler/server"
+	"juggler/internal/apipaths"
+)
+
+// TestMachineServerSessionLifecycle drives one session through the control
+// API: a first open spawns a child, a second open for the same project reuses
+// it, the list shows it running, and a stop takes the child down and drops the
+// record. It also checks the harness's isolation — the server's discovery file
+// is under the temporary HOME, naming the address it printed.
+func TestMachineServerSessionLifecycle(t *testing.T) {
+	ms, stop := startMachineServer(t)
+	defer stop()
+
+	var info machineserver.ServerInfo
+	raw, err := os.ReadFile(filepath.Join(ms.Home, ".juggler", "server.json"))
+	if err != nil {
+		t.Fatalf("server.json under the temporary HOME: %v", err)
+	}
+	if err := json.Unmarshal(raw, &info); err != nil {
+		t.Fatalf("decode server.json %s: %v", raw, err)
+	}
+	if info.Addr != ms.Addr || info.PID != ms.cmd.Process.Pid {
+		t.Fatalf("server.json = %+v, want addr %s pid %d", info, ms.Addr, ms.cmd.Process.Pid)
+	}
+
+	project := newProjectDir(t)
+	first := ms.openSession(project, http.StatusCreated)
+	if first.State != machineserver.SessionRunning || first.PID == 0 || first.Addr == "" {
+		t.Fatalf("spawned session = %+v, want running with a pid and an address", first)
+	}
+	if first.Project != project {
+		t.Fatalf("session project = %q, want %q", first.Project, project)
+	}
+
+	again := ms.openSession(project, http.StatusOK)
+	if again.ID != first.ID || again.PID != first.PID {
+		t.Fatalf("second open = %+v, want the running session %s (pid %d) reused", again, first.ID, first.PID)
+	}
+
+	list := ms.mustListSessions()
+	if len(list) != 1 || list[0].ID != first.ID || list[0].State != machineserver.SessionRunning {
+		t.Fatalf("sessions = %+v, want exactly %s running", list, first.ID)
+	}
+
+	resp, err := ms.do(http.MethodDelete, "/api/server/sessions/"+first.ID, nil)
+	if err != nil {
+		t.Fatalf("DELETE session: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("DELETE session: status %d, want 204", resp.StatusCode)
+	}
+	if list := ms.mustListSessions(); len(list) != 0 {
+		t.Fatalf("sessions after stop = %+v, want none", list)
+	}
+	// The stop returns once the child has exited, so its port is closed now.
+	if dialable(first.Addr) {
+		t.Fatalf("stopped child at %s still accepts connections", first.Addr)
+	}
+	resp, err = ms.do(http.MethodGet, "/s/"+first.ID+"/api/health", nil)
+	if err != nil {
+		t.Fatalf("GET through a stopped session: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("proxy to a stopped session: status %d, want 404", resp.StatusCode)
+	}
+}
+
+// TestMachineServerProxiesHTTP proves /s/<id>/ reaches the session's own
+// child: the instance it answers for is that child's pid and project. A bare
+// /s/<id> redirects to the prefixed root.
+func TestMachineServerProxiesHTTP(t *testing.T) {
+	ms, stop := startMachineServer(t)
+	defer stop()
+
+	project := newProjectDir(t)
+	sess := ms.openSession(project, http.StatusCreated)
+
+	resp, err := ms.do(http.MethodGet, "/s/"+sess.ID+"/api/health/instance", nil)
+	if err != nil {
+		t.Fatalf("proxied GET: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("proxied GET /api/health/instance: status %d, body %s", resp.StatusCode, body)
+	}
+	var inst struct {
+		ProjectPath string `json:"projectPath"`
+		PID         int    `json:"pid"`
+	}
+	if err := json.Unmarshal(body, &inst); err != nil {
+		t.Fatalf("decode instance health %s: %v", body, err)
+	}
+	if inst.PID != sess.PID || inst.ProjectPath != project {
+		t.Fatalf("proxied instance = pid %d project %q, want the session's child: pid %d project %q",
+			inst.PID, inst.ProjectPath, sess.PID, project)
+	}
+
+	// The page tells its scripts where it is mounted, so they address the
+	// child through the proxy rather than the machine server's own root.
+	resp, err = ms.do(http.MethodGet, "/s/"+sess.ID+"/", nil)
+	if err != nil {
+		t.Fatalf("proxied GET index: %v", err)
+	}
+	page, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	m := pageBasePattern.FindSubmatch(page)
+	if m == nil {
+		t.Fatalf("proxied index.html does not set window.__jugglerBase")
+	}
+	if got := strings.ReplaceAll(string(m[1]), `\/`, "/"); got != "/s/"+sess.ID {
+		t.Fatalf("proxied index.html base = %q, want /s/%s", got, sess.ID)
+	}
+
+	resp, err = ms.do(http.MethodGet, "/s/"+sess.ID, nil)
+	if err != nil {
+		t.Fatalf("GET bare session path: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusMovedPermanently || resp.Header.Get("Location") != "/s/"+sess.ID+"/" {
+		t.Fatalf("bare /s/<id>: status %d location %q, want 301 to /s/%s/",
+			resp.StatusCode, resp.Header.Get("Location"), sess.ID)
+	}
+}
+
+// TestMachineServerServesTheUIUnderItsPrefix loads the UI's page through the
+// proxy and then everything that page references by server path — scripts,
+// stylesheets, the SDK import map, the asset prefix its modules load from —
+// the way a browser there would. Each must be under /s/<id>/ and must load.
+func TestMachineServerServesTheUIUnderItsPrefix(t *testing.T) {
+	ms, stop := startMachineServer(t)
+	defer stop()
+
+	sess := ms.openSession(newProjectDir(t), http.StatusCreated)
+	prefix := "/s/" + sess.ID + "/"
+
+	resp, err := ms.do(http.MethodGet, prefix, nil)
+	if err != nil {
+		t.Fatalf("proxied GET index: %v", err)
+	}
+	page, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("proxied GET index: status %d", resp.StatusCode)
+	}
+
+	refs := pageRefPattern.FindAllStringSubmatch(string(page), -1)
+	if len(refs) < 20 {
+		t.Fatalf("found only %d server-relative references in the proxied index.html", len(refs))
+	}
+	seen := map[string]bool{}
+	for _, m := range refs {
+		// Groups: 1 src/href, 2 import-map entry, 3 the asset prefix — a
+		// directory, so a module the app loads from it stands in for it.
+		ref := m[1] + strings.ReplaceAll(m[2], `\/`, "/")
+		if m[3] != "" {
+			ref = strings.ReplaceAll(m[3], `\/`, "/") + "/js/app.js"
+		}
+		if seen[ref] {
+			continue
+		}
+		seen[ref] = true
+		if !strings.HasPrefix(ref, prefix) {
+			t.Errorf("index.html references %q outside %s", ref, prefix)
+			continue
+		}
+		resp, err := ms.do(http.MethodGet, ref, nil)
+		if err != nil {
+			t.Errorf("GET %s: %v", ref, err)
+			continue
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("GET %s through the proxy: status %d", ref, resp.StatusCode)
+		}
+	}
+}
+
+// TestMachineServerDrivesASessionInABrowser is the UI-under-the-proxy exit
+// test: a real browser test runs in a page the child's test window loads
+// through the machine server at /s/<id>/, so every request it makes — the
+// test runner's own, the app's /api calls, its WebSocket — has to find the
+// session through the prefix. The machine server's own root serves none of
+// them, so a URL that misses the prefix fails the test rather than reaching
+// the child another way.
+func TestMachineServerDrivesASessionInABrowser(t *testing.T) {
+	ms, stop := startMachineServer(t, "--test")
+	defer stop()
+
+	root, err := server.FindProjectRoot(".")
+	if err != nil {
+		t.Fatalf("find project root: %v", err)
+	}
+	fixture := newProjectDir(t)
+	if err := copyDir(filepath.Join(root, "tests", "benchmarks", "fixtures", "unit-test-fixture"), fixture); err != nil {
+		t.Fatalf("copy fixture: %v", err)
+	}
+	sess := ms.openSession(fixture, http.StatusCreated)
+
+	// The child's own test API, reached the way the page reaches it.
+	child := testServerEntry{addr: ms.Addr, fixture: fixture}
+	prefix := "/s/" + sess.ID
+	const name = "integration:read-file-single"
+	if err := postToServer(child, prefix+"/api/test/run", map[string]any{
+		"name":        name,
+		"projectPath": fixture,
+	}); err != nil {
+		t.Fatalf("POST %s/api/test/run: %v", prefix, err)
+	}
+	var result struct {
+		Passed      bool     `json:"passed"`
+		Details     string   `json:"details"`
+		Errors      []string `json:"errors"`
+		PostedUnder string   `json:"postedUnder"`
+	}
+	if err := pollServer(child, prefix+"/api/test/result?name="+name, 120*time.Second, &result); err != nil {
+		t.Fatalf("waiting for %s through the proxy: %v", name, err)
+	}
+	// The test queue is the child's own, so a lane that loaded the child
+	// directly would run the test too. Only a lane served through the proxy
+	// posts its result under the session's prefix.
+	if result.PostedUnder != prefix {
+		t.Fatalf("the lane posted its result under %q, want %q: it was not served through the proxy",
+			result.PostedUnder, prefix)
+	}
+	if !result.Passed {
+		for _, e := range result.Errors {
+			t.Error(e)
+		}
+		if len(result.Errors) == 0 {
+			t.Error(result.Details)
+		}
+	}
+}
+
+// pageRefPattern finds the server-relative URLs a page loads: src and href
+// attributes, import-map entries, and the asset prefix. External and
+// protocol-relative URLs don't match.
+var pageRefPattern = regexp.MustCompile(
+	`(?:src|href)="(/[^/"][^"]*)"` +
+		`|"juggler/[^"]+":\s*"(\\?/[^/"][^"]*)"` +
+		`|__assetPrefix = '([^']*)'`)
+
+// pageBasePattern finds the base path a child templates into index.html. The
+// page is rendered by html/template, which escapes '/' inside a JS string.
+var pageBasePattern = regexp.MustCompile(`window\.__jugglerBase = '([^']*)';`)
+
+// apiTokenPattern finds the per-instance token a child templates into index.html.
+var apiTokenPattern = regexp.MustCompile(`window\.__jugglerToken = '([0-9a-f]+)'`)
+
+// TestMachineServerProxiesWebSocket opens a viewer WebSocket through the proxy
+// the way a browser on the machine server's origin would: token from the
+// proxied index.html, Origin naming the machine server. The child only admits
+// that upgrade when the proxy has preserved the client's Host, and its first
+// frame is the session greeting.
+func TestMachineServerProxiesWebSocket(t *testing.T) {
+	ms, stop := startMachineServer(t)
+	defer stop()
+
+	sess := ms.openSession(newProjectDir(t), http.StatusCreated)
+	prefix := "/s/" + sess.ID
+
+	resp, err := ms.do(http.MethodGet, prefix+"/", nil)
+	if err != nil {
+		t.Fatalf("proxied GET index: %v", err)
+	}
+	page, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("proxied GET index: status %d", resp.StatusCode)
+	}
+	m := apiTokenPattern.FindSubmatch(page)
+	if m == nil {
+		t.Fatalf("proxied index.html carries no API token")
+	}
+
+	header := http.Header{"Origin": []string{"http://" + ms.Addr}}
+	wsURL := "ws://" + ms.Addr + prefix + apipaths.WebSocket + "?role=viewer&token=" + string(m[1])
+	conn, resp, err := websocket.DefaultDialer.Dial(wsURL, header)
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	if err != nil {
+		status := 0
+		if resp != nil {
+			status = resp.StatusCode
+		}
+		t.Fatalf("proxied WebSocket dial: %v (status %d)", err, status)
+	}
+	defer conn.Close()
+
+	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	_, msg, err := conn.ReadMessage()
+	if err != nil {
+		t.Fatalf("read first frame through the proxy: %v", err)
+	}
+	var greeting struct {
+		Type   string `json:"type"`
+		BootID string `json:"bootId"`
+	}
+	if err := json.Unmarshal(msg, &greeting); err != nil {
+		t.Fatalf("decode first frame %s: %v", msg, err)
+	}
+	if greeting.Type != "session" || greeting.BootID == "" {
+		t.Fatalf("first frame = %s, want the child's session greeting", msg)
+	}
+}
+
+// TestMachineServerChildCrashIsError kills a session's child out from under
+// the machine server: the session turns to the error state, the proxy stops
+// routing to it, and the next open for that project replaces it with a fresh
+// child.
+func TestMachineServerChildCrashIsError(t *testing.T) {
+	ms, stop := startMachineServer(t)
+	defer stop()
+
+	project := newProjectDir(t)
+	sess := ms.openSession(project, http.StatusCreated)
+
+	p, err := os.FindProcess(sess.PID)
+	if err != nil {
+		t.Fatalf("find child pid %d: %v", sess.PID, err)
+	}
+	if err := p.Kill(); err != nil {
+		t.Fatalf("kill child pid %d: %v", sess.PID, err)
+	}
+
+	crashed := ms.waitForSessionState(sess.ID, machineserver.SessionError, 15*time.Second)
+	if crashed.PID != 0 || crashed.Addr != "" || crashed.Error == "" {
+		t.Fatalf("crashed session = %+v, want no pid, no address, and an error", crashed)
+	}
+
+	resp, err := ms.do(http.MethodGet, "/s/"+sess.ID+"/api/health", nil)
+	if err != nil {
+		t.Fatalf("GET through a crashed session: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("proxy to a crashed session: status %d, want 503", resp.StatusCode)
+	}
+
+	fresh := ms.openSession(project, http.StatusCreated)
+	if fresh.ID == sess.ID || fresh.PID == sess.PID || fresh.State != machineserver.SessionRunning {
+		t.Fatalf("reopen after crash = %+v, want a new running session replacing %s", fresh, sess.ID)
+	}
+	if list := ms.mustListSessions(); len(list) != 1 || list[0].ID != fresh.ID {
+		t.Fatalf("sessions after reopen = %+v, want only %s", list, fresh.ID)
+	}
+}
+
+// TestMachineServerChildListensOnLoopbackOnly checks a spawned child from the
+// outside: its port answers on loopback and refuses every other address this
+// machine has, so nothing off the machine can bypass the proxy.
+func TestMachineServerChildListensOnLoopbackOnly(t *testing.T) {
+	ms, stop := startMachineServer(t)
+	defer stop()
+
+	sess := ms.openSession(newProjectDir(t), http.StatusCreated)
+	_, port, err := net.SplitHostPort(sess.Addr)
+	if err != nil {
+		t.Fatalf("session addr %q: %v", sess.Addr, err)
+	}
+
+	if !dialable(net.JoinHostPort("127.0.0.1", port)) {
+		t.Fatalf("child port %s refuses loopback", port)
+	}
+
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		t.Fatalf("interface addresses: %v", err)
+	}
+	var probed []string
+	for _, a := range addrs {
+		ipnet, ok := a.(*net.IPNet)
+		if !ok || ipnet.IP.IsLoopback() || ipnet.IP.IsLinkLocalUnicast() {
+			continue
+		}
+		target := net.JoinHostPort(ipnet.IP.String(), port)
+		probed = append(probed, target)
+		if dialable(target) {
+			t.Errorf("child port %s accepts connections on non-loopback %s", port, target)
+		}
+	}
+	if len(probed) == 0 {
+		t.Skip("this machine has no non-loopback address to probe")
+	}
+	t.Logf("refused on %s", strings.Join(probed, ", "))
+}

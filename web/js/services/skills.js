@@ -26,6 +26,7 @@
 
 import { fetchJson } from './http.js';
 import { SEND_LOOKUP_TIMEOUT_MS } from '../utils/constants.js';
+import { apiUrl } from '../utils/api-url.js';
 
 /**
  * @typedef {object} SkillFrontmatter
@@ -85,7 +86,7 @@ export async function fetchSkills() {
   if (cached) {
     return cached;
   }
-  const result = await fetchJson('/api/skills', {
+  const result = await fetchJson(apiUrl('/skills'), {
     errorPrefix: '[Skills] Failed to fetch skills',
     fallback: null,
     timeoutMs: SEND_LOOKUP_TIMEOUT_MS,
@@ -118,7 +119,7 @@ export async function getAvailableSkills() {
  * @throws {Error} On a non-OK response (unknown skill, bad scope/source, transport)
  */
 export async function fetchSkillBody(scope, source, name) {
-  const url = `/api/skills/${encodeURIComponent(scope)}/${encodeURIComponent(source)}/${encodeURIComponent(name)}`;
+  const url = apiUrl(`/skills/${encodeURIComponent(scope)}/${encodeURIComponent(source)}/${encodeURIComponent(name)}`);
   return await fetchJson(url, { errorPrefix: `Failed to load skill "${name}"` });
 }
 

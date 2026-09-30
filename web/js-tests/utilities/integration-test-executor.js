@@ -163,6 +163,7 @@ import { runTests as runDiffHighlightTests } from '../unit-tests/diff-highlight-
 import { runTests as runDiffReviewTests } from '../unit-tests/diff-review-test.js';
 import { runTests as runDiffSplitTests } from '../unit-tests/diff-split-test.js';
 import { runTests as runExternalLinkTests } from '../unit-tests/external-link-test.js';
+import { runTests as runApiUrlTests } from '../unit-tests/api-url-test.js';
 import { runTests as runLinkGuardTests } from '../unit-tests/link-guard-test.js';
 import { runTests as runAnsiTests } from '../unit-tests/ansi-test.js';
 import { runTests as runPrefsTests } from '../unit-tests/prefs-test.js';
@@ -197,6 +198,7 @@ import { runTests as runMobileComposerTests } from '../unit-tests/mobile-compose
 import { runTests as runComposerSendLatchTests } from '../unit-tests/composer-send-latch-test.js';
 import { runTests as runComposerAutoresizeDeferTests } from '../unit-tests/composer-autoresize-defer-test.js';
 import { runTests as runComposerRestoreMessageTests } from '../unit-tests/composer-restore-message-test.js';
+import { apiUrl } from '../../js/utils/api-url.js';
 import { runTests as runPendingMessageRestoreTests } from '../unit-tests/pending-message-restore-test.js';
 import { runTests as runWindowResizeCursorTests } from '../unit-tests/window-resize-cursor-test.js';
 import { runTests as runScheduledSendTests } from '../unit-tests/scheduled-send-test.js';
@@ -573,6 +575,7 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:diff-review', run: runDiffReviewTests },
   { name: 'unit:diff-split', run: runDiffSplitTests },
   { name: 'unit:external-link', run: runExternalLinkTests },
+  { name: 'unit:api-url', run: runApiUrlTests },
   { name: 'unit:link-guard', run: runLinkGuardTests },
   { name: 'unit:ansi', run: runAnsiTests },
   // Exclusive: it stubs window.fetch and writes localStorage keys, on an
@@ -752,7 +755,7 @@ export function ensureExtensionSuitesLoaded() {
       /** @type {{name: string, path: string}[]} */
       let list = [];
       try {
-        const resp = await fetch('/api/test/extension-tests');
+        const resp = await fetch(apiUrl('/test/extension-tests'));
         if (resp.ok) {
           const data = await resp.json();
           list = Array.isArray(data.tests) ? data.tests : [];
@@ -981,7 +984,7 @@ async function waitForEngineConnected() {
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
     try {
-      const resp = await fetch('/api/engine/status');
+      const resp = await fetch(apiUrl('/engine/status'));
       if (resp.ok) {
         const data = await resp.json();
         if (data.connected) return;
@@ -1019,7 +1022,7 @@ export async function runTestByName(testName, ctx) {
     // handles between-iteration cleanup in that topology instead. This
     // guard mirrors the same one in `runIntegrationTest` below.
     if (!window.parent || window.parent === window) {
-      const resetUrl = `/api/test/reset-fixture?fixture=unit-test-fixture&dir=${encodeURIComponent(ctx.fixtureDir)}`;
+      const resetUrl = apiUrl(`/test/reset-fixture?fixture=unit-test-fixture&dir=${encodeURIComponent(ctx.fixtureDir)}`);
       const resetResp = await fetch(resetUrl, { method: 'POST' });
       if (!resetResp.ok) {
         const errText = await resetResp.text();

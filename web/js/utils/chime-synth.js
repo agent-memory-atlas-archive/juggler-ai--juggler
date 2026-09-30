@@ -3,6 +3,7 @@
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
 import { fetchJson } from '../services/http.js';
+import { apiUrl } from './api-url.js';
 
 /**
  * Chime synth — generates the "needs your attention" notification tone with
@@ -474,7 +475,7 @@ let streamDest = null;
 function areport(level, message) {
   // Reporting a fault must never surface as an error itself, and fetch may be
   // unavailable (tests/workers) — never throw into the audio path.
-  void fetchJson('/api/client/report', {
+  void fetchJson(apiUrl('/client/report'), {
     method: 'POST',
     body: { source: 'chime', event: level, message },
     fallback: null,

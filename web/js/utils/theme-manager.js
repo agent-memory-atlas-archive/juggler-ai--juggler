@@ -45,6 +45,7 @@ import { onDocumentReady } from './document-ready.js';
 import { fetchJson } from '../services/http.js';
 import { scopedKey, resolvePref } from '../services/prefs.js';
 import { windowRole } from './view-mode.js';
+import { apiUrl } from './api-url.js';
 
 const THEME_KEY_BASE = 'juggler-theme';
 
@@ -303,7 +304,7 @@ function knownSystemTheme() {
  */
 function persistThemeToSession(mode) {
   // Best-effort — a missing/blocked fetch just skips session persistence.
-  const url = `/api/session/ui-theme?role=${encodeURIComponent(windowRole())}`;
+  const url = apiUrl(`/session/ui-theme?role=${encodeURIComponent(windowRole())}`);
   void fetchJson(url, { method: 'PUT', body: { uiTheme: mode }, fallback: null });
 }
 

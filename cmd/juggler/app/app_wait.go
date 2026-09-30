@@ -313,7 +313,7 @@ func (a *App) waitForExit() {
 			return
 		}
 	}
-	runWindowApp(a.server, devMode, !a.flags.window, a.flags.testMode, a.flags.testIframes, selected, done, teardownDone, requestQuit, onWindowReady)
+	runWindowApp(a.server, devMode, !a.flags.window, a.flags.testMode, a.flags.testIframes, a.flags.testWindowURL, selected, done, teardownDone, requestQuit, onWindowReady)
 }
 
 func (a *App) stdinIsTTY() bool {

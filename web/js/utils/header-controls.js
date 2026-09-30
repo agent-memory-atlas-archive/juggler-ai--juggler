@@ -15,6 +15,7 @@ import { hasNativeHost } from '../../sdk/lib/window-control.js';
 import { fetchJson } from '../services/http.js';
 import { showAlert } from '../components/modal-dialog.js';
 import { openSettings } from '../services/settings-launcher.js';
+import { apiUrl } from './api-url.js';
 
 /**
  * @typedef {import('../model/session.js').default} Session
@@ -199,7 +200,7 @@ export function setupHeaderControls(session) {
     // Seed the initial count: the join broadcast may have fired before this
     // listener was attached, so fetch the authoritative count once at startup.
     // An offline seed failure is corrected by a later clients-changed.
-    fetchJson('/api/connectivity', { fallback: null })
+    fetchJson(apiUrl('/connectivity'), { fallback: null })
       .then((c) => { if (c) updateClientsIndicator(c.clientCount); });
   }
 

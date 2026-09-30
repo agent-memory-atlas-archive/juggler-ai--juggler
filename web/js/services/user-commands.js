@@ -16,6 +16,7 @@
  */
 
 import { fetchJson } from './http.js';
+import { apiUrl } from '../utils/api-url.js';
 
 /**
  * Allowed command name (= filename sans .md): lowercase, starting with a
@@ -61,7 +62,7 @@ export async function fetchUserCommands() {
   if (cached) {
     return cached;
   }
-  const result = await fetchJson('/api/user-commands', {
+  const result = await fetchJson(apiUrl('/user-commands'), {
     errorPrefix: '[UserCommands] Failed to fetch user commands',
     fallback: null,
   });
@@ -102,7 +103,7 @@ export async function getRegisterableUserCommands() {
  * @returns {Promise<{ok: boolean, status: number, data: any}>} Result envelope
  */
 export async function writeUserCommand(scope, name, body) {
-  const response = await fetch(`/api/user-commands/${encodeURIComponent(scope)}/${encodeURIComponent(name)}`, {
+  const response = await fetch(apiUrl(`/user-commands/${encodeURIComponent(scope)}/${encodeURIComponent(name)}`), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -123,7 +124,7 @@ export async function writeUserCommand(scope, name, body) {
  * @returns {Promise<boolean>} True on success
  */
 export async function deleteUserCommand(scope, name) {
-  const response = await fetch(`/api/user-commands/${encodeURIComponent(scope)}/${encodeURIComponent(name)}`, {
+  const response = await fetch(apiUrl(`/user-commands/${encodeURIComponent(scope)}/${encodeURIComponent(name)}`), {
     method: 'DELETE',
   });
   return response.ok;

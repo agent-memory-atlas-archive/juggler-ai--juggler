@@ -6,6 +6,7 @@ import wsService from '../services/websocket.js';
 import { getUpdaterState, startInstall } from '../services/updater-control.js';
 import { fetchJson } from '../services/http.js';
 import JugglerElement from './juggler-element.js';
+import { apiUrl } from '../utils/api-url.js';
 
 /**
  * <update-button> — the single header affordance for updates. It merges the two
@@ -102,7 +103,7 @@ class UpdateButton extends JugglerElement {
   /** @private */
   async _seedServer() {
     // Offline — the WS push will seed us when it connects.
-    const status = await fetchJson('/api/update-status', { fallback: null });
+    const status = await fetchJson(apiUrl('/update-status'), { fallback: null });
     if (!status) return;
     this._server = status;
     this._scheduleRender();

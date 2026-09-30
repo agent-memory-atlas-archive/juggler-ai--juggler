@@ -12,6 +12,7 @@
 import { getUpdaterState, startCheck } from '../../services/updater-control.js';
 import { fetchJson } from '../../services/http.js';
 import { extractErrorMessage } from '../../../sdk/lib/error-utils.js';
+import { apiUrl } from '../../utils/api-url.js';
 
 /**
  * The three update modes, matching core.UpdateMode* on the server.
@@ -164,7 +165,7 @@ export class UpdatesTab {
   async _loadVersion() {
     // Offline — show what little we have.
     /** @type {any} */
-    const status = await fetchJson('/api/update-status', { fallback: {} });
+    const status = await fetchJson(apiUrl('/update-status'), { fallback: {} });
     const updater = await getUpdaterState();
     this._updaterPresent = !!updater.present;
     this._renderVersion(status, updater);
@@ -245,7 +246,7 @@ export class UpdatesTab {
     const prev = this._mode;
     this._mode = mode;
     try {
-      const data = await fetchJson('/api/settings', { method: 'PUT', body: { updates: { mode } } });
+      const data = await fetchJson(apiUrl('/settings'), { method: 'PUT', body: { updates: { mode } } });
       const saved = (data && data.updates && data.updates.mode) || mode;
       this._mode = saved;
       this._reflectMode(saved);
@@ -273,7 +274,7 @@ export class UpdatesTab {
       // result arrives via the pushed snapshot the header button consumes).
       if (this._updaterPresent) void startCheck();
 
-      const status = await fetchJson('/api/update-status/check', { method: 'POST' });
+      const status = await fetchJson(apiUrl('/update-status/check'), { method: 'POST' });
       if (status.error) {
         this._setStatus('Couldn’t reach the update server. Try again later.');
       } else if (status.updateAvailable) {

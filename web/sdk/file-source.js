@@ -11,6 +11,8 @@
  * @module sdk/file-source
  */
 
+import { apiUrl } from '../js/utils/api-url.js';
+
 /**
  * @typedef {object} FileSource
  * @property {string} path - Path as the producer spelled it (display + language detection). Usually project-relative, but a live read reports the absolute one — treat it as either.
@@ -97,7 +99,7 @@ function apiToken() {
  * @returns {string} Token-bearing content URL
  */
 export function fileContentURL(absPath) {
-  const url = `/api/session/files/content?path=${encodeURIComponent(absPath)}`;
+  const url = apiUrl(`/session/files/content?path=${encodeURIComponent(absPath)}`);
   const token = apiToken();
   return token ? `${url}&token=${encodeURIComponent(token)}` : url;
 }
@@ -112,7 +114,7 @@ export function fileContentURL(absPath) {
  * @returns {string} Token-bearing asset URL
  */
 export function conversationAssetURL(conversationId, sha) {
-  const url = `/api/session/conversations/${encodeURIComponent(conversationId)}/assets/${encodeURIComponent(sha)}`;
+  const url = apiUrl(`/session/conversations/${encodeURIComponent(conversationId)}/assets/${encodeURIComponent(sha)}`);
   const token = apiToken();
   return token ? `${url}?token=${encodeURIComponent(token)}` : url;
 }
@@ -151,7 +153,7 @@ export async function fetchFileBytes(absPath, signal, access = {}) {
   const headers = { 'Content-Type': 'application/json' };
   const token = apiToken();
   if (token) headers['X-Juggler-Token'] = token;
-  const response = await fetch('/api/session/files/bytes', {
+  const response = await fetch(apiUrl('/session/files/bytes'), {
     method: 'POST',
     headers,
     signal,

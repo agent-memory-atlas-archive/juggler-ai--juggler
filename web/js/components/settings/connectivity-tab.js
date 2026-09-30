@@ -14,6 +14,7 @@ import { createCopyButton } from '../../../sdk/lib/copy-button.js';
 import wsService from '../../services/websocket.js';
 import { ProxySettings } from './proxy-settings.js';
 import { fetchJson, httpErrorText } from '../../services/http.js';
+import { apiUrl } from '../../utils/api-url.js';
 
 /** Polling interval (ms) for refreshing the Connectivity tab while it's open. */
 const CONNECTIVITY_POLL_MS = 2000;
@@ -92,7 +93,7 @@ function clientDeviceLabel(ua) {
  */
 async function loadQRCodeSVG(host, url) {
   try {
-    const res = await fetch(`/api/connectivity/qr?url=${encodeURIComponent(url)}`);
+    const res = await fetch(apiUrl(`/connectivity/qr?url=${encodeURIComponent(url)}`));
     if (!res.ok) return;
     host.innerHTML = await res.text();
   } catch {
@@ -249,7 +250,7 @@ export class ConnectivityTab {
    */
   async refreshConnectivity(force = false) {
     try {
-      const next = await fetchJson('/api/connectivity');
+      const next = await fetchJson(apiUrl('/connectivity'));
       if (!next) return;
       const prev = this.connectivity;
       this.connectivity = next;
@@ -541,7 +542,7 @@ export class ConnectivityTab {
    */
   async _putLaunchPrefs(connectivity) {
     try {
-      await fetchJson('/api/settings', { method: 'PUT', body: { connectivity } });
+      await fetchJson(apiUrl('/settings'), { method: 'PUT', body: { connectivity } });
       return true;
     } catch {
       return false;
@@ -555,7 +556,7 @@ export class ConnectivityTab {
    */
   async _setLAN(enabled) {
     try {
-      await fetchJson('/api/connectivity/lan', { method: 'POST', body: { enabled } });
+      await fetchJson(apiUrl('/connectivity/lan'), { method: 'POST', body: { enabled } });
     } catch (e) {
       console.error('Failed to set LAN access:', e);
     }
@@ -735,7 +736,7 @@ export class ConnectivityTab {
   async _startTunnel(mode) {
     this._wanError = '';
     try {
-      const data = await fetchJson('/api/connectivity/tunnel', {
+      const data = await fetchJson(apiUrl('/connectivity/tunnel'), {
         method: 'POST',
         body: { enabled: true, mode },
       });
@@ -753,7 +754,7 @@ export class ConnectivityTab {
   async _stopTunnel() {
     this._wanError = '';
     try {
-      const data = await fetchJson('/api/connectivity/tunnel', {
+      const data = await fetchJson(apiUrl('/connectivity/tunnel'), {
         method: 'POST',
         body: { enabled: false },
       });

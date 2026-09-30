@@ -39,14 +39,16 @@ type child struct {
 
 // newChildCommand builds the exec.Cmd for a session child. A package variable
 // so tests can substitute a stub child process. bin comes from the supervisor's
-// own executable path (or $JUGGLER_SERVER_BIN) and the args are fixed flags
-// plus a validated project path passed as separate argv elements — no shell,
-// nothing request-derived beyond the directory path the control API validated.
-var newChildCommand = func(bin, project string) *exec.Cmd {
+// own executable path (or $JUGGLER_SERVER_BIN) and the args are fixed flags,
+// the supervisor's own extra flags (Server.childExtraArgs), and a validated
+// project path, passed as separate argv elements — no shell, nothing
+// request-derived beyond the directory path the control API validated.
+var newChildCommand = func(bin, project string, extra []string) *exec.Cmd {
 	args := []string{"--session-child",
 		"--port", "0",
-		"--log-file", logpaths.ServerLogPath(project),
-		"--project", project}
+		"--log-file", logpaths.ServerLogPath(project)}
+	args = append(args, extra...)
+	args = append(args, "--project", project)
 	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	return exec.Command(bin, args...) //nolint:gosec // operator-controlled bin+args, no shell
 }
@@ -54,8 +56,8 @@ var newChildCommand = func(bin, project string) *exec.Cmd {
 // spawnChild starts a session child for project and waits for its ready
 // handshake (a JUGGLER_ADDR=<host:port> line on stdout). The child keeps
 // running after return; the caller owns stopping it via stop().
-func spawnChild(bin, project string) (*child, error) {
-	cmd := newChildCommand(bin, project)
+func spawnChild(bin, project string, extra []string) (*child, error) {
+	cmd := newChildCommand(bin, project, extra)
 
 	// The child's stderr carries only genuine panics / pre-logging output;
 	// capture it to the project's crash sink (single writer per project). The

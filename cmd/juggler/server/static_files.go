@@ -276,6 +276,9 @@ func (s *Server) serveEngine(w http.ResponseWriter, r *http.Request) {
 		"StaticVersion": s.staticVersion,
 		"CSPNonce":      nonce,
 		"APIToken":      s.apiToken,
+		// Safe to substitute unescaped: requestBasePath admits only plain
+		// path segments.
+		"BasePath": requestBasePath(r),
 	}, func() { setHTMLSecurityHeaders(w, nonce) })
 }
 
@@ -294,6 +297,9 @@ func (s *Server) serveHeadlessTest(w http.ResponseWriter, r *http.Request) {
 	serveTemplatedHTML(w, string(content), map[string]string{
 		"StaticVersion": s.staticVersion,
 		"CSPNonce":      nonce,
+		// Safe to substitute unescaped: requestBasePath admits only plain
+		// path segments.
+		"BasePath": requestBasePath(r),
 		// Allow same-origin framing so the /test-pool host page can tile N copies
 		// of this page in iframes.
 	}, func() { setHTMLSecurityHeadersFramed(w, nonce, true, "") })
@@ -343,7 +349,7 @@ func (s *Server) serveTestPool(w http.ResponseWriter, r *http.Request) {
   grid.style.gridTemplateRows = 'repeat(' + rows + ', minmax(450px, 1fr))';
   for (let i = 0; i < n; i++) {
     const f = document.createElement('iframe');
-    f.src = '/headless-test?lane=' + i;
+    f.src = '` + requestBasePath(r) + `/headless-test?lane=' + i;
     f.setAttribute('data-lane', String(i));
     grid.appendChild(f);
   }
@@ -481,14 +487,18 @@ func (s *Server) serveIndex(w http.ResponseWriter, r *http.Request) {
 		IsWindowMode     bool
 		CSPNonce         string
 		APIToken         string
+		BasePath         string
 		InitialZoom      int
 		InitialThemeMode string
 		ProjectKey       string
 	}{
-		StaticVersion:    s.staticVersion,
-		IsTestMode:       s.testMode,
-		IsDevMode:        s.devMode,
-		APIToken:         s.apiToken,
+		StaticVersion: s.staticVersion,
+		IsTestMode:    s.testMode,
+		IsDevMode:     s.devMode,
+		APIToken:      s.apiToken,
+		// Where the client mounted this server: "" directly, /s/<id> behind
+		// the machine server's session proxy.
+		BasePath:         requestBasePath(r),
 		InitialZoom:      initialZoom,
 		InitialThemeMode: initialThemeMode,
 		// Namespaces the viewer's localStorage so a cached zoom/theme belongs to

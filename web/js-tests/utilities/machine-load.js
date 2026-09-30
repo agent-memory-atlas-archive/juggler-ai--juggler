@@ -28,6 +28,8 @@
  * @module utilities/machine-load
  */
 
+import { apiUrl } from '../../js/utils/api-url.js';
+
 /**
  * Links in the timer chain. Past ten, WebKit's nesting-based alignment applies,
  * so a chain this long crosses the threshold and keeps measuring after it.
@@ -87,7 +89,7 @@ export async function fetchMachineLoad() {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 1500);
   try {
-    const resp = await fetch('/api/test/machine', { signal: ctrl.signal });
+    const resp = await fetch(apiUrl('/test/machine'), { signal: ctrl.signal });
     if (!resp.ok) return null;
     const body = await resp.json();
     return {

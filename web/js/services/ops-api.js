@@ -17,6 +17,7 @@
  */
 
 import { extractHttpErrorDetail } from './http.js';
+import { apiUrl } from '../utils/api-url.js';
 
 // ============================================================================
 // OpsError - Backend Operation Errors (not bugs)
@@ -466,7 +467,7 @@ async function callOp(toolId, operation, params, signal, allowedPaths, workspace
     // The deadline covers the body too, not just the headers: a response whose
     // headers arrive and whose body then stalls hangs the caller just as
     // completely as one that never arrives.
-    const response = await fetch('/api/ops/call', {
+    const response = await fetch(apiUrl('/ops/call'), {
       method: 'POST',
       headers,
       body: JSON.stringify(requestBody),
@@ -1274,7 +1275,7 @@ export async function generateText(params, signal) {
     timeoutMs: params.timeoutMs
   };
 
-  const response = await fetch('/api/llm/complete', {
+  const response = await fetch(apiUrl('/llm/complete'), {
     method: 'POST',
     headers,
     body: JSON.stringify(body),

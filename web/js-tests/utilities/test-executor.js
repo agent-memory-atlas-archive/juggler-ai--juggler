@@ -59,6 +59,7 @@ import logger from './test-logger.js';
 import contextItemRegistry from '../../js/registries/context-item-registry.js';
 import strategyRegistry from '../../js/registries/strategy-registry.js';
 import providersCache from '../../js/services/providers-cache.js';
+import { apiUrl } from '../../js/utils/api-url.js';
 
 
 /**
@@ -77,7 +78,7 @@ async function selectDefaultProvider(conversation) {
 
   // Try to get from config first
   try {
-    const configResponse = await fetch('/api/config');
+    const configResponse = await fetch(apiUrl('/config'));
     if (configResponse.ok) {
       const config = await configResponse.json();
       const modelStr = config.model || '';

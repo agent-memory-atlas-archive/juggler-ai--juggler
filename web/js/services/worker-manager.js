@@ -17,6 +17,7 @@ import { isEngine } from '../../sdk/lib/client-role.js';
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
 import { setBootstrapSummarizationPrompt } from '../utils/compaction-utils.js';
 import { fetchJson } from './http.js';
+import { apiUrl } from '../utils/api-url.js';
 
 // ============================================================================
 // Type Definitions
@@ -2016,7 +2017,7 @@ export class WorkerManager {
         // 404s in production (over the studio tunnel that 404 is a visible
         // console line). Fire-and-forget.
         if (/** @type {any} */ (globalThis).JUGGLER_TEST_MODE) {
-          void fetchJson('/api/test/debug-log', {
+          void fetchJson(apiUrl('/test/debug-log'), {
             method: 'POST',
             body: {
               where: 'engine-auto-load-failed',

@@ -5,6 +5,7 @@
 import { recordTape } from '../utils/event-tape.js';
 import { isEngine } from '../../sdk/lib/client-role.js';
 import { fetchJson } from './http.js';
+import { apiUrl, wsUrl } from '../utils/api-url.js';
 import { WSChunkReassembler, WS_CHUNK_KIND_TEXT } from '../utils/ws-chunk.js';
 import { viewerId } from '../utils/viewer-id.js';
 import { reportFault } from '../utils/fault-report.js';
@@ -366,10 +367,6 @@ class WebSocketService {
    * @private
    */
   _connectWebSocket(role) {
-    // globalThis.location works in both the window (Location) and a module
-    // worker (WorkerLocation), so the engine can build its WS URL off-thread.
-    const loc = globalThis.location;
-    const protocol = loc.protocol === 'https:' ? 'wss:' : 'ws:';
     // Replay the per-instance session token (embedded in the served page) so the
     // server accepts the viewer upgrade (see cmd/juggler/server/api_auth.go). The
     // engine worker has no token global and is exempt server-side, so it simply
@@ -380,8 +377,9 @@ class WebSocketService {
     // The engine needs no identity and sends none.
     const id = role === 'viewer' ? viewerId() : '';
     const viewerParam = id ? `&viewerId=${encodeURIComponent(id)}` : '';
-    const wsUrl = `${protocol}//${loc.host}/api/ws?role=${role}${tokenParam}${viewerParam}`;
-    this._transport = new WebSocket(wsUrl);
+    // wsUrl reads globalThis.location, which works in both the window and a
+    // module worker, so the engine builds its URL off-thread the same way.
+    this._transport = new WebSocket(wsUrl(`role=${role}${tokenParam}${viewerParam}`));
     this._configureTransport(this._transport, 'WebSocket');
   }
 
@@ -420,7 +418,7 @@ class WebSocketService {
       await pc.setLocalDescription(offer);
       await this._waitForIceGathering(pc, 5000);
 
-      const answer = await fetchJson('/api/webrtc/signal', {
+      const answer = await fetchJson(apiUrl('/webrtc/signal'), {
         method: 'POST',
         body: { role, offer: pc.localDescription },
         errorPrefix: 'WebRTC signaling failed',

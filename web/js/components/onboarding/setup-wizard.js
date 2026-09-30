@@ -24,9 +24,10 @@
 
 import { fetchJson } from '../../services/http.js';
 import { presentWizard } from './step-modal.js';
+import { apiUrl } from '../../utils/api-url.js';
 
 /** Where to read the current state of the machine. */
-const DETECT_URL = '/api/onboarding/detect';
+const DETECT_URL = apiUrl('/onboarding/detect');
 
 /**
  * The preference that stops this asking again. A user preference rather than a

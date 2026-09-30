@@ -12,6 +12,7 @@
 
 import wsService from './websocket.js';
 import { fetchJson } from './http.js';
+import { apiUrl } from '../utils/api-url.js';
 
 /** @typedef {{ id: string, contextWindow: number, maxOutputTokens: number, fromAPI: boolean, inputModalities?: string[], streamsLiveUsage?: boolean }} ModelWithContext */
 /** `spawnsLocalProcess` marks a provider Juggler runs as a subprocess in the conversation's own directory (the CLI agents), so it can only serve a workspace this machine can spawn into. */
@@ -110,7 +111,7 @@ const providersCache = {
    * @returns {Promise<void>}
    */
   async refresh() {
-    await fetchJson('/api/providers/refresh', { method: 'POST', errorPrefix: 'Provider refresh failed' });
+    await fetchJson(apiUrl('/providers/refresh'), { method: 'POST', errorPrefix: 'Provider refresh failed' });
   }
 };
 

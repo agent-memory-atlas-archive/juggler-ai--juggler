@@ -46,6 +46,7 @@ import { MAX_CONVERSATIONS, CONVERSATION_LIMIT_MESSAGE } from './model/session.j
 import { normalizeAttachments } from './utils/attachments.js';
 import { showAlert, showNotice } from './components/modal-dialog.js';
 import { setFaultSink, reportFault } from './utils/fault-report.js';
+import { apiUrl, serverPath } from './utils/api-url.js';
 
 /**
  * Route this page's faults to the app log, and catch the ones nothing else
@@ -1182,17 +1183,17 @@ window.jugglerApp = app;
 if (window.JUGGLER_TEST_MODE) {
   setInterval(async () => {
     try {
-      const entry = await fetchJson('/api/test/pending');
+      const entry = await fetchJson(apiUrl('/test/pending'));
       if (!entry) return; // 204 — nothing queued
       if (entry.name === '__list__') {
-        window.location.href = '/headless-test?list=1';
+        window.location.href = serverPath('/headless-test?list=1');
       } else if (entry.taskId) {
-        let url = `/headless-test?task=${encodeURIComponent(entry.taskId)}&projectPath=${encodeURIComponent(entry.projectPath)}&quiet=true`;
+        let url = serverPath('/headless-test') + `?task=${encodeURIComponent(entry.taskId)}&projectPath=${encodeURIComponent(entry.projectPath)}&quiet=true`;
         if (entry.model) url += `&model=${encodeURIComponent(entry.model)}`;
         if (entry.provider) url += `&provider=${encodeURIComponent(entry.provider)}`;
         window.location.href = url;
       } else {
-        window.location.href = `/headless-test?test=${encodeURIComponent(entry.name)}&projectPath=${encodeURIComponent(entry.projectPath)}`;
+        window.location.href = serverPath('/headless-test') + `?test=${encodeURIComponent(entry.name)}&projectPath=${encodeURIComponent(entry.projectPath)}`;
       }
     } catch (_) { /* ignore fetch errors */ }
   }, 200);

@@ -5,6 +5,7 @@
 import js from '@eslint/js';
 import jsdoc from 'eslint-plugin-jsdoc';
 import stylistic from '@stylistic/eslint-plugin';
+import noAbsoluteApiUrl from './eslint-rules/no-absolute-api-url.js';
 
 export default [
   js.configs.recommended,
@@ -202,12 +203,14 @@ export default [
         // ===================================================================
         // All backend operations MUST go through ops-api.js for type safety.
         // This prevents runtime errors from parameter typos and wrong types.
+        // The URL itself is built by apiUrl() (juggler/no-absolute-api-url),
+        // so the call to catch is apiUrl('/ops/call').
         {
-          selector: "CallExpression[callee.name=/^(fetch|fetchJson)$/] > Literal[value*='/api/ops/call']",
+          selector: "CallExpression[callee.name='apiUrl'] > Literal[value=/^\\/ops\\/call/]",
           message: 'FORBIDDEN: Direct fetch() to /api/ops/call detected. Use typed functions from ops-api.js instead. Example: import { readFileLoad } from \'./services/ops-api.js\' and call readFileLoad(params)'
         },
         {
-          selector: "CallExpression[callee.name=/^(fetch|fetchJson)$/] > TemplateLiteral:has(TemplateElement[value.raw*='/api/ops/call'])",
+          selector: "CallExpression[callee.name='apiUrl'] > TemplateLiteral:has(TemplateElement[value.raw=/^\\/ops\\/call/])",
           message: 'FORBIDDEN: Direct fetch() to /api/ops/call detected. Use typed functions from ops-api.js instead. Example: import { readFileLoad } from \'./services/ops-api.js\' and call readFileLoad(params)'
         },
         // ===================================================================
@@ -276,6 +279,20 @@ export default [
           message: 'FORBIDDEN: Hardcoded plugin tool-name comparison. Add behavior to the ContextItem plugin class instead. See web/sdk/context-item.js.'
         }
       ],
+    },
+  },
+  // ===================================================================
+  // Every /api URL is built by web/js/utils/api-url.js
+  // ===================================================================
+  // A server may be mounted under a path prefix (the machine server's
+  // /s/<id>/), so client code never writes an absolute '/api/…' URL. Tests
+  // are exempt: they match request URLs in fetch stubs, not build them.
+  {
+    files: ['web/js/**/*.js', 'web/sdk/**/*.js', 'web/extensions/**/*.js'],
+    ignores: ['web/extensions/**/_tests/**/*.js', 'web/js/utils/api-url.js'],
+    plugins: { juggler: { rules: { 'no-absolute-api-url': noAbsoluteApiUrl } } },
+    rules: {
+      'juggler/no-absolute-api-url': 'error',
     },
   },
   // ===================================================================

@@ -12,6 +12,7 @@
 import { formatBytes } from '../../utils/format.js';
 import { addFilePath } from '../../utils/properties-panel-helpers.js';
 import { fetchJson } from '../../services/http.js';
+import { apiUrl } from '../../utils/api-url.js';
 
 /** Polling interval (ms) for tailing the selected log while the Logs tab is open. */
 const LOGS_POLL_MS = 2000;
@@ -140,7 +141,7 @@ export class LogsTab {
     /** @type {any[]} */
     let files = [];
     // Treat a failed fetch as "no logs" and fall through to the empty state.
-    const data = await fetchJson('/api/logs', { fallback: null });
+    const data = await fetchJson(apiUrl('/logs'), { fallback: null });
     if (data) files = data.files || [];
     this._logFiles = files;
 
@@ -258,7 +259,7 @@ export class LogsTab {
 
     const offset = reset ? 0 : this._logOffset;
     // A failure is transient; the next poll retries.
-    const data = await fetchJson(`/api/logs/content?path=${encodeURIComponent(path)}&offset=${offset}`,
+    const data = await fetchJson(apiUrl(`/logs/content?path=${encodeURIComponent(path)}&offset=${offset}`),
       { fallback: null });
     if (!data) return;
     // Drop a stale response for a file the user has since switched away from.

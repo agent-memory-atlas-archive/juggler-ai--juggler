@@ -45,6 +45,11 @@ type testResult struct {
 	Passed  bool     `json:"passed"`
 	Details string   `json:"details"`
 	Errors  []string `json:"errors"`
+	// PostedUnder is the path prefix the result's POST arrived under: the
+	// X-Forwarded-Prefix a reverse proxy set, "" for a lane that reached this
+	// server directly. Recorded by the server, never taken from the body, so
+	// a harness can tell which route its lane was served through.
+	PostedUnder string `json:"postedUnder,omitempty"`
 }
 
 // TestRunAPI coordinates test execution between Go and the browser. It is
@@ -162,6 +167,7 @@ func (api *TestRunAPI) HandlePostResult(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "invalid body", http.StatusBadRequest)
 		return
 	}
+	result.PostedUnder = r.Header.Get("X-Forwarded-Prefix")
 	api.withState(func(s *actorState) {
 		s.resultBufs[result.Name] = append(s.resultBufs[result.Name], result)
 		rec := s.auditFor(result.Name)

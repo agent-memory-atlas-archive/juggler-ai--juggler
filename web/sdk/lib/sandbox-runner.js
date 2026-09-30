@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { extractErrorMessage } from './error-utils.js';
+import { serverPath } from '../../js/utils/api-url.js';
 
 /**
  * Host sandbox service: execute an untrusted JavaScript string in an isolated
@@ -75,7 +76,7 @@ function getSandboxFrame() {
     iframe.setAttribute('hidden', '');
     iframe.setAttribute('aria-hidden', 'true');
     iframe.style.display = 'none';
-    iframe.src = '/sandbox';
+    iframe.src = serverPath('/sandbox');
 
     let settled = false;
     /** @type {any} */

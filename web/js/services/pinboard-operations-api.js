@@ -3,6 +3,7 @@
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
 import { fetchJson } from './http.js';
+import { apiUrl } from '../utils/api-url.js';
 
 /**
  * Apply semantic edits to one pinboard. This transport is realm-neutral: the
@@ -16,7 +17,7 @@ import { fetchJson } from './http.js';
  */
 export function applyPinboardOperations(board, operations, reveal = null, signal) {
   const body = reveal ? { operations, reveal } : { operations };
-  return fetchJson(`/api/session/pinboard/operations?board=${encodeURIComponent(board)}`, {
+  return fetchJson(apiUrl(`/session/pinboard/operations?board=${encodeURIComponent(board)}`), {
     method: 'POST',
     body,
     signal,

@@ -11,6 +11,7 @@
 
 import { extractErrorMessage } from '../../../sdk/lib/error-utils.js';
 import { fetchJson } from '../../services/http.js';
+import { apiUrl } from '../../utils/api-url.js';
 
 /**
  * The three proxy modes, matching core.ProxyMode* (and httpx.Mode*) on the
@@ -267,7 +268,7 @@ export class ProxySettings {
     this._mode = mode;
     this._url = url;
     try {
-      const data = await fetchJson('/api/settings', {
+      const data = await fetchJson(apiUrl('/settings'), {
         method: 'PUT',
         body: { network: { proxy: { mode, url } } },
       });

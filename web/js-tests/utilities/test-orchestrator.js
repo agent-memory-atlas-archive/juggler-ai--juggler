@@ -20,6 +20,7 @@ import UnitTestExecutor from './unit-test-executor.js';
 import { runTestByName } from './integration-test-executor.js';
 import logger from './test-logger.js';
 import providersCache from '../../js/services/providers-cache.js';
+import { apiUrl } from '../../js/utils/api-url.js';
 
 /**
  * Test Orchestrator - Coordinates test execution
@@ -134,7 +135,7 @@ class TestOrchestrator {
         throw new Error('No task ID provided in URL parameters');
       }
 
-      const response = await fetch(`/api/test/task?id=${encodeURIComponent(taskId)}`);
+      const response = await fetch(apiUrl(`/test/task?id=${encodeURIComponent(taskId)}`));
       if (!response.ok) {
         throw new Error(`Failed to load task ${taskId}: ${response.status} ${response.statusText}`);
       }

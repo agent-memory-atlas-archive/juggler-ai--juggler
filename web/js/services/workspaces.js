@@ -22,6 +22,7 @@
  */
 
 import { fetchJson } from './http.js';
+import { apiUrl } from '../utils/api-url.js';
 
 /**
  * Whether a workspace can be worked in.
@@ -83,7 +84,7 @@ export function isWorkspaceUsable(workspace) {
  * @returns {Promise<import('../model/session.js').Workspace[]>} The table.
  */
 export async function listWorkspaces() {
-  const answer = await fetchJson('/api/session/workspaces');
+  const answer = await fetchJson(apiUrl('/session/workspaces'));
   return answer?.workspaces ?? [];
 }
 
@@ -104,7 +105,7 @@ export async function listWorkspaces() {
  * @returns {Promise<import('../model/session.js').Workspace>} The row as stored, id included.
  */
 export async function registerWorkspace(workspace) {
-  const answer = await fetchJson('/api/session/workspaces', { method: 'POST', body: workspace });
+  const answer = await fetchJson(apiUrl('/session/workspaces'), { method: 'POST', body: workspace });
   return answer.workspace;
 }
 
@@ -115,7 +116,7 @@ export async function registerWorkspace(workspace) {
  * @returns {Promise<import('../model/session.js').Workspace>} The row as it now stands.
  */
 export async function patchWorkspace(id, patch) {
-  const answer = await fetchJson(`/api/session/workspaces/${encodeURIComponent(id)}`, {
+  const answer = await fetchJson(apiUrl(`/session/workspaces/${encodeURIComponent(id)}`), {
     method: 'PATCH',
     body: patch
   });
@@ -134,7 +135,7 @@ export async function patchWorkspace(id, patch) {
  * @returns {Promise<import('../model/session.js').Workspace[]>} The table as it now stands.
  */
 export async function reorderWorkspaces(ids) {
-  const answer = await fetchJson('/api/session/workspaces/reorder', {
+  const answer = await fetchJson(apiUrl('/session/workspaces/reorder'), {
     method: 'POST',
     body: { ids }
   });
@@ -149,7 +150,7 @@ export async function reorderWorkspaces(ids) {
  * @returns {Promise<import('../model/session.js').Workspace>} The closed row.
  */
 export async function closeWorkspace(id) {
-  const answer = await fetchJson(`/api/session/workspaces/${encodeURIComponent(id)}/close`, {
+  const answer = await fetchJson(apiUrl(`/session/workspaces/${encodeURIComponent(id)}/close`), {
     method: 'POST'
   });
   return answer.workspace;
@@ -165,7 +166,7 @@ export async function closeWorkspace(id) {
  * @returns {Promise<void>} When it is gone.
  */
 export async function unregisterWorkspace(id) {
-  await fetchJson(`/api/session/workspaces/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  await fetchJson(apiUrl(`/session/workspaces/${encodeURIComponent(id)}`), { method: 'DELETE' });
 }
 
 /**
@@ -179,6 +180,6 @@ export async function unregisterWorkspace(id) {
  * @returns {Promise<boolean>} Whether this client should reconcile.
  */
 export async function claimWorkspaceReconcile() {
-  const answer = await fetchJson('/api/session/workspaces/reconcile', { method: 'POST' });
+  const answer = await fetchJson(apiUrl('/session/workspaces/reconcile'), { method: 'POST' });
   return answer?.reconcile === true;
 }

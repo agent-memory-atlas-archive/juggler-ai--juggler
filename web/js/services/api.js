@@ -7,6 +7,7 @@ import { conversationAssetURL } from '../../sdk/file-source.js';
 import { getPaintedTheme, getMode } from '../utils/theme-manager.js';
 import { getCurrentZoom } from '../utils/zoom-manager.js';
 import { fetchJson } from './http.js';
+import { apiUrl } from '../utils/api-url.js';
 
 /**
  * The full session payload returned by GET /api/session. Mirrors the shape
@@ -178,11 +179,6 @@ function gitWorkspaceQuery(workspaceId) {
 }
 
 class APIService {
-  constructor() {
-    /** @type {string} @private */
-    this.baseURL = '/api';
-  }
-
   /**
    * @param {string} endpoint
    * @param {{method?: string, body?: any, headers?: Record<string, string>, signal?: AbortSignal}} [options]
@@ -191,7 +187,7 @@ class APIService {
    */
   async request(endpoint, options = {}) {
     try {
-      return await fetchJson(`${this.baseURL}${endpoint}`, options);
+      return await fetchJson(apiUrl(endpoint), options);
     } catch (error) {
       console.error(`[API] Request failed for ${endpoint}:`, error);
       throw error;
@@ -431,7 +427,7 @@ class APIService {
    * @returns {Promise<void>}
    */
   async saveConversationBinary(conversationId, yjsData) {
-    const url = `${this.baseURL}/session/conversations/${conversationId}`;
+    const url = apiUrl(`/session/conversations/${conversationId}`);
     await fetchJson(url, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/octet-stream' },
@@ -724,7 +720,7 @@ class APIService {
    *   The stored asset reference.
    */
   async uploadAsset(conversationId, file) {
-    const url = `${this.baseURL}/session/conversations/${encodeURIComponent(conversationId)}/assets`;
+    const url = apiUrl(`/session/conversations/${encodeURIComponent(conversationId)}/assets`);
     return await fetchJson(url, {
       method: 'POST',
       headers: { 'Content-Type': file.type || 'application/octet-stream' },

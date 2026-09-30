@@ -24,6 +24,7 @@
  */
 
 import { fetchJson } from './http.js';
+import { apiUrl } from '../utils/api-url.js';
 
 /** @type {boolean|null} Cached "reply suggestions enabled" state; null until seeded. */
 let cachedEnabled = null;
@@ -63,7 +64,7 @@ export function setReplySuggestionsEnabledCached(enabled) {
  * @returns {Promise<boolean>} The refreshed enabled state.
  */
 export async function refreshReplySuggestionsSetting() {
-  const config = await fetchJson('/api/config', { fallback: null });
+  const config = await fetchJson(apiUrl('/config'), { fallback: null });
   if (config) cachedEnabled = !(/** @type {any} */ (config).replySuggestionsDisabled);
   return cachedEnabled === true;
 }

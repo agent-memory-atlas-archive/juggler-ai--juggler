@@ -34,6 +34,21 @@ type Server struct {
 	startedAt   time.Time
 	httpSrv     *http.Server
 	shutdownReq chan struct{} // control-API shutdown signal (buffered, len 1)
+	// testChildren (serve --test) spawns every child as a test server whose
+	// test window loads its session through this server's proxy. Test
+	// binaries only: a production-tagged child panics on --test.
+	testChildren bool
+}
+
+// childExtraArgs returns the flags a session child gets beyond the fixed
+// ones. Under --test, each child runs the test harness in a window pointed at
+// its own session URL here, so a browser test drives it through the proxy.
+func (s *Server) childExtraArgs(sessionID string) []string {
+	if !s.testChildren {
+		return nil
+	}
+	return []string{"--test", "--assets-from-disk",
+		"--test-window-url", "http://" + s.addr + "/s/" + sessionID + "/"}
 }
 
 // routes builds the machine server's handler: the control API under
@@ -125,7 +140,7 @@ func (s *Server) handleOpenSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	c, err := spawnChild(s.childBin, project)
+	c, err := spawnChild(s.childBin, project, s.childExtraArgs(sess.ID))
 	if err != nil {
 		jlog.Error("[machineserver] spawn failed for %s: %v", project, err)
 		s.reg.setError(sess.ID, err.Error())

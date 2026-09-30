@@ -8,6 +8,7 @@ import { fetchJson } from '../services/http.js';
 import { LOGO_WITH_NAME_SVG } from '../utils/juggler-logo.js';
 import { dragGuard } from '../utils/drag-guard.js';
 import JugglerElement from './juggler-element.js';
+import { apiUrl } from '../utils/api-url.js';
 
 /**
  * AboutModal - Shows information about the application
@@ -55,7 +56,7 @@ class AboutModal extends JugglerElement {
    * @returns {Promise<string>} The version string or 'Unknown' on error
    */
   async _fetchVersion() {
-    const data = await fetchJson('/api/version', {
+    const data = await fetchJson(apiUrl('/version'), {
       errorPrefix: '[AboutModal] Failed to fetch version',
       fallback: null,
     });

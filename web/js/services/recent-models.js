@@ -25,6 +25,7 @@
  */
 
 import { fetchJson } from './http.js';
+import { apiUrl } from '../utils/api-url.js';
 
 const MAX = 6;
 
@@ -103,7 +104,7 @@ const recentModels = {
   async refresh() {
     // Network/parse failure — keep the existing cache; recents are best-effort
     // convenience state.
-    const data = await fetchJson('/api/recent-models', { fallback: null });
+    const data = await fetchJson(apiUrl('/recent-models'), { fallback: null });
     if (data) _cache = sanitize(data.models);
     return _cache;
   },
@@ -129,7 +130,7 @@ const recentModels = {
         && (x.serviceTier || '') === (serviceTier || '')))].slice(0, MAX);
     // Best-effort persistence; the optimistic cache update already reflects the
     // pick for this session.
-    await fetchJson('/api/recent-models', { method: 'POST', body: entry, fallback: null });
+    await fetchJson(apiUrl('/recent-models'), { method: 'POST', body: entry, fallback: null });
   },
 };
 

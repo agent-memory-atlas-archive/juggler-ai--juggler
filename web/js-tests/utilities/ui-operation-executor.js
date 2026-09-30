@@ -21,6 +21,7 @@ import { threadRunSettled } from '../../js/model/run-records.js';
 import { SecondViewer } from './second-viewer.js';
 import { budgetFor } from './test-deadline.js';
 import { askForMoreTime, whyGivingUp } from './test-patience.js';
+import { apiUrl } from '../../js/utils/api-url.js';
 
 /**
  * @typedef {import('./integration-test-runner.js').TestOperation} TestOperation
@@ -664,7 +665,7 @@ export async function executeUIOperation(harness, op) {
       if (!op.path) throw new Error('delete-fixture-file requires path');
       const fixtureDir = harness.innerHarness?._fixtureDir;
       if (!fixtureDir) throw new Error('delete-fixture-file: no fixtureDir on harness');
-      const url = `/api/test/delete-file?dir=${encodeURIComponent(fixtureDir)}&path=${encodeURIComponent(op.path)}`;
+      const url = apiUrl(`/test/delete-file?dir=${encodeURIComponent(fixtureDir)}&path=${encodeURIComponent(op.path)}`);
       await fetch(url, { method: 'POST' });
       break;
     }

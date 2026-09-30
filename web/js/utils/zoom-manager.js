@@ -30,6 +30,7 @@ import { postWindowControl, isDesktopWindow } from '../../sdk/lib/window-control
 import { fetchJson } from '../services/http.js';
 import { scopedKey, resolvePref } from '../services/prefs.js';
 import { windowRole } from './view-mode.js';
+import { apiUrl } from './api-url.js';
 
 const ZOOM_KEY_BASE = 'juggler-zoom';
 const ZOOM_STEP = 10;
@@ -120,7 +121,7 @@ function applyZoom(level) {
  */
 function persistToSession(level) {
   // Best-effort — a missing/blocked fetch just skips session persistence.
-  const url = `/api/session/ui-zoom?role=${encodeURIComponent(windowRole())}`;
+  const url = apiUrl(`/session/ui-zoom?role=${encodeURIComponent(windowRole())}`);
   void fetchJson(url, { method: 'PUT', body: { uiZoom: level }, fallback: null });
 }
 

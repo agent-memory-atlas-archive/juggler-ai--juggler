@@ -18,33 +18,33 @@
     <script type="importmap" nonce="{{.CSPNonce}}">
     {
         "imports": {
-            "juggler/context-item": "/v{{.StaticVersion}}/sdk/context-item.js",
-            "juggler/strategy-type": "/v{{.StaticVersion}}/sdk/strategy-type.js",
-            "juggler/command-type": "/v{{.StaticVersion}}/sdk/command-type.js",
-            "juggler/info-card-type": "/v{{.StaticVersion}}/sdk/info-card-type.js",
-            "juggler/pinboard": "/v{{.StaticVersion}}/sdk/pinboard.js",
-            "juggler/pinboard-item-type": "/v{{.StaticVersion}}/sdk/pinboard-item-type.js",
-            "juggler/file-viewer": "/v{{.StaticVersion}}/sdk/file-viewer.js",
-            "juggler/workspace-provider": "/v{{.StaticVersion}}/sdk/workspace-provider.js",
-            "juggler/file-source": "/v{{.StaticVersion}}/sdk/file-source.js",
-            "juggler/ops": "/v{{.StaticVersion}}/sdk/ops.js",
-            "juggler/sandbox": "/v{{.StaticVersion}}/sdk/sandbox.js",
-            "juggler/ui": "/v{{.StaticVersion}}/sdk/ui.js",
-            "juggler/model": "/v{{.StaticVersion}}/sdk/model.js",
-            "juggler/item-utils": "/v{{.StaticVersion}}/sdk/item-utils.js",
-            "juggler/registry": "/v{{.StaticVersion}}/sdk/registry.js",
-            "juggler/version": "/v{{.StaticVersion}}/sdk/version.js",
-            "juggler/utils/html": "/v{{.StaticVersion}}/sdk/lib/html.js",
-            "juggler/utils/path-containment": "/v{{.StaticVersion}}/sdk/lib/path-containment.js"
+            "juggler/context-item": "{{.BasePath}}/v{{.StaticVersion}}/sdk/context-item.js",
+            "juggler/strategy-type": "{{.BasePath}}/v{{.StaticVersion}}/sdk/strategy-type.js",
+            "juggler/command-type": "{{.BasePath}}/v{{.StaticVersion}}/sdk/command-type.js",
+            "juggler/info-card-type": "{{.BasePath}}/v{{.StaticVersion}}/sdk/info-card-type.js",
+            "juggler/pinboard": "{{.BasePath}}/v{{.StaticVersion}}/sdk/pinboard.js",
+            "juggler/pinboard-item-type": "{{.BasePath}}/v{{.StaticVersion}}/sdk/pinboard-item-type.js",
+            "juggler/file-viewer": "{{.BasePath}}/v{{.StaticVersion}}/sdk/file-viewer.js",
+            "juggler/workspace-provider": "{{.BasePath}}/v{{.StaticVersion}}/sdk/workspace-provider.js",
+            "juggler/file-source": "{{.BasePath}}/v{{.StaticVersion}}/sdk/file-source.js",
+            "juggler/ops": "{{.BasePath}}/v{{.StaticVersion}}/sdk/ops.js",
+            "juggler/sandbox": "{{.BasePath}}/v{{.StaticVersion}}/sdk/sandbox.js",
+            "juggler/ui": "{{.BasePath}}/v{{.StaticVersion}}/sdk/ui.js",
+            "juggler/model": "{{.BasePath}}/v{{.StaticVersion}}/sdk/model.js",
+            "juggler/item-utils": "{{.BasePath}}/v{{.StaticVersion}}/sdk/item-utils.js",
+            "juggler/registry": "{{.BasePath}}/v{{.StaticVersion}}/sdk/registry.js",
+            "juggler/version": "{{.BasePath}}/v{{.StaticVersion}}/sdk/version.js",
+            "juggler/utils/html": "{{.BasePath}}/v{{.StaticVersion}}/sdk/lib/html.js",
+            "juggler/utils/path-containment": "{{.BasePath}}/v{{.StaticVersion}}/sdk/lib/path-containment.js"
         }
     }
     </script>
 
     <!-- Favicon -->
-    <link rel="icon" type="image/svg+xml" href="/v{{.StaticVersion}}/resources/juggler-logo.svg">
+    <link rel="icon" type="image/svg+xml" href="{{.BasePath}}/v{{.StaticVersion}}/resources/juggler-logo.svg">
 
     <!-- Fonts (self-hosted; see web/css/base/fonts.css) -->
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/base/fonts.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/base/fonts.css">
 
     <!-- Paint the document background from the stored theme synchronously so
          the in-process WKWebView doesn't flash white during native resize.
@@ -181,106 +181,106 @@
          sheet declares its @layer. base/fonts.css is linked further up, ahead
          of the theme paint, and holds nothing but @font-face. -->
     <!-- Tokens -->
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/tokens/scale.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/tokens/theme-dark.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/tokens/theme-light.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/tokens/scale.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/tokens/theme-dark.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/tokens/theme-light.css">
 
     <!-- Element defaults -->
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/base/reset.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/base/elements.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/base/text-selection.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/base/reset.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/base/elements.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/base/text-selection.css">
 
     <!-- The shell -->
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/layout/app-shell.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/layout/window-chrome.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/layout/app-header.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/layout/app-shell.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/layout/window-chrome.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/layout/app-header.css">
 
     <!-- Shared patterns -->
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/buttons.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/copy-button.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/popup-surface.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/menus.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/code.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/markdown.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/overlay-chrome.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/icons.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/spinner.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/modal-dialog.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/tooltip.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/drag-grip.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/patterns/inline-rename.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/patterns/buttons.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/patterns/copy-button.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/patterns/popup-surface.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/patterns/menus.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/patterns/code.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/patterns/markdown.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/patterns/overlay-chrome.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/patterns/icons.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/patterns/spinner.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/patterns/modal-dialog.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/patterns/tooltip.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/patterns/drag-grip.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/patterns/inline-rename.css">
 
     <!-- The feature groups -->
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/messages.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/project-setup.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/conversation-bar.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/conversation-tab.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/strategy-bar.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/onboarding.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/workspace-panel.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/properties-panel.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/model-picker.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/diff-viewer.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/composer.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/about-modal.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/approvals.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/overlays-and-updates.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/settings.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/escape-arm-cue.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/find-bar.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/slash-commands.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/workspace-dialogs.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/pinboard.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/context-items.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/plugin-catalog.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/skills-marketplace.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/components/messages.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/components/project-setup.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/components/conversation-bar.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/components/conversation-tab.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/components/strategy-bar.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/components/onboarding.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/components/workspace-panel.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/components/properties-panel.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/components/model-picker.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/components/diff-viewer.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/components/composer.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/components/about-modal.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/components/approvals.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/components/overlays-and-updates.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/components/settings.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/components/escape-arm-cue.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/components/find-bar.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/components/slash-commands.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/components/workspace-dialogs.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/components/pinboard.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/components/context-items.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/components/plugin-catalog.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/components/skills-marketplace.css">
 
     <!-- Vendor. A syntax theme has to beat the generic pre/code styling the
          feature groups apply, so it sits above components. -->
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/components/popup-sheet.css">
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/vendor/prism-theme.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/components/popup-sheet.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/vendor/prism-theme.css">
 
     <!-- Utilities, last, so they win -->
-    <link rel="stylesheet" href="/v{{.StaticVersion}}/css/utilities/utilities.css">
+    <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/utilities/utilities.css">
 
     <!-- Marked.js for markdown rendering (vendored) -->
-    <script src="/v{{.StaticVersion}}/js/vendor/marked.min.js"></script>
+    <script src="{{.BasePath}}/v{{.StaticVersion}}/js/vendor/marked.min.js"></script>
 
     <!-- Prism.js for syntax highlighting (vendored) -->
-    <script src="/v{{.StaticVersion}}/js/vendor/prism-core.js"></script>
-    <script src="/v{{.StaticVersion}}/js/vendor/prism-markup.js"></script>
-    <script src="/v{{.StaticVersion}}/js/vendor/prism-css.js"></script>
-    <script src="/v{{.StaticVersion}}/js/vendor/prism-javascript.js"></script>
-    <script src="/v{{.StaticVersion}}/js/vendor/prism-typescript.js"></script>
-    <script src="/v{{.StaticVersion}}/js/vendor/prism-python.js"></script>
-    <script src="/v{{.StaticVersion}}/js/vendor/prism-go.js"></script>
-    <script src="/v{{.StaticVersion}}/js/vendor/prism-bash.js"></script>
-    <script src="/v{{.StaticVersion}}/js/vendor/prism-json.js"></script>
-    <script src="/v{{.StaticVersion}}/js/vendor/prism-markdown.js"></script>
+    <script src="{{.BasePath}}/v{{.StaticVersion}}/js/vendor/prism-core.js"></script>
+    <script src="{{.BasePath}}/v{{.StaticVersion}}/js/vendor/prism-markup.js"></script>
+    <script src="{{.BasePath}}/v{{.StaticVersion}}/js/vendor/prism-css.js"></script>
+    <script src="{{.BasePath}}/v{{.StaticVersion}}/js/vendor/prism-javascript.js"></script>
+    <script src="{{.BasePath}}/v{{.StaticVersion}}/js/vendor/prism-typescript.js"></script>
+    <script src="{{.BasePath}}/v{{.StaticVersion}}/js/vendor/prism-python.js"></script>
+    <script src="{{.BasePath}}/v{{.StaticVersion}}/js/vendor/prism-go.js"></script>
+    <script src="{{.BasePath}}/v{{.StaticVersion}}/js/vendor/prism-bash.js"></script>
+    <script src="{{.BasePath}}/v{{.StaticVersion}}/js/vendor/prism-json.js"></script>
+    <script src="{{.BasePath}}/v{{.StaticVersion}}/js/vendor/prism-markdown.js"></script>
     <!-- A grammar that extends another must load after it: markup-templating
          before php, scss/sass after css, cpp after c. -->
-    <script src="/v{{.StaticVersion}}/js/vendor/prism-markup-templating.js"></script>
-    <script src="/v{{.StaticVersion}}/js/vendor/prism-scss.js"></script>
-    <script src="/v{{.StaticVersion}}/js/vendor/prism-sass.js"></script>
-    <script src="/v{{.StaticVersion}}/js/vendor/prism-c.js"></script>
-    <script src="/v{{.StaticVersion}}/js/vendor/prism-cpp.js"></script>
-    <script src="/v{{.StaticVersion}}/js/vendor/prism-csharp.js"></script>
-    <script src="/v{{.StaticVersion}}/js/vendor/prism-java.js"></script>
-    <script src="/v{{.StaticVersion}}/js/vendor/prism-kotlin.js"></script>
-    <script src="/v{{.StaticVersion}}/js/vendor/prism-groovy.js"></script>
-    <script src="/v{{.StaticVersion}}/js/vendor/prism-ruby.js"></script>
-    <script src="/v{{.StaticVersion}}/js/vendor/prism-rust.js"></script>
-    <script src="/v{{.StaticVersion}}/js/vendor/prism-swift.js"></script>
-    <script src="/v{{.StaticVersion}}/js/vendor/prism-php.js"></script>
-    <script src="/v{{.StaticVersion}}/js/vendor/prism-yaml.js"></script>
-    <script src="/v{{.StaticVersion}}/js/vendor/prism-toml.js"></script>
-    <script src="/v{{.StaticVersion}}/js/vendor/prism-ini.js"></script>
-    <script src="/v{{.StaticVersion}}/js/vendor/prism-properties.js"></script>
-    <script src="/v{{.StaticVersion}}/js/vendor/prism-sql.js"></script>
-    <script src="/v{{.StaticVersion}}/js/vendor/prism-docker.js"></script>
-    <script src="/v{{.StaticVersion}}/js/vendor/prism-makefile.js"></script>
-    <script src="/v{{.StaticVersion}}/js/vendor/prism-cmake.js"></script>
-    <script src="/v{{.StaticVersion}}/js/vendor/prism-diff.js"></script>
+    <script src="{{.BasePath}}/v{{.StaticVersion}}/js/vendor/prism-markup-templating.js"></script>
+    <script src="{{.BasePath}}/v{{.StaticVersion}}/js/vendor/prism-scss.js"></script>
+    <script src="{{.BasePath}}/v{{.StaticVersion}}/js/vendor/prism-sass.js"></script>
+    <script src="{{.BasePath}}/v{{.StaticVersion}}/js/vendor/prism-c.js"></script>
+    <script src="{{.BasePath}}/v{{.StaticVersion}}/js/vendor/prism-cpp.js"></script>
+    <script src="{{.BasePath}}/v{{.StaticVersion}}/js/vendor/prism-csharp.js"></script>
+    <script src="{{.BasePath}}/v{{.StaticVersion}}/js/vendor/prism-java.js"></script>
+    <script src="{{.BasePath}}/v{{.StaticVersion}}/js/vendor/prism-kotlin.js"></script>
+    <script src="{{.BasePath}}/v{{.StaticVersion}}/js/vendor/prism-groovy.js"></script>
+    <script src="{{.BasePath}}/v{{.StaticVersion}}/js/vendor/prism-ruby.js"></script>
+    <script src="{{.BasePath}}/v{{.StaticVersion}}/js/vendor/prism-rust.js"></script>
+    <script src="{{.BasePath}}/v{{.StaticVersion}}/js/vendor/prism-swift.js"></script>
+    <script src="{{.BasePath}}/v{{.StaticVersion}}/js/vendor/prism-php.js"></script>
+    <script src="{{.BasePath}}/v{{.StaticVersion}}/js/vendor/prism-yaml.js"></script>
+    <script src="{{.BasePath}}/v{{.StaticVersion}}/js/vendor/prism-toml.js"></script>
+    <script src="{{.BasePath}}/v{{.StaticVersion}}/js/vendor/prism-ini.js"></script>
+    <script src="{{.BasePath}}/v{{.StaticVersion}}/js/vendor/prism-properties.js"></script>
+    <script src="{{.BasePath}}/v{{.StaticVersion}}/js/vendor/prism-sql.js"></script>
+    <script src="{{.BasePath}}/v{{.StaticVersion}}/js/vendor/prism-docker.js"></script>
+    <script src="{{.BasePath}}/v{{.StaticVersion}}/js/vendor/prism-makefile.js"></script>
+    <script src="{{.BasePath}}/v{{.StaticVersion}}/js/vendor/prism-cmake.js"></script>
+    <script src="{{.BasePath}}/v{{.StaticVersion}}/js/vendor/prism-diff.js"></script>
 
     <!-- diff-match-patch for proper diff algorithm -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/diff_match_patch/20121119/diff_match_patch.js"></script>
@@ -298,7 +298,7 @@
 
     <!-- Asset prefix injected by server -->
     <script nonce="{{.CSPNonce}}">
-        window.__assetPrefix = '/v{{.StaticVersion}}';
+        window.__assetPrefix = '{{.BasePath}}/v{{.StaticVersion}}';
         {{if .IsTestMode}}window.JUGGLER_TEST_MODE = true;{{end}}
         // Per-instance session token (see cmd/juggler/server/api_auth.go). It is
         // readable only by this same-origin page; a hostile cross-origin site
@@ -307,12 +307,17 @@
         // sites need no individual change. WebSocket dials pass it as a query
         // param (see services/websocket.js).
         window.__jugglerToken = '{{.APIToken}}';
+        // Where this server is mounted: '' when reached directly, '/s/<id>'
+        // behind the machine server's session proxy. Every /api and WebSocket
+        // URL is built on it (utils/api-url.js).
+        window.__jugglerBase = '{{.BasePath}}';
         (function () {
             const token = window.__jugglerToken;
             if (!token || typeof window.fetch !== 'function') return;
             const origFetch = window.fetch.bind(window);
+            const apiRoot = window.__jugglerBase + '/api/';
             const isApi = (u) => typeof u === 'string' &&
-                (u.startsWith('/api/') || u.startsWith(window.location.origin + '/api/'));
+                (u.startsWith(apiRoot) || u.startsWith(window.location.origin + apiRoot));
             window.fetch = function (input, init) {
                 try {
                     const url = typeof input === 'string' ? input : (input && input.url) || '';
@@ -334,7 +339,7 @@
         // native WKWebView debug context menu (reload / Inspect Element) — see
         // services/context-menu-service.js. Absent (falsy) in normal sessions.
         {{if .IsDevMode}}window.JUGGLER_DEV_MODE = true;{{end}}
-        document.documentElement.style.setProperty('--logo-with-name-url', "url('/v{{.StaticVersion}}/resources/juggler-logo-with-name.svg')");
+        document.documentElement.style.setProperty('--logo-with-name-url', "url('{{.BasePath}}/v{{.StaticVersion}}/resources/juggler-logo-with-name.svg')");
         // Mirror the window-mode marker (set synchronously in <head>) onto
         // <body> so CSS rules keyed on .window-mode keep working unchanged.
         if (document.documentElement.dataset.windowMode === '1') {
@@ -551,71 +556,71 @@
     </app-container>
 
     <!-- Load utilities first -->
-    <script type="module" src="/v{{.StaticVersion}}/sdk/lib/html.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/utils/theme-manager.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/utils/window-fullscreen.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/utils/window-resize-cursor.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/sdk/lib/html.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/utils/theme-manager.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/utils/window-fullscreen.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/utils/window-resize-cursor.js"></script>
 
     <!-- Load services -->
-    <script type="module" src="/v{{.StaticVersion}}/js/services/api.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/services/websocket.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/services/action-executor.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/services/llm-state.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/services/animation-service.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/services/response-handler.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/services/context-menu-service.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/services/api.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/services/websocket.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/services/action-executor.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/services/llm-state.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/services/animation-service.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/services/response-handler.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/services/context-menu-service.js"></script>
 
     <!-- Load model -->
-    <script type="module" src="/v{{.StaticVersion}}/js/model/conversation.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/model/session.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/model/conversation.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/model/session.js"></script>
 
     <!-- Load components -->
-    <script type="module" src="/v{{.StaticVersion}}/js/components/modal-dialog.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/components/context-preview-modal.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/components/settings-panel.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/components/about-modal.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/components/update-notice.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/components/update-button.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/components/bin-modal.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/components/diff-viewer.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/components/file-view.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/components/modal-dialog.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/components/context-preview-modal.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/components/settings-panel.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/components/about-modal.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/components/update-notice.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/components/update-button.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/components/bin-modal.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/components/diff-viewer.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/components/file-view.js"></script>
 
-    <script type="module" src="/v{{.StaticVersion}}/js/components/action-confirmation.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/components/juggler-spinner.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/components/reveal-button.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/components/window-caption-controls.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/components/token-display.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/components/model-selector.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/components/strategy-selector.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/components/action-confirmation.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/components/juggler-spinner.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/components/reveal-button.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/components/window-caption-controls.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/components/token-display.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/components/model-selector.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/components/strategy-selector.js"></script>
     <!-- Per-type message components -->
-    <script type="module" src="/v{{.StaticVersion}}/js/components/user-message.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/components/assistant-message.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/components/thinking-message.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/components/context-item-message.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/components/error-message.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/components/code-block.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/components/composer.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/components/thinking-block.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/components/user-message.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/components/assistant-message.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/components/thinking-message.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/components/context-item-message.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/components/error-message.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/components/code-block.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/components/composer.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/components/thinking-block.js"></script>
 
     <!-- New context-first components -->
-    <script type="module" src="/v{{.StaticVersion}}/js/components/conversation-bar.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/components/conversation-tab.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/components/no-project-overlay.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/components/no-conversations-overlay.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/components/workspace-panel.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/components/properties-panel.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/components/conversation-area.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/components/plugin-catalog.js"></script>
-    <script type="module" src="/v{{.StaticVersion}}/js/components/pinboard-shell.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/components/conversation-bar.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/components/conversation-tab.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/components/no-project-overlay.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/components/no-conversations-overlay.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/components/workspace-panel.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/components/properties-panel.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/components/conversation-area.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/components/plugin-catalog.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/components/pinboard-shell.js"></script>
 
     <!-- Plugin base class -->
-    <script type="module" src="/v{{.StaticVersion}}/sdk/context-item.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/sdk/context-item.js"></script>
 
     <!-- Plugin registry -->
-    <script type="module" src="/v{{.StaticVersion}}/js/registries/context-item-registry.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/registries/context-item-registry.js"></script>
 
     <!-- Main app -->
-    <script type="module" src="/v{{.StaticVersion}}/js/app.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/app.js"></script>
 
     <!-- About Modal (shows when clicking the logo) -->
     <about-modal></about-modal>

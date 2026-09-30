@@ -1,0 +1,341 @@
+//     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+//     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+//   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+
+package integration_test
+
+import (
+	"bufio"
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"sync"
+	"syscall"
+	"testing"
+	"time"
+
+	"juggler/cmd/juggler/machineserver"
+	"juggler/cmd/juggler/server"
+)
+
+// machineServerStartTimeout bounds how long `juggler serve` may take to print
+// its address. It binds before it does anything else, so this is generous.
+const machineServerStartTimeout = 30 * time.Second
+
+// machineServerStopTimeout bounds a graceful shutdown: the server stops its
+// children concurrently, each allowed an interrupt grace then a kill grace.
+const machineServerStopTimeout = 20 * time.Second
+
+// sessionOpenTimeout bounds POST /api/server/sessions, which blocks until the
+// child reports its address (the machine server's own spawn timeout is 20s).
+const sessionOpenTimeout = 60 * time.Second
+
+// machineServer is one `juggler serve` process run by a test, isolated under
+// its own temporary HOME so its ~/.juggler/server.lock and server.json never
+// meet the developer's, another test's, or a real machine server's.
+type machineServer struct {
+	t      *testing.T
+	Addr   string // host:port from the JUGGLER_ADDR= line
+	Home   string // the temporary HOME it and its children run under
+	Logs   string // JUGGLER_LOG_DIR for it and its children
+	cmd    *exec.Cmd
+	exited chan struct{} // closed once the process has been reaped
+	stderr string        // path of the captured stderr
+
+	// Every child pid seen → its address, for the leak check. Touched only
+	// from the test's own goroutine.
+	children map[int]string
+}
+
+// startMachineServer runs `juggler serve --port 0` from the suite's server
+// binary under a fresh temporary HOME and returns once it has printed its
+// address, with the cleanup that stops it. The cleanup asks for a graceful
+// shutdown through the control API, falls back to killing the process, and
+// fails the test if any session child it saw is still serving afterwards.
+//
+// Children are spawned from the machine server's own executable, as in
+// production: JUGGLER_SERVER_BIN is cleared rather than set, so the harness
+// runs the same path a shipped `juggler serve` does. They inherit the
+// temporary HOME and log dir. serveArgs are appended to the serve command
+// line; without `--test` among them the children run as production children
+// and enforce the per-instance API token.
+func startMachineServer(t *testing.T, serveArgs ...string) (*machineServer, func()) {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("spawns the juggler binary; skipped in -short mode")
+	}
+	root, err := server.FindProjectRoot(".")
+	if err != nil {
+		t.Fatalf("find project root: %v", err)
+	}
+	binary := serverBinary(root)
+	if _, err := os.Stat(binary); err != nil {
+		t.Fatalf("server binary not built at %s: %v", binary, err)
+	}
+
+	base := t.TempDir()
+	home := filepath.Join(base, "home")
+	logs := filepath.Join(base, "logs")
+	skills := filepath.Join(base, "skills")
+	for _, d := range []string{home, logs, skills} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", d, err)
+		}
+	}
+
+	cmd := exec.Command(binary, append([]string{"serve", "--port", "0"}, serveArgs...)...)
+	env := os.Environ()
+	for k, v := range map[string]string{
+		"HOME":        home,
+		"USERPROFILE": home,
+		// Empty values are ignored by the resolvers, so these fall back to
+		// paths under HOME instead of an ambient override.
+		"JUGGLER_CONFIG_DIR": "",
+		"XDG_CONFIG_HOME":    "",
+		"XDG_CACHE_HOME":     "",
+		"XDG_STATE_HOME":     "",
+		"XDG_DATA_HOME":      "",
+		"JUGGLER_SERVER_BIN": "",
+		"JUGGLER_LOG_DIR":    logs,
+		// An empty skills dir, so a user's skills never reach a child.
+		"JUGGLER_SKILLS_USER_DIR": skills,
+	} {
+		env = envWithOverride(env, k, v)
+	}
+	cmd.Env = env
+	setProcGroupAttr(cmd)
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatalf("stdout pipe: %v", err)
+	}
+	stderrPath := filepath.Join(base, "serve-stderr.log")
+	stderrFile, err := os.Create(stderrPath)
+	if err != nil {
+		t.Fatalf("stderr file: %v", err)
+	}
+	cmd.Stderr = stderrFile
+	if err := cmd.Start(); err != nil {
+		_ = stderrFile.Close()
+		t.Fatalf("start %s serve: %v", binary, err)
+	}
+	_ = stderrFile.Close()
+
+	ms := &machineServer{
+		t: t, Home: home, Logs: logs, cmd: cmd,
+		exited: make(chan struct{}), stderr: stderrPath,
+		children: map[int]string{},
+	}
+
+	// Scan for the handshake, then keep draining so the server never blocks
+	// on a full pipe. Wait runs only after the scanner reaches EOF.
+	addrCh := make(chan string, 1)
+	scanned := make(chan struct{})
+	go func() {
+		defer close(scanned)
+		sc := bufio.NewScanner(stdout)
+		for sc.Scan() {
+			if after, ok := strings.CutPrefix(sc.Text(), "JUGGLER_ADDR="); ok {
+				select {
+				case addrCh <- strings.TrimSpace(after):
+				default:
+				}
+			}
+		}
+	}()
+	go func() {
+		<-scanned
+		_ = cmd.Wait()
+		close(ms.exited)
+	}()
+
+	var once sync.Once
+	stop := func() { once.Do(ms.stop) }
+
+	select {
+	case ms.Addr = <-addrCh:
+	case <-ms.exited:
+		t.Fatalf("machine server exited before printing its address:\n%s", ms.stderrText())
+	case <-time.After(machineServerStartTimeout):
+		stop()
+		t.Fatalf("machine server did not print its address within %s:\n%s", machineServerStartTimeout, ms.stderrText())
+	}
+	return ms, stop
+}
+
+// stop shuts the machine server down and checks it took its children with it.
+func (ms *machineServer) stop() {
+	t := ms.t
+	// Record whatever is live now, so the leak check covers children the test
+	// never looked at.
+	if sessions, err := ms.listSessions(); err == nil {
+		for _, s := range sessions {
+			ms.noteChild(s)
+		}
+	}
+
+	if resp, err := ms.do(http.MethodPost, "/api/server/shutdown", nil); err == nil {
+		_ = resp.Body.Close()
+	}
+	select {
+	case <-ms.exited:
+	case <-time.After(machineServerStopTimeout):
+		t.Errorf("machine server did not exit within %s of a shutdown request — killing it", machineServerStopTimeout)
+		signalGroup(ms.cmd, syscall.SIGKILL)
+		<-ms.exited
+	}
+
+	for pid, addr := range ms.children {
+		if addr != "" && dialable(addr) {
+			t.Errorf("session child pid %d at %s is still serving after the machine server exited", pid, addr)
+		}
+		if p, err := os.FindProcess(pid); err == nil {
+			_ = p.Kill()
+		}
+	}
+	if t.Failed() {
+		t.Logf("machine server stderr:\n%s", ms.stderrText())
+	}
+}
+
+// noteChild records a session's child for the leak check at stop.
+func (ms *machineServer) noteChild(s machineserver.Session) {
+	if s.PID == 0 {
+		return
+	}
+	ms.children[s.PID] = s.Addr
+}
+
+func (ms *machineServer) stderrText() string {
+	b, err := os.ReadFile(ms.stderr)
+	if err != nil {
+		return fmt.Sprintf("(unreadable: %v)", err)
+	}
+	return string(b)
+}
+
+// url returns the machine server's URL for path.
+func (ms *machineServer) url(path string) string {
+	return "http://" + ms.Addr + path
+}
+
+// do sends one request to the machine server, JSON-encoding body when given.
+func (ms *machineServer) do(method, path string, body any) (*http.Response, error) {
+	var r io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		r = bytes.NewReader(b)
+	}
+	req, err := http.NewRequest(method, ms.url(path), r)
+	if err != nil {
+		return nil, err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	client := &http.Client{
+		Timeout: sessionOpenTimeout,
+		// Redirects are part of what the proxy does; tests see them as sent.
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	return client.Do(req)
+}
+
+// openSession POSTs /api/server/sessions for project, requires wantStatus, and
+// returns the session record.
+func (ms *machineServer) openSession(project string, wantStatus int) machineserver.Session {
+	ms.t.Helper()
+	resp, err := ms.do(http.MethodPost, "/api/server/sessions", map[string]string{"project": project})
+	if err != nil {
+		ms.t.Fatalf("POST /api/server/sessions: %v", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != wantStatus {
+		ms.t.Fatalf("POST /api/server/sessions for %s: status %d, want %d; body %s", project, resp.StatusCode, wantStatus, body)
+	}
+	var s machineserver.Session
+	if err := json.Unmarshal(body, &s); err != nil {
+		ms.t.Fatalf("decode session %s: %v", body, err)
+	}
+	ms.noteChild(s)
+	return s
+}
+
+// listSessions GETs /api/server/sessions.
+func (ms *machineServer) listSessions() ([]machineserver.Session, error) {
+	resp, err := ms.do(http.MethodGet, "/api/server/sessions", nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GET /api/server/sessions: status %d", resp.StatusCode)
+	}
+	var out []machineserver.Session
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// mustListSessions is listSessions that fails the test on error.
+func (ms *machineServer) mustListSessions() []machineserver.Session {
+	ms.t.Helper()
+	out, err := ms.listSessions()
+	if err != nil {
+		ms.t.Fatalf("%v", err)
+	}
+	return out
+}
+
+// waitForSessionState polls the sessions list until id reaches state.
+func (ms *machineServer) waitForSessionState(id string, state machineserver.SessionState, timeout time.Duration) machineserver.Session {
+	ms.t.Helper()
+	deadline := time.Now().Add(timeout)
+	var last []machineserver.Session
+	for {
+		last = ms.mustListSessions()
+		for _, s := range last {
+			if s.ID == id && s.State == state {
+				return s
+			}
+		}
+		if time.Now().After(deadline) {
+			ms.t.Fatalf("session %s did not reach state %q within %s; sessions: %+v", id, state, timeout, last)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// newProjectDir returns a fresh project folder with symlinks resolved, so the
+// path a test sends is the path the child reports back (macOS temp dirs sit
+// under a /var → /private/var link).
+func newProjectDir(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolve temp dir: %v", err)
+	}
+	return dir
+}
+
+// dialable reports whether something accepts TCP connections at addr.
+func dialable(addr string) bool {
+	c, err := net.DialTimeout("tcp", addr, 2*time.Second)
+	if err != nil {
+		return false
+	}
+	_ = c.Close()
+	return true
+}

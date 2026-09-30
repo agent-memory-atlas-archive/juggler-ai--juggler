@@ -17,6 +17,7 @@
 import { resolveAssetUrl, importModuleUrl } from '../utils/asset-url.js';
 import { whenRegistriesReady } from '../registries/registry-ready.js';
 import { fetchJson } from './http.js';
+import { apiUrl } from '../utils/api-url.js';
 
 /**
  * @typedef {object} ExtensionManifest
@@ -118,7 +119,7 @@ async function loadPluginConfig() {
   if (disabledInFlight) return disabledInFlight;
 
   disabledInFlight = (async () => {
-    const data = await fetchJson('/api/config/plugins', { fallback: null });
+    const data = await fetchJson(apiUrl('/config/plugins'), { fallback: null });
     // Unreadable: serve the config that WAS read, or null if there has never
     // been one. Never an empty set — see disabledStale.
     if (!data) return pluginConfig;
@@ -159,7 +160,7 @@ export async function fetchExtensions() {
   }
 
   /** @type {Extension[]|null} */
-  const result = await fetchJson('/api/extensions', {
+  const result = await fetchJson(apiUrl('/extensions'), {
     errorPrefix: '[Extensions] Failed to fetch extensions',
     fallback: null,
   });
@@ -326,6 +327,6 @@ const EMPTY_LOCATIONS = { userExtensions: '' };
  * @returns {Promise<ExtensionLocations>} The install locations (fields may be empty)
  */
 export async function fetchExtensionLocations() {
-  return await fetchJson('/api/extensions/locations', { fallback: { ...EMPTY_LOCATIONS } })
+  return await fetchJson(apiUrl('/extensions/locations'), { fallback: { ...EMPTY_LOCATIONS } })
     || { ...EMPTY_LOCATIONS };
 }

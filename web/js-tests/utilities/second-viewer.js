@@ -37,6 +37,7 @@
  */
 
 import ConversationDocument from '../../js/model/conversation-document.js';
+import { wsUrl } from '../../js/utils/api-url.js';
 
 /**
  * Normalize a doc's items to the [{type, content}] shape integration tests
@@ -75,9 +76,7 @@ export class SecondViewer {
    * @returns {Promise<void>}
    */
   open() {
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = `${proto}//${window.location.host}/api/ws?role=viewer`;
-    this._ws = new WebSocket(url);
+    this._ws = new WebSocket(wsUrl('role=viewer'));
 
     this._ws.onmessage = (/** @type {MessageEvent} */ event) => {
       if (!event.data || String(event.data).trim().length === 0) return;

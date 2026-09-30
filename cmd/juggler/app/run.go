@@ -310,6 +310,7 @@ func parseFlags(hasTerminal bool) (appFlags, bool) {
 	port := flag.Int("port", 0, "Override config port (0 = use config value)")
 	testMode := flag.Bool("test", false, "Enable test API routes and print JUGGLER_ADDR to stdout")
 	testIframes := flag.Int("test-iframes", 0, "Test-mode only: open the viewer window at /test-pool?n=N (tiled iframes acting as parallel test lanes) instead of the production UI")
+	testWindowURL := flag.String("test-window-url", "", "Test-mode only: the URL the test window loads instead of this server's own (set by `juggler serve --test` to the session's proxied URL)")
 	public := flag.Bool("public", false, "Force LAN access on/off at startup (default: on for a direct terminal server, off otherwise; press 'p' to toggle at runtime)")
 	// WAN startup flags come from the tunnel-mode registry: each registered
 	// mode with a FlagName contributes one bool flag. A build with no
@@ -377,6 +378,7 @@ func parseFlags(hasTerminal bool) (appFlags, bool) {
 		portSet:        portSet,
 		testMode:       *testMode,
 		testIframes:    *testIframes,
+		testWindowURL:  *testWindowURL,
 		public:         *public,
 		publicSet:      publicSet,
 		startupWAN:     startupWAN,
@@ -396,6 +398,7 @@ var hiddenFlags = map[string]bool{
 	"assets-from-disk": true,
 	"test":             true,
 	"test-iframes":     true,
+	"test-window-url":  true,
 	"session-child":    true,
 	"exit-with-parent": true,
 	"log-file":         true,

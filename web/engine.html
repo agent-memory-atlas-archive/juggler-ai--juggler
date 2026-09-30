@@ -17,24 +17,24 @@
     <script type="importmap" nonce="{{.CSPNonce}}">
     {
         "imports": {
-            "juggler/context-item": "/v{{.StaticVersion}}/sdk/context-item.js",
-            "juggler/strategy-type": "/v{{.StaticVersion}}/sdk/strategy-type.js",
-            "juggler/command-type": "/v{{.StaticVersion}}/sdk/command-type.js",
-            "juggler/info-card-type": "/v{{.StaticVersion}}/sdk/info-card-type.js",
-            "juggler/pinboard": "/v{{.StaticVersion}}/sdk/pinboard.js",
-            "juggler/pinboard-item-type": "/v{{.StaticVersion}}/sdk/pinboard-item-type.js",
-            "juggler/file-viewer": "/v{{.StaticVersion}}/sdk/file-viewer.js",
-            "juggler/workspace-provider": "/v{{.StaticVersion}}/sdk/workspace-provider.js",
-            "juggler/file-source": "/v{{.StaticVersion}}/sdk/file-source.js",
-            "juggler/ops": "/v{{.StaticVersion}}/sdk/ops.js",
-            "juggler/sandbox": "/v{{.StaticVersion}}/sdk/sandbox.js",
-            "juggler/ui": "/v{{.StaticVersion}}/sdk/ui.js",
-            "juggler/model": "/v{{.StaticVersion}}/sdk/model.js",
-            "juggler/item-utils": "/v{{.StaticVersion}}/sdk/item-utils.js",
-            "juggler/registry": "/v{{.StaticVersion}}/sdk/registry.js",
-            "juggler/version": "/v{{.StaticVersion}}/sdk/version.js",
-            "juggler/utils/html": "/v{{.StaticVersion}}/sdk/lib/html.js",
-            "juggler/utils/path-containment": "/v{{.StaticVersion}}/sdk/lib/path-containment.js"
+            "juggler/context-item": "{{.BasePath}}/v{{.StaticVersion}}/sdk/context-item.js",
+            "juggler/strategy-type": "{{.BasePath}}/v{{.StaticVersion}}/sdk/strategy-type.js",
+            "juggler/command-type": "{{.BasePath}}/v{{.StaticVersion}}/sdk/command-type.js",
+            "juggler/info-card-type": "{{.BasePath}}/v{{.StaticVersion}}/sdk/info-card-type.js",
+            "juggler/pinboard": "{{.BasePath}}/v{{.StaticVersion}}/sdk/pinboard.js",
+            "juggler/pinboard-item-type": "{{.BasePath}}/v{{.StaticVersion}}/sdk/pinboard-item-type.js",
+            "juggler/file-viewer": "{{.BasePath}}/v{{.StaticVersion}}/sdk/file-viewer.js",
+            "juggler/workspace-provider": "{{.BasePath}}/v{{.StaticVersion}}/sdk/workspace-provider.js",
+            "juggler/file-source": "{{.BasePath}}/v{{.StaticVersion}}/sdk/file-source.js",
+            "juggler/ops": "{{.BasePath}}/v{{.StaticVersion}}/sdk/ops.js",
+            "juggler/sandbox": "{{.BasePath}}/v{{.StaticVersion}}/sdk/sandbox.js",
+            "juggler/ui": "{{.BasePath}}/v{{.StaticVersion}}/sdk/ui.js",
+            "juggler/model": "{{.BasePath}}/v{{.StaticVersion}}/sdk/model.js",
+            "juggler/item-utils": "{{.BasePath}}/v{{.StaticVersion}}/sdk/item-utils.js",
+            "juggler/registry": "{{.BasePath}}/v{{.StaticVersion}}/sdk/registry.js",
+            "juggler/version": "{{.BasePath}}/v{{.StaticVersion}}/sdk/version.js",
+            "juggler/utils/html": "{{.BasePath}}/v{{.StaticVersion}}/sdk/lib/html.js",
+            "juggler/utils/path-containment": "{{.BasePath}}/v{{.StaticVersion}}/sdk/lib/path-containment.js"
         }
     }
     </script>
@@ -46,18 +46,21 @@
 <body>
     <!-- Asset prefix for versioned static paths -->
     <script nonce="{{.CSPNonce}}">
-        window.__assetPrefix = '/v{{.StaticVersion}}';
+        window.__assetPrefix = '{{.BasePath}}/v{{.StaticVersion}}';
         // Per-instance session token. The engine runs its real runtime inside a
         // module worker; engine-worker-main passes this value through so any
         // worker-side /api fallback calls (including bash's blocking fallback and
         // background shell ops) satisfy the same production auth gate as viewers.
         window.__jugglerToken = '{{.APIToken}}';
+        // Where this server is mounted ('' when reached directly); passed to
+        // the worker alongside the token.
+        window.__jugglerBase = '{{.BasePath}}';
         window.JUGGLER_ENGINE = true;
     </script>
 
     <!-- Engine entry point: boots the worker-backed runtime. The engine's
          WebSocket + Yjs sync + tool execution run in a module worker, off the
          WebView's main thread, so WebKit can't throttle them when hidden. -->
-    <script type="module" src="/v{{.StaticVersion}}/js/engine-worker-main.js"></script>
+    <script type="module" src="{{.BasePath}}/v{{.StaticVersion}}/js/engine-worker-main.js"></script>
 </body>
 </html>

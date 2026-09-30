@@ -17,6 +17,7 @@ import { customProvidersList } from '../../services/ops-api.js';
 import { showAlert, showConfirm } from '../modal-dialog.js';
 import { sortModelsByVersion } from '../../utils/model-filter.js';
 import { buildEndpointCard, buildAddEndpointForm } from './custom-endpoint-card.js';
+import { apiUrl } from '../../utils/api-url.js';
 
 // Standard refresh glyph for the OAuth "re-check sign-in" button. Fill is left to
 // CSS (currentColor) so it tracks the button's theme colour.
@@ -538,7 +539,7 @@ export class ProvidersTab {
 
     // Prefill with the saved host; the default above shows until this resolves.
     // Best-effort prefill — a failure just keeps the default host.
-    fetchJson('/api/providers/copilot/host', { fallback: null })
+    fetchJson(apiUrl('/providers/copilot/host'), { fallback: null })
       .then((d) => { if (d && d.success && d.host) input.value = d.host; });
 
     input.addEventListener('change', () => this._copilotSetHost(provider, input));
@@ -558,7 +559,7 @@ export class ProvidersTab {
   async _copilotSetHost(provider, input) {
     const host = input.value.trim() || 'github.com';
     try {
-      const data = await fetchJson('/api/providers/copilot/host', { method: 'POST', body: { host } });
+      const data = await fetchJson(apiUrl('/providers/copilot/host'), { method: 'POST', body: { host } });
       if (!data?.success) throw new Error(data?.error || 'Failed to set host');
       // Re-check against the new host (rebuilds this field with the saved value).
       await this._refreshOAuthProvider(provider, this._buildOAuthRefreshButton(provider));
@@ -584,7 +585,7 @@ export class ProvidersTab {
     button.disabled = true;
     button.textContent = 'Starting\u2026';
     try {
-      const data = await fetchJson('/api/providers/copilot/device/start', { method: 'POST', body: { host } });
+      const data = await fetchJson(apiUrl('/providers/copilot/device/start'), { method: 'POST', body: { host } });
       if (!data?.success) throw new Error(data?.error || 'Failed to start sign-in');
 
       const { userCode, verificationUri, deviceCode, interval } = data;
@@ -617,7 +618,7 @@ export class ProvidersTab {
     const deadline = Date.now() + 15 * 60 * 1000;
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, delayMs));
-      const data = await fetchJson('/api/providers/copilot/device/poll', {
+      const data = await fetchJson(apiUrl('/providers/copilot/device/poll'), {
         method: 'POST',
         body: { deviceCode, host },
       });
@@ -648,7 +649,7 @@ export class ProvidersTab {
     if (!ok) return;
     button.disabled = true;
     try {
-      const data = await fetchJson('/api/providers/copilot/signout', { method: 'POST' });
+      const data = await fetchJson(apiUrl('/providers/copilot/signout'), { method: 'POST' });
       if (!data?.success) throw new Error(data?.error || 'Sign out failed');
       await this._refreshAfterAuthChange(provider, false);
     } catch (err) {
@@ -1038,7 +1039,7 @@ export class ProvidersTab {
      * silently delete the models it left out.
      * @returns {Promise<any>} The settings PUT.
      */
-    const saveLimits = () => fetchJson('/api/settings', {
+    const saveLimits = () => fetchJson(apiUrl('/settings'), {
       method: 'PUT',
       body: { models: { limits: { [provider.name]: limits } } },
     });
@@ -1156,7 +1157,7 @@ export class ProvidersTab {
           // Always send this provider's COMPLETE list. The server merges the
           // hidden map key by key, so an omitted provider keeps whatever it had
           // and re-showing the last hidden model has to be an explicit [].
-          await fetchJson('/api/settings', {
+          await fetchJson(apiUrl('/settings'), {
             method: 'PUT',
             body: { models: { hidden: { [provider.name]: [...hidden] } } },
           });
@@ -1310,7 +1311,7 @@ export class ProvidersTab {
       if (value === (/** @type {any} */ (this.config)[configField] || '')) return;
       status.textContent = 'Saving…';
       try {
-        await fetchJson('/api/config', { method: 'PUT', body: { [configKey]: value } });
+        await fetchJson(apiUrl('/config'), { method: 'PUT', body: { [configKey]: value } });
         /** @type {any} */ (this.config)[configField] = value;
         status.textContent = value
           ? `Saved. Pointing at ${value}.`
@@ -1375,7 +1376,7 @@ export class ProvidersTab {
       if (value === (/** @type {any} */ (this.config).claudecodeBinaryPath || '')) return;
       status.textContent = 'Saving…';
       try {
-        await fetchJson('/api/config', { method: 'PUT', body: { claudecode_binary_path: value } });
+        await fetchJson(apiUrl('/config'), { method: 'PUT', body: { claudecode_binary_path: value } });
         /** @type {any} */ (this.config).claudecodeBinaryPath = value;
         if (value) {
           // A user pointing us at a binary means "use Claude Code" — enable it
@@ -1415,7 +1416,7 @@ export class ProvidersTab {
    */
   async toggleProviderEnabled(provider, enabled) {
     try {
-      await fetchJson('/api/config/provider-enabled', {
+      await fetchJson(apiUrl('/config/provider-enabled'), {
         method: 'POST',
         body: { provider: provider.name, enabled },
         errorPrefix: 'Failed to update provider',
@@ -1506,7 +1507,7 @@ export class ProvidersTab {
     if (!apiKey) return;
 
     try {
-      await fetchJson('/api/config', {
+      await fetchJson(apiUrl('/config'), {
         method: 'PUT',
         body: { [provider.configKeyName]: apiKey },
         errorPrefix: 'Failed to save API key',
@@ -1534,7 +1535,7 @@ export class ProvidersTab {
   async deleteProviderKey(provider) {
     try {
       // Send empty string to delete the key
-      await fetchJson('/api/config', {
+      await fetchJson(apiUrl('/config'), {
         method: 'PUT',
         body: { [provider.configKeyName]: '' },
         errorPrefix: 'Failed to delete API key',

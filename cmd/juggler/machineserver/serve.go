@@ -30,6 +30,7 @@ func RunCommand(args []string) int {
 	port := fs.Int("port", 0, "Port for the machine server (0 = OS-assigned; the bound address is recorded in ~/.juggler/server.json)")
 	verbose := fs.Bool("verbose", false, "Verbose logging (debug level)")
 	fs.BoolVar(verbose, "v", false, "Verbose logging (debug level) (shorthand)")
+	testChildren := fs.Bool("test", false, "Test harness only: spawn session children as test servers driven through this server's proxy")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -76,11 +77,12 @@ func RunCommand(args []string) int {
 	}
 
 	s := &Server{
-		reg:         newRegistry(),
-		lock:        lock,
-		childBin:    bin,
-		startedAt:   time.Now(),
-		shutdownReq: make(chan struct{}, 1),
+		reg:          newRegistry(),
+		lock:         lock,
+		childBin:     bin,
+		startedAt:    time.Now(),
+		shutdownReq:  make(chan struct{}, 1),
+		testChildren: *testChildren,
 	}
 
 	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", *port))

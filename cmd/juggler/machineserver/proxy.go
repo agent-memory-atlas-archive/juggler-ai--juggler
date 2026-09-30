@@ -47,6 +47,10 @@ func (s *Server) handleSessionProxy(w http.ResponseWriter, r *http.Request) {
 			// against the Host header, so rewriting it to the child's
 			// loopback address would reject every proxied WebSocket upgrade.
 			pr.Out.Host = pr.In.Host
+			// Tell the child where it is mounted, so the pages it serves
+			// address it through this proxy (the child's requestBasePath).
+			// Set, never appended: a client's own value must not reach it.
+			pr.Out.Header.Set("X-Forwarded-Prefix", prefix)
 		},
 		// Flush streamed responses immediately — the UI relies on
 		// incremental delivery, not just WebSocket frames.

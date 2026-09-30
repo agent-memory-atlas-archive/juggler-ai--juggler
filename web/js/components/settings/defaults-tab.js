@@ -29,6 +29,7 @@ import {
 } from '../../utils/diff-view-prefs.js';
 import { fetchJson } from '../../services/http.js';
 import { showAlert } from '../modal-dialog.js';
+import { apiUrl } from '../../utils/api-url.js';
 
 /**
  * Popup id shared by both model rows, so opening one row's picker closes the
@@ -168,7 +169,7 @@ export class DefaultsTab {
       async (on) => {
         const previous = toggleInput.checked;
         try {
-          await fetchJson('/api/config', { method: 'PUT', body: { auto_name_disabled: !on } });
+          await fetchJson(apiUrl('/config'), { method: 'PUT', body: { auto_name_disabled: !on } });
           /** @type {any} */ (this.config).autoNameDisabled = !on;
           setAutoNameEnabledCached(on);
           // The instruction only shapes an auto-derived title, so hide it while
@@ -211,7 +212,7 @@ export class DefaultsTab {
       async (on) => {
         const previous = toggleInput.checked;
         try {
-          await fetchJson('/api/config', { method: 'PUT', body: { reply_suggestions_disabled: !on } });
+          await fetchJson(apiUrl('/config'), { method: 'PUT', body: { reply_suggestions_disabled: !on } });
           /** @type {any} */ (this.config).replySuggestionsDisabled = !on;
           setReplySuggestionsEnabledCached(on);
         } catch (e) {
@@ -273,7 +274,7 @@ export class DefaultsTab {
       if (value === (/** @type {any} */ (this.config).autoNameInstruction || '')) return;
       status.textContent = 'Saving…';
       try {
-        await fetchJson('/api/config', { method: 'PUT', body: { auto_name_instruction: value } });
+        await fetchJson(apiUrl('/config'), { method: 'PUT', body: { auto_name_instruction: value } });
         /** @type {any} */ (this.config).autoNameInstruction = value;
         status.textContent = value ? 'Saved custom instruction.' : 'Saved. Using the built-in prompt.';
       } catch (e) {
@@ -408,7 +409,7 @@ export class DefaultsTab {
       async (on) => {
         const previous = autoCompactInput.checked;
         try {
-          await fetchJson('/api/config', { method: 'PUT', body: { auto_compact_disabled: !on } });
+          await fetchJson(apiUrl('/config'), { method: 'PUT', body: { auto_compact_disabled: !on } });
           /** @type {any} */ (this.config).autoCompactDisabled = !on;
         } catch (e) {
           console.error('[SettingsPanel] Failed to save automatic compaction setting:', e);
@@ -430,7 +431,7 @@ export class DefaultsTab {
       current: () => /** @type {any} */ (this.config).streamIdleTimeout || '',
       validate: (value) => (parseInt(value, 10) <= 0 ? 'Must be greater than zero.' : ''),
       save: async (value) => {
-        await fetchJson('/api/config', { method: 'PUT', body: { stream_idle_timeout: value } });
+        await fetchJson(apiUrl('/config'), { method: 'PUT', body: { stream_idle_timeout: value } });
         /** @type {any} */ (this.config).streamIdleTimeout = value;
         return value ? `Saved. Waiting up to ${value}s.` : 'Saved. Using default (180s).';
       },
@@ -458,7 +459,7 @@ export class DefaultsTab {
       },
       save: async (value) => {
         const tokens = value === '' ? '' : String(parseInt(value, 10) * 1_000_000);
-        await fetchJson('/api/config', { method: 'PUT', body: { spend_limit_tokens: tokens } });
+        await fetchJson(apiUrl('/config'), { method: 'PUT', body: { spend_limit_tokens: tokens } });
         /** @type {any} */ (this.config).spendLimitTokens = tokens;
         if (value === '') return 'Saved. Using the default (10M).';
         return value === '0' ? 'Saved. No ceiling.' : `Saved. Stopping delegated work past ${value}M.`;
@@ -862,12 +863,12 @@ export class DefaultsTab {
     };
     this.renderCheapModelField();
     try {
-      await fetchJson('/api/cheap-model', { method: 'PUT', body });
+      await fetchJson(apiUrl('/cheap-model'), { method: 'PUT', body });
       // Cleared to Automatic: re-fetch so the auto-derived name in the status
       // line is the one the server actually resolved. Off needs no such trip —
       // there is nothing for the server to have derived.
       if (!off && (!body.provider || !body.model)) {
-        this.cheapModel = await fetchJson('/api/cheap-model', { fallback: null }) || { explicit: false };
+        this.cheapModel = await fetchJson(apiUrl('/cheap-model'), { fallback: null }) || { explicit: false };
         this.renderCheapModelField();
       }
     } catch (err) {
@@ -955,7 +956,7 @@ export class DefaultsTab {
     };
     this.renderDefaultModelField();
     try {
-      await fetchJson('/api/default-model', { method: 'PUT', body });
+      await fetchJson(apiUrl('/default-model'), { method: 'PUT', body });
       // Displays that fall back to the default (the sidebar's Usage card, when
       // no conversation is on screen) read a cached copy of the server's answer.
       defaultModelCache.invalidate();

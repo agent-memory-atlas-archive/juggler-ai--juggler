@@ -17,6 +17,8 @@
  * @module utilities/project-size
  */
 
+import { apiUrl } from '../../js/utils/api-url.js';
+
 /**
  * Sizes this lane has seen, one entry per completed session load.
  * @type {number[]}
@@ -68,7 +70,7 @@ export async function fetchProjectSize() {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 1500);
   try {
-    const resp = await fetch('/api/session', { signal: ctrl.signal });
+    const resp = await fetch(apiUrl('/session'), { signal: ctrl.signal });
     if (!resp.ok) return null;
     const body = await resp.json();
     const ids = Array.isArray(body?.conversationOrder) ? body.conversationOrder : [];

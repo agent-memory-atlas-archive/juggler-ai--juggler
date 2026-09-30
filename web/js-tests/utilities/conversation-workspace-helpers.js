@@ -31,6 +31,7 @@ import WorkspaceProvider from '../../sdk/workspace-provider.js';
 import workspaceProviderRegistry from '../../js/registries/workspace-provider-registry.js';
 import { ensureWorkspaceBanner } from '../../js/components/conversation-area-rendering.js';
 import { relativePath } from '../../extensions/juggler-core/lib/workspace-paths.js';
+import { apiUrl } from '../../js/utils/api-url.js';
 
 /**
  * A workspace row as the client-side table holds it, for the cases that seed
@@ -733,8 +734,8 @@ export async function runWorkspaceSuite(label, defineCases) {
     }
   };
 
-  const projectPath = (await fetchJson('/api/session')).projectPath;
-  const registered = await fetchJson('/api/session/workspaces', {
+  const projectPath = (await fetchJson(apiUrl('/session'))).projectPath;
+  const registered = await fetchJson(apiUrl('/session/workspaces'), {
     method: 'POST',
     body: { root: projectPath, label: 'a tree of this suite\'s own', state: 'ready' }
   });
@@ -761,7 +762,7 @@ export async function runWorkspaceSuite(label, defineCases) {
         await releaseTestConversation(session, id, label);
       }
     }
-    await fetchJson(`/api/session/workspaces/${registeredId}`, { method: 'DELETE', fallback: null });
+    await fetchJson(apiUrl(`/session/workspaces/${registeredId}`), { method: 'DELETE', fallback: null });
   }
 
   return { passed, failed, errors };

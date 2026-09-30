@@ -25,6 +25,7 @@ import { LogsTab } from './settings/logs-tab.js';
 import { McpTab, AcpTab } from './settings/subprocess-tabs.js';
 import { SkillsTab } from './settings/skills-tab.js';
 import { UpdatesTab } from './settings/updates-tab.js';
+import { apiUrl } from '../utils/api-url.js';
 
 /**
  * Longest the first load will wait for the server's provider list to settle
@@ -610,11 +611,11 @@ class SettingsPanel extends HTMLElement {
       // the other three fall back to the tab's current value, so a blip leaves
       // the already-rendered picker alone rather than blanking it.
       const [config, providersData, defaultModel, cheapModel, connectivity] = await Promise.all([
-        fetchJson('/api/config', { errorPrefix: 'Failed to load config' }),
-        fetchJson('/api/providers', { errorPrefix: 'Failed to load providers' }),
-        fetchJson('/api/default-model', { fallback: /** @type {any} */ (this._tabs.defaults).defaultModel }),
-        fetchJson('/api/cheap-model', { fallback: /** @type {any} */ (this._tabs.defaults).cheapModel }),
-        fetchJson('/api/connectivity', { fallback: /** @type {any} */ (this._tabs.connectivity).connectivity }),
+        fetchJson(apiUrl('/config'), { errorPrefix: 'Failed to load config' }),
+        fetchJson(apiUrl('/providers'), { errorPrefix: 'Failed to load providers' }),
+        fetchJson(apiUrl('/default-model'), { fallback: /** @type {any} */ (this._tabs.defaults).defaultModel }),
+        fetchJson(apiUrl('/cheap-model'), { fallback: /** @type {any} */ (this._tabs.defaults).cheapModel }),
+        fetchJson(apiUrl('/connectivity'), { fallback: /** @type {any} */ (this._tabs.connectivity).connectivity }),
       ]);
 
       // Show the platform-correct credentials location (XDG on Linux,

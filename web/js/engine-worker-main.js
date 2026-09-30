@@ -120,12 +120,14 @@ worker.onerror = (/** @type {ErrorEvent} */ event) => {
 };
 
 // The worker builds its own WebSocket URL from self.location; pass the asset
-// prefix plus the per-instance API token so worker-side /api fetches satisfy the
+// prefix, the base path the page was served under, and the per-instance API
+// token so worker-side /api fetches reach this server and satisfy the
 // production auth gate (the viewer gets the same token via index.html's fetch
 // shim, but workers do not inherit that shim).
 worker.postMessage({
   type: 'start',
   assetPrefix: /** @type {any} */ (window).__assetPrefix || '',
+  apiBase: /** @type {any} */ (window).__jugglerBase || '',
   apiToken: /** @type {any} */ (window).__jugglerToken || ''
 });
 

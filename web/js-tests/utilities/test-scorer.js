@@ -3,6 +3,7 @@
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
 import logger from './test-logger.js';
+import { apiUrl } from '../../js/utils/api-url.js';
 
 /**
  * @typedef {object} ScoreResult
@@ -461,7 +462,7 @@ class TestScorer {
    */
   async readFile(relativePath) {
     // Note: Pass relative path only - backend ops.workingDir is already set to fixtureDir
-    const response = await fetch('/api/ops/call', {
+    const response = await fetch(apiUrl('/ops/call'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -495,7 +496,7 @@ class TestScorer {
   async executeCommand(command, timeout) {
     // Use shell operations via python context item type (shell_ops.go)
     // Note: Backend currently has a hard-coded 30-second timeout
-    const response = await fetch('/api/ops/call', {
+    const response = await fetch(apiUrl('/ops/call'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

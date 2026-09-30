@@ -4,6 +4,7 @@
 
 import { fetchJson } from './http.js';
 import { SEND_LOOKUP_TIMEOUT_MS } from '../utils/constants.js';
+import { apiUrl } from '../utils/api-url.js';
 
 /** @type {AbortController|null} */
 let _currentController = null;
@@ -25,7 +26,7 @@ export async function fetchExistingPaths(paths) {
   if (!paths || paths.length === 0) return new Set();
   const qs = paths.map(p => `paths=${encodeURIComponent(p)}`).join('&');
   /** @type {{existing: string[]}|null} */
-  const data = await fetchJson(`/api/completions/exists?${qs}`, {
+  const data = await fetchJson(apiUrl(`/completions/exists?${qs}`), {
     fallback: null,
     timeoutMs: SEND_LOOKUP_TIMEOUT_MS,
   });
@@ -47,7 +48,7 @@ export async function fetchFileCompletions(query) {
   _currentController = controller;
 
   try {
-    const url = `/api/completions/files?q=${encodeURIComponent(query)}`;
+    const url = apiUrl(`/completions/files?q=${encodeURIComponent(query)}`);
     /** @type {{results: Array<{path: string}>}|null} */
     const data = await fetchJson(url, { signal: controller.signal });
     return (data?.results || []).map(r => r.path);
@@ -77,7 +78,7 @@ export async function fetchPathCompletions(query) {
   _pathController = controller;
 
   try {
-    const url = `/api/completions/path?q=${encodeURIComponent(query)}`;
+    const url = apiUrl(`/completions/path?q=${encodeURIComponent(query)}`);
     /** @type {{results: Array<{path: string}>}|null} */
     const data = await fetchJson(url, { signal: controller.signal });
     return (data?.results || []).map(r => r.path);
