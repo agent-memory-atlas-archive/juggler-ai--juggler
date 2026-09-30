@@ -183,6 +183,22 @@ export async function runTests(_ctx) {
     assert(!eventMatchesBinding(prev, evt({ altKey: true, key: 'PageUp' })), 'Alt+PageUp is left alone');
   });
 
+  // The Shift-ed Page keys move the tab the bare ones select, and stay clear of
+  // them: prev-tab pins shift off, move-tab pins it on.
+  await run('Shift+Page moves the conversation, and only Shift+Page does', () => {
+    const up = keyShortcutManager.getBindings('move-tab-up', mac);
+    const down = keyShortcutManager.getBindings('move-tab-down', mac);
+    assert(up.length === 1 && down.length === 1, 'one key each, on every platform');
+    assert(eventMatchesBinding(up[0], evt({ shiftKey: true, key: 'PageUp' })), 'Shift+PageUp moves up');
+    assert(eventMatchesBinding(down[0], evt({ shiftKey: true, key: 'PageDown' })), 'Shift+PageDown moves down');
+    assert(!eventMatchesBinding(up[0], evt({ key: 'PageUp' })), 'a bare PageUp selects, it does not move');
+    assert(!eventMatchesBinding(up[0], evt({ ...modProp, shiftKey: true, key: 'PageUp' })),
+      'Mod+Shift+PageUp is left alone');
+    assert(formatBindingForPlatform(up[0], true) === '⇧⇞', `mac label wrong: ${formatBindingForPlatform(up[0], true)}`);
+    assert(formatBindingForPlatform(down[0], false) === 'Shift+Page Down',
+      `non-mac label wrong: ${formatBindingForPlatform(down[0], false)}`);
+  });
+
   await run('toggle-tool-grouping is Mod+Alt+G and survives the ⌥ glyph remap', () => {
     const grouping = keyShortcutManager.getBinding('toggle-tool-grouping');
     assert(grouping.mod && grouping.alt && grouping.key === 'g', 'tool grouping is Mod+Alt+G');
@@ -511,6 +527,38 @@ export async function runTests(_ctx) {
     pressBinChord(textarea, true);
     assert(presses() === 0, 'auto-repeat extends the cooldown for as long as the key is held');
   }));
+
+  // ── Dispatcher: the 'unscrolled' input policy ───────────────────────
+  // ⇧⇞ selects a page of text, which a field only has to give when it holds
+  // more than it shows. Driven through the real listener with a real textarea,
+  // sized so that one draft fits and another overflows.
+  await run('Shift+PageUp moves the tab from a draft that fits, not from one that scrolls', async () => {
+    const appHandler = keyShortcutManager._handlers.get('move-tab-up');
+    let count = 0;
+    const unregister = keyShortcutManager.register('move-tab-up', () => { count += 1; return true; });
+    const textarea = document.createElement('textarea');
+    textarea.style.cssText = 'height:60px;font-size:12px;line-height:14px;padding:0;overflow:auto;';
+    document.body.appendChild(textarea);
+    /** @returns {KeyboardEvent} The press, after dispatch. */
+    const press = () => {
+      const e = new KeyboardEvent('keydown', { key: 'PageUp', shiftKey: true, bubbles: true, cancelable: true });
+      textarea.dispatchEvent(e);
+      return e;
+    };
+    try {
+      textarea.value = 'a short draft';
+      assert(press().defaultPrevented && count === 1, 'a draft that fits hands the key to the command');
+      textarea.value = Array.from({ length: 40 }, (_, i) => `line ${i}`).join('\n');
+      assert(textarea.scrollHeight > textarea.clientHeight + 1, 'the fixture must overflow');
+      const e = press();
+      assert(count === 1, 'a draft with a page to select keeps the key');
+      assert(!e.defaultPrevented, 'and the press is left to the field\u2019s own selection');
+    } finally {
+      unregister();
+      if (appHandler) keyShortcutManager._handlers.set('move-tab-up', appHandler);
+      textarea.remove();
+    }
+  });
 
   // ── File-editing permission toggle ──────────────────────────────────
   await run('toggleFileEditing turns editing on then off', () => {

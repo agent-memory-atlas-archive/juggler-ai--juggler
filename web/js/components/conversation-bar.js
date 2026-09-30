@@ -60,6 +60,15 @@ const NEW_CONVERSATION_DEBOUNCE_MS = 500;
 // immediate.
 export const CYCLE_SETTLE_MS = 150;
 
+// How long a keyboard-moved tab takes to slide into its new place. A touch
+// longer than a drag's 150ms shove: there the pointer already says where the
+// tab is going, and here the slide is the only thing that does.
+const TAB_GLIDE_MS = 200;
+
+// Tags the keyboard move's glides, so a following press cancels only those and
+// leaves any other animation on the tab (the attention flash) alone.
+const TAB_GLIDE_ID = 'tab-keyboard-glide';
+
 // How far below a workspace box's top edge still counts as the strip above it
 // rather than the inside of it, while a drag is looking for somewhere to land
 // (see `_dropPlaceAt`). It is taken out of the header, which is a title and is
@@ -364,6 +373,10 @@ class ConversationBar extends JugglerElement {
     });
 
     this.onWindow('juggler:cycle-tab', (/** @type {Event} */ e) => this._handleCycleTab(e));
+    this.onWindow('juggler:move-tab', (/** @type {Event} */ e) => {
+      const detail = /** @type {CustomEvent} */ (e).detail;
+      this._moveVisibleTab(detail?.direction === 'up' ? -1 : 1);
+    });
 
     // Command shortcuts route here so a keystroke and a click share one path:
     // "new conversation" reuses the cap + inline-rename UX; "bin" reuses the
@@ -494,6 +507,97 @@ class ConversationBar extends JugglerElement {
     this._cycleTimer = null;
     this._cycleTargetId = null;
     this._cycleFocusInput = false;
+  }
+
+  /**
+   * Move the visible conversation's tab one place up or down the strip, from the
+   * keyboard.
+   *
+   * The tab steps past one neighbour in the list it is drawn in and never leaves
+   * it: inside a workspace box it moves among that box's tabs, and at the top
+   * level a whole box is one neighbour to step over. Crossing a box edge would
+   * rebind where the conversation works, which a drag asks about first and a
+   * keystroke has no business doing, so a press at the edge of its list does
+   * nothing.
+   *
+   * The move is made on the strip and committed the way a drop is, by reading
+   * the arrangement back off it — one path to the session for both gestures.
+   * @param {number} step - -1 to move up, 1 to move down.
+   * @returns {boolean} Whether the tab moved.
+   * @private
+   */
+  _moveVisibleTab(step) {
+    if (!this._session || this._dragging) return false;
+    // A keyboard cycle still settling is the tab the user is looking at in the
+    // strip; show it, so the tab that moves is the highlighted one.
+    this._flushCycle();
+    const id = this._session.visibleConversationId;
+    if (!id) return false;
+    const tab = /** @type {HTMLElement|null} */ (
+      this.querySelector(`.conversation-tab[data-conversation-id="${CSS.escape(id)}"]:not(.drag-ghost)`));
+    const list = tab?.parentElement;
+    if (!tab || !list) return false;
+
+    const slots = this._dropSlots(list, null);
+    const neighbour = slots[slots.indexOf(tab) + step];
+    if (!neighbour) return false;
+
+    // FLIP "First": where the two are on screen now — mid-glide, if a previous
+    // press is still animating them, so a run of presses carries on from where
+    // the eye is rather than jumping back to where the layout had them.
+    const first = new Map([tab, neighbour].map((el) => [el, el.getBoundingClientRect()]));
+    list.insertBefore(tab, step < 0 ? neighbour : neighbour.nextSibling);
+    this._commitArrangement(id);
+    this._glideSwap(tab, first);
+    this._scrollActiveTabIntoView();
+    return true;
+  }
+
+  /**
+   * Slide a keyboard-moved tab and the neighbour it passed from where they were
+   * to where the move put them.
+   *
+   * Without it the two rows simply trade places between frames, and a list of
+   * similar-looking tabs gives no sign that anything happened. The moved tab is
+   * lifted above the one it passes, so what the eye follows is the tab the user
+   * moved.
+   *
+   * Web Animations rather than a transition on inline style: render() runs in
+   * between (the commit notifies), and an animation is not something a render
+   * can overwrite.
+   * @param {HTMLElement} tab - The tab that moved.
+   * @param {Map<HTMLElement, DOMRect>} first - Where it and its neighbour were drawn before the move.
+   * @returns {void}
+   * @private
+   */
+  _glideSwap(tab, first) {
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    for (const [el, start] of first) {
+      // FLIP "Last": the layout's answer, with any glide still running on the
+      // element taken off so it is not counted twice.
+      for (const running of el.getAnimations()) {
+        if (/** @type {any} */ (running).id === TAB_GLIDE_ID) running.cancel();
+      }
+      const end = el.getBoundingClientRect();
+      const dx = start.left - end.left;
+      const dy = start.top - end.top;
+      if (!dx && !dy) continue;
+      const glide = el.animate(
+        [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }],
+        { duration: TAB_GLIDE_MS, easing: 'ease' });
+      glide.id = TAB_GLIDE_ID;
+      if (el !== tab) continue;
+      el.classList.add('keyboard-moving');
+      // Set down once no glide is left on it. Settles on finish and on cancel
+      // alike (a following press cancels this one and starts its own, which is
+      // still running when this checks).
+      const land = () => {
+        if (!el.getAnimations().some((a) => /** @type {any} */ (a).id === TAB_GLIDE_ID)) {
+          el.classList.remove('keyboard-moving');
+        }
+      };
+      glide.finished.then(land, land);
+    }
   }
 
   /**

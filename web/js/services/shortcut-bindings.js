@@ -56,6 +56,18 @@ export function registerConversationShortcuts(session) {
     markSeen('next-tab');
     return true;
   });
+  // Move-tab (⇧Page Up/Down) moves the visible tab past its neighbour in the
+  // conversation bar. Always "handles" the key, a press at the edge of the tab's
+  // list included, so the Shift-ed Page key never falls through to select text
+  // in a composer the dispatcher has already judged to have nothing to page.
+  keyShortcutManager.register('move-tab-up', () => {
+    window.dispatchEvent(new CustomEvent('juggler:move-tab', { detail: { direction: 'up' } }));
+    return true;
+  });
+  keyShortcutManager.register('move-tab-down', () => {
+    window.dispatchEvent(new CustomEvent('juggler:move-tab', { detail: { direction: 'down' } }));
+    return true;
+  });
   keyShortcutManager.register('jump-to-attention', () => {
     const acted = jumpToAttentionConversation(session);
     if (acted) markSeen('jump-to-attention');

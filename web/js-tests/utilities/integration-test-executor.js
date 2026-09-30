@@ -123,6 +123,7 @@ import { runTests as runRefreshMergeTests } from '../unit-tests/refresh-merge-te
 import { runTests as runWorkerInitDeclinedTests } from '../unit-tests/worker-init-declined-test.js';
 import { runTests as runTabOrderMergeTests } from '../unit-tests/tab-order-merge-test.js';
 import { runTests as runTabDragOrderTests } from '../unit-tests/tab-drag-order-test.js';
+import { runTests as runTabKeyboardMoveTests } from '../unit-tests/tab-keyboard-move-test.js';
 import { runTests as runTabDragAcrossWorkspaceTests } from '../unit-tests/tab-drag-across-workspace-test.js';
 import { runTests as runTabDragWorkspaceOrderTests } from '../unit-tests/tab-drag-workspace-order-test.js';
 import { runTests as runToolExecutionOrderTests } from '../unit-tests/tool-execution-order-test.js';
@@ -535,6 +536,7 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:worker-init-declined', run: runWorkerInitDeclinedTests },
   { name: 'unit:tab-order-merge', run: runTabOrderMergeTests },
   { name: 'unit:tab-drag-order', run: runTabDragOrderTests },
+  { name: 'unit:tab-keyboard-move', run: runTabKeyboardMoveTests },
   { name: 'unit:tab-drag-across-workspace', run: runTabDragAcrossWorkspaceTests },
   { name: 'unit:tab-drag-workspace-order', run: runTabDragWorkspaceOrderTests },
   { name: 'unit:tool-execution-order', run: runToolExecutionOrderTests },

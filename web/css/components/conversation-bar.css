@@ -596,6 +596,15 @@ conversation-bar .conversation-box-top > .drag-grip {
     }
 }
 
+/* A tab moved from the keyboard (⇧Page Up/Down) is lifted above the neighbour
+   it slides past, with a lighter version of the drag ghost's shadow, so the eye
+   follows the tab that moved rather than the one that made way. Only while the
+   glide runs. */
+conversation-bar .conversation-tab.keyboard-moving {
+    z-index: 1;
+    box-shadow: 0 0.125rem 0.5rem rgb(0 0 0 / 25%);
+}
+
 /* Everything a drag can shove aside travels to its new slot rather than
    appearing in it. The gate is the mark on the menu, so the list covers what
    the drag measures: its tabs wherever they are drawn — a tab inside a

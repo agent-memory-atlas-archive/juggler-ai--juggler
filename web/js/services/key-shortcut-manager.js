@@ -63,14 +63,17 @@ import { isAnyPopupOpen } from '../utils/popup-manager.js';
  *   giving up the chord that is right everywhere else. The primary binding is
  *   what tooltips advertise; {@link KeyShortcutManager#getBindings} returns the
  *   whole set for matching, and the settings page lists all of them.
- * @property {boolean|'empty'} [allowInInput] - Whether the command may fire while
- *   focus is in a text field. `false` (default): never — don't steal keys while
- *   the user is typing. `true`: always. `'empty'`: only when the field is empty,
- *   so a live edit still runs natively (e.g. ⌘⌫ deletes to line start in a
- *   non-empty composer, but bins the conversation when the composer is empty).
- *   An `'empty'` command also stands down for {@link EDIT_GESTURE_WINDOW_MS}
+ * @property {boolean|'empty'|'unscrolled'} [allowInInput] - Whether the command
+ *   may fire while focus is in a text field. `false` (default): never — don't
+ *   steal keys while the user is typing. `true`: always. `'empty'`: only when the
+ *   field is empty, so a live edit still runs natively (e.g. ⌘⌫ deletes to line
+ *   start in a non-empty composer, but bins the conversation when the composer is
+ *   empty). An `'empty'` command also stands down for {@link EDIT_GESTURE_WINDOW_MS}
  *   after its chord was last used to edit text, so emptying a field with it
- *   doesn't hand the very next press to the command.
+ *   doesn't hand the very next press to the command. `'unscrolled'`: only when
+ *   the field's whole content is in view, for a chord whose native meaning is to
+ *   page through text (⇧⇞ selects a page) — a field that doesn't scroll has
+ *   nothing to page through.
  * @property {boolean} [external] - This shortcut's dispatch is owned by a
  *   dedicated controller (e.g. the strategy switcher's hold-to-cycle UX). The
  *   manager still lists it (settings, tooltips) but never dispatches it — the
@@ -279,8 +282,9 @@ const SHORTCUT_DEFS = [
     // focusable, so outside a text field they do nothing at all.
     //
     // shift:false is load-bearing (an omitted shift is *tolerant*, see
-    // eventMatchesBinding): ⇧⇞ selects a page of text in the composer and stays
-    // native. Plain ⇞ there does not — see allowInInput below.
+    // eventMatchesBinding): ⇧⇞ belongs to move-tab-up, which gives it back to a
+    // composer with a page of text to select. Plain ⇞ there does not — see
+    // allowInInput below.
     aliasBindings: [{ shift: false, key: 'PageUp' }],
     // Works while typing. ⌥⌘↑ has no native text-editing meaning (plain ⌘↑ jumps
     // to document start, but the Option makes it distinct), so it never steals a
@@ -297,6 +301,29 @@ const SHORTCUT_DEFS = [
     defaultBinding: { mod: true, alt: true, key: 'ArrowDown', platform: 'mac' },
     aliasBindings: [{ shift: false, key: 'PageDown' }],
     allowInInput: true,
+  },
+  {
+    id: 'move-tab-up',
+    label: 'Move conversation up',
+    description: 'Move the current conversation one place up the tab list, within its '
+      + 'own workspace box.',
+    category: 'Conversations',
+    // The Shift-ed twin of the Page key that steps to the tab above: the same key
+    // moves the tab instead of the selection.
+    defaultBinding: { shift: true, key: 'PageUp' },
+    // ⇧⇞ selects a page of text in a field, which only matters when the field
+    // has more than a page to select: a draft that fits without scrolling has
+    // nowhere to page to, so the key moves the tab from there too.
+    allowInInput: 'unscrolled',
+  },
+  {
+    id: 'move-tab-down',
+    label: 'Move conversation down',
+    description: 'Move the current conversation one place down the tab list, within its '
+      + 'own workspace box.',
+    category: 'Conversations',
+    defaultBinding: { shift: true, key: 'PageDown' },
+    allowInInput: 'unscrolled',
   },
   {
     id: 'bin-conversation',
@@ -561,6 +588,19 @@ function isEditableEmpty(target) {
   return true;
 }
 
+/**
+ * @param {EventTarget|null} target
+ * @returns {boolean} True when the editable target holds more than it shows, so
+ *   there is somewhere for a paging key to go.
+ */
+function isEditableScrollable(target) {
+  const el = /** @type {HTMLElement|null} */ (target);
+  if (!el || typeof el.scrollHeight !== 'number') return false;
+  // A pixel of slack: sub-pixel line heights leave scrollHeight rounding one
+  // over clientHeight in a field that is showing everything it holds.
+  return el.scrollHeight > el.clientHeight + 1;
+}
+
 class KeyShortcutManager {
   constructor() {
     /** @type {Map<string, ShortcutDef>} @private */
@@ -822,6 +862,8 @@ class KeyShortcutManager {
         }
         if (this._withinEditingGesture(def.id, e)) continue;
       }
+      // A field with more than it shows keeps its paging key.
+      if (def.allowInInput === 'unscrolled' && editable && isEditableScrollable(e.target)) continue;
       const acted = handler(e);
       if (acted) {
         e.preventDefault();
