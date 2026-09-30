@@ -517,6 +517,12 @@ type ModelInfo struct {
 	ContextWindow   int    // Input token limit (0 if unknown)
 	MaxOutputTokens int    // Output token limit (0 if unknown)
 	FromAPI         bool   // True if retrieved from API, false if hardcoded fallback
+	// WindowAssumed is true when ContextWindow is a provider-wide fallback: the
+	// server reported nothing for this model and no per-model catalogue entry
+	// knew it either. It is narrower than !FromAPI, which also covers curated
+	// catalogue figures for endpoints that publish bare ids. This is the one
+	// case worth telling a user about, because the number is a guess.
+	WindowAssumed bool
 	// DisplayName is a human-readable label supplied by the provider (e.g.
 	// Gemini's API returns "Gemini 2.5 Pro" for id "models/gemini-2.5-pro").
 	// Empty when the provider exposes no such name — the UI then derives a

@@ -195,6 +195,52 @@ func TestHandleCompactFoldsSummarizesAndAcks(t *testing.T) {
 	}
 }
 
+// TestManualCompactNotesAssumedWindow: /compact on a model whose window is a
+// guess says so. The reply budget the summary is written into is derived from
+// that window, so a guess too small is also why a summary comes back cut short.
+// The notice stands in root after the fold — not inside the fold thread, whose
+// items are the summarizer's source.
+func TestManualCompactNotesAssumedWindow(t *testing.T) {
+	w := NewConversationWorker("test-conv", "user:test")
+	defer w.doc.Destroy()
+	w.currentRun().storeState(StateIdle)
+	w.doc.SetMetadata("defaultModelConfig", map[string]any{"provider": "local", "model": "qwen"})
+	w.windowResolver = func(ModelConfig) ContextWindowInfo {
+		return ContextWindowInfo{WindowTokens: 8192, ReserveTokens: 1638, Assumed: true}
+	}
+	feedCompactionContextAndTools(w)
+	w.llmCallFunc = func(_ context.Context, _ json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
+		return &LLMResponse{Blocks: []LLMResponseBlock{{Type: provider.ContentBlockTypeText, Content: "command compact summary"}}}, nil
+	}
+	w.doc.doc.Transact(func(_ *ycrdt.Transaction) {
+		arr := w.doc.ensureItems()
+		arr.Push(ycrdt.ArrayAny{conversationItemToYMap(ConversationItem{Type: ItemTypeUser, ItemID: generateItemID(), Content: "hello"})})
+		arr.Push(ycrdt.ArrayAny{conversationItemToYMap(ConversationItem{Type: ItemTypeAssistant, ItemID: generateItemID(), Content: "hi"})})
+	}, w.doc.authorID)
+
+	waitAck := captureAck(t, w, "client-1", "an1")
+	w.currentRun().handleCompact(json.RawMessage(`{"type":"compact","ackId":"an1"}`))
+	if result, _ := waitAck()["result"].(map[string]any); result["folded"] != true {
+		t.Fatalf("ack result = %v, want {folded:true}", result)
+	}
+
+	items := w.doc.GetItems()
+	notices := assumedWindowNotices(t, items)
+	if len(notices) != 1 {
+		t.Fatalf("root holds %d assumed-window notices, want 1: %s", len(notices), itemIDs(items))
+	}
+	if !strings.Contains(notices[0].Summary, "8192") {
+		t.Errorf("notice summary = %q, want the window it compacted at", notices[0].Summary)
+	}
+	for _, item := range items {
+		if item.Type == ItemTypeThread {
+			if got, _ := w.doc.GetThreadYMap(item.ItemID).Get("result").(string); got != "command compact summary" {
+				t.Fatalf("fold thread result = %q, want the summarizer output — the notice must not disturb the fold", got)
+			}
+		}
+	}
+}
+
 // TestHandleCompactBusyDeclines verifies the idle guard: a compact request while
 // the worker is processing acks {folded:false} with a busy error and folds
 // nothing.

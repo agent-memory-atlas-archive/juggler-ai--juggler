@@ -232,6 +232,7 @@
 				"message-text",
 				"message-with-icon",
 				"notice-message",
+				"notice-message-actions",
 				"pending-messages",
 				"pending-messages-label",
 				"scroll-*",

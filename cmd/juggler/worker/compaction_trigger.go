@@ -304,6 +304,12 @@ func (r *run) handleContextOverflow(
 		return overflowResult{verdict: overflowTerminal, err: providerAuthoredContextError(overflowErr)}
 	}
 
+	// Said before recovery runs, so a recovery that then fails still leaves the
+	// reason it ran so early on screen. Appending here cannot read as recovery
+	// progress: compactToFit takes its before-signature after this.
+	if notice, ok := r.assumedWindowNotice(modelConfig); ok {
+		r.appendTargetMessage(notice)
+	}
 	result, recErr := r.compactToFit(limit, modelConfig)
 	if errors.Is(recErr, errBoundedCompactionCancelled) {
 		return overflowResult{verdict: overflowStop}
@@ -651,6 +657,95 @@ func (r *run) insertCompactionNotice(foldedItems int) {
 		Source:    source,
 		Timestamp: time.Now().Format(time.RFC3339),
 	})
+}
+
+// assumedWindowNoticeData is the Data payload of a notice about an assumed
+// context window: where the window is corrected, and which window it was, so
+// the same guess is reported once per conversation rather than at every fold.
+// The browser reads Settings to draw the notice's one action.
+type assumedWindowNoticeData struct {
+	Settings struct {
+		Tab      string `json:"tab"`
+		Provider string `json:"provider"`
+		Model    string `json:"model"`
+		Field    string `json:"field"`
+	} `json:"settings"`
+	AssumedWindow int `json:"assumedWindow"`
+}
+
+// assumedWindowNotice builds the notice a compaction leaves when the window it
+// compacts against is a guess: the provider reported none for this model, no
+// catalogue entry knew it, and the user has not set one. That window decides
+// when the conversation folds and, since the reply budget is derived from it,
+// how long every reply and summary may run — so a model loaded with far more
+// than the guess compacts early and answers short, and nothing else on screen
+// says why. The notice names the window and carries a link to the one field
+// that corrects it.
+//
+// mc is the model the compaction is for (the rejected request's model); nil
+// means the conversation's effective model. Reports false when the window is
+// not assumed, is unknown, or this conversation already carries a notice for
+// the same model and window.
+func (r *run) assumedWindowNotice(mc *ModelConfig) (ConversationItem, bool) {
+	if r.windowResolver == nil {
+		return ConversationItem{}, false
+	}
+	if mc == nil {
+		if mc = r.resolveModelConfig(); mc == nil {
+			return ConversationItem{}, false
+		}
+	}
+	info := r.windowResolver(*mc)
+	if !info.Assumed || info.WindowTokens <= 0 {
+		return ConversationItem{}, false
+	}
+
+	var data assumedWindowNoticeData
+	data.Settings.Tab = "providers"
+	data.Settings.Provider = mc.Provider
+	data.Settings.Model = mc.Model
+	data.Settings.Field = "contextWindow"
+	data.AssumedWindow = info.WindowTokens
+	if r.hasAssumedWindowNotice(data) {
+		return ConversationItem{}, false
+	}
+	raw, err := json.Marshal(data)
+	if err != nil {
+		return ConversationItem{}, false
+	}
+	return ConversationItem{
+		Type:   ItemTypeNotice,
+		ItemID: generateItemID(),
+		Summary: fmt.Sprintf("Compacting at an assumed %d-token context window for %s — set the real size in Settings.",
+			info.WindowTokens, mc.Model),
+		Content: fmt.Sprintf("The server didn't report the context window for %s, so Juggler assumed %d tokens. "+
+			"That figure decides when this conversation is compacted, and each reply — compaction summaries included — "+
+			"is capped at %d tokens because of it. A model loaded with a larger window compacts far sooner than it needs "+
+			"to and writes shorter answers.\n\n"+
+			"Enter the window the model is actually loaded with in Settings → Providers, on this model's row. "+
+			"It applies from the next turn.",
+			mc.Model, info.WindowTokens, info.ReserveTokens),
+		Source:    mc.Provider,
+		Data:      raw,
+		Timestamp: time.Now().Format(time.RFC3339),
+	}, true
+}
+
+// hasAssumedWindowNotice reports whether root or the current target already
+// holds a notice about this same model and assumed window.
+func (r *run) hasAssumedWindowNotice(want assumedWindowNoticeData) bool {
+	for _, items := range [][]ConversationItem{r.doc.GetItems(), r.getTargetItems()} {
+		for _, item := range items {
+			if item.Type != ItemTypeNotice || len(item.Data) == 0 {
+				continue
+			}
+			var got assumedWindowNoticeData
+			if json.Unmarshal(item.Data, &got) == nil && got == want {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // recoveryShrunkResultMarker prefixes a tool result that was replaced by a

@@ -12,7 +12,7 @@ nothing to say about that exact model id:
 
 1. **What the endpoint says about itself.** Most model-list endpoints publish
    each model's limits — Claude and Gemini report them directly, and among
-   OpenAI-compatible servers so do vLLM, llama.cpp, LM Studio, LiteLLM, Groq,
+   OpenAI-compatible servers so do vLLM, llama.cpp, LiteLLM, Groq,
    Together, Mistral, Moonshot, OpenRouter and Copilot. This is the best
    possible answer, because it describes the machine that will actually serve
    your request rather than what a documentation page said once. Refreshing the
@@ -25,7 +25,11 @@ nothing to say about that exact model id:
 3. **A conservative default**, for a model neither of the above knows. It is a
    guess, and deliberately a low one: guessing low compacts a conversation
    earlier than it needed to be, while guessing high walks a fully-assembled
-   request into a rejection.
+   request into a rejection — or, on a local server that truncates silently,
+   quietly loses the middle of your conversation. Because it is a guess, Juggler
+   says so: the model picker marks the window "assumed", and a compaction that
+   runs against it leaves a notice naming the window with a link to the field
+   that corrects it.
 4. **Your own figure**, which outranks all three. Settings → Providers → expand
    a provider's model list gives every model a context-window and
    maximum-output field. Set one when you know better than the list above —
@@ -54,6 +58,15 @@ Some providers need more than a lookup:
   models report 8192 whatever their file says. The same capabilities route is
   read for any OpenAI-compatible endpoint that answers it, so a LocalAI reached
   as a custom endpoint gets the same numbers.
+- **LM Studio:** its OpenAI-compatible model list carries no windows, so the
+  LM Studio provider reads LM Studio's own model table instead (`/api/v1/models`,
+  or `/api/v0/models` on 0.3). A loaded model is enforced at the length it was
+  loaded with — the smallest, if it is loaded more than once — not the model's
+  maximum, because LM Studio's default overflow policy silently drops the middle
+  of a conversation that exceeds it. A model that is not loaded yet has no
+  loaded length to read: it is assumed to have 8192 (or its maximum, if that is
+  smaller) until it is loaded and the model list is refreshed. If you load
+  models at a longer length than that by default, set the window per model.
 - **Claude Code custom aliases:** an alias the CLI has never seen has no known
   limit, so the first turn is allowed through and the real limit is learned
   from the provider's response. Learned sizes are cached in

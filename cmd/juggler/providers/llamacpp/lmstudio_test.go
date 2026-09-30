@@ -102,13 +102,39 @@ func TestContextWindowPrefersLoadedOverMaxContextLength(t *testing.T) {
 	}
 }
 
-// A model LM Studio has downloaded but not loaded states only its ceiling, so
-// that is what it is published with.
-func TestContextWindowUsesMaxContextLengthWhenNotLoaded(t *testing.T) {
+// A model LM Studio has downloaded but not loaded states only its ceiling, and
+// it will be loaded at LM Studio's own default length, not that ceiling. So it
+// gets the conservative fallback: over-stating a window is what LM Studio
+// punishes silently, by dropping the middle of the conversation.
+func TestContextWindowDoesNotTrustCeilingWhenNotLoaded(t *testing.T) {
 	newLMStudioServer(t, lmStudioModels)
 
-	if window, _ := getContextWindowInfo("gemma-3-4b"); window != 32768 {
-		t.Errorf("context window = %d, want the declared 32768", window)
+	if window, _ := getContextWindowInfo("gemma-3-4b"); window != DefaultContextWindow {
+		t.Errorf("context window = %d, want the fallback %d rather than the 32768 ceiling", window, DefaultContextWindow)
+	}
+}
+
+// LM Studio 0.4's native table states each loaded instance's window, so a
+// llama.cpp provider pointed at it reads the same number the LM Studio provider
+// would.
+func TestContextWindowUsesLMStudioNativeTable(t *testing.T) {
+	isolateConfig(t)
+	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/models":
+			_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"qwen/qwen3.6-35b","object":"model"}]}`))
+		case "/api/v1/models":
+			_, _ = w.Write([]byte(`{"models":[{"type":"llm","key":"qwen/qwen3.6-35b","max_context_length":262144,
+			  "loaded_instances":[{"id":"qwen/qwen3.6-35b","config":{"context_length":256000}}]}]}`))
+		default:
+			_, _ = fmt.Fprintf(w, `{"error":"Unexpected endpoint or method. (%s %s)"}`, r.Method, r.URL.Path)
+		}
+	}))
+	t.Cleanup(stub.Close)
+	t.Setenv("LLAMACPP_HOST", stub.URL)
+
+	if window, _ := getContextWindowInfo("qwen/qwen3.6-35b"); window != 256000 {
+		t.Errorf("context window = %d, want the loaded 256000", window)
 	}
 }
 
@@ -122,15 +148,19 @@ func TestListModelsPublishesLMStudioWindows(t *testing.T) {
 	if len(models) != 2 {
 		t.Fatalf("models = %+v, want 2", models)
 	}
-	want := map[string]int{"qwen3-8b": 131072, "gemma-3-4b": 32768}
+	// The loaded model's window is reported; the unloaded one's is not — only
+	// its ceiling is — so it gets the fallback and is labelled a guess.
+	want := map[string]struct {
+		window  int
+		assumed bool
+	}{"qwen3-8b": {131072, false}, "gemma-3-4b": {DefaultContextWindow, true}}
 	for _, model := range models {
-		if model.ContextWindow != want[model.ID] {
-			t.Errorf("%s window = %d, want %d", model.ID, model.ContextWindow, want[model.ID])
+		w := want[model.ID]
+		if model.ContextWindow != w.window {
+			t.Errorf("%s window = %d, want %d", model.ID, model.ContextWindow, w.window)
 		}
-		// A window the server really reported is not a guess, and the settings
-		// panel labels it accordingly.
-		if !model.FromAPI {
-			t.Errorf("%s not marked FromAPI despite a server-reported window", model.ID)
+		if model.FromAPI == w.assumed || model.WindowAssumed != w.assumed {
+			t.Errorf("%s FromAPI=%v WindowAssumed=%v, want assumed=%v", model.ID, model.FromAPI, model.WindowAssumed, w.assumed)
 		}
 	}
 	// One probe for the whole list, not one per model.
@@ -185,14 +215,5 @@ func TestLMStudioProbeUnusedWhenLlamaServerAnswers(t *testing.T) {
 	}
 	if n := apiV0.Load(); n != 0 {
 		t.Errorf("/api/v0/models probed %d times for a llama-server that already answered", n)
-	}
-}
-
-func TestLMStudioWindowsReportsNothingWhenUnreachable(t *testing.T) {
-	isolateConfig(t)
-	t.Setenv("LLAMACPP_HOST", "http://127.0.0.1:1")
-
-	if windows := lmStudioWindows(context.Background(), nil); len(windows) != 0 {
-		t.Errorf("windows = %v, want none from an unreachable host", windows)
 	}
 }

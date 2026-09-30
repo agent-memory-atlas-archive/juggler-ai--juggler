@@ -76,6 +76,37 @@ func TestAutoCompactDisabledRoundTrip(t *testing.T) {
 	}
 }
 
+// TestLMStudioHostRoundTrip pins the settings field behind the LM Studio
+// provider's host row: PUT stores the raw credential the provider reads, GET
+// hands it back to the form, and an empty PUT clears it back to the default.
+func TestLMStudioHostRoundTrip(t *testing.T) {
+	api := newTestConfigAPI(t)
+	get := func() string {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		api.HandleGetConfig(rec, httptest.NewRequest(http.MethodGet, "/api/config", nil))
+		var payload struct {
+			LMStudioHost string `json:"lmstudioHost"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("decode GET payload: %v", err)
+		}
+		return payload.LMStudioHost
+	}
+
+	if got := get(); got != "" {
+		t.Fatalf("default lmstudioHost = %q, want empty (the provider's own default)", got)
+	}
+	putConfig(t, api, map[string]any{"lmstudio_host": "http://192.168.1.20:1234"})
+	if got := get(); got != "http://192.168.1.20:1234" {
+		t.Fatalf("after PUT, lmstudioHost = %q, want the saved host", got)
+	}
+	putConfig(t, api, map[string]any{"lmstudio_host": ""})
+	if got := get(); got != "" {
+		t.Fatalf("after clearing, lmstudioHost = %q, want empty", got)
+	}
+}
+
 // getAutoNameConfig drives HandleGetConfig and returns the autoNameDisabled and
 // autoNameInstruction fields from the payload.
 func getAutoNameConfig(t *testing.T, api *ConfigAPI) (bool, string) {

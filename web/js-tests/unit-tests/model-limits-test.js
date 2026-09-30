@@ -107,6 +107,9 @@ function providerFixture() {
       // A model whose endpoint published its own limits, which is a different
       // kind of number from the two above and has to read as one.
       { id: 'measured-model', contextWindow: 262144, maxOutputTokens: 32768, fromAPI: true },
+      // A server that reported nothing, so the provider's blanket fallback
+      // stands in — a guess, unlike the catalogued plain-model above.
+      { id: 'guessed-model', contextWindow: 8192, maxOutputTokens: 1638, windowAssumed: true },
     ],
   };
 }
@@ -142,7 +145,7 @@ export async function runTests(_ctx) {
    * the panel's load fans out five fetches and waits on the providers cache,
    * none of which this behaviour depends on.
    * @param {{reject?: boolean}} opts
-   * @param {(host: HTMLElement, backend: ReturnType<typeof installFetch>) => Promise<void>} body
+   * @param {(host: HTMLElement, backend: ReturnType<typeof installFetch>, tab: any) => Promise<void>} body
    */
   const withTab = async (opts, body) => {
     const backend = installFetch(opts);
@@ -156,7 +159,7 @@ export async function runTests(_ctx) {
       /** @type {any} */ (tab).providers = [providerFixture()];
       /** @type {any} */ (tab).config = {};
       tab.renderProviderFields();
-      await body(host, backend);
+      await body(host, backend, tab);
     } finally {
       host.remove();
       backend.restore();
@@ -257,9 +260,15 @@ export async function runTests(_ctx) {
       assert(/reported/i.test(measured.title),
         `a discovered limit should say the provider reported it; got ${JSON.stringify(measured.title)}`);
 
-      const assumed = limitInput(host, 'plain-model', 'contextWindow');
-      assert(/built-in/i.test(assumed.title),
-        `an undiscovered limit should say it is built in; got ${JSON.stringify(assumed.title)}`);
+      const catalogued = limitInput(host, 'plain-model', 'contextWindow');
+      assert(/built-in/i.test(catalogued.title) && !/assumed/i.test(catalogued.title),
+        `a catalogued limit should say it is built in, not assumed; got ${JSON.stringify(catalogued.title)}`);
+
+      // A provider-wide fallback is a different kind of number again: nobody,
+      // not even Juggler's catalogue, knows this model's window.
+      const guessed = limitInput(host, 'guessed-model', 'contextWindow');
+      assert(/assumed/i.test(guessed.title),
+        `a fallback window should say it was assumed; got ${JSON.stringify(guessed.title)}`);
 
       const overridden = limitInput(host, 'fixed-model', 'contextWindow');
       assert(/128000/.test(overridden.title),
@@ -336,6 +345,23 @@ export async function runTests(_ctx) {
       assert(input.value === '', `field reverted to blank; got ${JSON.stringify(input.value)}`);
       const status = host.querySelector('.model-visibility-status');
       assert(status && (status.textContent || '').length > 0, 'a failure message is shown');
+    });
+  });
+
+  // The deep link a compaction notice or the picker's "assumed" marker follows:
+  // the model list starts collapsed, so landing on the tab alone would leave the
+  // field to be found by hand.
+  await run('revealModel opens the model list and focuses that model\'s window field', async () => {
+    await withTab({}, async (host, _backend, tab) => {
+      const details = host.querySelector('details.model-visibility');
+      assert(details && !details.open, 'the model list starts collapsed (the case needs it to)');
+      const revealed = await tab.revealModel(PROVIDER, 'guessed-model');
+      assert(revealed === true, `revealModel returned ${revealed}, want true`);
+      assert(details.open, 'the model list was left collapsed');
+      const field = limitInput(host, 'guessed-model', 'contextWindow');
+      assert(document.activeElement === field,
+        `focus is on ${document.activeElement?.outerHTML?.slice(0, 80)}, want guessed-model's window field`);
+      assert(await tab.revealModel(PROVIDER, 'no-such-model') === false, 'an unknown model reported success');
     });
   });
 

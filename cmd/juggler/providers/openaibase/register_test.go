@@ -159,6 +159,56 @@ func TestRegisterMapsForcedToolChoiceQuirkToCapability(t *testing.T) {
 	}
 }
 
+// TestListingMarksOnlyDefaultWindowsAssumed separates the three places a
+// listed window can come from. Endpoints that return bare ids (OpenAI, DeepSeek,
+// z.ai) publish every model FromAPI false, so FromAPI alone would call the
+// whole curated catalogue a guess. Only the provider-wide Default is one, and
+// that is what WindowAssumed has to single out.
+func TestListingMarksOnlyDefaultWindowsAssumed(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/models" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"object":"list","data":[
+			{"id":"catalogued","object":"model"},
+			{"id":"uncatalogued","object":"model"},
+			{"id":"endpoint-sized","object":"model","max_model_len":65536}
+		]}`)
+	}))
+	t.Cleanup(srv.Close)
+
+	name := "openaibase-window-assumed-" + t.Name()
+	Register(Descriptor{
+		Name:              name,
+		BaseURL:           srv.URL,
+		ContextWindowCaps: utils.ModelCaps{Default: 100000, Overrides: map[string]int{"catalogued": 2000}},
+	})
+	p, err := provider.InitializeProvider(name, provider.Config{APIKey: "test", Model: "catalogued"})
+	if err != nil {
+		t.Fatalf("InitializeProvider: %v", err)
+	}
+	infos, err := p.ListModelsWithInfo(context.Background())
+	if err != nil {
+		t.Fatalf("ListModelsWithInfo: %v", err)
+	}
+	got := map[string]provider.ModelInfo{}
+	for _, info := range infos {
+		got[info.ID] = info
+	}
+	for id, want := range map[string]bool{"catalogued": false, "uncatalogued": true, "endpoint-sized": false} {
+		info, ok := got[id]
+		if !ok {
+			t.Errorf("%s missing from the listing", id)
+			continue
+		}
+		if info.WindowAssumed != want {
+			t.Errorf("%s WindowAssumed = %v, want %v (window %d, FromAPI %v)", id, info.WindowAssumed, want, info.ContextWindow, info.FromAPI)
+		}
+	}
+}
+
 func TestRegisterCapsResolverVouchesOnlyForCataloguedModels(t *testing.T) {
 	name := "openaibase-caps-resolver-" + t.Name()
 	Register(Descriptor{

@@ -77,9 +77,13 @@ func appendStreamedBlock(blocks []provider.ContentBlock, chunk provider.StreamCh
 // worker-owned anchored input usage by exactly the window admission would apply.
 // Returns (0, 0) for an unknown model, which the worker reads as "no threshold".
 func (s *Server) createWindowResolver() worker.WindowResolverFunc {
-	return func(mc worker.ModelConfig) (int, int) {
-		caps := s.resolveModelCapabilities(mc.Provider, mc.Model)
-		return int(caps.ContextWindowTokens), int(caps.MaxOutputTokens)
+	return func(mc worker.ModelConfig) worker.ContextWindowInfo {
+		caps, assumed := s.resolveModelLimits(mc.Provider, mc.Model)
+		return worker.ContextWindowInfo{
+			WindowTokens:  int(caps.ContextWindowTokens),
+			ReserveTokens: int(caps.MaxOutputTokens),
+			Assumed:       assumed,
+		}
 	}
 }
 

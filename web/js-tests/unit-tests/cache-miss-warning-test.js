@@ -15,6 +15,7 @@ import '../../js/components/composer.js';
 import NoticeMessage from '../../js/components/notice-message.js';
 import { buildPrefixFingerprint, classifyContextCacheImpact } from '../../js/services/context-cache-impact.js';
 import { typeNameForItem } from '../../js/utils/item-badge.js';
+import { registerSettingsOpener } from '../../js/services/settings-launcher.js';
 
 /**
  * @returns {{box: any, container: HTMLElement, metadata: Map<string, any>, notify: (key: string) => void}} Mounted composer and metadata controls
@@ -145,6 +146,37 @@ export async function runTests() {
         `the row must carry the explanation, got ${el.textContent}`);
       assert(!el.querySelector('button'), 'a notice reports; it must offer no action button');
     } finally {
+      container.remove();
+    }
+  });
+
+  // A notice about an assumed context window names the one field that fixes
+  // it, so it carries one action: the deep link to that field. Nothing else
+  // grows a button — the case above still stands for every other notice.
+  test('a notice that names a setting links straight to it', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    /** @type {Array<{tab: string|undefined, options: any}>} */
+    const opened = [];
+    const restore = registerSettingsOpener((tab, options) => { opened.push({ tab, options }); });
+    try {
+      const el = /** @type {any} */ (document.createElement('notice-message'));
+      el.setAttribute('message-id', 'NOTICE_2');
+      el.setAttribute('notice-text', 'Compacting at an assumed 8192-token context window for qwen');
+      el.setAttribute('notice-settings', JSON.stringify(
+        { tab: 'providers', provider: 'local', model: 'qwen', field: 'contextWindow' }));
+      container.appendChild(el);
+
+      const button = /** @type {HTMLButtonElement|null} */ (el.querySelector('button'));
+      assert(!!button, 'a notice with a settings target must offer its link');
+      assert(/context window/i.test(button.textContent || ''),
+        `the action must say what it opens, got ${JSON.stringify(button.textContent)}`);
+      button.click();
+      assert(opened.length === 1 && opened[0].tab === 'providers'
+        && opened[0].options?.model?.provider === 'local' && opened[0].options?.model?.id === 'qwen',
+      `the action opened ${JSON.stringify(opened)}, want the providers tab at local/qwen`);
+    } finally {
+      restore();
       container.remove();
     }
   });

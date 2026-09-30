@@ -577,7 +577,7 @@ const truncationNoticeLead = "The model hit its output limit before it finished,
 // the limit the user can actually act on rather than a provider-side default
 // nobody here can see.
 func (r *run) insertTruncationNotice(response *LLMResponse) {
-	_, reserve := r.resolveContextWindow()
+	reserve := r.resolveContextWindow().ReserveTokens
 
 	var detail strings.Builder
 	detail.WriteString(truncationNoticeLead)

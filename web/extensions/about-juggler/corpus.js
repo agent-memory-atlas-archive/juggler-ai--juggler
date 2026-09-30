@@ -280,7 +280,7 @@ Juggler talks to models through pluggable providers. The built-in set is:
 - **OpenRouter**
 - **OpenCode Zen**
 - **ACP Agents** (external agents speaking the Agent Client Protocol)
-- **Ollama (local)**, **llama.cpp (local)** and **LocalAI (local)**
+- **Ollama (local)**, **LM Studio (local)**, **llama.cpp (local)** and **LocalAI (local)**
 
 Beyond those you can define **custom endpoints**: any number of named gateways,
 tenants, regions or local servers, each with its own base URL, credentials,

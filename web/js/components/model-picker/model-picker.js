@@ -49,6 +49,7 @@ import { renderUsageRow } from '../../utils/usage-renderer.js';
 import { escapeHtml } from '../../../sdk/lib/html.js';
 import JugglerElement from '../juggler-element.js';
 import { cachedUserPref, setUserPref } from '../../services/prefs.js';
+import { openSettings } from '../../services/settings-launcher.js';
 import './model-tuning.js';
 
 /** The user preference holding the per-provider list view-state override map. */
@@ -64,6 +65,8 @@ const RECENT_LIMIT = 6;
  * @typedef {object} PickerModel
  * @property {string} id - Model ID.
  * @property {number} [contextWindow] - Context window size.
+ * @property {boolean} [windowAssumed] - The provider's window is a blanket fallback, not a reported or catalogued figure.
+ * @property {number|null} [providerContextWindow] - The provider's own window, present only when the user overrode it.
  * @property {string} [displayName] - Provider-supplied human label.
  * @property {string[]} [thinkingLevels] - Reasoning tiers, in display order.
  * @property {string} [defaultThinkingLevel] - Level used when a turn carries none.
@@ -794,11 +797,22 @@ class ModelPicker extends JugglerElement {
     const subParts = [providerLabel];
     if (ctx > 0) subParts.push(`${formatTokens(ctx)} context`);
 
+    // A window the server never reported is the provider's blanket fallback,
+    // and it decides when the conversation compacts and how long a reply may
+    // run. The marker says so and leads to the field that corrects it. A window
+    // the user has overridden is theirs, whatever the provider's figure was.
+    const assumed = ctx > 0 && entry?.windowAssumed
+      && (entry.providerContextWindow === undefined || entry.providerContextWindow === null);
+    const assumedHTML = assumed
+      ? ` · <button type="button" class="model-window-assumed" data-provider="${escapeHtml(cfg.provider)}" data-model="${escapeHtml(cfg.model)}"
+                    title="${escapeHtml(`The server didn't report this model's context window, so Juggler assumed ${formatTokens(ctx)}. Click to set the real size in Settings.`)}">assumed</button>`
+      : '';
+
     return `
             <div class="model-current">
                 <div class="model-current-label">Current model</div>
                 <div class="model-current-name">${escapeHtml(modelLabel(entry?.displayName, cfg.model))}</div>
-                <div class="model-current-sub">${escapeHtml(subParts.join(' · '))}</div>${this._usageHTML(cfg.provider)}
+                <div class="model-current-sub">${escapeHtml(subParts.join(' · '))}${assumedHTML}</div>${this._usageHTML(cfg.provider)}
             </div>`;
   }
 
@@ -974,6 +988,19 @@ class ModelPicker extends JugglerElement {
         e.stopPropagation();
         const providerName = toggle.getAttribute('data-provider');
         if (providerName) this._cycleProviderView(providerName);
+        return;
+      }
+
+      const assumed = target.closest('.model-window-assumed');
+      if (assumed) {
+        e.stopPropagation();
+        const provider = assumed.getAttribute('data-provider');
+        const id = assumed.getAttribute('data-model');
+        if (!provider || !id) return;
+        // Leaves the way Escape does: the host tears the popup down, and settings
+        // opens on the field rather than behind a picker still standing over it.
+        this._requestClose();
+        openSettings('providers', { model: { provider, id } });
         return;
       }
 

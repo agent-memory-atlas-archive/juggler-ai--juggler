@@ -261,6 +261,122 @@ func TestHandleContextOverflowFoldLeavesTailNotice(t *testing.T) {
 	}
 }
 
+// assumedWindowNotices returns the notices that point at a model's Context
+// window setting, in document order.
+func assumedWindowNotices(t *testing.T, items []ConversationItem) []ConversationItem {
+	t.Helper()
+	var out []ConversationItem
+	for _, item := range items {
+		if item.Type != ItemTypeNotice || len(item.Data) == 0 {
+			continue
+		}
+		var data assumedWindowNoticeData
+		if err := json.Unmarshal(item.Data, &data); err != nil {
+			t.Fatalf("notice data %s: %v", item.Data, err)
+		}
+		if data.Settings.Field == "contextWindow" {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+// assumedResolver answers every model with an 8192-token window that the
+// provider did not report, or did, per assumed.
+func assumedResolver(assumed bool) WindowResolverFunc {
+	return func(ModelConfig) ContextWindowInfo {
+		return ContextWindowInfo{WindowTokens: 8192, ReserveTokens: 1638, Assumed: assumed}
+	}
+}
+
+// TestAssumedWindowNoticeBeforeAutoCompaction is the report that motivated the
+// notice: a model loaded with a large window, served by a server that reported
+// none, compacted at a fraction of it and the compaction then failed — and
+// nothing on screen said the 8192 it compacted against was a guess. The notice
+// lands before recovery runs, so it is there even when recovery fails, and it
+// names the model that overflowed and where its window is set.
+func TestAssumedWindowNoticeBeforeAutoCompaction(t *testing.T) {
+	w := NewConversationWorker("test-conv", "user:test")
+	defer w.doc.Destroy()
+	w.currentRun().storeState(StateProcessing)
+	w.doc.SetMetadata("defaultModelConfig", map[string]any{"provider": "test", "model": "test"})
+	w.doc.InsertMessage(0, recoveryTestItems()...)
+	w.windowResolver = assumedResolver(true)
+	w.llmCallFunc = func(_ context.Context, _ json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
+		return nil, errors.New("server dropped the connection")
+	}
+	pinned := &ModelConfig{Provider: "local", Model: "qwen3.6-35b"}
+
+	recovery := &compactionAttempts{}
+	res := w.currentRun().handleContextOverflow(recoveryLimitErr(), false, false, recovery, pinned, recoveryLimitErr())
+	if res.verdict != overflowTerminal {
+		t.Fatalf("verdict = %v, want overflowTerminal (the reducer call fails)", res.verdict)
+	}
+
+	notices := assumedWindowNotices(t, w.doc.GetItems())
+	if len(notices) != 1 {
+		t.Fatalf("got %d assumed-window notices, want 1: %s", len(notices), itemIDs(w.doc.GetItems()))
+	}
+	notice := notices[0]
+	for _, want := range []string{"8192", "qwen3.6-35b", "assumed"} {
+		if !strings.Contains(notice.Summary, want) {
+			t.Errorf("notice summary = %q, want it to mention %q", notice.Summary, want)
+		}
+	}
+	var data assumedWindowNoticeData
+	_ = json.Unmarshal(notice.Data, &data)
+	if data.Settings.Tab != "providers" || data.Settings.Provider != "local" || data.Settings.Model != "qwen3.6-35b" {
+		t.Errorf("notice link = %+v, want the providers tab at local/qwen3.6-35b", data.Settings)
+	}
+}
+
+// A window the provider reported is not a guess, and compacting against it is
+// the system working: no notice.
+func TestNoAssumedWindowNoticeForReportedWindow(t *testing.T) {
+	w := NewConversationWorker("test-conv", "user:test")
+	defer w.doc.Destroy()
+	w.currentRun().storeState(StateProcessing)
+	w.doc.SetMetadata("defaultModelConfig", map[string]any{"provider": "test", "model": "test"})
+	w.doc.InsertMessage(0, recoveryTestItems()...)
+	w.windowResolver = assumedResolver(false)
+	pinned := &ModelConfig{Provider: "original", Model: "rejected"}
+	_, stub := newRecoveryStub(t, pinned)
+	w.llmCallFunc = stub
+
+	recovery := &compactionAttempts{}
+	if res := w.currentRun().handleContextOverflow(advisoryLimitErr(true), true, false, recovery, pinned, advisoryLimitErr(true)); res.verdict != overflowBypassAndRetry {
+		t.Fatalf("verdict = %v, want overflowBypassAndRetry", res.verdict)
+	}
+	if n := len(assumedWindowNotices(t, w.doc.GetItems())); n != 0 {
+		t.Fatalf("got %d assumed-window notices for a reported window, want 0", n)
+	}
+}
+
+// One notice per model and window: a conversation that compacts again and
+// again against the same guess is told once, not at every fold.
+func TestAssumedWindowNoticeOncePerModelWindow(t *testing.T) {
+	w := NewConversationWorker("test-conv", "user:test")
+	defer w.doc.Destroy()
+	w.doc.SetMetadata("defaultModelConfig", map[string]any{"provider": "test", "model": "test"})
+	w.windowResolver = assumedResolver(true)
+	r := w.currentRun()
+	mc := &ModelConfig{Provider: "local", Model: "qwen"}
+
+	for range 3 {
+		if item, ok := r.assumedWindowNotice(mc); ok {
+			r.appendTargetMessage(item)
+		}
+	}
+	if n := len(assumedWindowNotices(t, w.doc.GetItems())); n != 1 {
+		t.Fatalf("three compactions against one guess left %d notices, want 1", n)
+	}
+
+	// A different model's guess is news.
+	if _, ok := r.assumedWindowNotice(&ModelConfig{Provider: "local", Model: "other"}); !ok {
+		t.Fatal("a second model's assumed window was suppressed as a duplicate")
+	}
+}
+
 // TestHandleContextOverflowFoldReceiptSaysWhatSurvived covers the reassurance
 // half of the receipt. A reader who watches their context fill assumes the
 // oldest thing to go is the brief, so a notice that reports only how much was

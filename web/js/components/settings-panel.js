@@ -448,7 +448,7 @@ class SettingsPanel extends HTMLElement {
   /**
    * Open the settings panel
    * @param {string} [tab] - Optional tab to switch to on open
-   * @param {{capability?: {itemType: string, id: string}, mcpServer?: string, conversationLog?: string}} [options] - Optional target to reveal inside the tab
+   * @param {{capability?: {itemType: string, id: string}, mcpServer?: string, conversationLog?: string, model?: {provider: string, id: string}}} [options] - Optional target to reveal inside the tab
    */
   async open(tab, options = {}) {
     const isFirstLoad = !this._hasLoadedOnce;
@@ -479,6 +479,10 @@ class SettingsPanel extends HTMLElement {
 
     if (options.conversationLog) {
       this._revealConversationLog(options.conversationLog);
+    }
+
+    if (options.model) {
+      this._revealModel(options.model);
     }
 
     // Load config (only fetches from API on first load). The first-load latch is
@@ -529,6 +533,19 @@ class SettingsPanel extends HTMLElement {
   _revealConversationLog(conversationId) {
     Promise.resolve(/** @type {any} */ (this._tabs.logs)?.revealEntry?.(conversationId))
       .catch((error) => console.error('Failed to reveal the conversation log in settings:', error));
+  }
+
+  /**
+   * Deep-link into the Providers tab: open one model's row and focus its Context
+   * window field — where a window Juggler had to assume gets corrected. The tab
+   * draws its fields once the panel's config load lands, so like the others it
+   * is handed the target and applies it when that happens.
+   * @param {{provider: string, id: string}} model - Provider name and model id
+   * @private
+   */
+  _revealModel(model) {
+    Promise.resolve(/** @type {any} */ (this._tabs.providers)?.revealModel?.(model.provider, model.id))
+      .catch((error) => console.error('Failed to reveal the model in provider settings:', error));
   }
 
   /**

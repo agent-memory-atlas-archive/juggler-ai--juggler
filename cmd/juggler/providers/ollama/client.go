@@ -184,6 +184,10 @@ func listModels(ctx context.Context, _ string, headers map[string]string) ([]pro
 			ContextWindow:   window,
 			MaxOutputTokens: servingMaxOutput(window),
 			FromAPI:         true,
+			// Neither the Modelfile nor the user named a window, so this is the
+			// conservative fallback standing in for a daemon setting nobody can
+			// read back.
+			WindowAssumed: numCtx[i] <= 0 && override <= 0,
 		})
 	}
 	return models, nil

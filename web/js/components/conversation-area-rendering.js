@@ -942,10 +942,17 @@ function createErrorBubble(message, itemIndex) {
  * @returns {HTMLElement} Created element.
  */
 function createNoticeBubble(message, itemIndex) {
+  /** @type {Record<string, string>} */
+  const attributes = { 'notice-text': message.get('summary') || '' };
+  // A notice whose cause is a correctable setting names it in its data; the
+  // row turns that into its one link. See notice-message.js.
+  const data = message.get('data');
+  const settings = (data && typeof data.toJSON === 'function' ? data.toJSON() : data)?.settings;
+  if (settings) attributes['notice-settings'] = JSON.stringify(settings);
   return createMessageElement('notice-message', {
     itemId: message.get('itemId'),
     itemIndex,
-    attributes: { 'notice-text': message.get('summary') || '' }
+    attributes
   });
 }
 

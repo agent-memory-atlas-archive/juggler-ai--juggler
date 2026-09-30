@@ -6,6 +6,8 @@ package customprovider
 
 import (
 	"fmt"
+	"net"
+	"net/url"
 	"strings"
 
 	"juggler/cmd/juggler/providers/openaibase"
@@ -18,17 +20,48 @@ import (
 // the endpoint says nothing about.
 //
 // Most OpenAI-compatible servers do say something — vLLM publishes
-// max_model_len, llama.cpp meta.n_ctx, LM Studio its loaded window, LiteLLM
-// max_input_tokens — and openaibase reads whichever of those a listing carries,
+// max_model_len, llama.cpp meta.n_ctx, LiteLLM max_input_tokens — and
+// openaibase reads whichever of those a listing carries,
 // which beats anything set here because it describes the server that will serve
-// the request. What is left is a gateway whose rows are bare ids, and for that
-// there is nothing to know: 128000 is a guess, wrong in both directions for
+// the request. What is left is a server whose rows are bare ids, and for that
+// there is nothing to know: the window is a guess, wrong in both directions for
 // somebody, and the per-model override in settings is how a user who knows
-// better corrects it.
+// better corrects it. The UI marks it as assumed, and so does every compaction
+// that runs against it.
+//
+// Which guess depends on where the endpoint is (defaultContextWindowFor). The
+// rule is that an assumed window must never exceed what the server would
+// plausibly serve, because the two errors are not symmetric: too small
+// compacts early and shortens replies, visibly, while too large is silent on a
+// server like LM Studio that drops the middle of an over-long conversation. A
+// hosted gateway serves full-size models, so 128000 is a floor there. A server
+// on the user's own machine or network is serving a model it loaded itself, at
+// whatever length it was loaded with — and local servers default to a few
+// thousand tokens, so 8192 is the most that can be assumed without over-stating.
 const (
-	defaultContextWindow   = 128000
-	defaultMaxOutputTokens = 16384
+	defaultContextWindow      = 128000
+	localDefaultContextWindow = 8192
+	defaultMaxOutputTokens    = 16384
 )
+
+// defaultContextWindowFor returns the window assumed for an endpoint's models
+// that the endpoint says nothing about: localDefaultContextWindow for a server
+// on this machine or a private network, defaultContextWindow for anything
+// else (including a base URL that does not parse, which never lists models).
+func defaultContextWindowFor(baseURL string) int {
+	u, err := url.Parse(baseURL)
+	if err != nil || u.Host == "" {
+		return defaultContextWindow
+	}
+	host := u.Hostname()
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return localDefaultContextWindow
+	}
+	if ip := net.ParseIP(host); ip != nil && (ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast()) {
+		return localDefaultContextWindow
+	}
+	return defaultContextWindow
+}
 
 // The set of instances currently registered, keyed by instance id, so Sync can
 // tell which registrations are its own and retire the ones the user removed.
@@ -125,15 +158,17 @@ func registerInstance(id string, inst Instance) {
 	openaibase.Register(openaibase.Descriptor{
 		Name:        RegisteredName(id),
 		DisplayName: displayName,
-		Description: "A custom endpoint speaking the OpenAI Chat Completions API. Its base URL and request headers are set in the Custom Providers tab; the API key is optional, for endpoints that need one. Models come from the endpoint's own model list, along with their context windows where it publishes them (vLLM, llama.cpp, LM Studio and LiteLLM all do). For a model it says nothing about, Juggler assumes 128k — set the real figure per model below.",
+		Description: "A custom endpoint speaking the OpenAI Chat Completions API. Its base URL and request headers are set in the Custom Providers tab; the API key is optional, for endpoints that need one. Models come from the endpoint's own model list, along with their context windows where it publishes them (vLLM, llama.cpp and LiteLLM all do; for LM Studio, use the LM Studio provider, which reads each model's loaded window). For a model it says nothing about, Juggler assumes 128k, or 8k for a server on this machine or your local network — set the real figure per model below.",
 		// Per-instance credential slot and environment variable, so several
 		// endpoints hold distinct secrets. The environment form folds the
 		// hyphens an id may carry to underscores, since a shell cannot set a
 		// variable whose name contains one.
-		ConfigKeyName:     ConfigKeyName(id),
-		EnvVarName:        EnvVarName(id),
-		DisplayProvider:   displayName,
-		ContextWindowCaps: utils.ModelCaps{Default: defaultContextWindow},
+		ConfigKeyName:   ConfigKeyName(id),
+		EnvVarName:      EnvVarName(id),
+		DisplayProvider: displayName,
+		// Fixed at registration, which Sync repeats after every edit, so a
+		// changed base URL re-decides it.
+		ContextWindowCaps: utils.ModelCaps{Default: defaultContextWindowFor(inst.BaseURL)},
 		MaxOutputCaps:     utils.ModelCaps{Default: defaultMaxOutputTokens},
 		BaseURLFunc:       func() string { return liveBaseURL(id) },
 		HeadersFunc:       func() map[string]string { return liveHeaders(id) },

@@ -115,8 +115,7 @@ func (w *ConversationWorker) runResultBudgetFor(threadItemID string) int {
 	if mc == nil {
 		return runResultFloorChars
 	}
-	window, _ := w.windowResolver(*mc)
-	return runResultCharBudget(window)
+	return runResultCharBudget(w.windowResolver(*mc).WindowTokens)
 }
 
 // runResultTrimmedMarker opens the note left in place of what was cut. Kept as

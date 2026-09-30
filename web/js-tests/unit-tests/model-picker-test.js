@@ -27,6 +27,8 @@
  *   5. The current-model card carries the provider's quota meters, which the
  *      picker pulls itself — and shows nothing at all when there are none, so a
  *      provider that never reports usage costs the card no empty space.
+ *   6. A window the provider never reported is marked as assumed on the card,
+ *      and the marker opens that model's Context window field in settings.
  * @module unit-tests/model-picker-test
  */
 
@@ -35,6 +37,7 @@ import recentModels from '../../js/services/recent-models.js';
 import { cachedUserPref, setUserPref } from '../../js/services/prefs.js';
 import usageStatsCache from '../../js/services/usage-stats-cache.js';
 import { presentPopup } from '../../js/utils/popup-surface.js';
+import { registerSettingsOpener } from '../../js/services/settings-launcher.js';
 import '../../js/components/model-picker/model-picker.js';
 
 /**
@@ -874,6 +877,46 @@ export async function runTests(_ctx) {
         cleanup();
         await clearRecents();
       }
+    });
+
+    // A window the server never reported looks exactly like one it did, and it
+    // decides when the conversation compacts and how long a reply may run. The
+    // card is where the size is shown, so it is where a guess has to say so —
+    // and only a guess: a curated catalogue figure (fromAPI false, not assumed)
+    // and a window the user already typed in are both real statements.
+    await run('an assumed window says so on the card, and the marker opens that model\'s field', async () => {
+      const card = (/** @type {any} */ entry) => {
+        const el = /** @type {any} */ (document.createElement('model-picker'));
+        el.providers = [{ name: 'local', displayName: 'Local', available: true, modelsWithContext: [entry] }];
+        el.value = { provider: 'local', model: entry.id };
+        el.render();
+        return el;
+      };
+
+      const guessed = card({ id: 'guessed', contextWindow: 8192, windowAssumed: true });
+      const marker = /** @type {HTMLElement|null} */ (guessed.querySelector('.model-window-assumed'));
+      assert(!!marker, 'no assumed marker on a card whose window is the provider fallback');
+      assert(/context/.test(guessed.querySelector('.model-current-sub')?.textContent || ''),
+        'the card lost its context size');
+
+      assert(!card({ id: 'catalogued', contextWindow: 128000, fromAPI: false }).querySelector('.model-window-assumed'),
+        'a catalogued window was marked as assumed');
+      assert(!card({ id: 'fixed', contextWindow: 256000, windowAssumed: true, providerContextWindow: 8192 })
+        .querySelector('.model-window-assumed'),
+      'a window the user overrode was marked as assumed');
+
+      /** @type {Array<{tab: string|undefined, options: any}>} */
+      const opened = [];
+      const restore = registerSettingsOpener((tab, options) => { opened.push({ tab, options }); });
+      try {
+        marker?.click();
+      } finally {
+        restore();
+      }
+      assert(opened.length === 1, `the marker opened settings ${opened.length} times, want once`);
+      assert(opened[0]?.tab === 'providers'
+        && opened[0]?.options?.model?.provider === 'local' && opened[0]?.options?.model?.id === 'guessed',
+      `the marker asked for ${JSON.stringify(opened[0])}, want the providers tab at local/guessed`);
     });
 
     await run('filled rows clear their own corner, and the list clears the scrollbar', async () => {

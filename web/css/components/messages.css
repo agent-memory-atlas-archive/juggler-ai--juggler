@@ -623,11 +623,19 @@ error-message article.error {
 
 /* A notice takes no card and no extra room: the amber triangle, a "Warning"
    lozenge and one line saying what happened are the whole row, laid out by the
-   shared .message-with-icon rules. Nothing has failed and there is nothing to
-   act on, so the measured detail waits in the properties panel. */
+   shared .message-with-icon rules. Nothing has failed, so the measured detail
+   waits in the properties panel; the only action a notice carries is a link to
+   a setting that corrects its cause, when it names one. */
 notice-message article.notice {
     max-width: 100%;
     overflow: hidden;
+}
+
+/* The one link a notice may carry, to the setting that corrects its cause:
+   under the line, left-aligned with its text. */
+.notice-message-actions {
+    display: flex;
+    padding-top: 0.375rem;
 }
 
 /* All message components need display: block for proper backgrounds and selection */

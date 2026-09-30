@@ -485,6 +485,11 @@ func (r *run) handleCompact(payload json.RawMessage) {
 	ack.Result = map[string]any{"folded": folded}
 	r.reply(ack)
 	if folded {
+		// Root, beside the fold: the fold thread's own items are the summarizer's
+		// source, and a notice there would be summarized with them.
+		if notice, ok := r.assumedWindowNotice(nil); ok {
+			r.tracker.AppendMessage(notice)
+		}
 		r.checkForNewThreads()
 	}
 }

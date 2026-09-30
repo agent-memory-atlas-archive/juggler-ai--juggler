@@ -6,6 +6,7 @@ package localai
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -18,7 +19,8 @@ import (
 // DefaultHost is the URL used when no explicit host is configured. 8080 is
 // LocalAI's own default port — the same one llama-server uses, which is why the
 // two are easy to confuse from the outside. They are told apart by what answers:
-// LocalAI serves a discovery document and no /health, llama-server the reverse.
+// LocalAI serves a discovery document and no /health, llama-server the reverse
+// (see server for why the document's body, not just its status, is checked).
 const DefaultHost = "http://127.0.0.1:8080"
 
 // HostCredKey is the credentials.json field where the user-configured LocalAI
@@ -42,14 +44,31 @@ const DefaultContextWindow = 8192
 //
 // HealthPath is the discovery document rather than a health route, because
 // detection here has to answer "is this LocalAI" and not merely "is something
-// listening on 8080". llama-server occupies the same port by default and
-// answers 404 there, so the document is what keeps the two providers from
-// claiming each other's server.
+// listening on 8080". The status code cannot answer that: llama-server
+// answers 404 there, but LM Studio answers 200 to every path it does not
+// implement. So the body has to be LocalAI's own document (isDiscoveryDocument),
+// which is what keeps LocalAI from claiming another server.
 var server = openaibase.LocalHost{
 	CredKey:     HostCredKey,
 	EnvVar:      "LOCALAI_HOST",
 	DefaultHost: DefaultHost,
 	HealthPath:  "/.well-known/localai.json",
+	ValidBody:   isDiscoveryDocument,
+}
+
+// isDiscoveryDocument reports whether body is LocalAI's discovery document.
+// LocalAI's handler writes "endpoints" and "capabilities" as objects on every
+// response, in every release that serves the route; the key sets inside them
+// grow over time, so only their presence and shape are checked.
+func isDiscoveryDocument(body []byte) bool {
+	var doc struct {
+		Endpoints    map[string]json.RawMessage `json:"endpoints"`
+		Capabilities map[string]json.RawMessage `json:"capabilities"`
+	}
+	if err := json.Unmarshal(body, &doc); err != nil {
+		return false
+	}
+	return doc.Endpoints != nil && doc.Capabilities != nil
 }
 
 // probeClient bounds the model-list and capabilities reads. Both are cheap
@@ -128,6 +147,7 @@ func listModels(ctx context.Context, credential string, headers map[string]strin
 			DisplayName:   utils.ModelDisplayName(id),
 			ContextWindow: window,
 			FromAPI:       fromAPI,
+			WindowAssumed: !fromAPI,
 		})
 	}
 	return models, nil

@@ -166,7 +166,8 @@ func listModels(ctx context.Context, bearerToken string, headers map[string]stri
 		if contextWindow == 0 {
 			contextWindow = model.Capabilities.Limits.MaxPromptTokens
 		}
-		if contextWindow == 0 {
+		windowAssumed := contextWindow == 0
+		if windowAssumed {
 			contextWindow = DefaultContextWindow
 		}
 		maxOutputTokens := model.Capabilities.Limits.MaxOutputTokens
@@ -184,6 +185,7 @@ func listModels(ctx context.Context, bearerToken string, headers map[string]stri
 			ContextWindow:        contextWindow,
 			MaxOutputTokens:      maxOutputTokens,
 			FromAPI:              true,
+			WindowAssumed:        windowAssumed,
 			ThinkingLevels:       spec.Options(),
 			DefaultThinkingLevel: spec.Default,
 		})

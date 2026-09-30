@@ -80,6 +80,51 @@ func newLocalAI(t *testing.T, models, caps string) *int {
 	return &probes
 }
 
+// discoveryDocument is LocalAI's /.well-known/localai.json, abbreviated: the
+// four top-level keys its handler always writes, with a sample of each.
+const discoveryDocument = `{
+  "version": "v4.10.0",
+  "endpoints": {"models": "/v1/models", "chat_completions": "/v1/chat/completions"},
+  "endpoint_groups": {"openai_compatible": {}},
+  "capabilities": {"config_metadata": true, "config_patch": true, "mcp": true}
+}`
+
+// A server that answers 200 to every path is not LocalAI. LM Studio is the
+// case: it replies to any route it does not implement with a 200 and an error
+// body, and a user who points LocalAI's host at it (or runs it on LocalAI's
+// port) must not find LocalAI switched on against it.
+func TestAutoDetectRejectsServerAnsweringEveryPath(t *testing.T) {
+	isolateConfig(t)
+	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"error":"Unexpected endpoint or method. (` + r.Method + ` ` + r.URL.Path + `)"}`))
+	}))
+	t.Cleanup(stub.Close)
+	t.Setenv("LOCALAI_HOST", stub.URL)
+
+	if server.AutoDetect()() {
+		t.Fatal("LocalAI detected a server that answers 200 to every path")
+	}
+}
+
+func TestAutoDetectAcceptsDiscoveryDocument(t *testing.T) {
+	isolateConfig(t)
+	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/.well-known/localai.json" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(discoveryDocument))
+	}))
+	t.Cleanup(stub.Close)
+	t.Setenv("LOCALAI_HOST", stub.URL)
+
+	if !server.AutoDetect()() {
+		t.Fatal("LocalAI not detected from its own discovery document")
+	}
+}
+
 func listed(t *testing.T) map[string]provider.ModelInfo {
 	t.Helper()
 	models, err := listModels(context.Background(), "", nil)
@@ -164,6 +209,9 @@ func TestOlderServerFallsBackToDefaultWindow(t *testing.T) {
 	}
 	if model.FromAPI {
 		t.Error("top-level-big FromAPI = true, but the server described no window — the number is an assumption")
+	}
+	if !model.WindowAssumed {
+		t.Error("top-level-big WindowAssumed = false, so nothing will tell the user its window is a guess")
 	}
 }
 

@@ -71,6 +71,16 @@ export class ProvidersTab {
     /** @type {Map<string, (models: any[]) => void>} @private */
     this._modelRowUpdaters = new Map();
 
+    // A deep link (revealModel) can arrive before the panel's config load has
+    // drawn anything, so it waits on the first draw and on the endpoint list
+    // that draw fetches — a custom endpoint's model rows live on its own card.
+    /** @type {() => void} @private */
+    this._markFieldsRendered = () => {};
+    /** @type {Promise<void>} @private */
+    this._fieldsRendered = new Promise((resolve) => { this._markFieldsRendered = resolve; });
+    /** @type {Promise<void>} @private */
+    this._endpointsRefreshed = Promise.resolve();
+
     // Hidden models and per-model limits are global settings, so another window
     // can change them — and this tab holds no copy of the settings document. What
     // it reads is the published catalogue, into which the server folds both before
@@ -162,7 +172,56 @@ export class ProvidersTab {
     this.endpointSection.id = 'custom-endpoints-section';
     container.appendChild(this.endpointSection);
     this._renderEndpointSection();
-    this._refreshEndpoints();
+    this._endpointsRefreshed = this._refreshEndpoints();
+    this._markFieldsRendered();
+  }
+
+  /**
+   * Open one model's row and focus its Context window field: the destination
+   * of the "assumed" marker in the model picker and of a compaction notice
+   * about an assumed window. The model list is collapsed by default, so without
+   * this a user sent here would still have to find the field by hand.
+   * @param {string} providerName - Provider the model belongs to
+   * @param {string} modelId - Model id, as the row's data-model carries it
+   * @returns {Promise<boolean>} True if the field existed and now has focus
+   */
+  async revealModel(providerName, modelId) {
+    await this._fieldsRendered;
+    await this._endpointsRefreshed;
+    const card = this._cardFor(providerName);
+    const details = /** @type {HTMLDetailsElement|null} */ (card?.querySelector('details.model-visibility') ?? null);
+    const row = Array.from(details ? details.querySelectorAll('.model-visibility-row') : [])
+      .find((el) => /** @type {HTMLElement} */ (el).dataset.model === modelId);
+    const field = /** @type {HTMLInputElement|null} */ (row?.querySelector('[data-limit="contextWindow"]') ?? null);
+    if (!details || !row || !field) return false;
+    details.open = true;
+    // A filter left over from an earlier visit could be hiding the row.
+    const filter = /** @type {HTMLInputElement|null} */ (details.querySelector('.model-visibility-filter'));
+    if (filter && filter.value) {
+      filter.value = '';
+      filter.dispatchEvent(new Event('input'));
+    }
+    row.scrollIntoView({ block: 'center' });
+    field.focus();
+    return true;
+  }
+
+  /**
+   * The card holding a provider's controls: a built-in provider's field group,
+   * or, for one of the user's own endpoints, that endpoint's card.
+   * @param {string} providerName - Registered provider name
+   * @returns {HTMLElement|null} The card, or null when none is drawn
+   * @private
+   */
+  _cardFor(providerName) {
+    const container = this.host.querySelector('#provider-fields-container');
+    const field = Array.from(container ? container.querySelectorAll('.provider-field') : [])
+      .find((el) => /** @type {HTMLElement} */ (el).dataset.provider === providerName);
+    if (field) return /** @type {HTMLElement} */ (field);
+    for (const card of this.endpointCards.values()) {
+      if (card.endpoint?.providerId === providerName) return card.element;
+    }
+    return null;
   }
 
   /**
@@ -769,10 +828,9 @@ export class ProvidersTab {
     }
 
     // llama.cpp: expose the server host so users can point at a non-default
-    // (LAN / remote / custom port) instance without restarting the app. The
-    // same field reaches an LM Studio server, which serves this API on 1234.
-    // Saved as the `llamacpp_host` raw credential; backend re-fetches the model
-    // list, and each model's context window, on change.
+    // (LAN / remote / custom port) instance without restarting the app. Saved
+    // as the `llamacpp_host` raw credential; backend re-fetches the model list,
+    // and each model's context window, on change.
     if (provider.name === 'llamacpp') {
       controlColumn.appendChild(this._buildHostRow({
         inputId: 'llamacpp-host-input',
@@ -794,6 +852,20 @@ export class ProvidersTab {
         configField: 'localaiHost',
         configKey: 'localai_host',
         defaultLabel: 'http://127.0.0.1:8080',
+      }));
+    }
+
+    // LM Studio: expose the server host so users can point at a non-default
+    // (LAN / custom port) instance without restarting the app. Saved as the
+    // `lmstudio_host` raw credential; backend re-reads the model table, and
+    // each model's loaded window, on change.
+    if (provider.name === 'lmstudio') {
+      controlColumn.appendChild(this._buildHostRow({
+        inputId: 'lmstudio-host-input',
+        placeholder: 'http://127.0.0.1:1234',
+        configField: 'lmstudioHost',
+        configKey: 'lmstudio_host',
+        defaultLabel: 'http://127.0.0.1:1234',
       }));
     }
 
@@ -957,7 +1029,7 @@ export class ProvidersTab {
    * @private
    */
   _buildModelVisibilityRow(provider) {
-    /** @type {Array<{id: string, displayName?: string, hidden?: boolean, fromAPI?: boolean, contextWindow?: number, maxOutputTokens?: number, providerContextWindow?: number, providerMaxOutputTokens?: number}>} */
+    /** @type {Array<{id: string, displayName?: string, hidden?: boolean, fromAPI?: boolean, windowAssumed?: boolean, contextWindow?: number, maxOutputTokens?: number, providerContextWindow?: number, providerMaxOutputTokens?: number}>} */
     const models = Array.isArray(provider.modelsWithContext) ? provider.modelsWithContext : [];
     if (models.length === 0) return null;
 
@@ -1072,14 +1144,19 @@ export class ProvidersTab {
       input.autocomplete = 'off';
       input.spellcheck = false;
       input.setAttribute('aria-label', `${label} for ${model.id}`);
-      // Three numbers that look identical in a box: one the provider stated,
-      // one Juggler assumed because the provider states none, and one typed
-      // here. Which it is decides how much to trust it, and nothing else on the
-      // row says.
+      // Four numbers that look identical in a box: one the provider stated, one
+      // from Juggler's catalogue for this model, one assumed because neither
+      // knows the model, and one typed here. Which it is decides how much to
+      // trust it, and nothing else on the row says. windowAssumed describes the
+      // context window only; an assumed window's output cap is derived from it.
       if (overridden) {
         input.title = `Your figure. Clearing the field goes back to ${reported}.`;
-      } else if (model.fromAPI) {
+      } else if (model.fromAPI && !(field === 'contextWindow' && model.windowAssumed)) {
         input.title = `${reported} — reported by the provider for this model.`;
+      } else if (model.windowAssumed) {
+        input.title = field === 'contextWindow'
+          ? `${reported} — assumed. The server didn't report this model's context window, so Juggler used a conservative default; enter the size the model is loaded with.`
+          : `${reported} — derived from the assumed context window; it follows the window unless you set it here.`;
       } else {
         input.title = `${reported} — Juggler's built-in figure. This provider doesn't publish its limits; correct it here if you know better.`;
       }
@@ -1267,7 +1344,7 @@ export class ProvidersTab {
 
   /**
    * Build a host-URL input row for a keyless local-server provider (Ollama,
-   * llama.cpp, LocalAI). Loads the current value from `this.config[configField]`; saves
+   * llama.cpp, LocalAI, LM Studio). Loads the current value from `this.config[configField]`; saves
    * via /api/config on blur or Enter. Empty value clears the override (falls
    * back to the env var or the server-side default).
    * @param {{inputId: string, placeholder: string, configField: string, configKey: string, defaultLabel: string}} opts

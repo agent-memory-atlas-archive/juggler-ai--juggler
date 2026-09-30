@@ -9,6 +9,7 @@ import (
 
 	"juggler/cmd/juggler/core"
 	"juggler/cmd/juggler/providers/provider"
+	"juggler/cmd/juggler/worker"
 	"juggler/internal/userpaths/userpathstest"
 )
 
@@ -198,6 +199,47 @@ func TestResolveModelCapabilitiesHonoursUserLimitOverrides(t *testing.T) {
 				t.Fatalf("resolveModelCapabilities() = %+v, want %+v", got, test.want)
 			}
 		})
+	}
+}
+
+// TestWindowResolverReportsAssumedWindow pins what the worker is told about a
+// guessed window: that it is one while the provider's fallback stands, and that
+// it no longer is once the user has typed the real number in. Compaction reads
+// this to say which window it folded at, so a user who has already corrected
+// the window must not be told it is a guess.
+func TestWindowResolverReportsAssumedWindow(t *testing.T) {
+	userpathstest.Isolate(t)
+	const providerName = "test_capability_window_assumed"
+	provider.RegisterProvider(provider.ProviderInfo{Name: providerName},
+		func(provider.Config) (provider.Provider, error) { return nil, nil })
+
+	if err := core.SaveGlobalSettings(&core.GlobalSettings{Models: core.ModelSettings{
+		Limits: map[string]map[string]core.ModelLimits{providerName: {
+			"corrected": {ContextWindow: 256000},
+		}},
+	}}); err != nil {
+		t.Fatalf("SaveGlobalSettings: %v", err)
+	}
+	s := &Server{settings: newSettingsStore()}
+	providers := []ProviderStatus{{
+		Name: providerName,
+		ModelsWithContext: []ModelWithContext{
+			{ID: "guessed", ContextWindow: 8192, WindowAssumed: true},
+			{ID: "corrected", ContextWindow: 8192, WindowAssumed: true},
+			{ID: "reported", ContextWindow: 131072, FromAPI: true},
+		},
+	}}
+	s.providersList.Store(&providers)
+
+	resolve := s.createWindowResolver()
+	for model, want := range map[string]worker.ContextWindowInfo{
+		"guessed":   {WindowTokens: 8192, ReserveTokens: int(provider.ContextSafetyReserve(8192)), Assumed: true},
+		"corrected": {WindowTokens: 256000, ReserveTokens: int(provider.ContextSafetyReserve(256000))},
+		"reported":  {WindowTokens: 131072, ReserveTokens: int(provider.ContextSafetyReserve(131072))},
+	} {
+		if got := resolve(worker.ModelConfig{Provider: providerName, Model: model}); got != want {
+			t.Errorf("%s: resolver = %+v, want %+v", model, got, want)
+		}
 	}
 }
 

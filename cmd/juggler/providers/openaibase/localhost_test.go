@@ -7,6 +7,7 @@ package openaibase
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -20,6 +21,31 @@ func TestAutoDetectAcceptsSuccessfulErrorBody(t *testing.T) {
 	host := LocalHost{DefaultHost: server.URL, HealthPath: "/health"}
 	if !host.AutoDetect()() {
 		t.Fatal("AutoDetect rejected a 200 response with an error-shaped body")
+	}
+}
+
+// A provider that must recognise its own server, not merely a listening port,
+// sets ValidBody — and then a server answering 200 to everything, as LM Studio
+// does, is not mistaken for it.
+func TestAutoDetectValidatesBodyWhenAsked(t *testing.T) {
+	body := `{"error":"Unexpected endpoint or method. (GET /.well-known/thing.json)"}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(body))
+	}))
+	defer server.Close()
+
+	host := LocalHost{
+		DefaultHost: server.URL,
+		HealthPath:  "/.well-known/thing.json",
+		ValidBody:   func(b []byte) bool { return strings.Contains(string(b), `"thing":true`) },
+	}
+	if host.AutoDetect()() {
+		t.Fatal("AutoDetect accepted a 200 whose body ValidBody rejects")
+	}
+	body = `{"thing":true}`
+	if !host.AutoDetect()() {
+		t.Fatal("AutoDetect rejected a body ValidBody accepts")
 	}
 }
 

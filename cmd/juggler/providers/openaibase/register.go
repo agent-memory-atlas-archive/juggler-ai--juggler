@@ -364,7 +364,26 @@ func (c *openAICompatClient) ListModelsWithInfo(ctx context.Context) ([]provider
 	if err != nil {
 		return nil, err
 	}
-	return c.fillWindowsFromCapabilities(ctx, models), nil
+	return markDefaultWindows(c.desc.ContextWindowCaps, c.fillWindowsFromCapabilities(ctx, models)), nil
+}
+
+// markDefaultWindows flags the models whose window is the catalogue's
+// provider-wide Default: nothing on the endpoint sized them and no per-model
+// entry knows them. A catalogued figure for a bare-id endpoint is not flagged —
+// it is a statement about that model, merely not the server's own.
+func markDefaultWindows(caps utils.ModelCaps, models []provider.ModelInfo) []provider.ModelInfo {
+	if caps.Default <= 0 {
+		return models
+	}
+	for i := range models {
+		if models[i].FromAPI {
+			continue
+		}
+		if _, known := caps.LookupKnown(models[i].ID); !known {
+			models[i].WindowAssumed = true
+		}
+	}
+	return models
 }
 
 type usageOpenAICompatClient struct {

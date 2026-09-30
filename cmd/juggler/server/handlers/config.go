@@ -22,6 +22,7 @@ const (
 	ollamaHostKey           = "ollama_host"
 	llamacppHostKey         = "llamacpp_host"
 	localaiHostKey          = "localai_host"
+	lmstudioHostKey         = "lmstudio_host"
 	claudecodeBinaryPathKey = "claudecode_binary_path"
 	streamIdleTimeoutKey    = "stream_idle_timeout" // mirrors streamidle.CredKey
 	// spendLimitTokensKey stores the conversation spend ceiling in cumulative
@@ -167,6 +168,7 @@ func (c *ConfigAPI) HandleGetConfig(w http.ResponseWriter, r *http.Request) {
 		"ollamaHost":               c.credStore.GetRawKey(ollamaHostKey),
 		"llamacppHost":             c.credStore.GetRawKey(llamacppHostKey),
 		"localaiHost":              c.credStore.GetRawKey(localaiHostKey),
+		"lmstudioHost":             c.credStore.GetRawKey(lmstudioHostKey),
 		"claudecodeBinaryPath":     c.credStore.GetRawKey(claudecodeBinaryPathKey),
 		"streamIdleTimeout":        c.credStore.GetRawKey(streamIdleTimeoutKey),
 		"spendLimitTokens":         c.credStore.GetRawKey(spendLimitTokensKey),
@@ -250,6 +252,17 @@ func (c *ConfigAPI) HandleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		if hostStr, ok := hostValue.(string); ok {
 			if err := c.credStore.SetRawKey(localaiHostKey, hostStr); err != nil {
 				jlog.Error("Failed to save LocalAI host: %v", err)
+			}
+		}
+	}
+
+	// Handle the LM Studio host override (raw credential), the same shape as the
+	// two above: the refresh fireCredsChanged triggers re-reads the model table,
+	// and each model's loaded window, from the new server.
+	if hostValue, ok := req[lmstudioHostKey]; ok {
+		if hostStr, ok := hostValue.(string); ok {
+			if err := c.credStore.SetRawKey(lmstudioHostKey, hostStr); err != nil {
+				jlog.Error("Failed to save LM Studio host: %v", err)
 			}
 		}
 	}

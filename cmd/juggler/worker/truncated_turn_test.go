@@ -89,7 +89,7 @@ func assistantContains(items map[string][]ConversationItem, substr string) bool 
 // be reported as what it was.
 func TestTruncatedThinkingOnlyTurnIsReportedNotRetried(t *testing.T) {
 	w := newTruncationWorker(t, "conv-truncated")
-	w.windowResolver = func(ModelConfig) (int, int) { return 8192, 1638 }
+	w.windowResolver = func(ModelConfig) ContextWindowInfo { return ContextWindowInfo{WindowTokens: 8192, ReserveTokens: 1638} }
 
 	// Four queued, only one may be consumed: the surplus proves the loop
 	// stopped rather than merely running the queue dry.
@@ -141,7 +141,7 @@ func TestTruncatedThinkingOnlyTurnIsReportedNotRetried(t *testing.T) {
 // the reply is short, not absent, and nothing may discard it.
 func TestTruncatedTurnWithTextKeepsTheTextAndReportsIt(t *testing.T) {
 	w := newTruncationWorker(t, "conv-truncated-text")
-	w.windowResolver = func(ModelConfig) (int, int) { return 8192, 1638 }
+	w.windowResolver = func(ModelConfig) ContextWindowInfo { return ContextWindowInfo{WindowTokens: 8192, ReserveTokens: 1638} }
 
 	w.setMockResponses([]MockResponse{
 		{Blocks: []LLMResponseBlock{textBlock("Here is the first half of the answer")}, StopReason: "max_tokens", OutputTokens: 1638},

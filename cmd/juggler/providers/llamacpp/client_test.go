@@ -156,6 +156,9 @@ func TestListModelsPublishesPerModelWindows(t *testing.T) {
 		if !model.FromAPI {
 			t.Errorf("%s not marked FromAPI despite a server-reported window", id)
 		}
+		if model.WindowAssumed {
+			t.Errorf("%s marked WindowAssumed despite a server-reported window", id)
+		}
 	}
 
 	// No window anywhere for this one: the router's /props says 0, so the
@@ -166,6 +169,9 @@ func TestListModelsPublishesPerModelWindows(t *testing.T) {
 	}
 	if unsized.FromAPI {
 		t.Error("unsized model marked FromAPI despite falling back to the default window")
+	}
+	if !unsized.WindowAssumed {
+		t.Error("unsized model not marked WindowAssumed, so nothing will tell the user its window is a guess")
 	}
 }
 

@@ -5,6 +5,7 @@
 package openaibase
 
 import (
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -24,6 +25,12 @@ type LocalHost struct {
 	EnvVar      string // environment-variable fallback (e.g. "OLLAMA_HOST")
 	DefaultHost string // used when neither the credential nor the env var is set
 	HealthPath  string // GET path probed by AutoDetect (e.g. "/api/tags", "/health")
+	// ValidBody, when set, must accept the HealthPath response body for
+	// AutoDetect to report the server present. Set it when detection has to
+	// answer "is this that server" rather than "is something listening":
+	// LM Studio answers 200 to every path it does not implement, so a status
+	// code alone cannot tell it from the server a provider is looking for.
+	ValidBody func(body []byte) bool
 }
 
 // Host returns the configured server URL. Resolution order:
@@ -53,10 +60,17 @@ func (l LocalHost) BaseURLFunc() func() string {
 	return func() string { return l.Host() + "/v1" }
 }
 
+// maxDetectBody bounds how much of a detection response ValidBody is shown.
+// Discovery documents and model tables are a few KB; the cap only stops an
+// unexpected server from streaming an unbounded body into the probe.
+const maxDetectBody = 1 << 20
+
 // AutoDetect returns a probe suitable for Descriptor.AutoDetect: a short-timeout
 // GET of HealthPath at the configured host, reporting whether it answers 200.
-// The body is deliberately ignored: LM Studio answers 200 with an error-shaped
-// body for unsupported health paths, and that still proves the local host is up.
+// Without ValidBody the body is ignored: LM Studio answers 200 with an
+// error-shaped body for unsupported health paths, and for a probe that only
+// asks "is the host up" that still proves it is. With ValidBody the body must
+// also be the one the provider's own server sends.
 func (l LocalHost) AutoDetect() func() bool {
 	return func() bool {
 		client := &http.Client{Timeout: 300 * time.Millisecond}
@@ -69,7 +83,14 @@ func (l LocalHost) AutoDetect() func() bool {
 			return false
 		}
 		defer resp.Body.Close()
-		return resp.StatusCode == http.StatusOK
+		if resp.StatusCode != http.StatusOK {
+			return false
+		}
+		if l.ValidBody == nil {
+			return true
+		}
+		body, err := io.ReadAll(io.LimitReader(resp.Body, maxDetectBody))
+		return err == nil && l.ValidBody(body)
 	}
 }
 

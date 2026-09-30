@@ -140,12 +140,24 @@ func (e *TransientError) retryStatus(a, max int) string {
 // Returns the complete response when streaming finishes.
 type LLMCallFunc func(ctx context.Context, request json.RawMessage, chunkHandler func(StreamChunk)) (*LLMResponse, error)
 
-// WindowResolverFunc resolves a model's context window and output reserve (in
-// tokens) from its identity alone, with no provider round-trip. Injected
-// alongside the LLM caller for the places that need the model's limits without
-// building a request. Returns (0, 0) when the model is unknown; a non-positive
-// window means "unknown" to callers.
-type WindowResolverFunc func(modelConfig ModelConfig) (windowTokens, reserveTokens int)
+// ContextWindowInfo is a model's effective context window and output reserve
+// (in tokens), with whether that window is a guess. A non-positive
+// WindowTokens means "unknown".
+type ContextWindowInfo struct {
+	WindowTokens  int
+	ReserveTokens int
+	// Assumed is true when the window is a provider-wide fallback — the server
+	// reported nothing for this model and no catalogue entry knew it — and the
+	// user has not set one. Compaction says so, because a guessed window
+	// decides both when a conversation folds and how long a reply may be.
+	Assumed bool
+}
+
+// WindowResolverFunc resolves a model's context window from its identity alone,
+// with no provider round-trip. Injected alongside the LLM caller for the places
+// that need the model's limits without building a request. Returns the zero
+// value when the model is unknown.
+type WindowResolverFunc func(modelConfig ModelConfig) ContextWindowInfo
 
 // AutoCompactGateFunc reports whether automatic compaction is enabled. A nil
 // gate preserves the default enabled behavior.
@@ -1153,7 +1165,9 @@ const (
 	// context cache, say. It carries Summary (a one-line explanation, the whole
 	// of the transcript row), Content (the detail, ending in the underlying
 	// reason verbatim) and Source (what
-	// reported it). It stands in the transcript at the point the event occurred,
+	// reported it), and optionally Data naming a setting that corrects the cause
+	// (assumedWindowNoticeData), which the browser turns into the row's one
+	// link. It stands in the transcript at the point the event occurred,
 	// and is never sent to the LLM: itemWireMessages has no case for it, so it
 	// emits nothing (TestNoticeItemEmitsNothingToTheLLM pins that).
 	ItemTypeNotice = "notice"

@@ -74,11 +74,41 @@ func TestCustomProviderDiscoversEndpointLimits(t *testing.T) {
 	if !ok {
 		t.Fatal("silent-gateway-model missing from the listing")
 	}
-	if silent.ContextWindow != defaultContextWindow {
-		t.Errorf("silent-gateway-model ContextWindow = %d, want the %d assumption", silent.ContextWindow, defaultContextWindow)
+	// The test server is on loopback, so the assumption is the local one.
+	if silent.ContextWindow != localDefaultContextWindow {
+		t.Errorf("silent-gateway-model ContextWindow = %d, want the local %d assumption", silent.ContextWindow, localDefaultContextWindow)
 	}
 	if silent.FromAPI {
 		t.Error("silent-gateway-model FromAPI = true, but nothing was reported about it — the number is an assumption")
+	}
+	if !silent.WindowAssumed {
+		t.Error("silent-gateway-model WindowAssumed = false, but its window is the provider-wide default")
+	}
+	if served.WindowAssumed {
+		t.Error("served-by-vllm WindowAssumed = true, but the endpoint reported its window")
+	}
+}
+
+// TestLocalCustomProviderAssumesSmallWindow: an endpoint on the user's own
+// machine or network is a local server — LM Studio, llama-server, anything
+// hosting a model it loaded itself — and its window is whatever it was loaded
+// with, usually far below 128k. Assuming 128k there is the harmful direction:
+// LM Studio drops the middle of an over-long conversation without a word. A
+// hosted gateway serves full-size models, so 128k stays its guess.
+func TestLocalCustomProviderAssumesSmallWindow(t *testing.T) {
+	for url, want := range map[string]int{
+		"http://127.0.0.1:1234/v1":       localDefaultContextWindow,
+		"http://localhost:8000/v1":       localDefaultContextWindow,
+		"http://[::1]:1234/v1":           localDefaultContextWindow,
+		"http://192.168.1.20:1234/v1":    localDefaultContextWindow,
+		"http://10.0.0.5/v1":             localDefaultContextWindow,
+		"https://gateway.example.com/v1": defaultContextWindow,
+		"https://8.8.8.8/v1":             defaultContextWindow,
+		"not a url":                      defaultContextWindow,
+	} {
+		if got := defaultContextWindowFor(url); got != want {
+			t.Errorf("defaultContextWindowFor(%q) = %d, want %d", url, got, want)
+		}
 	}
 }
 

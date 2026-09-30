@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"juggler/cmd/juggler/providers/lmstudio"
 	"juggler/cmd/juggler/providers/openaibase"
 	"juggler/cmd/juggler/providers/provider"
 	"juggler/cmd/juggler/providers/utils"
@@ -34,7 +35,11 @@ const HostCredKey = "llamacpp_host"
 //
 // It is a floor, not a guess to settle for: the output reserve is derived from
 // whatever window is advertised, so a server left on this value also caps every
-// reply at a fifth of it. Exhaust the probes before falling back here.
+// reply at a fifth of it. Exhaust the probes before falling back here. It is
+// kept small anyway, because an assumed window must never exceed what the
+// server would plausibly serve: too small is visible (the model is marked as
+// assumed, with a link to the field that corrects it), too large is a rejected
+// request here and silent truncation on LM Studio.
 const DefaultContextWindow = 8192
 
 // server describes the local llama-server as a keyless, host-configurable
@@ -47,7 +52,8 @@ var server = openaibase.LocalHost{
 	HealthPath:  "/health",
 }
 
-// probeClient bounds the window probes (/v1/models, /props, /api/v0/models).
+// probeClient bounds the native window probes (/v1/models, /props); LM
+// Studio's table is read by the lmstudio package with its own client.
 // All are cheap metadata reads a local server answers in milliseconds, and they
 // only run after the health probe has proven the host reachable, so a short
 // timeout is safe — it caps the wait when the server dies between probes, and
@@ -60,7 +66,7 @@ func Register() {
 	openaibase.Register(openaibase.Descriptor{
 		Name:            "llamacpp",
 		DisplayName:     "llama.cpp (local)",
-		Description:     "Runs a model locally via llama-server's OpenAI-compatible API. Start llama-server yourself first (Juggler doesn't launch it); point at a non-default host (LAN, remote workstation, custom port) below, otherwise defaults to http://127.0.0.1:8080. LM Studio also serves this API — set the host to http://127.0.0.1:1234 to use it, and Juggler will read the context window each model is loaded with.",
+		Description:     "Runs a model locally via llama-server's OpenAI-compatible API. Start llama-server yourself first (Juggler doesn't launch it); point at a non-default host (LAN, remote workstation, custom port) below, otherwise defaults to http://127.0.0.1:8080. For LM Studio, use the LM Studio provider.",
 		AutoDetect:      server.AutoDetect(),
 		DisplayProvider: "llama.cpp",
 		ContextWindowFn: getContextWindowInfo,
@@ -134,7 +140,8 @@ func getContextWindowInfo(modelID string) (int, int) {
 	if window := propsContextWindow(ctx, nil); window > 0 {
 		return window, 0
 	}
-	if window := lmStudioWindows(ctx, nil)[modelID]; window > 0 {
+	if m, ok := lmStudioTable(ctx, nil)[modelID]; ok {
+		window, _ := m.ContextWindow()
 		return window, 0
 	}
 	return DefaultContextWindow, 0
@@ -172,36 +179,37 @@ func listModels(ctx context.Context, _ string, headers map[string]string) ([]pro
 	if err != nil {
 		return nil, err
 	}
-	propsWindow, lmStudio := 0, map[string]int(nil)
+	propsWindow, lmStudio := 0, map[string]lmstudio.Model(nil)
 	if slices.ContainsFunc(entries, func(e modelEntry) bool { return e.contextWindow() <= 0 }) {
 		propsWindow = propsContextWindow(ctx, headers)
 		// One shared probe for the whole list, and only when something still
 		// needs it: every model LM Studio serves lacks a window above, so the
 		// alternative is an identical request per model.
 		if propsWindow <= 0 {
-			lmStudio = lmStudioWindows(ctx, headers)
+			lmStudio = lmStudioTable(ctx, headers)
 		}
 	}
 	models := make([]provider.ModelInfo, 0, len(entries))
 	for _, entry := range entries {
-		window := entry.contextWindow()
+		window, assumed := entry.contextWindow(), false
 		if window <= 0 {
 			window = propsWindow
 		}
-		if window <= 0 {
-			window = lmStudio[entry.ID]
+		if m, ok := lmStudio[entry.ID]; ok && window <= 0 {
+			window, assumed = m.ContextWindow()
 		}
 		// Only a window the server actually reported counts as API-sourced; the
-		// conservative constant is a fallback and is labelled as one.
-		fromAPI := window > 0
+		// conservative constant, and LM Studio's assumption for a model it has
+		// not loaded, are fallbacks and are labelled as such.
 		if window <= 0 {
-			window = DefaultContextWindow
+			window, assumed = DefaultContextWindow, true
 		}
 		models = append(models, provider.ModelInfo{
 			ID:            entry.ID,
 			DisplayName:   utils.ModelDisplayName(entry.ID),
 			ContextWindow: window,
-			FromAPI:       fromAPI,
+			FromAPI:       !assumed,
+			WindowAssumed: assumed,
 		})
 	}
 	return models, nil
@@ -242,55 +250,26 @@ func propsContextWindow(ctx context.Context, headers map[string]string) int {
 	return props.DefaultGenerationSettings.NCtx
 }
 
-// lmStudioEntry is the subset of one GET /api/v0/models entry we care about.
-//
+// lmStudioTable reads LM Studio's own model table at this provider's host,
+// keyed by model id, for a user who reaches LM Studio through this provider.
 // LM Studio serves the same OpenAI-compatible /v1 surface as llama-server but
 // publishes no window there, and it does not implement /props at all — so both
-// of the probes above come back empty and only this endpoint knows the answer.
+// native probes come back empty and only its own table knows the answer. The
+// LM Studio provider reads the same table (lmstudio.Models), so the two agree
+// on every window, including the assumed one for a model not yet loaded.
 //
-// LoadedContextLength is the window the model is currently loaded with, and is
-// the one to enforce: MaxContextLength is the architecture's ceiling, which a
-// model is routinely loaded far below. Believing the ceiling would admit
-// requests the server then silently truncates, since LM Studio's default
-// context-overflow policy drops the middle of the conversation rather than
-// refusing the request.
-type lmStudioEntry struct {
-	ID                  string `json:"id"`
-	MaxContextLength    int    `json:"max_context_length"`
-	LoadedContextLength int    `json:"loaded_context_length"`
-}
-
-// contextWindow returns the window this entry declares, or 0 when it declares
-// none. A loaded model states the window it was actually loaded with; one that
-// is merely downloaded describes only what its architecture could support.
-func (e lmStudioEntry) contextWindow() int {
-	if e.LoadedContextLength > 0 {
-		return e.LoadedContextLength
-	}
-	return e.MaxContextLength
-}
-
-// lmStudioWindows reads the windows LM Studio declares for every model it
-// lists, keyed by model id. Returns nil when the endpoint is absent or
-// unreadable, which is the ordinary case for a real llama-server.
-//
-// LM Studio answers 200 to any path it does not implement, so a decode that
-// yields no usable entries is indistinguishable from a 404 here — both simply
-// produce an empty map and leave the caller's remaining fallbacks to apply.
-func lmStudioWindows(ctx context.Context, headers map[string]string) map[string]int {
-	var models struct {
-		Data []lmStudioEntry `json:"data"`
-	}
-	if err := getJSON(ctx, server.Host()+"/api/v0/models", headers, &models); err != nil {
+// Returns nil when there is no such table, which is the ordinary case for a
+// real llama-server.
+func lmStudioTable(ctx context.Context, headers map[string]string) map[string]lmstudio.Model {
+	models, err := lmstudio.Models(ctx, server.Host(), headers)
+	if err != nil {
 		return nil
 	}
-	windows := make(map[string]int, len(models.Data))
-	for _, entry := range models.Data {
-		if window := entry.contextWindow(); window > 0 {
-			windows[entry.ID] = window
-		}
+	byID := make(map[string]lmstudio.Model, len(models))
+	for _, m := range models {
+		byID[m.ID] = m
 	}
-	return windows
+	return byID
 }
 
 // ctxSizeFromArgs derives the per-request window from the command line a

@@ -738,6 +738,23 @@ model-tuning:empty {
     color: var(--text-secondary);
 }
 
+/* "assumed" beside a context size the server never reported: a word in the
+   sentence that happens to be clickable, so it keeps the line's type and colour
+   and says it is a link only by its underline. */
+.model-window-assumed {
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: none;
+    padding: 0;
+    text-decoration: underline dotted;
+    text-underline-offset: 0.125rem;
+}
+
+.model-window-assumed:hover {
+    color: var(--text-primary);
+}
+
 /* The chosen provider's quota meters, closing the card. They belong to the model
    in effect rather than to the list, so they sit inside the card and take no
    heading of their own — the card's own label already names what they describe.

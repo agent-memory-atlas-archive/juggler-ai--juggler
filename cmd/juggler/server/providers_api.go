@@ -28,6 +28,12 @@ type ModelWithContext struct {
 	MaxOutputTokens int      `json:"maxOutputTokens"`
 	FromAPI         bool     `json:"fromAPI"`                   // True if from API, false if hardcoded fallback
 	InputModalities []string `json:"inputModalities,omitempty"` // e.g. ["text","image"]; empty/omitted means text-only
+	// WindowAssumed mirrors provider.ModelInfo.WindowAssumed: the provider's
+	// window for this model is a blanket fallback, not a reported or catalogued
+	// figure. Like FromAPI it describes the provider's own number, so it stays
+	// set under a user override; a UI asking "is the effective window a guess?"
+	// checks ProviderContextWindow == nil as well.
+	WindowAssumed bool `json:"windowAssumed,omitempty"`
 	// ProviderContextWindow and ProviderMaxOutputTokens carry the numbers the
 	// provider itself reported, and are set only when a user override
 	// (models.limits in the global settings) replaced one in the fields above.
@@ -236,6 +242,7 @@ func (s *Server) computeProviders(ctx context.Context) []ProviderStatus {
 							ContextWindow:        modelInfo.ContextWindow,
 							MaxOutputTokens:      modelInfo.MaxOutputTokens,
 							FromAPI:              modelInfo.FromAPI,
+							WindowAssumed:        modelInfo.WindowAssumed,
 							InputModalities:      modelInfo.InputModalities,
 							ThinkingLevels:       modelInfo.ThinkingLevels,
 							DefaultThinkingLevel: modelInfo.DefaultThinkingLevel,
@@ -821,6 +828,18 @@ func (s *Server) cachedProviders() []ProviderStatus {
 // reserve from the same snapshot fields, so the reserve and the value placed
 // on the wire can never diverge.
 func (s *Server) resolveModelCapabilities(providerName, model string) provider.ModelCapabilities {
+	capabilities, _ := s.resolveModelLimits(providerName, model)
+	return capabilities
+}
+
+// resolveModelLimits is resolveModelCapabilities together with whether the
+// resulting window is a guess: true only when the published entry that
+// supplied it carries WindowAssumed and no user override replaced it. The
+// flag is kept out of provider.ModelCapabilities, which is the admission
+// snapshot handed to providers, because nothing that admits or sends a
+// request has any use for it.
+func (s *Server) resolveModelLimits(providerName, model string) (provider.ModelCapabilities, bool) {
+	assumed := false
 	info, hasInfo := provider.GetProviderInfo(providerName)
 	capabilities := provider.ModelCapabilities{}
 	if hasInfo {
@@ -846,6 +865,7 @@ func (s *Server) resolveModelCapabilities(providerName, model string) provider.M
 			}
 			if candidate.ContextWindow > 0 {
 				capabilities.ContextWindowTokens = int64(candidate.ContextWindow)
+				assumed = candidate.WindowAssumed && candidate.ProviderContextWindow == nil
 			}
 			if candidate.MaxOutputTokens > 0 {
 				capabilities.MaxOutputTokens = int64(candidate.MaxOutputTokens)
@@ -866,12 +886,13 @@ func (s *Server) resolveModelCapabilities(providerName, model string) provider.M
 		limits := settings.ModelLimitsFor(providerName, model)
 		if limits.ContextWindow > 0 {
 			capabilities.ContextWindowTokens = int64(limits.ContextWindow)
+			assumed = false
 		}
 		if limits.MaxOutputTokens > 0 {
 			capabilities.MaxOutputTokens = int64(limits.MaxOutputTokens)
 		}
 	}
-	return normalizeOutputLimit(capabilities)
+	return normalizeOutputLimit(capabilities), assumed
 }
 
 // normalizeOutputLimit fills the derived safety reserve when the window is

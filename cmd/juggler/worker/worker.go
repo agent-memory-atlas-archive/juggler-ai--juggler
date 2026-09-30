@@ -810,16 +810,16 @@ func (w *ConversationWorker) SetWindowResolver(fn WindowResolverFunc) {
 }
 
 // resolveContextWindow maps the conversation's effective model to its context
-// window and output reserve (tokens) via the injected resolver. Returns (0, 0)
-// when no resolver is wired (tests) or the model is unknown; callers read a
-// non-positive window as "unknown".
-func (r *run) resolveContextWindow() (windowTokens, reserveTokens int) {
+// window and output reserve (tokens) via the injected resolver. Returns the
+// zero value when no resolver is wired (tests) or the model is unknown; callers
+// read a non-positive window as "unknown".
+func (r *run) resolveContextWindow() ContextWindowInfo {
 	if r.windowResolver == nil {
-		return 0, 0
+		return ContextWindowInfo{}
 	}
 	mc := r.resolveModelConfig()
 	if mc == nil {
-		return 0, 0
+		return ContextWindowInfo{}
 	}
 	return r.windowResolver(*mc)
 }

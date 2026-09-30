@@ -17,6 +17,10 @@ of changes; this project follows semantic versioning.
 - A failed rename to a name containing "409" or "400" now reports the real error
 - Long sub-thread answers are trimmed according to the caller's context window, not a fixed 24k characters
 - Deleting a sandbox stops tasks running in it, fixing "directory not empty" errors
+- The model picker and compaction now say when a context window was assumed, linking to its setting
+- New LM Studio provider reads the context window each model is loaded with
+- LocalAI no longer mistakes an LM Studio server for LocalAI
+- A custom provider at a local address assumes an 8k context window, not 128k
 
 ## [0.7.2] - 2026-09-28
 

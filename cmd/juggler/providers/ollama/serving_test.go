@@ -207,6 +207,12 @@ func TestListModelsProbesRealServingWindows(t *testing.T) {
 		if m.MaxOutputTokens <= 0 || m.MaxOutputTokens >= m.ContextWindow {
 			t.Errorf("%s output = %d, want 0 < output < window %d", id, m.MaxOutputTokens, m.ContextWindow)
 		}
+		if !m.WindowAssumed {
+			t.Errorf("%s WindowAssumed = false, but %d is the conservative fallback, not this model's num_ctx", id, m.ContextWindow)
+		}
+	}
+	if alpha.WindowAssumed {
+		t.Error("alpha WindowAssumed = true, but its window is the Modelfile's own num_ctx")
 	}
 }
 
