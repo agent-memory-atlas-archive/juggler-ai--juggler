@@ -163,6 +163,40 @@ type turnResult struct {
 	// read loop watches this to tell "alive but retrying" apart from "making
 	// progress"; see retryLadderCap.
 	retryNotices int
+
+	// Calls to a tool name missing the mcp__juggler__ prefix, which the CLI
+	// rejects on its own side. bareNameThisCall is per API call, reset at every
+	// message_start like the tallies above; bareNameRounds counts the calls this
+	// read loop whose every tool call was one of them, and bareNames the names
+	// seen, for the error. A read loop ends at the first round that dispatches a
+	// tool, so these only ever describe rounds with nothing to show for them.
+	// See maxBareToolNameRounds.
+	bareNameThisCall int
+	bareNameRounds   int
+	bareNames        []string
+}
+
+// maxBareToolNameRounds is how many consecutive rounds of bare-name tool calls a
+// turn is allowed before it is abandoned as unusable output.
+//
+// The CLI answers a bare name with "No such tool available: <name>", which
+// never mentions the prefix, and the model has to work the rest out. Usually it
+// does on the very next round. When it doesn't, it tends to read the rejection
+// as that tool being broken and try a different bare name instead, working down
+// the tool list, and can end the turn telling the user the tools are down. A
+// fresh sample of the same request is far more likely to use the names it was
+// given than the one that has already failed this way, so the provider abandons
+// the turn and the worker sends it again. A model that ends its turn after any
+// bare round without reaching a real tool is treated the same way (see the
+// end_turn arm): that answer comes from a model that couldn't investigate.
+const maxBareToolNameRounds = 2
+
+// unusableBareNameOutput is the error a turn is abandoned with once the model's
+// bare-name calls have used up maxBareToolNameRounds, or it gave up after one.
+func unusableBareNameOutput(result *turnResult) error {
+	return &provider.UnusableOutputError{Message: fmt.Sprintf(
+		"the model called tools by names this session doesn't serve (%s) and did not recover; its turn was discarded",
+		strings.Join(result.bareNames, ", "))}
 }
 
 // partialBlock accumulates a single content block's incremental data as
@@ -601,6 +635,7 @@ func (c *Client) handleStreamEvent(ev *StreamEventDetail, result *turnResult, ca
 		// the start of a new one.
 		result.dispatchableThisCall = 0
 		result.cliServedThisCall = 0
+		result.bareNameThisCall = 0
 		if ev.Message != nil && ev.Message.Usage != nil {
 			result.InputTokens = ev.Message.Usage.InputTokens
 			result.OutputTokens = ev.Message.Usage.OutputTokens
@@ -719,16 +754,20 @@ func (c *Client) handleStreamEvent(ev *StreamEventDetail, result *turnResult, ca
 			// The name still says which of two things happened, so the log line
 			// does too. A CLI built-in means --disallowedTools has gone stale and
 			// the CLI may have acted where juggler cannot see it: an ERROR worth
-			// chasing. Anything else is the model imitating the bare names in its
-			// own transcript (prefixJugglerToolUses covers why they are there); the
-			// CLI rejects the name with "No such tool available" and the model
-			// re-issues it correctly on the same open process, so the turn heals
-			// itself and the note is routine.
+			// chasing, and never grounds for re-sending the request, which could
+			// run it twice. Anything else is the model using a name it was never
+			// offered — imitating the bare names in its own transcript
+			// (prefixJugglerToolUses covers why they are there) or in the prompt's
+			// prose. The CLI rejects it with "No such tool available" and the
+			// model usually re-issues it correctly on the same open process, so
+			// the turn heals itself; when it doesn't, maxBareToolNameRounds ends it.
 			if !strings.HasPrefix(pb.toolName, mcpToolPrefix) {
 				if isCLINativeToolName(pb.toolName) {
 					jlog.Error("claudecode: CLI native tool %q leaked past --disallowedTools — skipping the block rather than dispatching it as juggler's own (which deadlocks the conversation). The CLI may have served it itself, unseen by juggler. Add it to disallowedNativeTools.", pb.toolName)
 				} else {
 					jlog.Info("claudecode: model called %q without the %s prefix — skipping the block; the CLI rejects the bare name itself and drives the model's retry", pb.toolName, mcpToolPrefix)
+					result.bareNameThisCall++
+					result.bareNames = append(result.bareNames, pb.toolName)
 				}
 				result.cliServedThisCall++
 				_, _ = callback(provider.StreamChunk{
@@ -852,6 +891,14 @@ func (c *Client) handleStreamEvent(ev *StreamEventDetail, result *turnResult, ca
 				// recovers with nothing instead trips the idle watchdog, which ends
 				// the turn with a visible stall.
 				if result.dispatchableThisCall == 0 {
+					if result.bareNameThisCall > 0 {
+						result.bareNameRounds++
+						if result.bareNameRounds >= maxBareToolNameRounds {
+							jlog.Info("claudecode: %d consecutive rounds of bare tool names (%s) — abandoning the turn for the worker to re-send",
+								result.bareNameRounds, strings.Join(result.bareNames, ", "))
+							return false, 0, unusableBareNameOutput(result)
+						}
+					}
 					if result.cliServedThisCall > 0 {
 						jlog.Info("claudecode: tool_use pause with no dispatchable blocks (%d answered by the CLI itself) — reading on for its recovery round", result.cliServedThisCall)
 					} else {
@@ -869,6 +916,13 @@ func (c *Client) handleStreamEvent(ev *StreamEventDetail, result *turnResult, ca
 				}
 				return true, count, nil
 			case "end_turn", "stop_sequence", "max_tokens":
+				// Giving up after a rejected bare name: the model is answering
+				// without ever having reached a tool (see maxBareToolNameRounds).
+				if result.bareNameRounds > 0 {
+					jlog.Info("claudecode: turn ended after a round of bare tool names (%s) and no tool call — abandoning it for the worker to re-send",
+						strings.Join(result.bareNames, ", "))
+					return false, 0, unusableBareNameOutput(result)
+				}
 				result.StopReason = provider.StopReasonEndTurn
 			default:
 				result.StopReason = provider.StopReason(ev.Delta.StopReason)

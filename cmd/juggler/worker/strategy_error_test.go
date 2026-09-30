@@ -98,6 +98,34 @@ func TestCallLLMWithRetryRetriesRateAndTransientErrors(t *testing.T) {
 	}
 }
 
+// TestCallLLMWithRetryResendsUnusableOutput: a provider that abandoned a turn
+// because the model's output could not be acted on gets the same request again,
+// and the fresh attempt's answer is the turn's result.
+func TestCallLLMWithRetryResendsUnusableOutput(t *testing.T) {
+	w := NewConversationWorker("test-conv", "user:test")
+	defer w.doc.Destroy()
+
+	calls := 0
+	w.llmCallFunc = func(context.Context, json.RawMessage, func(StreamChunk)) (*LLMResponse, error) {
+		calls++
+		if calls == 1 {
+			return nil, &provider.UnusableOutputError{Message: "model called tools by names the session does not serve"}
+		}
+		return &LLMResponse{Blocks: []LLMResponseBlock{{Type: provider.ContentBlockTypeText, Content: "recovered"}}}, nil
+	}
+
+	response, err := w.currentRun().callLLMWithRetry(nil)
+	if err != nil {
+		t.Fatalf("callLLMWithRetry: %v", err)
+	}
+	if calls != 2 {
+		t.Fatalf("provider calls = %d, want 2", calls)
+	}
+	if len(response.Blocks) != 1 || response.Blocks[0].Content != "recovered" {
+		t.Fatalf("response = %+v, want recovered response", response)
+	}
+}
+
 // TestCallLLMWithRetryStopsWhenRetryBudgetSpent: retries are bounded by
 // wall-clock as well as by count. When a single attempt is expensive — a
 // provider CLI that runs its own internal backoff ladder against an overloaded

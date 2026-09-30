@@ -135,6 +135,23 @@ func (e *TransientError) retryStatus(a, max int) string {
 	return fmt.Sprintf("Connection dropped, retrying (%d/%d)", a, max)
 }
 
+// UnusableOutputError is returned by callLLM when the provider abandoned a turn
+// whose output could not be acted on (provider.UnusableOutputError). The same
+// request is sent again, since a fresh sample usually lands where the last one
+// did not.
+type UnusableOutputError struct {
+	Wait    time.Duration
+	Message string
+	Cause   error
+}
+
+func (e *UnusableOutputError) Error() string            { return e.Message }
+func (e *UnusableOutputError) Unwrap() error            { return e.Cause }
+func (e *UnusableOutputError) retryWait() time.Duration { return e.Wait }
+func (e *UnusableOutputError) retryStatus(a, max int) string {
+	return fmt.Sprintf("Unusable response, retrying (%d/%d)", a, max)
+}
+
 // LLMCallFunc is the signature for direct LLM calls from the worker.
 // The chunkHandler receives streaming chunks (called from the provider goroutine).
 // Returns the complete response when streaming finishes.

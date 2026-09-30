@@ -492,7 +492,14 @@ func (c *Client) finalizeTurn(req provider.MessageRequest, turn *turnResult, err
 		if c.activeSession != nil {
 			err = annotateExit(err, c.activeSession.exitDiag)
 		}
-		if c.threadID == "" {
+		// Output abandoned as unusable is the exception, for sub-threads too: the
+		// CLI's transcript holds the calls it rejected, which juggler's history
+		// never saw, and resuming it would hand them straight back to the model
+		// the worker is about to re-ask. The retry starts clean instead.
+		var unusable *provider.UnusableOutputError
+		if errors.As(err, &unusable) {
+			c.dropSession(req.ConversationID)
+		} else if c.threadID == "" {
 			c.activeSession = nil
 		}
 		return &provider.StreamResult{

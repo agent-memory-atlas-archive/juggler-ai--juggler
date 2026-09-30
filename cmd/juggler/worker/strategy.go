@@ -1205,6 +1205,10 @@ func classifyLLMError(msg string, cause error) error {
 	if errors.As(cause, &limited) && limited.RetryAfter > 0 {
 		return newRateLimitError(limited.RetryAfter, true, msg, cause)
 	}
+	var unusable *provider.UnusableOutputError
+	if errors.As(cause, &unusable) {
+		return &UnusableOutputError{Wait: TransientRetryWait, Message: "LLM error: " + msg, Cause: cause}
+	}
 
 	switch {
 	case isRateLimitMsg(msg):
