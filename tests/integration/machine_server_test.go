@@ -33,7 +33,7 @@ func TestMachineServerSessionLifecycle(t *testing.T) {
 	defer stop()
 
 	var info machineserver.ServerInfo
-	raw, err := os.ReadFile(filepath.Join(ms.Home, ".juggler", "server.json"))
+	raw, err := os.ReadFile(filepath.Join(ms.ConfigDir, "server.json"))
 	if err != nil {
 		t.Fatalf("server.json under the temporary HOME: %v", err)
 	}

@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -38,20 +39,35 @@ const machineServerStopTimeout = 20 * time.Second
 const sessionOpenTimeout = 60 * time.Second
 
 // machineServer is one `juggler serve` process run by a test, isolated under
-// its own temporary HOME so its ~/.juggler/server.lock and server.json never
-// meet the developer's, another test's, or a real machine server's.
+// its own temporary HOME so its server.lock and server.json never meet the
+// developer's, another test's, or a real machine server's.
 type machineServer struct {
-	t      *testing.T
-	Addr   string // host:port from the JUGGLER_ADDR= line
-	Home   string // the temporary HOME it and its children run under
-	Logs   string // JUGGLER_LOG_DIR for it and its children
-	cmd    *exec.Cmd
-	exited chan struct{} // closed once the process has been reaped
-	stderr string        // path of the captured stderr
+	t         *testing.T
+	Addr      string // host:port from the JUGGLER_ADDR= line
+	Home      string // the temporary HOME it and its children run under
+	ConfigDir string // where it keeps server.lock and server.json, under Home
+	Logs      string // JUGGLER_LOG_DIR for it and its children
+	cmd       *exec.Cmd
+	exited    chan struct{} // closed once the process has been reaped
+	stderr    string        // path of the captured stderr
 
 	// Every child pid seen → its address, for the leak check. Touched only
 	// from the test's own goroutine.
 	children map[int]string
+}
+
+// configDirUnder is the config dir a server run under the harness environment
+// resolves for itself: JUGGLER_CONFIG_DIR and XDG_CONFIG_HOME are blanked, so
+// it is ~/.juggler on macOS and Windows and the XDG default ~/.config/juggler
+// everywhere else. Spelled out here rather than asked of userpaths, which reads
+// the test process's environment, not the server's.
+func configDirUnder(home string) string {
+	switch runtime.GOOS {
+	case "darwin", "windows":
+		return filepath.Join(home, ".juggler")
+	default:
+		return filepath.Join(home, ".config", "juggler")
+	}
 }
 
 // startMachineServer runs `juggler serve --port 0` from the suite's server
@@ -129,7 +145,7 @@ func startMachineServer(t *testing.T, serveArgs ...string) (*machineServer, func
 	_ = stderrFile.Close()
 
 	ms := &machineServer{
-		t: t, Home: home, Logs: logs, cmd: cmd,
+		t: t, Home: home, ConfigDir: configDirUnder(home), Logs: logs, cmd: cmd,
 		exited: make(chan struct{}), stderr: stderrPath,
 		children: map[int]string{},
 	}

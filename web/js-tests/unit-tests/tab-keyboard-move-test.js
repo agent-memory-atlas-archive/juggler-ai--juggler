@@ -125,6 +125,25 @@ function move(bar, id, direction) {
 }
 
 /**
+ * Run a body with `prefers-reduced-motion` answering as given, whatever the
+ * machine is set to — CI desktops commonly ask for reduced motion.
+ * @param {boolean} reduce - Whether reduced motion is asked for.
+ * @param {() => Promise<void>} fn - The body.
+ * @returns {Promise<void>} Resolves when the body has run and matchMedia is back.
+ */
+async function withReducedMotion(reduce, fn) {
+  const realMatchMedia = window.matchMedia;
+  /** @type {any} */ (window).matchMedia = (/** @type {string} */ q) => (q === '(prefers-reduced-motion: reduce)'
+    ? { matches: reduce, media: q, addEventListener() {}, removeEventListener() {} }
+    : realMatchMedia.call(window, q));
+  try {
+    await fn();
+  } finally {
+    window.matchMedia = realMatchMedia;
+  }
+}
+
+/**
  * @typedef {object} TestResult
  * @property {number} passed - Number of passed tests
  * @property {number} failed - Number of failed tests
@@ -201,7 +220,7 @@ export async function runTests(_ctx) {
 
   // The swap is animated: without it two similar rows trade places between
   // frames and nothing on screen says which one moved.
-  await run('the moved tab glides from where it was, lifted over the one it passes',
+  await withReducedMotion(false, () => run('the moved tab glides from where it was, lifted over the one it passes',
     [['a', ''], ['b', ''], ['c', '']], async ({ bar }) => {
       /**
        * @param {string} id - Whose tab.
@@ -233,7 +252,18 @@ export async function runTests(_ctx) {
       moved[0].finish();
       await moved[0].finished;
       assert(!tab('b').classList.contains('keyboard-moving'), 'and set down when it lands');
-    });
+    }));
+
+  await withReducedMotion(true, () => run('under reduced motion the tab still moves, without a glide or a lift',
+    [['a', ''], ['b', ''], ['c', '']], ({ bar, calls }) => {
+      move(bar, 'b', 'up');
+      assert(calls.at(-1) === 'b,a,c' && drawn(bar) === 'b,a,c',
+        `the move itself is not motion: wrote ${JSON.stringify(calls)}, drew ${drawn(bar)}`);
+      const tabs = /** @type {HTMLElement[]} */ (Array.from(bar.querySelectorAll('.conversation-tab')));
+      const gliding = tabs.filter((el) => el.getAnimations().some((anim) => anim.id === 'tab-keyboard-glide'));
+      assert(gliding.length === 0, `nothing should glide, ${gliding.length} did`);
+      assert(!tabs.some((el) => el.classList.contains('keyboard-moving')), 'nor be lifted');
+    }));
 
   await run('nothing moves while a workspace panel is on screen', [['a', ''], ['b', '']], ({ bar, calls }) => {
     bar._session.visibleConversationId = null;
