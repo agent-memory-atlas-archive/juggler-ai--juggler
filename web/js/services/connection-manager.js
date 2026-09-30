@@ -321,21 +321,18 @@ class ConnectionManager {
     this._unfollowGit = followSession(this._session);
 
     // Load session data from backend.
-    // If the session doesn't exist (404), reload to get a new one.
+    //
+    // Every failure takes the one recovery path below, whatever it says. There
+    // is no "session missing" case to single out: GET /api/session is
+    // registered unconditionally and its handler has no not-found answer (see
+    // HandleGetSession), so a 404 here comes from a request the load
+    // makes afterwards — and reloading the page would only repeat that request,
+    // in a loop, with the user unable to reach the picker.
     let loadError = null;
     try {
       await this._session.load();
     } catch (error) {
       const errorMessage = extractErrorMessage(error);
-      if (errorMessage.includes('404') || errorMessage.includes('Not Found')) {
-        console.warn('[ConnectionManager] Session not found, clearing and reloading...');
-        // The recovery here is a viewer page reload; the engine worker has
-        // no page and recovers via the server reissuing session state.
-        if (typeof window !== 'undefined') {
-          window.location.reload();
-          return;
-        }
-      }
       // Don't strand the UI on a failed load. Fall through to wire the
       // session into the UI anyway: the <no-project-overlay> project
       // picker is the user's recovery path (opening a project triggers a
@@ -382,8 +379,7 @@ class ConnectionManager {
     // was standing in for it goes. Said here rather than on the success path
     // above because a load that FAILED has also finished starting up — the
     // project picker wired in just now is the recovery, and it is no use behind
-    // a spinner. (The 404 branch is the exception, and it returned already: that
-    // page is being reloaded, so it stays as it is until the new one paints.)
+    // a spinner.
     setAppPhase('ready');
 
     if (loadError && typeof window !== 'undefined') {

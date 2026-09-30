@@ -312,6 +312,7 @@ import { runTests as runModelLimitsTests } from '../unit-tests/model-limits-test
 import { runTests as runReconnectPolicyTests } from '../unit-tests/reconnect-policy-test.js';
 import { runTests as runResyncOfflineEditTests } from '../unit-tests/resync-offline-edit-test.js';
 import { runTests as runOpenDuringLoadTests } from '../unit-tests/open-during-load-test.js';
+import { runTests as runSessionLoadFailureTests } from '../unit-tests/session-load-failure-test.js';
 import { runTests as runPopupBackButtonTests } from '../unit-tests/popup-back-button-test.js';
 import { runTests as runPopupSurfaceTests } from '../unit-tests/popup-surface-test.js';
 import { runTests as runModelDisplayTests } from '../unit-tests/model-display-test.js';
@@ -712,6 +713,7 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:reconnect-policy', run: runReconnectPolicyTests },
   { name: 'unit:resync-offline-edit', run: runResyncOfflineEditTests },
   { name: 'unit:open-during-load', run: runOpenDuringLoadTests },
+  { name: 'unit:session-load-failure', run: runSessionLoadFailureTests },
   { name: 'unit:popup-back-button', run: runPopupBackButtonTests },
   { name: 'unit:popup-surface', run: runPopupSurfaceTests, needsExclusiveRun: true },
   { name: 'unit:model-display', run: runModelDisplayTests },
