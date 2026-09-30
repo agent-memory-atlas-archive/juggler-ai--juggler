@@ -94,7 +94,7 @@ export async function saveUserPreset(name, content) {
 export async function deleteUserPreset(id) {
   const res = await apiService.deleteSystemPromptPreset(id);
   if (!res || !res.success) {
-    throw new Error(res && res.error ? res.error : 'Failed to delete preset');
+    throw new Error(res && res.error ? res.error : "Couldn't delete preset");
   }
   await refreshUserPresets();
 }
@@ -123,7 +123,7 @@ export async function updateUserPreset(id, name, content) {
 export async function setDefaultPreset(id) {
   const res = await apiService.setDefaultSystemPromptPreset(id);
   if (!res || !res.success) {
-    throw new Error(res && res.error ? res.error : 'Failed to set default preset');
+    throw new Error(res && res.error ? res.error : "Couldn't set default preset");
   }
   _defaultId = id || '';
 }

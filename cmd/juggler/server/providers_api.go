@@ -699,7 +699,7 @@ func (s *Server) handleSetCheapModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.cheapModelStore.Save(req); err != nil {
-		handlers.WriteError(w, r, http.StatusInternalServerError, fmt.Sprintf("Failed to save cheap model: %v", err))
+		handlers.WriteError(w, r, http.StatusInternalServerError, fmt.Sprintf("Couldn't save cheap model: %v", err))
 		return
 	}
 	handlers.WriteJSON(w, r, 0, map[string]any{"success": true})
@@ -746,7 +746,7 @@ func (s *Server) handleSetDefaultModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.defaultModelStore.Save(req); err != nil {
-		handlers.WriteError(w, r, http.StatusInternalServerError, fmt.Sprintf("Failed to save default model: %v", err))
+		handlers.WriteError(w, r, http.StatusInternalServerError, fmt.Sprintf("Couldn't save default model: %v", err))
 		return
 	}
 	handlers.WriteJSON(w, r, 0, map[string]any{"success": true})
@@ -780,7 +780,7 @@ func (s *Server) handleRecentModelsGet(w http.ResponseWriter, r *http.Request) {
 
 	models, err := s.recentModelsStore.Load()
 	if err != nil {
-		handlers.WriteError(w, r, http.StatusInternalServerError, fmt.Sprintf("Failed to load recent models: %v", err))
+		handlers.WriteError(w, r, http.StatusInternalServerError, fmt.Sprintf("Couldn't load recent models: %v", err))
 		return
 	}
 	if models == nil {
@@ -802,7 +802,7 @@ func (s *Server) handleRecentModelsPost(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if err := s.recentModelsStore.Add(req); err != nil {
-		handlers.WriteError(w, r, http.StatusInternalServerError, fmt.Sprintf("Failed to record recent model: %v", err))
+		handlers.WriteError(w, r, http.StatusInternalServerError, fmt.Sprintf("Couldn't record recent model: %v", err))
 		return
 	}
 	handlers.WriteJSON(w, r, 0, map[string]any{"success": true})
@@ -976,7 +976,7 @@ func (s *Server) handleProviderUsageStats(w http.ResponseWriter, r *http.Request
 	credStore, err := core.NewCredentialsStore()
 	if err != nil {
 		handlers.WriteJSON(w, r, http.StatusInternalServerError, map[string]any{
-			"error": fmt.Sprintf("Failed to initialize credentials store: %v", err),
+			"error": fmt.Sprintf("Couldn't initialize credentials store: %v", err),
 		})
 		return
 	}

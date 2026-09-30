@@ -298,38 +298,41 @@ func (m *SessionManager) Shutdown() {
 	})
 }
 
-// runRead submits fn to the read channel and waits for its result.
-func runRead[T any](m *SessionManager, fn func(*sessionState) (T, error)) (T, error) {
-	out := make(chan struct {
-		v   T
-		err error
-	}, 1)
-	m.readChan <- func(s *sessionState) {
+// pair carries two values out of an actor closure, which runRead and runWrite
+// otherwise let return only one.
+type pair[A, B any] struct {
+	a A
+	b B
+}
+
+// runOn submits fn to one of the actor's channels and waits for its result.
+func runOn[T any](ch chan<- sessionTask, fn func(*sessionState) (T, error)) (T, error) {
+	out := make(chan pair[T, error], 1)
+	ch <- func(s *sessionState) {
 		v, err := fn(s)
-		out <- struct {
-			v   T
-			err error
-		}{v, err}
+		out <- pair[T, error]{v, err}
 	}
 	r := <-out
-	return r.v, r.err
+	return r.a, r.b
+}
+
+// runRead submits fn to the read channel and waits for its result.
+func runRead[T any](m *SessionManager, fn func(*sessionState) (T, error)) (T, error) {
+	return runOn(m.readChan, fn)
 }
 
 // runWrite submits fn to the write channel and waits for its result.
 func runWrite[T any](m *SessionManager, fn func(*sessionState) (T, error)) (T, error) {
-	out := make(chan struct {
-		v   T
-		err error
-	}, 1)
-	m.writeChan <- func(s *sessionState) {
-		v, err := fn(s)
-		out <- struct {
-			v   T
-			err error
-		}{v, err}
-	}
-	r := <-out
-	return r.v, r.err
+	return runOn(m.writeChan, fn)
+}
+
+// runLookup runs a read that answers (value, found) and cannot fail.
+func runLookup[T any](m *SessionManager, fn func(*sessionState) (T, bool)) (T, bool) {
+	r, _ := runRead(m, func(s *sessionState) (pair[T, bool], error) {
+		v, ok := fn(s)
+		return pair[T, bool]{v, ok}, nil
+	})
+	return r.a, r.b
 }
 
 // ============================================================================
@@ -451,28 +454,24 @@ func (p ConversationPlacement) indexIn(order []string) int {
 // head is right for a conversation of the project's and wrong for one made
 // inside a workspace box, which belongs beside the rest of that box.
 func (m *SessionManager) CreateConversationAt(name, requestedID string, place ConversationPlacement) (string, string, error) {
-	type result struct {
-		id   string
-		name string
-	}
-	r, err := runWrite(m, func(s *sessionState) (result, error) {
+	r, err := runWrite(m, func(s *sessionState) (pair[string, string], error) {
 		id, finalName, _, err := s.store.CreateConversationFolder(name, requestedID)
 		if err != nil {
-			return result{}, err
+			return pair[string, string]{}, err
 		}
 		if !slices.Contains(s.session.ConversationOrder, id) {
 			at := place.indexIn(s.session.ConversationOrder)
 			s.session.ConversationOrder = slices.Insert(s.session.ConversationOrder, at, id)
 		}
 		if err := s.store.Save(s.session); err != nil {
-			return result{}, err
+			return pair[string, string]{}, err
 		}
-		return result{id, finalName}, nil
+		return pair[string, string]{id, finalName}, nil
 	})
 	if err != nil {
 		return "", "", err
 	}
-	return r.id, r.name, nil
+	return r.a, r.b, nil
 }
 
 // SaveConversationBinary writes the Yjs document for an existing
@@ -649,29 +648,17 @@ func (m *SessionManager) RenameConversation(convID, newName string) (string, err
 // ConvDir returns the absolute folder path for the conversation, or "",
 // false if the conversation isn't known.
 func (m *SessionManager) ConvDir(convID string) (string, bool) {
-	type result struct {
-		dir string
-		ok  bool
-	}
-	r, _ := runRead(m, func(s *sessionState) (result, error) {
-		dir, ok := s.store.ConvDir(convID)
-		return result{dir, ok}, nil
+	return runLookup(m, func(s *sessionState) (string, bool) {
+		return s.store.ConvDir(convID)
 	})
-	return r.dir, r.ok
 }
 
 // ConvName returns the human-readable name of one conversation, or "", false
 // if the conversation isn't known.
 func (m *SessionManager) ConvName(convID string) (string, bool) {
-	type result struct {
-		name string
-		ok   bool
-	}
-	r, _ := runRead(m, func(s *sessionState) (result, error) {
-		name, ok := s.store.ConvName(convID)
-		return result{name, ok}, nil
+	return runLookup(m, func(s *sessionState) (string, bool) {
+		return s.store.ConvName(convID)
 	})
-	return r.name, r.ok
 }
 
 // ConvNames returns a snapshot of id → human name for every conversation
@@ -779,22 +766,25 @@ func (m *SessionManager) DeleteBinnedConversation(convID string) error {
 // stalls other session writes (new tabs, saves) nor plays one "moved to trash"
 // sound per conversation — it is a single trash operation, off the hot path.
 func (m *SessionManager) EmptyBin() ([]string, error) {
-	type emptied struct {
-		ids       []string
-		trashPath string
-	}
-	r, err := runWrite(m, func(s *sessionState) (emptied, error) {
-		ids, trashPath, e := s.store.emptyBinDeferred()
+	return m.emptyBinSelection((*FileSessionStore).emptyBinDeferred)
+}
+
+// emptyBinSelection is the shape both bin-emptying calls share: moveAside runs
+// on the actor and renames the chosen folders into one staging directory, which
+// trashAside then OS-trashes off it. Returns the ids moved aside.
+func (m *SessionManager) emptyBinSelection(moveAside func(*FileSessionStore) (ids []string, trashPath string, err error)) ([]string, error) {
+	ids, err := runWrite(m, func(s *sessionState) ([]string, error) {
+		ids, trashPath, e := moveAside(s.store)
 		if e == nil && trashPath != "" {
 			m.trashAside(trashPath)
 		}
-		return emptied{ids: ids, trashPath: trashPath}, e
+		return ids, e
 	})
 	if err != nil {
 		return nil, err
 	}
 	m.kickBinSizeRecompute()
-	return r.ids, nil
+	return ids, nil
 }
 
 // trashAside OS-trashes a staging directory the actor has just moved the
@@ -816,22 +806,9 @@ func (m *SessionManager) trashAside(path string) {
 // qualifying folders aside, a background goroutine OS-trashes them.
 func (m *SessionManager) EmptyBinOlderThan(days int) ([]string, error) {
 	cutoff := time.Now().AddDate(0, 0, -days)
-	type emptied struct {
-		ids       []string
-		trashPath string
-	}
-	r, err := runWrite(m, func(s *sessionState) (emptied, error) {
-		ids, trashPath, e := s.store.emptySelectionDeferred(cutoff)
-		if e == nil && trashPath != "" {
-			m.trashAside(trashPath)
-		}
-		return emptied{ids: ids, trashPath: trashPath}, e
+	return m.emptyBinSelection(func(store *FileSessionStore) ([]string, string, error) {
+		return store.emptySelectionDeferred(cutoff)
 	})
-	if err != nil {
-		return nil, err
-	}
-	m.kickBinSizeRecompute()
-	return r.ids, nil
 }
 
 // GetRuntimeInfo returns the runtime info for this manager's project.
@@ -848,19 +825,14 @@ func (m *SessionManager) GetProjectPath() string {
 // project's window roles, or (zero, false) if none has been saved yet. Runs on
 // the actor goroutine so it never races a concurrent save.
 func (m *SessionManager) GetWindowState(role string) (WindowState, bool) {
-	type result struct {
-		ws WindowState
-		ok bool
-	}
-	r, _ := runRead(m, func(s *sessionState) (result, error) {
+	return runLookup(m, func(s *sessionState) (WindowState, bool) {
 		if s.session == nil {
-			return result{}, nil
+			return WindowState{}, false
 		}
 		s.session.migrateWindowStates()
 		ws, ok := s.session.WindowStates[role]
-		return result{ws, ok}, nil
+		return ws, ok
 	})
-	return r.ws, r.ok
 }
 
 // SetWindowState persists the native-window geometry for one window role of this
@@ -919,17 +891,12 @@ func setWindowPref(s *sessionState, role string, apply func(*WindowState)) error
 // WindowState — but, unlike geometry, it is surfaced to the web viewer so a
 // reopened project paints at the size the user left it.
 func (m *SessionManager) GetUIZoom() (int, bool) {
-	type result struct {
-		zoom int
-		ok   bool
-	}
-	r, _ := runRead(m, func(s *sessionState) (result, error) {
+	return runLookup(m, func(s *sessionState) (int, bool) {
 		if s.session == nil || s.session.UIZoom <= 0 {
-			return result{}, nil
+			return 0, false
 		}
-		return result{s.session.UIZoom, true}, nil
+		return s.session.UIZoom, true
 	})
-	return r.zoom, r.ok
 }
 
 // SetUIZoom persists the UI zoom for this project and writes the session
@@ -965,17 +932,12 @@ func validUIThemeMode(mode string) bool {
 // theme the user left it — not whichever theme another project last wrote to the
 // origin-shared localStorage (every project's server reuses the same port).
 func (m *SessionManager) GetUITheme() (string, bool) {
-	type result struct {
-		mode string
-		ok   bool
-	}
-	r, _ := runRead(m, func(s *sessionState) (result, error) {
+	return runLookup(m, func(s *sessionState) (string, bool) {
 		if s.session == nil || !validUIThemeMode(s.session.UITheme) {
-			return result{}, nil
+			return "", false
 		}
-		return result{s.session.UITheme, true}, nil
+		return s.session.UITheme, true
 	})
-	return r.mode, r.ok
 }
 
 // SetUITheme persists the UI theme mode for this project and writes the session
@@ -1003,24 +965,19 @@ func (m *SessionManager) SetUITheme(mode string) error {
 // second board does not produce a window in some other colour than the one it
 // was opened from.
 func (m *SessionManager) GetWindowUITheme(role string) (string, bool) {
-	type result struct {
-		mode string
-		ok   bool
-	}
-	r, _ := runRead(m, func(s *sessionState) (result, error) {
+	return runLookup(m, func(s *sessionState) (string, bool) {
 		if s.session == nil {
-			return result{}, nil
+			return "", false
 		}
 		s.session.migrateWindowStates()
 		if mode := s.session.WindowStates[role].Theme; validUIThemeMode(mode) {
-			return result{mode, true}, nil
+			return mode, true
 		}
 		if validUIThemeMode(s.session.UITheme) {
-			return result{s.session.UITheme, true}, nil
+			return s.session.UITheme, true
 		}
-		return result{}, nil
+		return "", false
 	})
-	return r.mode, r.ok
 }
 
 // SetWindowUITheme records the theme mode one window is wearing. The main
@@ -1047,24 +1004,19 @@ func (m *SessionManager) SetWindowUITheme(role, mode string) error {
 // if it has been given one, else the project's, else (0, false). Mirrors
 // GetWindowUITheme, including why it falls back.
 func (m *SessionManager) GetWindowUIZoom(role string) (int, bool) {
-	type result struct {
-		zoom int
-		ok   bool
-	}
-	r, _ := runRead(m, func(s *sessionState) (result, error) {
+	return runLookup(m, func(s *sessionState) (int, bool) {
 		if s.session == nil {
-			return result{}, nil
+			return 0, false
 		}
 		s.session.migrateWindowStates()
 		if zoom := s.session.WindowStates[role].Zoom; zoom > 0 {
-			return result{zoom, true}, nil
+			return zoom, true
 		}
 		if s.session.UIZoom > 0 {
-			return result{s.session.UIZoom, true}, nil
+			return s.session.UIZoom, true
 		}
-		return result{}, nil
+		return 0, false
 	})
-	return r.zoom, r.ok
 }
 
 // SetWindowUIZoom records the zoom one window is at, and the project's too when

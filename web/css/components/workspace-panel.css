@@ -34,10 +34,6 @@ workspace-panel {
     position: relative;
 }
 
-workspace-panel[hidden] {
-    display: none;
-}
-
 /* The scroll lives here rather than on the column, so the resize handle pinned
    to the column's edge stays put while the panel is scrolled. */
 .workspace-panel-body {

@@ -284,7 +284,13 @@ func batchMemberSettled(siblings []ConversationItem, item ConversationItem) bool
 // not transition further without external input. Only completed and
 // cancelled are terminal; pending/approved/running/"" are in flight.
 func isToolTerminal(t ConversationItem) bool {
-	return t.State == StateCompleted || t.State == StateCancelled
+	return isTerminalToolState(t.State)
+}
+
+// isTerminalToolState is isToolTerminal's rule for a bare state string, for
+// callers reading one straight off a YMap.
+func isTerminalToolState(state string) bool {
+	return state == StateCompleted || state == StateCancelled
 }
 
 // anyBatchCancelled returns true if at least one member of the batch came back

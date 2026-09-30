@@ -19,11 +19,6 @@ no-conversations-overlay {
     padding: 3rem;
 }
 
-no-project-overlay[hidden],
-no-conversations-overlay[hidden] {
-    display: none;
-}
-
 no-project-overlay .onboarding-panel,
 no-conversations-overlay .onboarding-panel {
     max-width: 34rem;
@@ -147,10 +142,6 @@ no-project-overlay .np-recents {
     text-align: left;
 }
 
-no-project-overlay .np-recents[hidden] {
-    display: none;
-}
-
 no-project-overlay .np-recents-label {
     font-size: 0.6875rem;
     text-transform: uppercase;
@@ -179,11 +170,6 @@ no-project-overlay .np-recent {
 
 no-project-overlay .np-recent:hover {
     background: var(--bg-raised, rgb(255 255 255 / 6%));
-}
-
-no-project-overlay .np-explainer[hidden],
-no-project-overlay .np-lead[hidden] {
-    display: none;
 }
 
 /* The prerequisite that otherwise fails silently at the first message, so it

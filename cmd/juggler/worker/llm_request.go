@@ -417,7 +417,7 @@ func buildToolResultMap(item ConversationItem) map[string]any {
 // turn's WARNING/FATAL logging and resultFedTurn stamp wrap it in
 // appendToolActionResult.
 func toolResultWire(item ConversationItem) map[string]any {
-	if item.State != StateCompleted && item.State != StateCancelled {
+	if !isToolTerminal(item) {
 		return map[string]any{
 			"type":      "tool-result",
 			"toolUseId": item.ToolUseID,
@@ -831,7 +831,7 @@ func threadRunRecords(item ConversationItem) []threadRun {
 // int64 untyped for it (see its float64 case); resetRunningToolsForReattach
 // reads it back numerically.
 func (w *ConversationWorker) appendToolActionResult(messages []map[string]any, item ConversationItem, stampPending bool) []map[string]any {
-	if item.State != StateCompleted && item.State != StateCancelled {
+	if !isToolTerminal(item) {
 		w.log.Error("WARNING: Tool %s has no result yet — emitting isError tool-result (auto-continue may have raced ahead of execution)", item.ToolUseID)
 		messages = append(messages, map[string]any{
 			"type":      "tool-result",

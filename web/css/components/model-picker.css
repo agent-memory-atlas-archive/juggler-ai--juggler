@@ -688,10 +688,6 @@ model-tuning:empty {
     list-style: none;
 }
 
-.model-picker .model-picker-footer[hidden] {
-    display: none;
-}
-
 /* The two kinds of filled row in the left column. Both sit on the column's text
    line, and both pull their fill out past it by one row pad on each side, so a
    hover is a band around the text rather than a box wrapped tight to it — and

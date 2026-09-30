@@ -165,10 +165,6 @@ reply-suggestions {
     background: var(--bg-secondary);
 }
 
-reply-suggestions[hidden] {
-    display: none;
-}
-
 /* Text to match the textarea's, on the shared surface above. */
 reply-suggestions .reply-suggestion {
     border: none;
@@ -891,12 +887,6 @@ composer-box .context-cache-warning-btn {
     color: #fff;
     cursor: pointer;
     flex-shrink: 0;
-}
-
-/* Override the UA `display` so the flex layout above applies when shown; when
-   `hidden` the attribute wins and the button collapses out of the row. */
-composer-box .context-cache-warning-btn[hidden] {
-    display: none;
 }
 
 composer-box .context-cache-warning-btn .icon-warning {

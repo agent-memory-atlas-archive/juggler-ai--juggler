@@ -134,10 +134,6 @@
     line-height: 1;
 }
 
-:where(.app-header) .ppd-clients-indicator[hidden] {
-    display: none;
-}
-
 :where(.app-header) .ppd-clients-indicator svg {
     width: 1.125rem;
     height: 1.125rem;

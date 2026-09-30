@@ -944,10 +944,6 @@ conversation-bar .conversation-bin-undo {
         bin-undo-flash 480ms ease-in-out 2;
 }
 
-conversation-bar .conversation-bin-undo[hidden] {
-    display: none;
-}
-
 conversation-bar .conversation-bin-undo:hover {
     background: rgb(88 166 255 / 28%);
 }
@@ -1022,10 +1018,6 @@ conversation-bar info-cards-button {
        by 0.15rem lines the icon up with the 0.4rem-inset card text below it. */
     margin-left: 0.15rem;
     flex-shrink: 0;
-}
-
-conversation-bar info-cards-button[hidden] {
-    display: none;
 }
 
 conversation-bar .info-cards-button {
@@ -1137,10 +1129,6 @@ conversation-bar info-rail:has(info-cards-button[hidden]) {
    only when something is actually cut, so a card that fits keeps its full contrast. */
 conversation-bar info-rail[data-clipped] {
     mask-image: linear-gradient(to bottom, transparent 0, #000 var(--info-card-fade));
-}
-
-conversation-bar info-rail[hidden] {
-    display: none;
 }
 
 conversation-bar .info-card {

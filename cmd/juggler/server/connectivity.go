@@ -136,7 +136,7 @@ func (s *Server) handleQRCode(w http.ResponseWriter, r *http.Request) {
 	}
 	code, err := qr.Encode(rawURL, qr.M)
 	if err != nil {
-		http.Error(w, "failed to encode QR", http.StatusInternalServerError)
+		http.Error(w, "Couldn't encode QR", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "image/svg+xml; charset=utf-8")

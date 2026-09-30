@@ -1496,7 +1496,7 @@ export class ProvidersTab {
       await fetchJson(apiUrl('/config/provider-enabled'), {
         method: 'POST',
         body: { provider: provider.name, enabled },
-        errorPrefix: 'Failed to update provider',
+        errorPrefix: "Couldn't update provider",
       });
       // The handler queues a provider recompute; the resulting providers-update
       // is what refreshes every model selector.
@@ -1507,7 +1507,7 @@ export class ProvidersTab {
       if (toggle) {
         toggle.checked = !enabled;
       }
-      await showAlert(error instanceof Error ? error.message : 'Failed to update provider', 'Error');
+      await showAlert(error instanceof Error ? error.message : "Couldn't update provider", 'Error');
     }
   }
 

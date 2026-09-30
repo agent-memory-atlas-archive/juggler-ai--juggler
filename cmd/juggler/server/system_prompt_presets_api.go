@@ -22,7 +22,7 @@ import (
 func (s *Server) handleGetSystemPromptPresets(w http.ResponseWriter, r *http.Request) {
 	presets, defaultID, err := s.systemPromptPresetStore.Load()
 	if err != nil {
-		handlers.WriteError(w, r, http.StatusInternalServerError, fmt.Sprintf("Failed to load system prompt presets: %v", err))
+		handlers.WriteError(w, r, http.StatusInternalServerError, fmt.Sprintf("Couldn't load system prompt presets: %v", err))
 		return
 	}
 	handlers.WriteJSON(w, r, 0, map[string]any{
@@ -57,7 +57,7 @@ func (s *Server) handleCreateSystemPromptPreset(w http.ResponseWriter, r *http.R
 func (s *Server) handleDeleteSystemPromptPreset(w http.ResponseWriter, r *http.Request) {
 	id := mux.Vars(r)["id"]
 	if err := s.systemPromptPresetStore.Delete(id); err != nil {
-		handlers.WriteError(w, r, http.StatusInternalServerError, fmt.Sprintf("Failed to delete preset: %v", err))
+		handlers.WriteError(w, r, http.StatusInternalServerError, fmt.Sprintf("Couldn't delete preset: %v", err))
 		return
 	}
 	handlers.WriteJSON(w, r, 0, map[string]any{"success": true})
@@ -96,7 +96,7 @@ func (s *Server) handleSetDefaultSystemPromptPreset(w http.ResponseWriter, r *ht
 		return
 	}
 	if err := s.systemPromptPresetStore.SetDefault(req.ID); err != nil {
-		handlers.WriteError(w, r, http.StatusInternalServerError, fmt.Sprintf("Failed to set default preset: %v", err))
+		handlers.WriteError(w, r, http.StatusInternalServerError, fmt.Sprintf("Couldn't set default preset: %v", err))
 		return
 	}
 	handlers.WriteJSON(w, r, 0, map[string]any{"success": true})

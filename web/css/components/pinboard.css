@@ -32,10 +32,6 @@ pinboard-shell {
     pointer-events: none;
 }
 
-pinboard-shell[hidden] {
-    display: none;
-}
-
 .pinboard-scrim {
     position: absolute;
     inset: 0;
@@ -178,13 +174,6 @@ pinboard-tabbar {
     padding: var(--spacing-xs) var(--spacing-sm);
     border-bottom: 0.0625rem solid var(--border-divider);
     font-family: var(--font-ui);
-}
-
-/* An author `display` beats the UA sheet's `[hidden]` whatever the specificity,
-   so every band that sets one needs its own rule or the panel cannot put it
-   away. */
-pinboard-tabbar[hidden] {
-    display: none;
 }
 
 .pinboard-tabbar__list {
@@ -420,10 +409,6 @@ pinboard-content {
     position: relative;
 }
 
-pinboard-content[hidden] {
-    display: none;
-}
-
 /* Focused only under focusBody(), which is a place to type from rather than a
    thing selected — and the band it spans is the whole lower half of the board,
    which is far too big a shape to ring. */
@@ -437,13 +422,6 @@ pinboard-content:focus {
     gap: var(--spacing-sm);
     padding: var(--spacing-sm) var(--spacing-md);
     border-bottom: 0.0625rem solid var(--border-divider);
-}
-
-/* An author `display` beats the UA sheet's [hidden], so a board with nothing on
-   it would otherwise keep the last pin's name and its divider above the empty
-   state. */
-.pinboard-item-toolbar[hidden] {
-    display: none;
 }
 
 /* The name of the thing takes the width; the actions keep theirs. */
@@ -569,11 +547,6 @@ pinboard-content:focus {
     height: 100%;
 }
 
-.pinboard-content__slot[hidden],
-.pinboard-content__placeholder[hidden] {
-    display: none;
-}
-
 .pinboard-empty,
 .pinboard-placeholder {
     display: flex;
@@ -585,13 +558,6 @@ pinboard-content:focus {
     padding: var(--spacing-xl);
     color: var(--text-secondary);
     text-align: center;
-}
-
-/* The placeholder stands in place of the board, so an unhidden one does not sit
-   quietly behind it: it takes a share of the panel's height and pushes the pins
-   into what is left. */
-.pinboard-placeholder[hidden] {
-    display: none;
 }
 
 .pinboard-empty__line,
@@ -661,13 +627,6 @@ pinboard-content:focus {
     padding-left: var(--spacing-md);
     color: var(--text-tertiary);
     font-size: var(--font-size-sm);
-}
-
-/* Away with the rest of the surface while there is no project to have a board,
-   or nothing that can fill one: .btn-icon-header's display would otherwise
-   beat the UA sheet's [hidden]. */
-.pinboard-header-button[hidden] {
-    display: none;
 }
 
 @media (width <= 36rem) {

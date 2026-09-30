@@ -628,7 +628,7 @@ class SettingsPanel extends HTMLElement {
       // the other three fall back to the tab's current value, so a blip leaves
       // the already-rendered picker alone rather than blanking it.
       const [config, providersData, defaultModel, cheapModel, connectivity] = await Promise.all([
-        fetchJson(apiUrl('/config'), { errorPrefix: 'Failed to load config' }),
+        fetchJson(apiUrl('/config'), { errorPrefix: "Couldn't load config" }),
         fetchJson(apiUrl('/providers'), { errorPrefix: 'Failed to load providers' }),
         fetchJson(apiUrl('/default-model'), { fallback: /** @type {any} */ (this._tabs.defaults).defaultModel }),
         fetchJson(apiUrl('/cheap-model'), { fallback: /** @type {any} */ (this._tabs.defaults).cheapModel }),
@@ -656,7 +656,7 @@ class SettingsPanel extends HTMLElement {
       return true;
     } catch (error) {
       console.error('Failed to load config:', error);
-      await showAlert('Failed to load configuration', 'Error');
+      await showAlert("Couldn't load configuration", 'Error');
       return false;
     }
   }

@@ -362,7 +362,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		jlog.Error("settings: save failed: %v", err)
-		handlers.WriteError(w, r, http.StatusInternalServerError, "failed to save settings")
+		handlers.WriteError(w, r, http.StatusInternalServerError, "Couldn't save settings")
 		return
 	}
 	// Read back the stored document: the save normalises the hidden-model lists

@@ -147,53 +147,9 @@ func (r *run) runOneTurn(st *strategyRunState, explicitContinuation bool) turnVe
 	}
 
 	// A browser-folded /compact (or /handoff) thread is summarized by the
-	// bounded reducer, not an ordinary strategy turn: probe the whole
-	// transcript once and, on a provider overflow, map/reduce it. This is the
-	// single summarizer, committing through writeBoundedCompactionResult. The
-	// turn ends here; the deferred cleanup drives idle, which collapses the
-	// fold + summary into one undo group (compactionMergeFromIdx).
-	if r.t.thread.itemID != "" && r.isBoundedCompactionThread(r.t.thread.itemID) && !r.threadHasResult(r.t.thread.itemID) {
-		itemIDs := r.foldedCompactionContextItemIDs(r.t.thread.itemID)
-		ctxResult, tools, prepErr := r.requestContextAndToolsForItemIDs(itemIDs)
-		if prepErr != nil {
-			if errors.Is(prepErr, ErrCancelled) {
-				return turnDone
-			}
-			r.sendError(fmt.Sprintf("Failed to get context/tools for compaction: %v", prepErr), "")
-			return turnDone
-		}
-		handled, compactErr := r.runFoldedThreadCompaction(r.resolveModelConfig(), ctxResult, tools)
-		if handled {
-			if compactErr != nil && !errors.Is(compactErr, errBoundedCompactionCancelled) {
-				r.log.Error("❌ compaction error: %s", compactErr.Error())
-				errorData := map[string]any{}
-				for k, v := range compactionErrorData(compactErr) {
-					errorData[k] = v
-				}
-				r.sendErrorWithData(compactErr.Error(), "", errorData)
-			}
-			// The fold committed before this run started, so ending without a
-			// summary leaves the parent holding a fold tile and nothing else.
-			// Mark it, whatever the reason: an error item goes inside the
-			// sub-thread where the parent cannot show it, and cancellation
-			// writes nothing at all. Checked against the thread rather than
-			// against compactErr because a partial run may still have committed.
-			if compactErr != nil && !r.threadHasResult(r.t.thread.itemID) {
-				// One message either way so the state is greppable by one string,
-				// but a fold the human cancelled is an outcome, not a fault: only a
-				// genuine failure is worth an ERROR in a log someone is scanning for
-				// what broke.
-				line := "[compaction] fold %s left unsummarized: %s"
-				if errors.Is(compactErr, errBoundedCompactionCancelled) {
-					r.log.Info(line, r.t.thread.itemID, compactErr.Error())
-				} else {
-					r.log.Error(line, r.t.thread.itemID, compactErr.Error())
-				}
-				r.setCompactionUnsummarized(r.t.thread.itemID)
-			}
-			r.t.txnID = ""
-			return turnDone
-		}
+	// bounded reducer, not an ordinary strategy turn.
+	if verdict, handled := r.runFoldedCompactionTurn(); handled {
+		return verdict
 	}
 
 	// Drain any messages queued while this turn was in flight (or while the
@@ -315,6 +271,48 @@ func (r *run) runOneTurn(st *strategyRunState, explicitContinuation bool) turnVe
 
 	r.batcher.Flush()
 
+	r.recordTurnTransaction(txnID, llmRequest, response, err, startTime, duration)
+
+	if err != nil {
+		return r.handleTurnFailure(st, err, llmRequest, duration)
+	}
+
+	st.bypassContextGuard = false
+	// A successful dispatch closes this context-pressure incident: a later
+	// overflow in the same (possibly very long) strategy run gets a fresh
+	// bounded recovery budget instead of inheriting an exhausted one. This
+	// cannot loop — re-entering recovery still takes a fresh provider
+	// overflow, and each incident stays progress-checked and bounded.
+	st.compaction = compactionAttempts{}
+
+	// Per-turn token economics at Info level; turnTokensLine says how to read it.
+	r.log.Info("%s", turnTokensLine(r.t.thread.itemID, response, duration))
+
+	// One completed round-trip is charged to this run's budget, turn and tokens.
+	// Charged here because here is where a turn is known to have HAPPENED: the
+	// request went out, the provider answered, and the tokens above were spent.
+	// Counting at the top of a turn would charge for attempts that never reached
+	// a provider, and counting after processLLMResponse would miss the turns that
+	// end in one.
+	r.noteRunTurn(response)
+
+	shouldContinue, err := r.processLLMResponse(response)
+	r.t.txnID = ""
+	if err != nil {
+		if errors.Is(err, ErrCancelled) {
+			return turnDone
+		}
+		r.sendError(fmt.Sprintf("Error processing response: %v", err), "")
+		return turnDone
+	}
+
+	return r.settleTurn(st, response, shouldContinue)
+}
+
+// recordTurnTransaction persists one round-trip's transaction blob and charges
+// it to the conversation's spend, whatever the outcome. It runs BEFORE any
+// further Yjs mutation, so every item the turn goes on to write can link to it.
+func (r *run) recordTurnTransaction(txnID string, llmRequest json.RawMessage, response *LLMResponse, err error, startTime time.Time, duration time.Duration) {
 	// Persist the transaction blob BEFORE any further Yjs mutation. On
 	// cancellation, capture whatever partial streaming content existed so
 	// the log shows truncated output rather than "No response data".
@@ -344,261 +342,12 @@ func (r *run) runOneTurn(st *strategyRunState, explicitContinuation bool) turnVe
 	// same response the blob records — so a turn the user cancelled, which the
 	// provider billed all the same, is counted rather than quietly dropped.
 	r.recordTurnSpend(blobResponse)
+}
 
-	if err != nil {
-		if errors.Is(err, ErrCancelled) {
-			r.t.txnID = ""
-			return turnDone
-		}
-
-		// Guard B: the selected model's provider can't be used (no API key,
-		// provider disabled, OAuth not signed in, sign-in expired). That is a
-		// user-fixable setup problem, so it carries the validation-error code
-		// "provider-unavailable" — prompt to pick another model, never
-		// auto-retry. Do this before any context-limit handling: a credential
-		// failure is terminal and unrelated to compaction/recovery.
-		if errors.Is(err, ErrProviderUnavailable) {
-			mc := r.resolveModelConfig()
-			msg := "The selected model's provider can't be used. Pick another model, or configure it in settings."
-			errorData := map[string]any{"duration": duration.Milliseconds()}
-			if mc != nil {
-				msg = fmt.Sprintf("The provider for %s (%s) can't be used. Pick another model, or configure %s in settings.", mc.Model, mc.Provider, mc.Provider)
-				errorData["provider"] = mc.Provider
-				errorData["model"] = mc.Model
-			}
-			// Carry the resolver's own account of what is wrong ("codex access
-			// token is expired; sign in with the Codex app or run `codex
-			// login`"). The lead says what to do, the detail says why, and a
-			// credential failure is barely actionable without it — an expired
-			// sign-in reads as a lie when reported as "isn't configured".
-			if detail := providerUnavailableDetail(err); detail != "" {
-				msg += "\n\n" + detail
-			}
-			// This ends the turn, so it needs a durable record like any other
-			// terminal failure. The validation-error status alone is a
-			// client-side transient notice: it is a timed toast when the
-			// conversation is on screen and nothing at all when it isn't, so a
-			// credential that lapses mid-loop leaves a turn that simply stops.
-			// Insert the item first, while turn.txnID still stamps it with
-			// the transaction saved above.
-			r.sendErrorWithData(msg, "", errorData)
-			r.sendStatusWithCode("validation-error", msg, "provider-unavailable")
-			r.t.txnID = ""
-			return turnDone
-		}
-
-		// The provider refused a call it actually made, on authentication
-		// grounds. Guard B cannot catch this: it fires when credential
-		// resolution fails beforehand, and a CLI-backed provider resolves no
-		// credential of its own — the refusal is the first sign the login has
-		// lapsed. Same terminal shape as Guard B, and equally never retried.
-		var authErr *provider.AuthError
-		if errors.As(err, &authErr) {
-			// The provider's hint leads, because it is the only sentence here
-			// written for the person reading it — the provider's own error text
-			// is addressed to someone standing at its command line. That text
-			// still follows, since it is the only diagnosable part.
-			lead := authErr.Hint
-			if lead == "" {
-				lead = "The provider isn't signed in."
-			}
-			msg := lead
-			if detail := strings.TrimSpace(authErr.Message); detail != "" {
-				msg += "\n\n" + detail
-			}
-			errorData := map[string]any{"duration": duration.Milliseconds()}
-			if mc := r.resolveModelConfig(); mc != nil {
-				errorData["provider"] = mc.Provider
-				errorData["model"] = mc.Model
-			}
-			if authErr.Provider != "" {
-				errorData["provider"] = authErr.Provider
-			}
-			// errorKind lets the transcript row offer the remediation action
-			// without re-deriving the classification by matching on the text.
-			errorData["errorKind"] = "auth"
-			r.log.Error("❌ LLM error (authentication): %s", err.Error())
-			// Durable item first, for the same reason as Guard B: the status is
-			// a transient client-side notice and would leave nothing behind for
-			// a sign-in that lapsed while nobody was watching.
-			r.sendErrorWithData(msg, "", errorData)
-			// Only the lead goes to the composer warning. The detail belongs in
-			// the transcript, where there is room to read it.
-			r.sendStatusWithCode("validation-error", lead, "auth-required")
-			r.t.txnID = ""
-			return turnDone
-		}
-
-		var advisory *provider.ContextCompactionAdvisory
-		var contextLimit *provider.ContextLimitExceededError
-		var limit *provider.ContextLimitExceededError
-		isAdvisory := false
-		if errors.As(err, &advisory) {
-			// A silent-truncation guard is an estimate-based request to
-			// compact, never a terminal error; normalize it to the same
-			// overflow shape the provider-rejection path uses.
-			limit = contextLimitFromAdvisory(advisory)
-			isAdvisory = true
-		} else if errors.As(err, &contextLimit) {
-			limit = contextLimit
-		}
-		if limit != nil {
-			// Parse the original request only now that it is needed (a
-			// context-limit overflow), not on every successful turn.
-			var originalRequest hiddenLLMRequest
-			_ = json.Unmarshal(llmRequest, &originalRequest)
-			switch v := r.handleContextOverflow(limit, isAdvisory, st.bypassContextGuard, &st.compaction, originalRequest.ModelConfig, err); v.verdict {
-			case overflowStop:
-				r.t.txnID = ""
-				return turnDone
-			case overflowBypassAndRetry:
-				st.bypassContextGuard = true
-				r.t.txnID = ""
-				return turnContinue
-			case overflowTerminal:
-				// Report v.err below. A synthesized terminal error must not
-				// re-enter overflow handling in the same iteration, even when
-				// it wraps a provider overflow.
-				err = v.err
-			}
-		}
-
-		r.log.Error("❌ LLM error: %s", err.Error())
-		errorData := map[string]any{
-			"duration": duration.Milliseconds(),
-		}
-		if mc := r.resolveModelConfig(); mc != nil {
-			errorData["provider"] = mc.Provider
-			errorData["model"] = mc.Model
-		}
-		// A failed bounded compaction / context recovery still leaves its
-		// partial accounting on the durable error item.
-		for k, v := range compactionErrorData(err) {
-			errorData[k] = v
-		}
-
-		// A usage cap the provider dated is a fact about the ACCOUNT, not about
-		// this request, so it is latched here — the one place every terminal LLM
-		// error passes — and stands over every thread in the conversation until it
-		// lifts. Exactly one thread wins that latch and reports it; the others met
-		// the same refusal and have nothing to add, so they rest silently and the
-		// conversation says this once instead of once per thread.
-		//
-		// Both rest the way a Pause rests, without settling: a thread stopped by a
-		// cap is not a thread that finished, and settling would report an answer it
-		// never gave and hand its parent a fresh turn — straight back into the wall.
-		var rateLimit *RateLimitError
-		if errors.As(err, &rateLimit) && !rateLimit.ResetAt.IsZero() {
-			providerName := ""
-			if mc := r.resolveModelConfig(); mc != nil {
-				providerName = mc.Provider
-			}
-			if !r.latchRateLimit(providerName, rateLimit.ResetAt) {
-				r.log.Info("Usage limit on %s already reported for this conversation — resting this thread instead of reporting it again", providerName)
-				r.promotePendingItems(r.t.thread.itemID)
-				r.t.politelyStopped = true
-				r.t.txnID = ""
-				return turnDone
-			}
-			r.log.Info("Usage limit on %s stands until %s — latched, so no thread here calls it again until the user sends", providerName, rateLimit.ResetAt.Format(time.RFC3339))
-			r.sendErrorWithData(rateLimitReport(providerName, rateLimit.ResetAt, time.Now(), err.Error()), "", errorData)
-			r.promotePendingItems(r.t.thread.itemID)
-			r.t.politelyStopped = true
-			r.t.txnID = ""
-			return turnDone
-		}
-
-		// turn.txnID is still set, so insertTargetMessage stamps the
-		// error item with txnID — the View Transaction button opens the
-		// blob saved above.
-		r.sendErrorWithData(err.Error(), "", errorData)
-		r.t.txnID = ""
-		return turnDone
-	}
-
-	st.bypassContextGuard = false
-	// A successful dispatch closes this context-pressure incident: a later
-	// overflow in the same (possibly very long) strategy run gets a fresh
-	// bounded recovery budget instead of inheriting an exhausted one. This
-	// cannot loop — re-entering recovery still takes a fresh provider
-	// overflow, and each incident stays progress-checked and bounded.
-	st.compaction = compactionAttempts{}
-
-	// Per-turn token economics at Info level so the prompt-cache hit rate is
-	// visible in the normal conversation log without enabling trace. cached/
-	// input is the prefix-cache hit rate: on an agent loop it should climb
-	// toward ~1.0 once routing is pinned (prompt_cache_key). A persistent 0
-	// on an OpenAI/Codex model means the growing prefix is being re-billed
-	// every turn — the shard-misrouting burn. cached=? / cacheWrite=? mean
-	// the provider reported no cache usage for the call: unknown, not a
-	// miss. thread is logged so an interleaved sub-context (its own short
-	// prefix, tiny output) is distinguishable from the main task's turns
-	// rather than looking like a cache miss on the same conversation.
-	cached, hit, cacheWrite := "?", "?", "?"
-	if response.CachedTokens != nil {
-		cached = fmt.Sprintf("%d", *response.CachedTokens)
-		hit = "0"
-		if response.InputTokens > 0 {
-			hit = fmt.Sprintf("%d", *response.CachedTokens*100/response.InputTokens)
-		}
-	}
-	if response.CacheWriteTokens != nil {
-		cacheWrite = fmt.Sprintf("%d", *response.CacheWriteTokens)
-	}
-	// est is how large admission judged this same request before dispatching
-	// it, and est/input is that judgement's error against what the provider
-	// actually billed. It is logged here because automatic compaction fires on
-	// est, not on input: a ratio well above 1.0 means compaction triggers at a
-	// fraction of the real window, which is invisible from input alone.
-	//
-	// The "anchored"/"full" tag says which way est was reached. Anchored means
-	// it was projected from the previous turn's measured count plus an estimate
-	// of only the messages added since, so the ratio should sit near 1.0. Full
-	// means the whole request was estimated by the character heuristic, which
-	// is where the large ratios live. A run of "full" on a long conversation
-	// means the transcript prefix keeps changing under us and the anchor is not
-	// holding — that, not the ratio, is the thing to chase.
-	//
-	// est=? means admission did not size the request at all (unknown window).
-	// A trailing ~ means input is itself a local fallback estimate, so there is
-	// no measurement to form a ratio against.
-	est := "?"
-	if response.AdmissionEstimateTokens > 0 {
-		basis := "full"
-		if response.AdmissionAnchored {
-			basis = "anchored"
-		}
-		est = fmt.Sprintf("%d/%s", response.AdmissionEstimateTokens, basis)
-		switch {
-		case response.InputTokensApproximate:
-			est += "~"
-		case response.InputTokens > 0:
-			est += fmt.Sprintf(" %.2fx", float64(response.AdmissionEstimateTokens)/float64(response.InputTokens))
-		}
-	}
-	r.log.Info("[turn tokens] thread=%q input=%d est=%s cached=%s (%s%% hit) output=%d cacheWrite=%s stop=%s in %s",
-		r.t.thread.itemID, response.InputTokens, est, cached, hit,
-		response.OutputTokens, cacheWrite, response.StopReason,
-		duration.Round(time.Millisecond))
-
-	// One completed round-trip is charged to this run's budget, turn and tokens.
-	// Charged here because here is where a turn is known to have HAPPENED: the
-	// request went out, the provider answered, and the tokens above were spent.
-	// Counting at the top of a turn would charge for attempts that never reached
-	// a provider, and counting after processLLMResponse would miss the turns that
-	// end in one.
-	r.noteRunTurn(response)
-
-	shouldContinue, err := r.processLLMResponse(response)
-	r.t.txnID = ""
-	if err != nil {
-		if errors.Is(err, ErrCancelled) {
-			return turnDone
-		}
-		r.sendError(fmt.Sprintf("Error processing response: %v", err), "")
-		return turnDone
-	}
-
+// settleTurn decides what follows a turn whose response has been processed:
+// wait for async work, surface a truncation or refusal, retry a barren turn, or
+// end the run unless the loop has something left to react to.
+func (r *run) settleTurn(st *strategyRunState, response *LLMResponse, shouldContinue bool) turnVerdict {
 	// Non-blocking: if async tools or a child thread were created,
 	// transition to "awaiting_llm" and let the reducer re-dispatch when
 	// the work completes.

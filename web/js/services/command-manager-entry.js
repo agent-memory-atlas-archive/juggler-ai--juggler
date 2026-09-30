@@ -6,7 +6,8 @@
  * The two pinned buttons above a command list — "Edit custom slash commands…"
  * and "Browse built-in commands…" — shared by every surface that lists slash
  * commands: the typed-`/` completion menu, the composer's `/` button dropdown,
- * and the mobile actions sheet.
+ * and the mobile actions sheet. The last two also share their command order and
+ * row builder from here.
  *
  * That a user can write their own commands is not something a list of commands
  * conveys — `/commands` sitting among them reads as one more command to run, not
@@ -26,6 +27,57 @@ export const MANAGE_COMMANDS_LABEL = 'Edit custom slash commands…';
 
 /** Label of the button opening the built-ins in the Extensions settings. */
 export const BROWSE_COMMANDS_LABEL = 'Browse built-in commands…';
+
+/**
+ * The fixed lead of the button-opened command lists: tab operations first (new,
+ * duplicate), then thread, then conversation-history operations (clear,
+ * compact). Everything else follows in the order it was registered.
+ */
+const MENU_ORDER = ['new', 'duplicate', 'thread', 'clear', 'compact'];
+
+/**
+ * The commands a button-opened list shows, in its order: the manager command
+ * dropped (its pinned button stands in for it) and {@link MENU_ORDER} leading.
+ * Shared by the composer's `/` dropdown and the mobile actions sheet, so the two
+ * cannot list the same commands in different orders.
+ * @template {{name: string}} T
+ * @param {T[]} commands - Commands as the handler reports them
+ * @returns {T[]} A new, ordered list
+ */
+export function menuOrderedCommands(commands) {
+  const rank = (/** @type {string} */ name) => {
+    const i = MENU_ORDER.indexOf(name);
+    return i === -1 ? MENU_ORDER.length : i;
+  };
+  return withoutManagerCommand(commands).sort((a, b) => rank(a.name) - rank(b.name));
+}
+
+/**
+ * Build one command row of a button-opened list: the mono `/name`, then its
+ * label (or the name capitalised). The caller owns the click wiring, since each
+ * surface dismisses itself differently.
+ * @param {{name: string, label?: string, danger?: boolean}} cmd - The command
+ * @param {object} [opts]
+ * @param {string} [opts.extraClass] - Surface-specific class alongside `menu-item`
+ * @param {string} [opts.labelClass] - Class of the label span
+ * @returns {HTMLLIElement} The row element
+ */
+export function buildCommandRow(cmd, { extraClass = '', labelClass = 'menu-item-desc' } = {}) {
+  const row = document.createElement('li');
+  row.className = ['menu-item', extraClass, cmd.danger ? 'danger' : ''].filter(Boolean).join(' ');
+  row.dataset.command = cmd.name;
+
+  const code = document.createElement('code');
+  code.textContent = '/' + cmd.name;
+  row.appendChild(code);
+
+  const label = document.createElement('span');
+  label.className = labelClass;
+  label.textContent = cmd.label || cmd.name.charAt(0).toUpperCase() + cmd.name.slice(1);
+  row.appendChild(label);
+
+  return row;
+}
 
 /**
  * A command list with the manager command removed — for surfaces showing the

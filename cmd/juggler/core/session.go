@@ -647,12 +647,10 @@ func fitSuffixed(base string, i int, suffixFn func(string, int) string) string {
 	return suffixFn(clipped, i)
 }
 
-// disambiguateName resolves a name collision by calling suffixFn(base, i) for
-// i=2, 3, … until the name is unique (case-folded, excluding excludeID). Each
-// candidate is fitted to the name cap for its own suffix, so a longer counter
-// tail eats further into the base instead of overflowing.
-func disambiguateName(base, excludeID string, names map[string]string, suffixFn func(string, int) string) string {
-	taken := func(candidate string) bool {
+// nameTaken returns a test for whether a candidate name is already held,
+// case-folded, by any conversation in names other than excludeID.
+func nameTaken(names map[string]string, excludeID string) func(candidate string) bool {
+	return func(candidate string) bool {
 		folded := strings.ToLower(candidate)
 		for id, n := range names {
 			if id == excludeID {
@@ -664,6 +662,14 @@ func disambiguateName(base, excludeID string, names map[string]string, suffixFn 
 		}
 		return false
 	}
+}
+
+// disambiguateName resolves a name collision by calling suffixFn(base, i) for
+// i=2, 3, … until the name is unique (case-folded, excluding excludeID). Each
+// candidate is fitted to the name cap for its own suffix, so a longer counter
+// tail eats further into the base instead of overflowing.
+func disambiguateName(base, excludeID string, names map[string]string, suffixFn func(string, int) string) string {
+	taken := nameTaken(names, excludeID)
 	if !taken(base) {
 		return base
 	}
@@ -693,18 +699,7 @@ func (fs *FileSessionStore) uniqueName(base, excludeID string) string {
 	// stays reserved for genuine duplicates (/duplicate, /handoff), which pass
 	// an explicit, non-placeholder name.
 	if IsUntitledName(base) {
-		taken := func(candidate string) bool {
-			folded := strings.ToLower(candidate)
-			for id, n := range fs.index.Names {
-				if id == excludeID {
-					continue
-				}
-				if strings.ToLower(n) == folded {
-					return true
-				}
-			}
-			return false
-		}
+		taken := nameTaken(fs.index.Names, excludeID)
 		if !taken(base) {
 			return base
 		}
@@ -1130,7 +1125,12 @@ func (fs *FileSessionStore) removeBinnedConversationFiles(convID string) error {
 // by direct callers and tests; the server empties the bin via emptyBinDeferred
 // so the slow OS-trash step runs off the actor goroutine.
 func (fs *FileSessionStore) EmptyBin() ([]string, error) {
-	removed, trashPath, err := fs.emptyBinDeferred()
+	return trashMovedAside(fs.emptyBinDeferred())
+}
+
+// trashMovedAside finishes a deferred empty synchronously: it trashes the
+// moved-aside staging directory on the caller's goroutine and returns the ids.
+func trashMovedAside(removed []string, trashPath string, err error) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
@@ -1181,16 +1181,7 @@ func (fs *FileSessionStore) emptyBinDeferred() (removed []string, trashPath stri
 // through emptySelectionDeferred so the slow OS-trash step runs off the actor
 // goroutine.
 func (fs *FileSessionStore) EmptyBinOlderThan(cutoff time.Time) ([]string, error) {
-	removed, trashPath, err := fs.emptySelectionDeferred(cutoff)
-	if err != nil {
-		return nil, err
-	}
-	if trashPath != "" {
-		if err := trashOrRemove(trashPath); err != nil {
-			return removed, fmt.Errorf("empty bin: trash %q: %w", trashPath, err)
-		}
-	}
-	return removed, nil
+	return trashMovedAside(fs.emptySelectionDeferred(cutoff))
 }
 
 // emptySelectionDeferred is emptyBinDeferred restricted to the conversations

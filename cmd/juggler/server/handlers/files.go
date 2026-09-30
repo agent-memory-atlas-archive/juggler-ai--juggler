@@ -81,7 +81,7 @@ func (api *FilesAPI) HandleGetFileContent(w http.ResponseWriter, r *http.Request
 			http.Error(w, "file not found", http.StatusNotFound)
 			return
 		}
-		http.Error(w, "failed to stat file", http.StatusInternalServerError)
+		http.Error(w, "Couldn't inspect file", http.StatusInternalServerError)
 		return
 	}
 	if info.IsDir() {
@@ -95,7 +95,7 @@ func (api *FilesAPI) HandleGetFileContent(w http.ResponseWriter, r *http.Request
 
 	file, err := os.Open(absPath)
 	if err != nil {
-		http.Error(w, "failed to open file", http.StatusInternalServerError)
+		http.Error(w, "Couldn't open file", http.StatusInternalServerError)
 		return
 	}
 	defer func() { _ = file.Close() }()
@@ -181,7 +181,7 @@ func (api *FilesAPI) HandlePostFileBytes(w http.ResponseWriter, r *http.Request)
 			http.Error(w, "file not found", http.StatusNotFound)
 			return
 		}
-		http.Error(w, "failed to stat file", http.StatusInternalServerError)
+		http.Error(w, "Couldn't inspect file", http.StatusInternalServerError)
 		return
 	}
 	if info.IsDir() {
@@ -195,7 +195,7 @@ func (api *FilesAPI) HandlePostFileBytes(w http.ResponseWriter, r *http.Request)
 
 	file, err := os.Open(absPath)
 	if err != nil {
-		http.Error(w, "failed to open file", http.StatusInternalServerError)
+		http.Error(w, "Couldn't open file", http.StatusInternalServerError)
 		return
 	}
 	defer func() { _ = file.Close() }()

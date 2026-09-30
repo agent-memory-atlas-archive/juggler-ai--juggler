@@ -26,3 +26,11 @@
 .hidden {
     display: none !important;
 }
+
+/* The `hidden` attribute, made to mean it. The UA sheet's [hidden] is only a
+   `display: none` of the lowest rank, so any component that gives its host or
+   a child its own `display` would otherwise keep showing it — which is why a
+   component never needs a `[hidden]` rule of its own. */
+[hidden] {
+    display: none !important;
+}

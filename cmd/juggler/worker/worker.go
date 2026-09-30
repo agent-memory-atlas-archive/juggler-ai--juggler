@@ -2110,7 +2110,7 @@ func (r *run) hasIncompleteTools() bool {
 		if item.Type != ItemTypeToolAction {
 			continue
 		}
-		if item.State != StateCompleted && item.State != StateCancelled {
+		if !isToolTerminal(item) {
 			return true
 		}
 	}

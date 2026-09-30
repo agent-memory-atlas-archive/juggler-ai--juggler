@@ -103,7 +103,7 @@ func (w *ConversationWorker) findThreadWithIncompleteTool() (string, bool) {
 			return false
 		}
 		state, _ := m.Get("state").(string)
-		if state == StateCompleted || state == StateCancelled {
+		if isTerminalToolState(state) {
 			return false
 		}
 		threadID = currentThreadID
@@ -314,7 +314,7 @@ func (w *ConversationWorker) cancelToolsInArray(arr *ycrdt.YArray, includeApprov
 		switch itemType {
 		case ItemTypeToolAction:
 			item := yMapToConversationItem(m)
-			if item.State == StateCompleted || item.State == StateCancelled {
+			if isToolTerminal(item) {
 				continue // already finished
 			}
 			if item.State == StatePending && !includePending {

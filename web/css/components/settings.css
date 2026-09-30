@@ -848,10 +848,6 @@ settings-panel .auto-name-instruction {
     border-top: 0.0625rem solid var(--border-color);
 }
 
-settings-panel .auto-name-instruction[hidden] {
-    display: none;
-}
-
 settings-panel .provider-input-wrapper {
     position: relative;
     display: flex;
@@ -1139,10 +1135,6 @@ settings-panel .proxy-url-row {
     display: flex;
     flex-direction: column;
     gap: 0.375rem;
-}
-
-settings-panel .proxy-url-row[hidden] {
-    display: none;
 }
 
 settings-panel .proxy-status:empty {

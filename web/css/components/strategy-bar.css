@@ -13,13 +13,6 @@ strategy-selector {
     flex-shrink: 0;
 }
 
-/* A delegated sub-agent's column hides its selector: that thread runs under a
-   strategy its calling tool owns, and is not user-steerable. `display: flex`
-   above beats the UA's [hidden] rule, so restate it here. */
-strategy-selector[hidden] {
-    display: none;
-}
-
 /* Strategy Dropdown */
 .strategy-dropdown {
     min-width: 22rem;

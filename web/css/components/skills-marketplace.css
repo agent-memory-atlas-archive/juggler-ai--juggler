@@ -437,10 +437,6 @@
   font-weight: 400;
 }
 
-.skills-drawer[hidden] {
-  display: none;
-}
-
 .skills-preview-panel {
   width: min(94vw, 54rem);
   max-height: min(92vh, 62rem);

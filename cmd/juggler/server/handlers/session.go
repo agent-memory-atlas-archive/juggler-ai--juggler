@@ -665,7 +665,7 @@ func (api *SessionAPI) HandleCreateConversation(w http.ResponseWriter, r *http.R
 	if req.DuplicateFrom != "" {
 		if err := api.duplicateConversationFiles(req.DuplicateFrom, id); err != nil {
 			jlog.Error("[session.Duplicate] conv=%s → %s failed: %v", req.DuplicateFrom, id, err)
-			WriteError(w, r, http.StatusInternalServerError, "Failed to duplicate conversation: "+err.Error())
+			WriteError(w, r, http.StatusInternalServerError, "Couldn't duplicate conversation: "+err.Error())
 			return
 		}
 		jlog.Info("[session.Duplicate] conv=%s → %s (server-side file copy)", req.DuplicateFrom, id)
@@ -685,7 +685,7 @@ func (api *SessionAPI) HandleCreateConversation(w http.ResponseWriter, r *http.R
 		}
 		if err := api.workerManager.SeedNewConversation(id, finalName, projectPath, created, model); err != nil {
 			jlog.Error("[session.Create] seed conv=%s failed: %v", id, err)
-			WriteError(w, r, http.StatusInternalServerError, "Failed to initialize conversation: "+err.Error())
+			WriteError(w, r, http.StatusInternalServerError, "Couldn't initialize conversation: "+err.Error())
 			return
 		}
 	}
@@ -834,7 +834,7 @@ func (api *SessionAPI) HandleGetConversation(w http.ResponseWriter, r *http.Requ
 
 	w.Header().Set("Content-Type", "application/octet-stream")
 	if _, err := w.Write(yjsData); err != nil {
-		WriteError(w, r, http.StatusInternalServerError, "Failed to write response")
+		WriteError(w, r, http.StatusInternalServerError, "Couldn't write response")
 	}
 }
 
@@ -920,7 +920,7 @@ func (api *SessionAPI) HandleUpdateConversation(w http.ResponseWriter, r *http.R
 	if contentType == "application/octet-stream" {
 		yjsData, err := io.ReadAll(r.Body)
 		if err != nil {
-			WriteError(w, r, http.StatusBadRequest, "Failed to read request body")
+			WriteError(w, r, http.StatusBadRequest, "Couldn't read request body")
 			return
 		}
 
