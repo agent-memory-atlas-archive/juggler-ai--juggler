@@ -5,6 +5,8 @@ of changes; this project follows semantic versioning.
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-09-30
+
 - New workspace type "Group" for organising conversations, with no worktree or copy behind it
 - Usage meters now redden by pace against the window, not by how much of the quota is gone
 - The composer's "⋮" menu now appears on touch devices, where it had never been shown
