@@ -63,7 +63,7 @@ export async function executeContextItem(mt, conv, itemTypeId, params, options =
   if (!customId && ItemClass.mergeOrReplace) {
     const existingItemsOfType = mt.contextItems.filter(item => item.type === itemTypeId);
     const context = { projectPath: session.projectPath };
-    const mergeResult = ItemClass.mergeOrReplace(params, existingItemsOfType, context);
+    const mergeResult = await ItemClass.mergeOrReplace(params, existingItemsOfType, context);
     if (mergeResult) {
       const existingItem = /** @type {import('juggler/context-item').default} */ (mergeResult.item);
       if (!existingItem?.id || !mt.findByItemId(existingItem.id)) {
@@ -159,8 +159,11 @@ export async function executeContextItem(mt, conv, itemTypeId, params, options =
  * send time) but is NOT registered as an active context item — it isn't part of
  * the conversation or the LLM context until the worker promotes it, at which
  * point it lands in `items` and `getContextItems` picks it up like any other.
- * `mergeOrReplace` is deliberately skipped: a queued read has nothing in `items`
- * to merge with yet, so each mention simply creates a fresh entry.
+ * `mergeOrReplace` is consulted against the committed items: on a `reuse` the
+ * existing item handles the call, as in {@link executeContextItem}, and nothing
+ * is queued. The reused item is left where it is — it cannot be repositioned
+ * under a running turn — and a `merge` is treated as no match, since it would
+ * edit a committed item mid-turn.
  * @param {MessageThread} mt
  * @param {Conversation} conv
  * @param {string} itemTypeId
@@ -177,6 +180,21 @@ export async function executeContextItemIntoPending(mt, conv, itemTypeId, params
 
   // Each user-driven context-item action is its own logical undo step.
   workerManager.stopUndoCapturing(conv.id);
+
+  if (ItemClass.mergeOrReplace) {
+    const existingItemsOfType = mt.contextItems.filter(item => item.type === itemTypeId);
+    const mergeResult = await ItemClass.mergeOrReplace(params, existingItemsOfType, { projectPath: session.projectPath });
+    const existingItem = /** @type {import('juggler/context-item').default|null} */ (
+      mergeResult?.action === 'reuse' ? mergeResult.item : null);
+    if (existingItem?.id && existingItem.type === itemTypeId && mt.findByItemId(existingItem.id)) {
+      // As in executeContextItem, a reuse hands the call to the existing item.
+      /** @type {import('juggler/context-item').ToolCallContext} */
+      const ctx = { session, conversation: conv };
+      const toolResult = await existingItem.handleToolCall(itemTypeId, params, ctx);
+      return { id: existingItem.id, type: itemTypeId, created: false,
+        ...(toolResult.success ? {} : { error: toolResult.error }) };
+    }
+  }
 
   const newItemId = generateUniqueItemId(mt, ItemClass);
   const contextItem = new ItemClass({ id: newItemId, type: itemTypeId, session, conversation: conv, messageThread: mt });

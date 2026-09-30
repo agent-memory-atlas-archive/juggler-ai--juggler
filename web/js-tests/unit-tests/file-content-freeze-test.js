@@ -271,18 +271,45 @@ export async function runTests(_ctx) {
       'a reloaded mention still serves its snapshot');
   });
 
-  await test('a mention never reuses an item already holding the path', async () => {
-    // A second mention of the same file, later on, is the file as it stands at
-    // THAT send — folding it into the earlier snapshot would hand the model the
-    // old bytes a second time. A mention does not borrow a live pin either.
+  await test('a mention of an unchanged snapshotted file reuses it', async () => {
+    // The model already holds exactly these bytes; a second item would send them twice.
     const { item: earlier } = makeItem('v1\n');
     await earlier.onToolCall('file-content', { path: 'plan.md', frozen: true });
+    await earlier.createContextText(REQUEST);
+    const merged = await FileContentContextItem.mergeOrReplace({ path: 'plan.md', frozen: true }, [earlier]);
+    assert(merged?.action === 'reuse' && merged.item === earlier,
+      'a mention of a file whose snapshot still matches must reuse that snapshot');
+  });
+
+  await test('a mention of a file changed since its snapshot adds a new one', async () => {
+    // A later mention is the file as it stands at THAT send — folding it into
+    // the earlier snapshot would hand the model the old bytes a second time.
+    const { item: earlier, setBody } = makeItem('v1\n');
+    await earlier.onToolCall('file-content', { path: 'plan.md', frozen: true });
+    await earlier.createContextText(REQUEST);
+    setBody('v2\n');
+    assert(await FileContentContextItem.mergeOrReplace({ path: 'plan.md', frozen: true }, [earlier]) === null,
+      'a mention of a changed file must not reuse the stale snapshot');
+  });
+
+  await test('a mention reuses a mention that has not snapshotted yet', async () => {
+    // Both are the file as it stands at the next send, which is one snapshot.
+    const { item: earlier } = makeItem('v1\n');
+    await earlier.onToolCall('file-content', { path: 'plan.md', frozen: true });
+    const merged = await FileContentContextItem.mergeOrReplace({ path: 'plan.md', frozen: true }, [earlier]);
+    assert(merged?.action === 'reuse' && merged.item === earlier,
+      'a mention must reuse an unlatched mention of the same file');
+  });
+
+  await test('a mention reuses a live pin without freezing it', async () => {
+    // A pin already hands the model the file as it stands at every send.
     const { item: pin } = makeItem('v1\n');
     await pin.onToolCall('file-content', { path: 'plan.md' });
-    assert(FileContentContextItem.mergeOrReplace({ path: 'plan.md', frozen: true }, [earlier]) === null,
-      'a mention must not reuse an earlier mention');
-    assert(FileContentContextItem.mergeOrReplace({ path: 'plan.md', frozen: true }, [pin]) === null,
-      'a mention must not reuse a live pin');
+    const merged = await FileContentContextItem.mergeOrReplace({ path: 'plan.md', frozen: true }, [pin]);
+    assert(merged?.action === 'reuse' && merged.item === pin, 'a mention of a pinned file must reuse the pin');
+    // The orchestrator then re-runs the tool call on the reused item.
+    await pin.onToolCall('file-content', { path: 'plan.md', frozen: true });
+    assert(pin.data.frozen === undefined, 'reusing a pin for a mention must leave it live');
   });
 
   await test('a pin reuses a pin, but not a frozen item', async () => {
@@ -290,9 +317,9 @@ export async function runTests(_ctx) {
     await mention.onToolCall('file-content', { path: 'plan.md', frozen: true });
     const { item: pin } = makeItem('v1\n');
     await pin.onToolCall('file-content', { path: 'plan.md' });
-    assert(FileContentContextItem.mergeOrReplace({ path: 'plan.md' }, [mention]) === null,
+    assert(await FileContentContextItem.mergeOrReplace({ path: 'plan.md' }, [mention]) === null,
       'pinning a file that was mentioned must add a live pin, not adopt the snapshot');
-    const merged = FileContentContextItem.mergeOrReplace({ path: 'plan.md' }, [pin]);
+    const merged = await FileContentContextItem.mergeOrReplace({ path: 'plan.md' }, [pin]);
     assert(merged?.action === 'reuse' && merged.item === pin, 'pinning a pinned file reuses the pin');
   });
 

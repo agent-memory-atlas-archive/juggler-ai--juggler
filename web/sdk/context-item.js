@@ -1255,13 +1255,14 @@ class ContextItem {
   }
 
   /**
-   * Check if new params can be merged with or should replace an existing item
+   * Check if new params can be merged with or should replace an existing item.
+   * May be async, for a decision that depends on more than the items' data.
    * [Context: shared]
    * @static
    * @param {Record<string, any>} newParams - Parameters for the new request
    * @param {ContextItem[]} existingItems - All existing items of this type
    * @param {{projectPath?: string}} [context] - Optional context with project info
-   * @returns {MergeOrReplaceResult|null} Merge result or null if no merge possible
+   * @returns {MergeOrReplaceResult|null|Promise<MergeOrReplaceResult|null>} Merge result or null if no merge possible
    */
   static mergeOrReplace(newParams, existingItems, context) {
     void newParams, existingItems, context;

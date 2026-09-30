@@ -96,6 +96,69 @@ export const atMentionDeduplicates = {
   }
 };
 
+// Mentioning, in a later message, a file the conversation already holds —
+// unchanged since — must not add a second identical item: the model already has
+// exactly those bytes.
+/** @type {import('../utilities/integration-test-runner.js').IntegrationTestDefinition} */
+export const atMentionOfFileAlreadyInContextReusesIt = {
+  name: 'at-mention-of-file-already-in-context-reuses-it',
+  description: 'Re-mentioning an unchanged file in a later message reuses the item already holding it',
+  fixture: 'unit-test-fixture',
+
+  llmResponses: [
+    textResponse('Seen it.'),
+    textResponse('Still seen it.')
+  ],
+
+  operations: [
+    { type: 'send-message', message: '@src/main.go explain this file' },
+    { type: 'send-message', message: 'and again, @src/main.go' }
+  ],
+
+  customAssertions(conversation) {
+    const fileItems = conversation.rootMessageThread.contextItems.filter(
+      item => item.type === 'file-content'
+    );
+    if (fileItems.length !== 1) {
+      throw new Error(`Expected exactly 1 file-content item but found ${fileItems.length}`);
+    }
+  }
+};
+
+// The same, for a mention in a message queued behind a running turn: it rides
+// the pending queue rather than landing in the items directly, and must still
+// reuse the item the conversation already holds.
+/** @type {import('../utilities/integration-test-runner.js').IntegrationTestDefinition} */
+export const queuedAtMentionOfFileAlreadyInContextReusesIt = {
+  name: 'queued-at-mention-of-file-already-in-context-reuses-it',
+  description: 'Re-mentioning an unchanged file in a message queued while busy reuses the item already holding it',
+  fixture: 'unit-test-fixture',
+
+  llmResponses: [
+    textResponse('Seen it.'),
+    textResponse('Working.', { pauseBeforeReturn: true }),
+    textResponse('Still seen it.')
+  ],
+
+  operations: [
+    { type: 'send-message', message: '@src/main.go explain this file' },
+    { type: 'send-message-no-wait', message: 'keep going' },
+    { type: 'wait-for-mock-paused' },
+    { type: 'send-message-no-wait', message: 'and again, @src/main.go' },
+    { type: 'release-mock' },
+    { type: 'wait-for-idle' }
+  ],
+
+  customAssertions(conversation) {
+    const fileItems = conversation.rootMessageThread.contextItems.filter(
+      item => item.type === 'file-content'
+    );
+    if (fileItems.length !== 1) {
+      throw new Error(`Expected exactly 1 file-content item but found ${fileItems.length}`);
+    }
+  }
+};
+
 // On send, every at-mention in the message text should be parsed and turned
 // into a file-content context item. Covers multiple paths, a quoted path
 // containing spaces, a backslash-escaped space, and trailing punctuation
@@ -284,6 +347,8 @@ export const sendMessageTreatsDirectoryMentionWithoutTrailingSlashAsFolder = {
 export const tests = [
   atMentionAddsFileContentItem,
   atMentionDeduplicates,
+  atMentionOfFileAlreadyInContextReusesIt,
+  queuedAtMentionOfFileAlreadyInContextReusesIt,
   sendMessageCreatesFileItemsForAllMentions,
   sendMessageHandlesPunctuationAndBareAt,
   atMentionIsFrozenAtSend,

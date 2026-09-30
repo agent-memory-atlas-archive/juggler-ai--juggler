@@ -103,8 +103,10 @@ const MAX_FROZEN_SNAPSHOT_CHARS = 256_000;
  *    made while a turn runs waits in the pending queue. What belongs in context
  *    is what was true when the model was handed it. `contextParams.forRequest`
  *    is what distinguishes a dispatch render from a properties-panel one.
- *  - A mention never merges into an existing item: a later mention of the same
- *    file is the file as it stands at THAT send, which an earlier snapshot is not.
+ *  - A mention reuses an existing item for the same file only when that item
+ *    hands the model the same bytes (see {@link mergeOrReplace}): a later mention
+ *    of a file that has changed is the file as it stands at THAT send, which the
+ *    earlier snapshot is not, so it gets a snapshot of its own.
  *  - What is NOT this class is a `read` TOOL CALL — ReadFileContextItem, an
  *    immutable record of bytes the model saw at one turn, living in the
  *    append-only history.
@@ -200,36 +202,49 @@ class FileContentContextItem extends ContextItem {
   /**
    * Check if new params can be merged with an existing item
    *
-   * Files with the same path are deduplicated — reuse the existing item — with
-   * one exception: a mention (`frozen`) never merges, either way round. A
-   * mention is the file as it stands at its own send, which an earlier snapshot
-   * is not and a live pin does not keep; and a pin adopting a mention would hand
-   * a snapshot back to someone who asked for the file kept current. Seeding
-   * still dedups by path: adding the agents files again must not add them twice.
+   * Files with the same path are deduplicated — reuse the existing item — except
+   * where reuse would change what the model is handed:
+   *  - A pin never adopts a mention: that would hand a snapshot back to someone
+   *    who asked for the file kept current.
+   *  - A mention (`frozen`) reuses an item only when it gives the model the same
+   *    bytes this send would: a live pin (current at every send), a frozen item
+   *    that has not taken its snapshot yet (it takes it at this send), or a
+   *    snapshot that still matches the file. A file changed since its snapshot
+   *    gets a new one — the later mention is the file as it stands at THAT send.
+   * Seeding dedups by path: adding the agents files again must not add them twice.
    * @static
    * @param {Record<string, any>} newParams - Parameters for the new item request
    * @param {ContextItem[]} existingItems - All existing items of this type
-   * @returns {import('juggler/context-item').MergeOrReplaceResult|null} Merge result or null if no merge possible
+   * @returns {Promise<import('juggler/context-item').MergeOrReplaceResult|null>} Merge result or null if no merge possible
    */
-  static mergeOrReplace(newParams, existingItems) {
-    if (!newParams.path || newParams.frozen === true) {
+  static async mergeOrReplace(newParams, existingItems) {
+    if (!newParams.path) {
       return null;
     }
 
     // Normalize path for comparison
     const newPath = newParams.path.replace(/^\/+/, '');
-
-    const existing = existingItems.find(f => {
+    const samePath = existingItems.filter(f => {
       const data = /** @type {FileContentData} */ (f.data);
-      if (data.frozen === true) return false;
-      const existingPath = (data.path || '').replace(/^\/+/, '');
-      return existingPath === newPath;
+      return (data.path || '').replace(/^\/+/, '') === newPath;
     });
 
-    if (existing) {
-      return { action: 'reuse', item: existing };
+    if (newParams.frozen !== true) {
+      const pin = samePath.find(f => /** @type {FileContentData} */ (f.data).frozen !== true);
+      return pin ? { action: 'reuse', item: pin } : null;
     }
 
+    for (const f of samePath) {
+      const data = /** @type {FileContentData} */ (f.data);
+      if (!FileContentContextItem.isFrozen(data) || typeof data.content !== 'string') {
+        return { action: 'reuse', item: f };
+      }
+    }
+    for (const f of samePath) {
+      const item = /** @type {FileContentContextItem} */ (f);
+      const current = FileContentContextItem._boundSnapshot(await item._renderLive());
+      if (current === item.data.content) return { action: 'reuse', item: f };
+    }
     return null;
   }
 
@@ -302,7 +317,12 @@ class FileContentContextItem extends ContextItem {
     if (!params.path || typeof params.path !== 'string') {
       throw new Error('Missing required parameter: path');
     }
+    // An item that already has a path is being reused (see mergeOrReplace):
+    // its kind was fixed when it was created, and a mention or seed reusing a
+    // live pin must leave it live.
+    const reused = !!this.data.path;
     this.data.path = params.path;
+    if (reused) return;
     if (params.frozen) this.data.frozen = true;
     if (params.seeded) this.data.seeded = true;
   }
