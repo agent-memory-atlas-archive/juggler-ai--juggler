@@ -6,6 +6,7 @@ package ops
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"io/fs"
@@ -20,6 +21,16 @@ import (
 
 	"juggler/internal/gitignore"
 )
+
+// maxMatchContentBytes caps the "content" returned for one matching line, so a
+// hit in a minified bundle costs a line's worth of context, not the bundle.
+const maxMatchContentBytes = 1000
+
+// maxSearchFileBytes is the size above which grep skips a file unread.
+const maxSearchFileBytes = 10 * 1024 * 1024
+
+// binarySniffBytes is how much of a file's head is checked for a NUL byte.
+const binarySniffBytes = 8 * 1024
 
 // SearchOperations handles code search operations
 type SearchOperations struct {
@@ -223,8 +234,8 @@ func (ops *SearchOperations) searchGlobFiles(ctx context.Context, globPattern st
 			continue
 		}
 
-		// Skip binary files and very large files
-		if info.Size() > 10*1024*1024 {
+		// Skip very large files (searchInFile skips binary ones)
+		if info.Size() > maxSearchFileBytes {
 			continue
 		}
 
@@ -315,9 +326,9 @@ func (ops *SearchOperations) searchFiles(ctx context.Context, searchPath string,
 			}
 		}
 
-		// Skip binary files and very large files
+		// Skip very large files (searchInFile skips binary ones)
 		info, err := d.Info()
-		if err != nil || info.Size() > 10*1024*1024 { // Skip files > 10MB
+		if err != nil || info.Size() > maxSearchFileBytes {
 			return nil
 		}
 
@@ -359,7 +370,20 @@ func (ops *SearchOperations) searchInFile(filePath, basePath string, pattern *re
 	// POSIX-style, so normalise back to forward slashes.
 	relPath := filepath.ToSlash(filepathRelEvalSymlinks(ops.scope.Root(), filePath))
 
-	scanner := bufio.NewScanner(file)
+	// Binary files are skipped, detected as git and ripgrep do: a NUL byte in
+	// the first 8KB. Their "lines" are whatever lies between stray newline
+	// bytes, so a hit returns a blob of bytecode around a string the source
+	// file already matched.
+	reader := bufio.NewReaderSize(file, binarySniffBytes)
+	if head, _ := reader.Peek(binarySniffBytes); bytes.IndexByte(head, 0) >= 0 {
+		return matches
+	}
+
+	// Callers skip files over maxSearchFileBytes, so a buffer that size holds
+	// any line; the default 64KB token limit would end the scan at the first
+	// longer line and drop every match after it.
+	scanner := bufio.NewScanner(reader)
+	scanner.Buffer(make([]byte, 0, 64*1024), maxSearchFileBytes+1)
 	lineNum := 1
 
 	for scanner.Scan() && len(matches) < maxMatches {
@@ -370,7 +394,7 @@ func (ops *SearchOperations) searchInFile(filePath, basePath string, pattern *re
 			matches = append(matches, map[string]any{
 				"file":    relPath,
 				"line":    strconv.Itoa(lineNum),
-				"content": line,
+				"content": truncateMatchContent(line),
 			})
 		}
 
@@ -378,6 +402,19 @@ func (ops *SearchOperations) searchInFile(filePath, basePath string, pattern *re
 	}
 
 	return matches
+}
+
+// truncateMatchContent cuts line to maxMatchContentBytes on a rune boundary,
+// appending a marker that says how much was dropped.
+func truncateMatchContent(line string) string {
+	if len(line) <= maxMatchContentBytes {
+		return line
+	}
+	cut := maxMatchContentBytes
+	for cut > 0 && !utf8.RuneStart(line[cut]) {
+		cut--
+	}
+	return line[:cut] + fmt.Sprintf(" … [%d more bytes]", len(line)-cut)
 }
 
 // countUniqueFiles counts unique files in search results
