@@ -357,17 +357,20 @@ export function mapChimeParams(p) {
 let ctx = null;
 
 /**
- * True while the shared context is suspended *because we parked it for idle*
- * (no chime playing) — never on Apple, see {@link keepAudioContextWarm}. It tells
- * the *automatic* wake paths ({@link wakeContext}/{@link rearmAudio}) to leave the
+ * The context we suspended *because we parked it for idle* (no chime playing), or
+ * null — never set on Apple, see {@link keepAudioContextWarm}. It tells the
+ * *automatic* wake paths ({@link wakeContext}/{@link rearmAudio}) to leave that
  * context parked, so only a real chime ({@link playChime}) or an explicit gesture
  * ({@link unlockAudio}) revives it. Distinct from an OS-driven park (autoplay
  * `suspended`, or `interrupted`), which those paths still recover. Cleared the
  * instant the context runs again (see {@link audioContext}'s `onstatechange`), so
- * a later OS/autoplay suspend can never be misclassified as one we set.
- * @type {boolean}
+ * a later OS/autoplay suspend can never be misclassified as one we set. Held as
+ * the context itself rather than a flag so it only ever describes the context we
+ * parked: a rebuilt context, or any other context handed to {@link wakeContext},
+ * is never mistaken for it.
+ * @type {AudioContext|null}
  */
-let idleSuspended = false;
+let idleParkedCtx = null;
 
 /**
  * Pending debounced idle-park timer. Each scheduled chime resets it, so a burst
@@ -428,7 +431,7 @@ export function shouldAutoResume(state, idleParked) {
  * @private
  */
 function cancelIdlePark() {
-  idleSuspended = false;
+  idleParkedCtx = null;
   if (idleParkTimer !== null) {
     clearTimeout(idleParkTimer);
     idleParkTimer = null;
@@ -501,7 +504,7 @@ function areport(level, message) {
  * @returns {void}
  */
 export function wakeContext(ac) {
-  if (!shouldAutoResume(ac.state, idleSuspended)) return;
+  if (!shouldAutoResume(ac.state, ac === idleParkedCtx)) return;
   const from = ac.state;
   ac.resume().then(
     () => { /* resumed to `running` — the routine case, not reported */ },
@@ -565,7 +568,7 @@ function recreateContext() {
  * Park the shared context after its motif has finished and the app is idle,
  * stopping the audio render thread that otherwise spins for the whole life of
  * the process. Guarded so it only ever parks the *current* running context; the
- * resulting `suspended` state is flagged {@link idleSuspended} so the automatic
+ * resulting `suspended` context is recorded in {@link idleParkedCtx} so the automatic
  * wake paths ({@link wakeContext}/{@link rearmAudio}) leave it parked until a
  * real chime or gesture revives it. Never armed where {@link keepAudioContextWarm}
  * is true (Apple platforms). Best-effort: a failed suspend() clears the flag so
@@ -577,14 +580,14 @@ function recreateContext() {
 function suspendForIdle(ac) {
   idleParkTimer = null;
   if (ctx !== ac || ac.state !== 'running' || typeof ac.suspend !== 'function') return;
-  idleSuspended = true;
+  idleParkedCtx = ac;
   try {
     const p = ac.suspend();
     if (p && typeof p.catch === 'function') {
-      p.catch(() => { idleSuspended = false; });
+      p.catch(() => { if (idleParkedCtx === ac) idleParkedCtx = null; });
     }
   } catch {
-    idleSuspended = false; // suspend() unsupported/threw — treat as never parked
+    idleParkedCtx = null; // suspend() unsupported/threw — treat as never parked
   }
 }
 
@@ -628,7 +631,7 @@ function audioContext() {
       // Back to running ⇒ no longer our idle-park; drop the flag so a later OS or
       // autoplay suspend is never misread as one we set (which would wrongly keep
       // the automatic wake paths from recovering it — see shouldAutoResume).
-      if (ac.state === 'running') idleSuspended = false;
+      if (ac.state === 'running') { if (idleParkedCtx === ac) idleParkedCtx = null; }
       // Report only the OS parking the session live; routine suspend/resume churn
       // isn't worth an app-log line.
       else if (ac.state === 'interrupted') areport('info', 'audio session parked (onstatechange → interrupted)');
