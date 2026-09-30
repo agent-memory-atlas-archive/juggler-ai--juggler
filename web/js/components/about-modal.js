@@ -27,11 +27,14 @@ class AboutModal extends JugglerElement {
     this._version = '';
     /** @type {(() => void)|null} @private */
     this._releasePopupOpen = null;
+    /** @type {Animation[]} @private */
+    this._clubAnimations = [];
   }
 
   connectedCallback() {
     this.render();
     this._setupLogoClick();
+    this.addCleanup(() => this._cancelClubThrows());
     this.onWindow('juggler:open-about', () => { void this.open(); });
   }
 
@@ -97,6 +100,7 @@ class AboutModal extends JugglerElement {
 
   /** @private */
   render() {
+    this._cancelClubThrows();
     if (!this._isOpen) {
       this.innerHTML = '';
       return;
@@ -106,7 +110,7 @@ class AboutModal extends JugglerElement {
             <modal-backdrop class="about-backdrop"></modal-backdrop>
             <modal-panel class="about-container">
                 <header class="about-header">
-                    <div class="about-logo tossing">${LOGO_WITH_NAME_SVG}</div>
+                    <div class="about-logo">${LOGO_WITH_NAME_SVG}</div>
                     <span class="about-version">${this._version}</span>
                 </header>
 
@@ -150,30 +154,94 @@ class AboutModal extends JugglerElement {
       focusWhenShown(/** @type {HTMLElement} */ (closeButton));
     }
 
-    // The clubs are thrown off the panel and caught again shortly after the box
-    // opens; the animation is declared in CSS and starts on its own because
-    // render() builds the logo fresh every time. Clicking the logo throws them
-    // again, which is the whole reason to click a logo.
+    // Opening and clicking the logo both start a short three-club cascade.
     const logo = /** @type {HTMLElement|null} */ (this.querySelector('.about-logo'));
     if (logo) {
+      // Keep the full flight inside the SVG's own painting surface; overflow
+      // alone does not expand the raster bounds of accelerated SVG animations.
+      logo.querySelector('svg')?.setAttribute('viewBox', '-40 -140 176.238 308.263');
+      this._throwClubs(logo);
       logo.addEventListener('click', () => this._throwClubs(logo));
     }
   }
 
+  /** @private */
+  _cancelClubThrows() {
+    for (const animation of this._clubAnimations) animation.cancel();
+    this._clubAnimations = [];
+  }
+
   /**
-   * Re-run the club throw from the top.
-   *
-   * The animations are spent once they have played, so restarting means taking
-   * the class off, forcing a reflow to discard them, and putting it back — the
-   * same trick the spinner uses to recover a frozen cascade. Both writes and the
-   * reflow happen in one task, so no intermediate frame is ever painted.
-   * @param {HTMLElement} logo - The `.about-logo` element carrying the class.
+   * Four alternating throws per club, separated by a hand's catching/scooping
+   * beat. Travel is sampled from x = lerp(start, end), y = lerp(start, end)
+   * - 4h t(1-t): constant horizontal velocity and constant downward acceleration.
+   * Rotation is independent, one full turn per flight, with no spin in the hand.
+   * All lengths are SVG user units, so the whole cascade scales with the logo.
+   * @param {HTMLElement} logo
    * @private
    */
   _throwClubs(logo) {
-    logo.classList.remove('tossing');
-    void logo.offsetWidth;
-    logo.classList.add('tossing');
+    this._cancelClubThrows();
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    const svg = /** @type {SVGSVGElement} */ (logo.querySelector('svg'));
+    const rect = svg.getBoundingClientRect();
+    const scale = rect.height / svg.viewBox.baseVal.height;
+    const inkTop = rect.top - svg.viewBox.baseVal.y * scale;
+    // Reserve half a spinning club plus a small margin at the viewport's top.
+    const height = Math.max(0, Math.min(110, (inkTop - 24) / scale));
+    const flight = 900;
+    const hold = 450;
+    const duration = 4 * flight + 3 * hold;
+
+    logo.querySelectorAll('.logo-club').forEach((node, index) => {
+      const club = /** @type {SVGGElement} */ (node);
+      const box = club.getBBox();
+      const homeX = box.x + box.width / 2;
+      const homeY = box.y + box.height / 2;
+      /** @type {Keyframe[]} */
+      const travel = [];
+      /** @type {Keyframe[]} */
+      const spin = [];
+      let x = 0;
+      let y = 0;
+      let angle = 0;
+      /** @type {(time: number, dx: number, dy: number, rotation: number) => void} */
+      const frame = (time, dx, dy, rotation) => {
+        travel.push({ offset: time / duration, transform: `translate(${dx}px, ${dy}px)` });
+        spin.push({ offset: time / duration, transform: `rotate(${rotation}deg)` });
+      };
+
+      for (let round = 0; round < 4; round++) {
+        const start = round * (flight + hold);
+        const right = (round + index) % 2 === 0;
+        const targetX = round === 3 ? 0 : (right ? 48 : -18) - homeX;
+        const targetY = round === 3 ? 0 : 18 - homeY;
+        const turn = right ? 360 : -360;
+        for (let step = 0; step <= 24; step++) {
+          const t = step / 24;
+          frame(start + t * flight, x + (targetX - x) * t,
+            y + (targetY - y) * t - 4 * height * t * (1 - t), angle + turn * t);
+        }
+        angle += turn;
+        x = targetX;
+        y = targetY;
+        if (round < 3) {
+          // Catch on the outside, scoop down and inward, then launch across.
+          for (let step = 1; step <= 8; step++) {
+            const t = step / 8;
+            frame(start + flight + t * hold, x + (right ? -12 : 12) * t,
+              y + 5 * Math.sin(Math.PI * t), angle);
+          }
+          x += right ? -12 : 12;
+        }
+      }
+      const options = { duration, delay: 600 + index * hold, easing: 'linear', fill: /** @type {FillMode} */ ('both') };
+      this._clubAnimations.push(
+        club.animate(travel, { ...options, id: 'about-club-flight' }),
+        /** @type {SVGGElement} */ (club.querySelector('.logo-spin')).animate(spin, { ...options, id: 'about-club-spin' }),
+      );
+    });
   }
 }
 

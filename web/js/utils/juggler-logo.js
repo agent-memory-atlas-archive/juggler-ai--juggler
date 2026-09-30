@@ -10,8 +10,8 @@
  * (`--logo-with-name-url`, set in index.html), which is the cheaper way to paint
  * it and stays theme-coloured for free. A mask is one flat image though, so
  * nothing inside it can move on its own. Inline SVG is here for the one place
- * that needs the pieces separated: the About box throws the clubs off the panel
- * and catches them again, which means each club has to be its own element.
+ * that needs the pieces separated: the About box juggles the clubs above the
+ * panel and catches them again, so each club has to be its own element.
  *
  * ## Structure
  *
@@ -38,7 +38,7 @@
  * the element centres what you can actually see.
  *
  * The clubs leave this box when they are thrown, so whatever draws this needs
- * `overflow: visible` on the `<svg>` and something further out to clip against.
+ * `overflow: visible` on the `<svg>` and its ancestors up to the viewport.
  */
 export const LOGO_WITH_NAME_SVG = `<svg class="juggler-logo" viewBox="0 0 96.238 28.263" role="img" aria-label="Juggler">`
   + `<g class="logo-club logo-club-1"><g class="logo-spin">`
