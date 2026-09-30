@@ -64,20 +64,60 @@ const (
 	runBarrenNote = "The run ended without producing a reply."
 )
 
-// maxRunResultChars caps what one run hands back to whoever called it.
+// The cap on what one run hands back to whoever called it is a share of the
+// CALLER's context window (runResultCharBudget).
 //
 // A sub-thread's whole economy is that its working context costs the caller
 // nothing and only its answer is charged — and the answer was the one part
 // nobody bounded. resultSpec asks a model for a shape; it does not enforce one,
 // and a child that decides to return its notes returns all of them.
 //
-// Measured against what runs actually return rather than picked round: across
-// the settled runs on this machine the median is ~15k characters and the 80th
-// percentile ~22k, so this sits just above the ordinary range. It is an outlier
-// guard, deliberately not a redefinition of what a report may be — trimming the
-// median report would push callers into asking again for what was cut, which
-// costs more than it saves.
-const maxRunResultChars = 24_000
+// The floor is measured against what runs actually return rather than picked
+// round: across the settled runs on this machine the median is ~15k characters
+// and the 80th percentile ~22k, so it sits just above the ordinary range. It is
+// an outlier guard, deliberately not a redefinition of what a report may be —
+// trimming the median report would push callers into asking again for what was
+// cut, which costs more than it saves.
+//
+// The fraction is what the floor is to a 200k-token window, so a caller of that
+// size is bounded exactly by the floor and a larger one gets proportionally
+// more: an outlier is judged against the room the caller actually has. The
+// ceiling and the chars-per-token figure mirror the browser's per-tool-result
+// budget (Conversation#truncationBudget), and for the same reason — an
+// implausible window figure cannot turn one result into the whole request.
+const (
+	runResultFloorChars     = 24_000
+	runResultCeilingChars   = 200_000
+	runResultWindowFraction = 0.03
+	runResultCharsPerToken  = 4
+)
+
+// runResultCharBudget is the cap for a run whose caller's model has a context
+// window of windowTokens. A non-positive window is unknown and gets the floor.
+func runResultCharBudget(windowTokens int) int {
+	if windowTokens <= 0 {
+		return runResultFloorChars
+	}
+	scaled := int(float64(windowTokens) * runResultCharsPerToken * runResultWindowFraction)
+	return min(runResultCeilingChars, max(runResultFloorChars, scaled))
+}
+
+// runResultBudgetFor is the cap for a run of threadItemID, sized by the window
+// of the model that reads the result: the parent thread's, or the
+// conversation's for a top-level thread. The child's own model is irrelevant —
+// the result is spent in the caller's context, not its own. Takes ycrdtMu, so
+// callers must hold nothing.
+func (w *ConversationWorker) runResultBudgetFor(threadItemID string) int {
+	if w.windowResolver == nil {
+		return runResultFloorChars
+	}
+	mc := w.doc.ResolveEffectiveModelConfig(w.doc.ParentThreadID(threadItemID))
+	if mc == nil {
+		return runResultFloorChars
+	}
+	window, _ := w.windowResolver(*mc)
+	return runResultCharBudget(window)
+}
 
 // runResultTrimmedMarker opens the note left in place of what was cut. Kept as
 // its own constant because a trimmed result has to be RECOGNISABLE as trimmed:
@@ -95,7 +135,12 @@ func runResultTrimNote(kept, total int) string {
 		"if you need more of it.]", runResultTrimmedMarker, kept, total)
 }
 
-// capRunResult trims one run result to maxRunResultChars, note included.
+// capRunResult trims one run result to limit characters, note included, and
+// reports the untrimmed length in characters — 0 when nothing was cut.
+//
+// Everything here counts characters (runes), never bytes: the note tells the
+// model "N of M characters", and a cap in bytes would both overstate those
+// figures and cut accented or non-Latin prose short of the budget it names.
 //
 // The note is sized before the cut and written after it, so the returned string
 // honours the cap rather than overshooting it by however long the note turned
@@ -106,29 +151,33 @@ func runResultTrimNote(kept, total int) string {
 // The START is what survives. A report is written top-down — answer first, then
 // the working — so a head is the useful half; it is also the half a truncated
 // tail would have thrown away in favour of text the reader had already seen.
-func capRunResult(text string) string {
-	if len(text) <= maxRunResultChars {
-		return text
+func capRunResult(text string, limit int) (capped string, fullChars int) {
+	total := utf8.RuneCountInString(text)
+	if total <= limit {
+		return text, 0
 	}
-	total := len(text)
-	kept := trimToBoundary(text, maxRunResultChars-len(runResultTrimNote(maxRunResultChars, total)))
-	return kept + runResultTrimNote(len(kept), total)
+	kept := trimToBoundary(text, limit-utf8.RuneCountInString(runResultTrimNote(limit, total)))
+	return kept + runResultTrimNote(utf8.RuneCountInString(kept), total), total
 }
 
-// trimToBoundary cuts text to at most n bytes, landing on a line break when one
-// stands near the cut and on a rune boundary otherwise. A cut mid-rune would
-// hand the provider invalid UTF-8; a cut mid-line hands the model half a
-// sentence it may try to complete.
+// trimToBoundary cuts text to at most n characters, landing on a line break
+// when one stands near the cut. Cutting at a character never splits a rune, so
+// the provider is never handed invalid UTF-8; a cut mid-line hands the model
+// half a sentence it may try to complete.
 func trimToBoundary(text string, n int) string {
 	if n <= 0 {
 		return ""
 	}
-	if n >= len(text) {
-		return text
+	cut, chars := len(text), 0
+	for off := range text {
+		if chars == n {
+			cut = off
+			break
+		}
+		chars++
 	}
-	cut := n
-	for cut > 0 && !utf8.RuneStart(text[cut]) {
-		cut--
+	if cut == len(text) {
+		return text
 	}
 	// Only a nearby line break is worth taking: a distant one would discard
 	// content to tidy the edge.
@@ -694,8 +743,10 @@ func lastSettlingItem(items []ConversationItem) (ConversationItem, bool) {
 // reason, and one that settled with nothing clean says so. Nothing is
 // fabricated, and no ending yields silence — an unpaired tool_use is
 // wire-invalid, so a parent that called into this thread must always get
-// something back.
-func resolveRunOutcome(items []ConversationItem, cancelled bool) (status, result string) {
+// something back. resultLimit is the cap on the returned text
+// (runResultCharBudget); fullChars is the untrimmed length in characters when
+// the cap cut it, 0 otherwise.
+func resolveRunOutcome(items []ConversationItem, cancelled bool, resultLimit int) (status, result string, fullChars int) {
 	if cancelled {
 		// Capped BEFORE the note is appended, never after: the note is the part of
 		// a cancelled result the caller cannot do without — it is what stops a
@@ -703,20 +754,23 @@ func resolveRunOutcome(items []ConversationItem, cancelled bool) (status, result
 		// finished string would take the note off the end and leave exactly that
 		// misreading behind.
 		if text := selectThreadFallbackResult(items); text != "" {
-			return runStatusCancelled, capRunResult(text) + "\n\n" + runCancelledNote
+			capped, full := capRunResult(text, resultLimit)
+			return runStatusCancelled, capped + "\n\n" + runCancelledNote, full
 		}
-		return runStatusCancelled, runCancelledNote
+		return runStatusCancelled, runCancelledNote, 0
 	}
 	if last, ok := lastSettlingItem(items); ok && last.Type == ItemTypeError {
 		if last.Content != "" {
-			return runStatusError, capRunResult(last.Content)
+			capped, full := capRunResult(last.Content, resultLimit)
+			return runStatusError, capped, full
 		}
-		return runStatusError, "The run stopped on an error."
+		return runStatusError, "The run stopped on an error.", 0
 	}
 	if text := selectThreadFallbackResult(items); text != "" {
-		return runStatusRest, capRunResult(text)
+		capped, full := capRunResult(text, resultLimit)
+		return runStatusRest, capped, full
 	}
-	return runStatusBarren, runBarrenNote
+	return runStatusBarren, runBarrenNote, 0
 }
 
 // stampRunOutcome records an outcome the run itself cannot describe — a panic
@@ -959,6 +1013,7 @@ func (w *ConversationWorker) settleThreadRun(threadItemID string, cancelled bool
 	if threadItemID == "" {
 		return
 	}
+	resultLimit := w.runResultBudgetFor(threadItemID)
 
 	ycrdtMu.Lock()
 	threadYMap := findThreadYMap(w.doc.getItems(), threadItemID)
@@ -977,7 +1032,7 @@ func (w *ConversationWorker) settleThreadRun(threadItemID string, cancelled bool
 	if nested != nil {
 		items = w.doc.getItemsFromArrayLocked(nested)
 	}
-	status, result := resolveRunOutcome(items, cancelled)
+	status, result, fullChars := resolveRunOutcome(items, cancelled, resultLimit)
 	open := openRunMessagesLocked(nested)
 	_, recordsRun := runSettlementLocked(nested)
 
@@ -1017,5 +1072,12 @@ func (w *ConversationWorker) settleThreadRun(threadItemID string, cancelled bool
 	})
 	ycrdtMu.Unlock()
 
-	w.log.Info("[worker] Thread %s run settled: %s (%d chars)", threadItemID, status, len(result))
+	// A trimmed result names the size it was cut from: the length handed on is
+	// only the cap, and the log is where a cut is diagnosed after the fact.
+	if fullChars > 0 {
+		w.log.Info("[worker] Thread %s run settled: %s (%d chars, trimmed from %d to fit a %d-char cap)",
+			threadItemID, status, utf8.RuneCountInString(result), fullChars, resultLimit)
+		return
+	}
+	w.log.Info("[worker] Thread %s run settled: %s (%d chars)", threadItemID, status, utf8.RuneCountInString(result))
 }

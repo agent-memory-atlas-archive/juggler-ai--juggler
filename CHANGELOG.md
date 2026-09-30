@@ -15,6 +15,7 @@ of changes; this project follows semantic versioning.
 - An @-mentioned file is frozen as sent, so editing it no longer re-reads the conversation
 - Shift+Page Up and Shift+Page Down move the current conversation up or down the list
 - A failed rename to a name containing "409" or "400" now reports the real error
+- Long sub-thread answers are trimmed according to the caller's context window, not a fixed 24k characters
 
 ## [0.7.2] - 2026-09-28
 

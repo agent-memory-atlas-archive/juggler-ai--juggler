@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // TestResolveRunOutcome pins the whole outcome table. Every ending resolves to
@@ -79,7 +80,7 @@ func TestResolveRunOutcome(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			status, result := resolveRunOutcome(tc.items, tc.cancelled)
+			status, result, _ := resolveRunOutcome(tc.items, tc.cancelled, runResultFloorChars)
 			if status != tc.wantStatus {
 				t.Errorf("status = %q, want %q", status, tc.wantStatus)
 			}
@@ -287,7 +288,7 @@ func TestRunResultIsCapped(t *testing.T) {
 	ordinary := strings.Repeat("a finding about the code\n", 600)
 
 	t.Run("an ordinary result is returned untouched", func(t *testing.T) {
-		status, result := resolveRunOutcome(rest(ordinary), false)
+		status, result, fullChars := resolveRunOutcome(rest(ordinary), false, runResultFloorChars)
 		if status != runStatusRest {
 			t.Fatalf("status = %q, want %q", status, runStatusRest)
 		}
@@ -295,16 +296,22 @@ func TestRunResultIsCapped(t *testing.T) {
 			t.Errorf("a result inside the cap must be returned byte-identical; got %d chars, want %d",
 				len(result), len(ordinary))
 		}
+		if fullChars != 0 {
+			t.Errorf("fullChars = %d for an untrimmed result, want 0 — the log would report a cut that never happened", fullChars)
+		}
 	})
 
 	t.Run("a transcript dump is trimmed and says so", func(t *testing.T) {
-		status, result := resolveRunOutcome(rest(huge), false)
+		status, result, fullChars := resolveRunOutcome(rest(huge), false, runResultFloorChars)
 		if status != runStatusRest {
 			t.Fatalf("status = %q, want %q", status, runStatusRest)
 		}
-		if len(result) > maxRunResultChars {
+		if n := utf8.RuneCountInString(result); n > runResultFloorChars {
 			t.Errorf("capped result = %d chars, want at most %d — the note has to fit inside the budget too",
-				len(result), maxRunResultChars)
+				n, runResultFloorChars)
+		}
+		if fullChars != len(huge) {
+			t.Errorf("fullChars = %d, want %d — the settle log names the size the result was cut from", fullChars, len(huge))
 		}
 		if !strings.HasPrefix(result, "a finding about the code\n") {
 			t.Error("the trim must keep the START of the report: a summary is written top-down")
@@ -319,8 +326,28 @@ func TestRunResultIsCapped(t *testing.T) {
 		}
 	})
 
+	// The note speaks in characters, and so must the cap and its counts: a report
+	// in accented prose is longer in bytes than in characters, and a count in
+	// bytes both overstates what the caller was given and trims it early.
+	t.Run("a trimmed result counts characters, not bytes", func(t *testing.T) {
+		accented := strings.Repeat("é résumé of the findings\n", 2000) // 50k characters, 56k bytes
+		total := utf8.RuneCountInString(accented)
+		_, result, _ := resolveRunOutcome(rest(accented), false, runResultFloorChars)
+		if n := utf8.RuneCountInString(result); n > runResultFloorChars {
+			t.Errorf("capped result = %d characters, want at most %d", n, runResultFloorChars)
+		}
+		cut := strings.Index(result, "\n\n… "+runResultTrimmedMarker)
+		if cut < 0 {
+			t.Fatalf("no trim note in the result; tail %q", result[max(0, len(result)-200):])
+		}
+		want := fmt.Sprintf("%s %d of %d characters shown", runResultTrimmedMarker, utf8.RuneCountInString(result[:cut]), total)
+		if !strings.Contains(result, want) {
+			t.Errorf("the note must count characters: want %q in tail %q", want, result[max(0, len(result)-200):])
+		}
+	})
+
 	t.Run("a cancelled run keeps its note after the trim", func(t *testing.T) {
-		status, result := resolveRunOutcome(rest(huge), true)
+		status, result, _ := resolveRunOutcome(rest(huge), true, runResultFloorChars)
 		if status != runStatusCancelled {
 			t.Fatalf("status = %q, want %q", status, runStatusCancelled)
 		}
@@ -330,6 +357,75 @@ func TestRunResultIsCapped(t *testing.T) {
 		}
 		if !strings.Contains(result, runResultTrimmedMarker) {
 			t.Error("a cancelled run's partial output is capped like any other")
+		}
+	})
+}
+
+// TestRunResultCapFollowsTheCallersWindow pins whose window sizes the cap: the
+// caller's, because the result is spent in the caller's context. The child here
+// runs on a small model and its caller on a large one, so a cap read off the
+// child — or not scaled at all — trims a report the caller has ample room for.
+// With no window known, the floor still holds.
+func TestRunResultCapFollowsTheCallersWindow(t *testing.T) {
+	huge := strings.Repeat("a finding about the code\n", 2000) // ~50k
+
+	settle := func(t *testing.T, callerWindow int) string {
+		t.Helper()
+		w := NewConversationWorker("test-conv", "user:test")
+		t.Cleanup(w.doc.Destroy)
+		w.doc.SetMetadata("defaultModelConfig", map[string]any{"provider": "prov", "model": "caller"})
+		w.windowResolver = func(mc ModelConfig) (int, int) {
+			switch mc.Model {
+			case "caller":
+				return callerWindow, 0
+			case "child":
+				return 8192, 0
+			}
+			return 0, 0
+		}
+
+		threadID := insertThreadWithOpts(w, threadOpts{goal: "Research", userMessage: "look into it"})
+		w.doc.SetThreadField(threadID, "modelConfig", map[string]any{"provider": "prov", "model": "child"})
+		w.turn.thread.itemID = threadID
+		w.turn.thread.itemsArray = w.doc.GetThreadItemsArray(threadID)
+		w.currentRun().appendTargetMessage(ConversationItem{
+			Type: ItemTypeAssistant, ItemID: generateItemID(), Content: huge,
+		})
+		w.settleThreadRun(threadID, false)
+
+		ycrdtMu.Lock()
+		defer ycrdtMu.Unlock()
+		_, result := latestRunOutcomeLocked(findThreadYMap(w.doc.getItems(), threadID))
+		return result
+	}
+
+	t.Run("a large caller window takes the whole report", func(t *testing.T) {
+		if result := settle(t, 1_000_000); result != huge {
+			t.Errorf("a %d-char report against a 1M-token caller window came back as %d chars — "+
+				"the cap must scale with the window of the context that pays for it", len(huge), len(result))
+		}
+	})
+
+	t.Run("an unknown caller window keeps the floor", func(t *testing.T) {
+		result := settle(t, 0)
+		if n := utf8.RuneCountInString(result); n > 24_000 || !strings.Contains(result, runResultTrimmedMarker) {
+			t.Errorf("with no window known the result must be trimmed to the 24k floor; got %d chars", n)
+		}
+	})
+
+	t.Run("the budget curve", func(t *testing.T) {
+		for _, tc := range []struct {
+			window, want int
+		}{
+			{0, runResultFloorChars},            // unknown
+			{32_000, runResultFloorChars},       // small window: never below the floor
+			{200_000, runResultFloorChars},      // the window the floor was measured against
+			{1_000_000, 120_000},                // proportional above it
+			{10_000_000, runResultCeilingChars}, // an implausible figure hits the ceiling
+		} {
+			if got := runResultCharBudget(tc.window); got != tc.want {
+				t.Errorf("runResultCharBudget(%d) = %d, want %d", tc.window, got, tc.want)
+			}
 		}
 	})
 }
