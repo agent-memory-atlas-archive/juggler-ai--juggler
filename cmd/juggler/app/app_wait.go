@@ -344,11 +344,12 @@ func lanOnLaunch(publicSet, public, guiLaunch, savedLAN bool) bool {
 }
 
 // isGUILaunch reports whether this is a desktop-app/icon launch (no controlling
-// terminal) that isn't the test harness. Only such a launch applies the saved
-// connectivity preferences; a terminal launch uses CLI flags and test mode must
-// not read the developer's real settings.
+// terminal) that isn't the test harness or a machine-server session child. Only
+// such a launch applies the saved connectivity preferences; a terminal launch
+// uses CLI flags, test mode must not read the developer's real settings, and a
+// session child is reached only through its supervisor, which owns exposure.
 func (a *App) isGUILaunch() bool {
-	return !a.flags.hasTerminal && !a.flags.testMode
+	return !a.flags.hasTerminal && !a.flags.testMode && !a.flags.sessionChild
 }
 
 // savedWANModeToStart returns the tunnel-mode spec to auto-start from the saved

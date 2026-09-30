@@ -234,6 +234,7 @@ type Server struct {
 	workerManager  *worker.Manager     // Go worker manager
 	extraRoutes    func(r *mux.Router) // Optional Config.ExtraRoutes hook, invoked at the end of setupRoutes
 	exitWithParent bool                // Config.ExitWithParent: server self-terminates when its parent (the viewer) dies; reported on /api/health/instance
+	loopbackOnly   bool                // Config.LoopbackOnly: bind 127.0.0.1 instead of every interface
 
 	// conversationCache holds the per-conversation Provider.Conversation
 	// handles: one handle per (convID, providerName, model), opened lazily
@@ -322,6 +323,12 @@ type Config struct {
 	// self-terminates once that parent dies. Surfaced on /api/health/instance so
 	// a discovering viewer can tell an about-to-exit orphan from a durable server.
 	ExitWithParent bool
+
+	// LoopbackOnly binds the listener to 127.0.0.1 rather than every
+	// interface. A machine-server session child sets it: it is reached only
+	// through its supervisor's proxy, so nothing off this machine should be
+	// able to connect to it at all — not merely be refused by the LAN gate.
+	LoopbackOnly bool
 }
 
 // New creates a new server
@@ -434,6 +441,7 @@ func New(cfg Config) (*Server, error) {
 	s.bootProjectPath = cfg.ProjectPath
 	s.extraRoutes = cfg.ExtraRoutes
 	s.exitWithParent = cfg.ExitWithParent
+	s.loopbackOnly = cfg.LoopbackOnly
 	s.staticVersion = staticVersion
 	s.apiToken = mintAPIToken()
 	s.bootID = generateClientID()

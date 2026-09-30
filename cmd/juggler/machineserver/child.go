@@ -27,8 +27,9 @@ const childStartTimeout = 20 * time.Second
 const childStopGrace = 3 * time.Second
 
 // child is one live session-child process: today's per-project server, spawned
-// with --session-child, bound to a loopback ephemeral port, contained via
-// childcontain for tree-kill.
+// with --session-child and contained via childcontain for tree-kill. That flag
+// binds it to a loopback ephemeral port and stops it applying the saved
+// LAN/WAN-on-launch preferences, so it is reachable only through the proxy.
 type child struct {
 	cmd       *exec.Cmd
 	contained *childcontain.Child

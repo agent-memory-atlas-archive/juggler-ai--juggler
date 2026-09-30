@@ -268,6 +268,7 @@ func (a *App) initServer() error {
 		BootLock:       a.lock,
 		ExtraRoutes:    a.config.ExtraRoutes,
 		ExitWithParent: a.flags.exitWithParent,
+		LoopbackOnly:   a.flags.sessionChild,
 	})
 	if err != nil {
 		jlog.Error("Failed to create server: %v", err)

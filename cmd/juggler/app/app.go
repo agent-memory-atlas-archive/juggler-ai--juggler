@@ -31,7 +31,7 @@ type appFlags struct {
 	public         bool                // --public: open LAN access on startup
 	publicSet      bool                // true if --public was passed (an explicit value overrides the direct-terminal LAN default)
 	startupWAN     []server.TunnelMode // WAN tunnel modes whose startup flag was passed, in registration order (flags are registered per tunnel-mode spec)
-	sessionChild   bool                // --session-child: supervised child of a machine server (`juggler serve`); refuses lock contention instead of prompting
+	sessionChild   bool                // --session-child: supervised child of a machine server (`juggler serve`); binds loopback only, ignores saved LAN/WAN-on-launch, refuses lock contention instead of prompting
 	exitWithParent bool                // --exit-with-parent: self-terminate if the parent process dies (set by juggler-app for servers it owns)
 	logFile        string              // --log-file: explicit log file path, overriding the centrally-derived one (set by juggler-app per spawned server)
 	logFileSet     bool                // true if --log-file was passed

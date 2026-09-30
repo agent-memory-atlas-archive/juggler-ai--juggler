@@ -312,10 +312,15 @@ func (s *Server) findAvailablePort() (net.Listener, string, error) {
 		return nil, "", fmt.Errorf("invalid port: %w", err)
 	}
 
-	// Always bind to all interfaces so LAN gate middleware can control access.
-	// The display address (returned as the second value) keeps the configured
-	// hostname so the banner shows "localhost" rather than "0.0.0.0".
-	bindAddr := net.JoinHostPort("", portStr)
+	// Bind to all interfaces so LAN gate middleware can control access, unless
+	// this server is LoopbackOnly, when nothing off the machine may connect at
+	// all. The display address (returned as the second value) keeps the
+	// configured hostname so the banner shows "localhost" rather than "0.0.0.0".
+	bindHost := ""
+	if s.loopbackOnly {
+		bindHost = "127.0.0.1"
+	}
+	bindAddr := net.JoinHostPort(bindHost, portStr)
 	listener, err := listenForViewers(bindAddr)
 	if err == nil {
 		_, actualPort, _ := net.SplitHostPort(listener.Addr().String())
@@ -328,7 +333,7 @@ func (s *Server) findAvailablePort() (net.Listener, string, error) {
 	maxAttempts := 10
 	for range maxAttempts {
 		port++
-		bindAddr := net.JoinHostPort("", strconv.Itoa(port))
+		bindAddr := net.JoinHostPort(bindHost, strconv.Itoa(port))
 		displayAddr := net.JoinHostPort(host, strconv.Itoa(port))
 		listener, err := listenForViewers(bindAddr)
 		if err == nil {

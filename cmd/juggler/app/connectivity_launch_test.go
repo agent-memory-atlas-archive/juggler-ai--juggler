@@ -63,21 +63,25 @@ func TestSavedWANModeToStart(t *testing.T) {
 }
 
 // TestIsGUILaunch pins that only a no-terminal, non-test launch counts as a GUI
-// launch — the only launch that applies the saved connectivity preferences.
+// launch — the only launch that applies the saved connectivity preferences. A
+// machine-server session child has no terminal either, but it is not a desktop
+// launch: applying "Start LAN/WAN on launch" there would expose a project the
+// user only ever meant to reach through the machine server.
 func TestIsGUILaunch(t *testing.T) {
 	cases := []struct {
-		hasTerminal, testMode, want bool
+		hasTerminal, testMode, sessionChild, want bool
 	}{
-		{false, false, true}, // icon/desktop-app launch
-		{true, false, false}, // terminal launch
-		{false, true, false}, // test harness
-		{true, true, false},
+		{false, false, false, true}, // icon/desktop-app launch
+		{true, false, false, false}, // terminal launch
+		{false, true, false, false}, // test harness
+		{true, true, false, false},
+		{false, false, true, false}, // machine-server session child
 	}
 	for _, c := range cases {
-		a := &App{flags: appFlags{hasTerminal: c.hasTerminal, testMode: c.testMode}}
+		a := &App{flags: appFlags{hasTerminal: c.hasTerminal, testMode: c.testMode, sessionChild: c.sessionChild}}
 		if got := a.isGUILaunch(); got != c.want {
-			t.Errorf("isGUILaunch(hasTerminal=%v,testMode=%v) = %v, want %v",
-				c.hasTerminal, c.testMode, got, c.want)
+			t.Errorf("isGUILaunch(hasTerminal=%v,testMode=%v,sessionChild=%v) = %v, want %v",
+				c.hasTerminal, c.testMode, c.sessionChild, got, c.want)
 		}
 	}
 }
