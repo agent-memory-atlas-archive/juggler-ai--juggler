@@ -75,6 +75,12 @@ func OpenAIThinkingSpec(modelID string) ThinkingSpec {
 		return EffortSpec("low", "low", "medium", "high", "xhigh", "max")
 	}
 
+	// GPT-6.1 Sol: Astra's range, so no "none" despite the GPT-6 Sol name —
+	// OpenAI's guide says to send "low" in its place. Defaults to "medium".
+	if strings.HasPrefix(m, "gpt-6.1-sol") {
+		return EffortSpec("medium", "low", "medium", "high", "xhigh", "max")
+	}
+
 	// GPT-6 Sol and Luna: Astra's range plus the explicit "none" it refuses.
 	// The ChatGPT-plan catalog advertises a further "ultra" tier for Sol, which
 	// is deliberately not offered here: this spec answers for the Platform API,

@@ -48,6 +48,13 @@ func TestOpenAIThinkingSpec(t *testing.T) {
 			wantDefault: "low",
 		},
 		{
+			// GPT-6.1 Sol: Astra's levels, not GPT-6 Sol's — it refuses "none" —
+			// but it defaults to "medium" where Astra defaults to "low".
+			model:       "gpt-6.1-sol",
+			wantLevels:  []string{"low", "medium", "high", "xhigh", "max"},
+			wantDefault: "medium",
+		},
+		{
 			// GPT-6 Sol and Luna: Astra's two tiers above "high", plus the
 			// explicit "none" Astra does not take.
 			model:       "gpt-6-sol",

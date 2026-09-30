@@ -56,6 +56,7 @@ type knownModel struct {
 //     it stays selectable long after the backend stops accepting it.
 var knownModels = []knownModel{
 	{Slug: "gpt-6-astra", ContextWindow: catalogContextWindow, MinClientVersion: "0.153.0"},
+	{Slug: "gpt-6.1-sol", ContextWindow: catalogContextWindow, MinClientVersion: "0.153.0"},
 	{Slug: "gpt-6-sol", ContextWindow: catalogContextWindow, MinClientVersion: "0.155.0"},
 	{Slug: "gpt-6-luna", ContextWindow: catalogContextWindow, MinClientVersion: "0.155.0"},
 	{Slug: "gpt-5.6-sol", ContextWindow: catalogContextWindow, MinClientVersion: "0.144.0"},

@@ -143,8 +143,8 @@ func TestListModelsParsesCodexCatalog(t *testing.T) {
 	}
 	// Two visible catalog models, then the static entries the catalog did not
 	// return. gpt-5.5 is in both, and must not be listed twice.
-	if len(models) != 8 {
-		t.Fatalf("got %d models, want 8", len(models))
+	if len(models) != 9 {
+		t.Fatalf("got %d models, want 9", len(models))
 	}
 	if models[0].ID != "gpt-5.5" || models[0].ContextWindow != 272000 || models[0].MaxOutputTokens != 32768 || !models[0].FromAPI {
 		t.Fatalf("unexpected first model: %+v", models[0])
@@ -218,7 +218,7 @@ func TestListModelsParsesCodexCatalog(t *testing.T) {
 	for _, model := range models[2:] {
 		fallbackIDs[model.ID] = !model.FromAPI
 	}
-	for _, id := range []string{"gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"} {
+	for _, id := range []string{"gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"} {
 		if !fallbackIDs[id] {
 			t.Fatalf("missing static fallback %s in %+v", id, models)
 		}
@@ -389,7 +389,7 @@ func TestKnownModelsDriveEverything(t *testing.T) {
 // minimal_client_version is above codexClientVersion is withheld from the live
 // response entirely, with nothing in the reply to say a row was dropped.
 func TestPlanCatalogMatchesTheLiveList(t *testing.T) {
-	for _, slug := range []string{"gpt-6-sol", "gpt-6-luna"} {
+	for _, slug := range []string{"gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"} {
 		if _, ok := ModelContextWindows[slug]; !ok {
 			t.Errorf("%s is not listed, so the ChatGPT plan's current model is unselectable", slug)
 		}
