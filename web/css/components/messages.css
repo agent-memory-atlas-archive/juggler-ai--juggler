@@ -575,6 +575,18 @@ thinking-message article.thinking {
     overflow-wrap: break-word;
 }
 
+/* A short thinking block is shown as its text, in the shared .llm-description
+   style. Verbatim reasoning keeps its line breaks, in the description's sans
+   rather than the panel's mono so the row reads as prose; a Markdown summary's
+   bold titles carry at medium weight, as they do in the properties panel. */
+thinking-message article.thinking-inline .plain {
+    white-space: pre-wrap;
+}
+
+thinking-message article.thinking-inline .markdown :is(strong, b) {
+    font-weight: var(--font-weight-medium);
+}
+
 /* Unified icon-based message components */
 context-item-message article.ci,
 error-message article.error {
