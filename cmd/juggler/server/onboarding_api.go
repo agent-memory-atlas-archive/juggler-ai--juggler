@@ -55,13 +55,15 @@ func realOnboardingProbes() onboardingProbes {
 
 // codexLoginPresent reports whether the Codex login on disk resolves to a usable
 // bearer. It asks the credentials store rather than stat-ing the file, so an
-// expired token counts as signed out exactly as it does everywhere else.
+// expired token counts as signed out exactly as it does everywhere else. It
+// ignores the provider's on/off switch: a user who switched Codex off is still
+// signed in, and the setup flow sends them to settings rather than to a login.
 func codexLoginPresent() bool {
 	credStore, err := core.NewCredentialsStore()
 	if err != nil {
 		return false
 	}
-	_, err = credStore.GetProviderCredential(codexProviderName)
+	_, err = credStore.ResolveOAuthLogin(codexProviderName)
 	return err == nil
 }
 

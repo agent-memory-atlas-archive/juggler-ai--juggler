@@ -470,6 +470,18 @@ func (s *CredentialsStore) SetProviderEnabled(providerName string, enabled bool)
 	})
 }
 
+// IsProviderSwitchedOff reports that the user explicitly switched a provider
+// off. It is the default-on reading of the same flag IsProviderEnabled reads
+// default-off: an OAuth provider (a login borrowed from another app) is on
+// whenever that login is present, so only a recorded "false" disables it.
+func (s *CredentialsStore) IsProviderSwitchedOff(providerName string) bool {
+	creds, err := s.Load()
+	if err != nil {
+		return false
+	}
+	return creds["enabled_"+providerName] == "false"
+}
+
 // HasProviderFlag returns whether a provider has an enabled/disabled flag set.
 // This distinguishes "never configured" from "user explicitly disabled".
 func (s *CredentialsStore) HasProviderFlag(providerName string) bool {
@@ -526,11 +538,10 @@ func (s *CredentialsStore) GetProviderCredential(providerName string) (ProviderC
 		return ProviderCredential{AuthHint: "Enabled"}, nil
 
 	case provider.AuthTypeOAuthBearer:
-		resolver, ok := lookupOAuthBearerSource(providerInfo.AuthSource)
-		if !ok {
-			return ProviderCredential{}, fmt.Errorf("unsupported OAuth bearer source for provider %s: %s", providerName, providerInfo.AuthSource)
+		if s.IsProviderSwitchedOff(providerName) {
+			return ProviderCredential{}, fmt.Errorf("provider %s is switched off", providerName)
 		}
-		return resolver()
+		return resolveOAuthLogin(providerInfo)
 
 	case provider.AuthTypeAPIKey:
 		apiKey, err := s.GetAPIKey(providerName)
@@ -559,6 +570,30 @@ func (s *CredentialsStore) GetProviderCredential(providerName string) (ProviderC
 	default:
 		return ProviderCredential{}, fmt.Errorf("unsupported auth type for provider %s: %s", providerName, providerInfo.EffectiveAuthType())
 	}
+}
+
+// ResolveOAuthLogin resolves an OAuth provider's external login whether or not
+// the user has switched the provider off. It answers "is there a login", not
+// "may this provider serve" — onboarding needs the former, to tell a provider
+// that is switched off from one that was never signed in. Everything that
+// serves a turn goes through GetProviderCredential, which honours the switch.
+func (s *CredentialsStore) ResolveOAuthLogin(providerName string) (ProviderCredential, error) {
+	info, ok := provider.GetProviderInfo(providerName)
+	if !ok {
+		return ProviderCredential{}, fmt.Errorf("unknown provider: %s", providerName)
+	}
+	if info.EffectiveAuthType() != provider.AuthTypeOAuthBearer {
+		return ProviderCredential{}, fmt.Errorf("provider %s does not use an OAuth login", providerName)
+	}
+	return resolveOAuthLogin(&info)
+}
+
+func resolveOAuthLogin(providerInfo *provider.ProviderInfo) (ProviderCredential, error) {
+	resolver, ok := lookupOAuthBearerSource(providerInfo.AuthSource)
+	if !ok {
+		return ProviderCredential{}, fmt.Errorf("unsupported OAuth bearer source for provider %s: %s", providerInfo.Name, providerInfo.AuthSource)
+	}
+	return resolver()
 }
 
 // GetProviderCredentialString returns the legacy string credential for a provider.

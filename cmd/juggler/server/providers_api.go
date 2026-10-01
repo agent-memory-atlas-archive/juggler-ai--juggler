@@ -101,6 +101,11 @@ type ProviderStatus struct {
 	// a CLI's sign-in lapsed, telling the user they had disabled something they
 	// had not.
 	Credentialed bool `json:"credentialed"`
+	// Disabled reports that the user switched an OAuth provider off. Those are
+	// on by default, so for them a false Credentialed alone can't separate "the
+	// login lapsed" (switch still on, models listed greyed out) from "the user
+	// declined it" (switch off, no models).
+	Disabled bool `json:"disabled,omitempty"`
 	// SpawnsLocalProcess mirrors ProviderInfo's: this provider is run as a
 	// subprocess in the conversation's directory, so a workspace of a kind this
 	// machine only reaches over a wire cannot host it. The browser pairs it with
@@ -209,6 +214,8 @@ func (s *Server) computeProviders(ctx context.Context) []ProviderStatus {
 				}
 			}
 
+			disabled := authType == provider.AuthTypeOAuthBearer && credStore.IsProviderSwitchedOff(pInfo.Name)
+
 			cred, err := credStore.GetProviderCredential(pInfo.Name)
 			credentialed := err == nil
 			available := credentialed
@@ -263,11 +270,15 @@ func (s *Server) computeProviders(ctx context.Context) []ProviderStatus {
 					}
 					modelsWithContext = modelContextFallbacks(pInfo, settings)
 				}
-			} else if authType == provider.AuthTypeOAuthBearer {
+			} else if authType == provider.AuthTypeOAuthBearer && !disabled {
 				// OAuth providers can be discoverable in the UI even while their
 				// external CLI login has expired. Publish built-in model fallbacks so
-				// the menu can show disabled choices with the authHint.
+				// the menu can show disabled choices with the authHint. One the user
+				// switched off publishes nothing: it is gone, not waiting on a login.
 				modelsWithContext = modelContextFallbacks(pInfo, settings)
+			}
+			if disabled {
+				authHint = ""
 			}
 
 			providers[idx] = ProviderStatus{
@@ -284,6 +295,7 @@ func (s *Server) computeProviders(ctx context.Context) []ProviderStatus {
 				KeySource:          cred.KeySource,
 				Available:          available,
 				Credentialed:       credentialed,
+				Disabled:           disabled,
 				SpawnsLocalProcess: pInfo.SpawnsLocalProcess,
 				ModelsWithContext:  modelsWithContext,
 			}

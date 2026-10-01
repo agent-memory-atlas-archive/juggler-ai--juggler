@@ -412,7 +412,9 @@ func (c *ConfigAPI) HandleUpdatePluginConfig(w http.ResponseWriter, r *http.Requ
 	})
 }
 
-// HandleSetProviderEnabled enables or disables a keyless provider
+// HandleSetProviderEnabled switches a keyless or OAuth provider on or off.
+// Keyless providers are off until enabled; OAuth providers are on until
+// switched off (core.CredentialsStore.IsProviderSwitchedOff).
 // POST /api/config/provider-enabled
 // Body: { "provider": "claudecode", "enabled": true }
 func (c *ConfigAPI) HandleSetProviderEnabled(w http.ResponseWriter, r *http.Request) {
@@ -429,9 +431,9 @@ func (c *ConfigAPI) HandleSetProviderEnabled(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Verify provider exists and is a toggle-style keyless provider.
+	// Verify provider exists and has a switch: keyless or OAuth.
 	info, found := provider.GetProviderInfo(req.Provider)
-	if found && info.EffectiveAuthType() != provider.AuthTypeToggle {
+	if found && info.EffectiveAuthType() != provider.AuthTypeToggle && info.EffectiveAuthType() != provider.AuthTypeOAuthBearer {
 		WriteError(w, r, http.StatusBadRequest, "This provider cannot be enabled with a toggle")
 		return
 	}

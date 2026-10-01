@@ -16,6 +16,9 @@
  * (`available`), or an expired sign-in would look like something they had turned
  * off themselves. And a provider that is on but reporting a hint must show that
  * hint, with the same re-check the OAuth rows get.
+ *
+ * OAuth rows (a subscription login read from another app) carry the same
+ * switch, on by default: there "off" is `disabled`, and signed-out is not off.
  * @module unit-tests/keyless-signin-status-test
  */
 
@@ -182,6 +185,87 @@ export async function runTests(_ctx) {
       const toggle = el.querySelector('#fake-cli-toggle');
       assert(toggle.checked === true,
         'with no credentialed field the switch falls back to availability');
+    });
+  });
+
+  /**
+   * An OAuth provider row (the Codex plan, Copilot): on by default whenever its
+   * external login is present, with a switch the user can turn off.
+   * @param {{available: boolean, disabled?: boolean, authHint?: string}} state - Row state
+   * @returns {any} A provider entry shaped like /api/providers serves one
+   */
+  const oauthProvider = (state) => ({
+    name: 'fake-plan',
+    displayName: 'Fake Plan',
+    description: 'Stands in for a subscription login.',
+    authType: 'oauth_bearer',
+    authSource: 'fake_src',
+    configKeyName: '',
+    envVarName: '',
+    apiKeyURL: '',
+    keySource: '',
+    available: state.available,
+    credentialed: state.available,
+    disabled: state.disabled,
+    authHint: state.authHint || '',
+    modelsWithContext: state.disabled
+      ? []
+      : [{ id: 'fake-plan-model', contextWindow: 1000, maxOutputTokens: 100, fromAPI: false }],
+  });
+
+  await run('an OAuth provider has a switch that reads on by default', async () => {
+    await withPanel(oauthProvider({ available: true, authHint: 'Signed in' }), async (el) => {
+      const toggle = el.querySelector('#fake-plan-toggle');
+      assert(!!toggle, 'the OAuth row must render a switch');
+      assert(toggle.checked === true, 'a provider nobody switched off reads as on');
+      assert(!!el.querySelector('#fake-plan-oauth-status'), 'an on OAuth row keeps its sign-in status');
+    });
+  });
+
+  await run('a signed-out OAuth provider still reads as on', async () => {
+    // Signed out is not switched off: drawing the switch from `available` would
+    // tell the user they had turned off a provider whose login merely lapsed.
+    await withPanel(oauthProvider({ available: false, authHint: 'Sign in with codex login' }), async (el) => {
+      const toggle = el.querySelector('#fake-plan-toggle');
+      assert(toggle.checked === true, 'a signed-out provider must still read as on');
+      const status = el.querySelector('#fake-plan-oauth-status');
+      assert(!!status && (status.textContent || '').includes('codex login'),
+        'the signed-out row must still say how to sign in');
+    });
+  });
+
+  await run('a switched-off OAuth provider reads off and stays silent', async () => {
+    await withPanel(oauthProvider({ available: false, disabled: true }), async (el) => {
+      const toggle = el.querySelector('#fake-plan-toggle');
+      assert(toggle.checked === false, 'a provider the user switched off reads as off');
+      assert(!el.querySelector('#fake-plan-oauth-status'),
+        'an off provider has no sign-in to report on');
+    });
+  });
+
+  await run('turning the OAuth switch off posts the choice', async () => {
+    await withPanel(oauthProvider({ available: true }), async (el) => {
+      /** @type {any[]} */
+      const posted = [];
+      const inner = window.fetch;
+      window.fetch = /** @type {any} */ (async (/** @type {any} */ url, /** @type {any} */ init) => {
+        if (String(url) === '/api/config/provider-enabled') {
+          posted.push(JSON.parse(init.body));
+          return { ok: true, status: 200, json: async () => ({ success: true }) };
+        }
+        return inner(url, init);
+      });
+      try {
+        const toggle = el.querySelector('#fake-plan-toggle');
+        toggle.checked = false;
+        // The handler reaches fetch synchronously, so the post is recorded by the
+        // time dispatchEvent returns — no wait needed.
+        toggle.dispatchEvent(new Event('change'));
+      } finally {
+        window.fetch = inner;
+      }
+      assert(posted.length === 1 && posted[0].provider === 'fake-plan' && posted[0].enabled === false,
+        `the switch must post {provider, enabled:false}, got ${JSON.stringify(posted)}`);
     });
   });
 

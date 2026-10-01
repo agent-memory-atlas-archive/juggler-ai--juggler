@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"juggler/cmd/juggler/providers/provider"
 )
 
 // newTestConfigAPI builds a ConfigAPI with an isolated credentials store
@@ -24,6 +26,39 @@ func newTestConfigAPI(t *testing.T) *ConfigAPI {
 		t.Fatalf("NewConfigAPI: %v", err)
 	}
 	return api
+}
+
+// TestSetProviderEnabledAcceptsOAuthProviders: an OAuth provider gets the same
+// switch a keyless one has; an API-key provider still has nothing to switch.
+func TestSetProviderEnabledAcceptsOAuthProviders(t *testing.T) {
+	api := newTestConfigAPI(t)
+	provider.RegisterProvider(provider.ProviderInfo{
+		Name:       "handler_oauth",
+		AuthType:   provider.AuthTypeOAuthBearer,
+		AuthSource: "handler_oauth_src",
+	}, nil)
+	provider.RegisterProvider(provider.ProviderInfo{
+		Name:          "handler_apikey",
+		AuthType:      provider.AuthTypeAPIKey,
+		ConfigKeyName: "handler_apikey_key",
+	}, nil)
+
+	post := func(name string, enabled bool) int {
+		raw, _ := json.Marshal(map[string]any{"provider": name, "enabled": enabled})
+		rec := httptest.NewRecorder()
+		api.HandleSetProviderEnabled(rec, httptest.NewRequest(http.MethodPost, "/api/config/provider-enabled", bytes.NewReader(raw)))
+		return rec.Code
+	}
+
+	if code := post("handler_oauth", false); code != http.StatusOK {
+		t.Fatalf("switching an OAuth provider off = %d, want 200", code)
+	}
+	if !api.credStore.IsProviderSwitchedOff("handler_oauth") {
+		t.Fatal("the switch must be persisted")
+	}
+	if code := post("handler_apikey", false); code != http.StatusBadRequest {
+		t.Fatalf("switching an API-key provider = %d, want 400", code)
+	}
 }
 
 // getAutoCompactDisabled drives HandleGetConfig and returns the

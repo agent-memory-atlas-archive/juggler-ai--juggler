@@ -155,6 +155,44 @@ func TestLoadCodexCLIAccessTokenRejectsInvalidAuth(t *testing.T) {
 	}
 }
 
+// TestOAuthProviderSwitchLeavesTheLoginReadable: switching an OAuth provider off
+// refuses its credential to everything that would serve a turn, but the login
+// itself is still there — onboarding asks about it to tell "switched off" from
+// "never signed in", and must keep getting the true answer.
+func TestOAuthProviderSwitchLeavesTheLoginReadable(t *testing.T) {
+	userpathstest.Isolate(t)
+	const name = "core_oauthswitch"
+	const source = "core_oauthswitch_src"
+	RegisterOAuthBearerSource(source, func() (ProviderCredential, error) {
+		return ProviderCredential{BearerToken: "tok"}, nil
+	})
+	provider.RegisterProvider(provider.ProviderInfo{
+		Name:       name,
+		AuthType:   provider.AuthTypeOAuthBearer,
+		AuthSource: source,
+	}, nil)
+	store, err := NewCredentialsStore()
+	if err != nil {
+		t.Fatalf("new credentials store: %v", err)
+	}
+
+	if _, err := store.GetProviderCredential(name); err != nil {
+		t.Fatalf("an OAuth provider must be on by default: %v", err)
+	}
+	if err := store.SetProviderEnabled(name, false); err != nil {
+		t.Fatalf("switch off: %v", err)
+	}
+	if _, err := store.GetProviderCredential(name); err == nil {
+		t.Fatal("a switched-off OAuth provider must not hand out its credential")
+	}
+	if !store.IsProviderSwitchedOff(name) {
+		t.Fatal("IsProviderSwitchedOff must report the user's choice")
+	}
+	if _, err := store.ResolveOAuthLogin(name); err != nil {
+		t.Fatalf("the login must still resolve while switched off: %v", err)
+	}
+}
+
 // A corrupt credentials file must not permanently lock the user out: the next
 // write quarantines the bad file and starts fresh. This reproduces the reported
 // "failed to parse credentials file: invalid character 'e' after top-level

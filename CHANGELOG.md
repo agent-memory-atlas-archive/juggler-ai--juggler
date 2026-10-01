@@ -5,6 +5,8 @@ of changes; this project follows semantic versioning.
 
 ## [Unreleased]
 
+- Codex and Copilot subscription providers can now be switched off in Provider settings
+
 ## [0.7.3] - 2026-09-30
 
 - New workspace type "Group" for organising conversations, with no worktree or copy behind it

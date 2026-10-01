@@ -403,7 +403,10 @@ export class ProvidersTab {
 
   /**
    * Build the field for an OAuth (bearer) provider: name, optional
-   * description and a sign-in status line, with no API-key input.
+   * description, an on/off switch and a sign-in status line, with no API-key
+   * input. The login lives in another app, so the provider is on whenever that
+   * login is present until the user switches it off (`disabled`); a switched-off
+   * row shows only its switch.
    * @param {any} provider - Provider info object
    * @param {Element} container - Element to append the field group to
    * @private
@@ -432,6 +435,14 @@ export class ProvidersTab {
       description.textContent = provider.description;
       infoColumn.appendChild(description);
     }
+
+    // Signed out is not switched off: the switch reads `disabled` alone, so a
+    // lapsed login keeps it on and the status line below says how to sign in.
+    this._buildProviderToggle(provider, !provider.disabled, controlColumn);
+    fieldGroup.appendChild(infoColumn);
+    fieldGroup.appendChild(controlColumn);
+    container.appendChild(fieldGroup);
+    if (provider.disabled) return;
 
     const status = document.createElement('div');
     status.className = 'key-source-hint';
@@ -479,10 +490,39 @@ export class ProvidersTab {
     // Which of this provider's models to offer in the model menu.
     const visibility = this._buildModelVisibilityRow(provider);
     if (visibility) controlColumn.appendChild(visibility);
+  }
 
-    fieldGroup.appendChild(infoColumn);
-    fieldGroup.appendChild(controlColumn);
-    container.appendChild(fieldGroup);
+  /**
+   * Build a provider's on/off switch and append it to the control column. Its
+   * change posts the choice to /config/provider-enabled.
+   * @param {any} provider - Provider info object
+   * @param {boolean} checked - Whether the switch reads on
+   * @param {Element} controlColumn - Column to append the switch to
+   * @returns {HTMLInputElement} The checkbox behind the switch.
+   * @private
+   */
+  _buildProviderToggle(provider, checked, controlColumn) {
+    const toggleWrapper = document.createElement('div');
+    toggleWrapper.className = 'provider-toggle-wrapper';
+
+    const toggle = document.createElement('input');
+    toggle.type = 'checkbox';
+    toggle.id = `${provider.name}-toggle`;
+    toggle.className = 'provider-toggle';
+    toggle.checked = checked;
+
+    const toggleLabel = document.createElement('label');
+    toggleLabel.setAttribute('for', toggle.id);
+    toggleLabel.className = 'toggle-switch';
+
+    toggle.addEventListener('change', async () => {
+      await this.toggleProviderEnabled(provider, toggle.checked);
+    });
+
+    toggleWrapper.appendChild(toggle);
+    toggleWrapper.appendChild(toggleLabel);
+    controlColumn.appendChild(toggleWrapper);
+    return toggle;
   }
 
   /**
@@ -769,30 +809,11 @@ export class ProvidersTab {
       infoColumn.appendChild(description);
     }
 
-    const toggleWrapper = document.createElement('div');
-    toggleWrapper.className = 'provider-toggle-wrapper';
-
-    const toggle = document.createElement('input');
-    toggle.type = 'checkbox';
-    toggle.id = `${provider.name}-toggle`;
-    toggle.className = 'provider-toggle';
     // The toggle shows what the user chose, not whether the provider can serve a
     // turn this second. Those come apart when a readiness check refuses — a CLI
     // whose sign-in has lapsed is still switched on — and drawing the switch from
     // availability would tell the user they had turned something off themselves.
-    toggle.checked = provider.credentialed ?? provider.available;
-
-    const toggleLabel = document.createElement('label');
-    toggleLabel.setAttribute('for', toggle.id);
-    toggleLabel.className = 'toggle-switch';
-
-    toggle.addEventListener('change', async () => {
-      await this.toggleProviderEnabled(provider, toggle.checked);
-    });
-
-    toggleWrapper.appendChild(toggle);
-    toggleWrapper.appendChild(toggleLabel);
-    controlColumn.appendChild(toggleWrapper);
+    const toggle = this._buildProviderToggle(provider, provider.credentialed ?? provider.available, controlColumn);
 
     // A keyless provider that is switched on but can't serve — a CLI that is
     // installed and enabled, yet not signed in — has nowhere else to say so. Its
@@ -1486,7 +1507,7 @@ export class ProvidersTab {
   }
 
   /**
-   * Toggle enabled state for a keyless provider
+   * Toggle enabled state for a keyless or OAuth provider
    * @param {any} provider - Provider info object
    * @param {boolean} enabled - Whether to enable or disable the provider
    * @private
