@@ -215,6 +215,14 @@ func (r *run) runOneTurn(st *strategyRunState, explicitContinuation bool) turnVe
 		return turnDone
 	}
 
+	// A thread deleted after it was queued has no transcript and no context left
+	// to send; a request built for it carries no messages and no system prompt.
+	// Every dispatcher (the reducer, the pending-request orchestrator, the
+	// needsStrategyRun pickup) reaches the provider through here.
+	if r.t.thread.itemID != "" && r.doc.GetThreadYMap(r.t.thread.itemID) == nil {
+		return turnDone
+	}
+
 	r.sendStatus("preparing", "")
 	r.batcher.Flush()
 

@@ -538,6 +538,19 @@ func (r *run) tryReconcile() {
 		// event, and the full conversion would copy every sub-thread's transcript.
 		var items []ConversationItem
 		if target.threadItemID != "" {
+			// A claim outlives the thread it names: processingState is not part of
+			// the items tree, so deleting the thread's host item (a rewind, a
+			// delete-range) leaves a queued awaiting_llm standing. Read as an empty
+			// thread, that is the reducer's continuation trigger, and it would run a
+			// turn on nothing — no messages, no system prompt. A deleted thread has
+			// nothing to run; drop its queued claim. One mid-call is left to the
+			// cancel handleItemsChange raises for it.
+			if r.doc.GetThreadYMap(target.threadItemID) == nil {
+				if target.activity != ActivityCallingLLM {
+					r.releaseLLM(target.threadItemID)
+				}
+				continue
+			}
 			if arr := r.doc.GetThreadItemsArray(target.threadItemID); arr != nil {
 				items = r.doc.GetReducerItemsFromArray(arr)
 			}

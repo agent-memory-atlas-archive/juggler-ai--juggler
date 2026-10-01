@@ -398,6 +398,103 @@ func TestHandleItemsChange_CancelsWhenCurrentThreadDeleted(t *testing.T) {
 	w.doc.Destroy()
 }
 
+// A thread queued for dispatch (awaiting_llm) and then deleted before it ran —
+// a rewind past the item that hosts it — leaves its claim standing in
+// processingState, which outlives the item. The reducer anchors its walk on that
+// claim, finds no items for the vanished thread, and must not read that as an
+// empty continuation thread: running it sends the provider a request with no
+// messages and no system prompt. The claim is released and nothing is called.
+func TestReconcile_DeletedThreadWithStandingClaimDoesNotRun(t *testing.T) {
+	w := NewConversationWorker("test-conv", "user:test")
+	defer w.doc.Destroy()
+	w.currentRun().storeState(StateIdle)
+	w.doc.SetMetadata("defaultModelConfig", map[string]any{"provider": "test", "model": "test"})
+
+	// Feed context/tools so that a wrong dispatch completes and is counted rather
+	// than blocking the test on the context channel.
+	go func() {
+		ctxResponse, _ := json.Marshal(map[string]any{
+			"type":         "render-context-items-result",
+			"systemPrompt": "",
+			"contexts":     []any{},
+		})
+		toolsResponse, _ := json.Marshal(map[string]any{"type": "tools-result", "tools": []any{}})
+		w.contextReply.inject(w.done, ctxResponse)
+		w.toolsReply.inject(w.done, toolsResponse)
+	}()
+
+	calls := 0
+	w.llmCallFunc = func(ctx context.Context, request json.RawMessage, chunkHandler func(StreamChunk)) (*LLMResponse, error) {
+		calls++
+		return &LLMResponse{StopReason: "end_turn"}, nil
+	}
+
+	threadID := insertThreadWithOpts(w, threadOpts{goal: "Child"})
+	if !w.requestLLM(threadID) {
+		t.Fatal("requestLLM refused the thread")
+	}
+
+	// The rewind: the thread's host item is deleted; its claim is not.
+	w.doc.doc.Transact(func(_ *ycrdt.Transaction) {
+		w.doc.ensureItems().Delete(ycrdt.Number(0), 1)
+	}, w.doc.authorID)
+	if w.doc.GetThreadYMap(threadID) != nil {
+		t.Fatal("thread still present after delete")
+	}
+
+	w.needsReconcile.Store(true)
+	for i := 0; i < 10 && w.needsReconcile.Load(); i++ {
+		w.currentRun().tryReconcile()
+	}
+
+	if calls != 0 {
+		t.Fatalf("LLM called %d time(s) for a deleted thread, want 0", calls)
+	}
+	if got := w.threadActivity(threadID); got != ActivityNone {
+		t.Fatalf("deleted thread's claim = %q, want released", got)
+	}
+}
+
+// The turn itself refuses a thread that no longer exists, whoever dispatched it:
+// the reducer is one route to a turn, the pending-request orchestrator and the
+// needsStrategyRun pickup are others, and a request built for a vanished thread
+// has nothing in it to send.
+func TestRunOneTurn_DeletedThreadDoesNotCallLLM(t *testing.T) {
+	w := NewConversationWorker("test-conv", "user:test")
+	defer w.doc.Destroy()
+	w.currentRun().storeState(StateIdle)
+	w.doc.SetMetadata("defaultModelConfig", map[string]any{"provider": "test", "model": "test"})
+
+	go func() {
+		ctxResponse, _ := json.Marshal(map[string]any{
+			"type":         "render-context-items-result",
+			"systemPrompt": "",
+			"contexts":     []any{},
+		})
+		toolsResponse, _ := json.Marshal(map[string]any{"type": "tools-result", "tools": []any{}})
+		w.contextReply.inject(w.done, ctxResponse)
+		w.toolsReply.inject(w.done, toolsResponse)
+	}()
+
+	calls := 0
+	w.llmCallFunc = func(ctx context.Context, request json.RawMessage, chunkHandler func(StreamChunk)) (*LLMResponse, error) {
+		calls++
+		return &LLMResponse{StopReason: "end_turn"}, nil
+	}
+
+	threadID := insertThreadWithOpts(w, threadOpts{goal: "Child"})
+	w.requestLLM(threadID)
+	w.doc.doc.Transact(func(_ *ycrdt.Transaction) {
+		w.doc.ensureItems().Delete(ycrdt.Number(0), 1)
+	}, w.doc.authorID)
+
+	w.currentRun().dispatchCallLLMOnThread(threadID)
+
+	if calls != 0 {
+		t.Fatalf("LLM called %d time(s) for a deleted thread, want 0", calls)
+	}
+}
+
 // =============================================================================
 // STREAMING INTEGRITY TESTS
 //
