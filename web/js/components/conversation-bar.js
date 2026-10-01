@@ -36,7 +36,7 @@ import { isPinboardView } from '../utils/view-mode.js';
 import keyShortcutManager from '../services/key-shortcut-manager.js';
 import { isAutoNameEnabled, refreshAutoNameSetting } from '../services/auto-name-setting.js';
 import { isTabHighlightEnabled, ATTENTION_PREFS_EVENT } from '../utils/attention-manager.js';
-import { workspaceGroups, selectedWorkspace } from '../services/workspace-provisioning.js';
+import { workspaceGroups, drawnConversationOrder, selectedWorkspace } from '../services/workspace-provisioning.js';
 import { openWorkspaceMove } from './workspace-move-dialog.js';
 import { openWorkspaceCreate } from './workspace-create-dialog.js';
 import JugglerElement from './juggler-element.js';
@@ -460,7 +460,7 @@ class ConversationBar extends JugglerElement {
    */
   _switchAdjacentTab(step, options = {}) {
     if (!this._session) return;
-    const ids = Array.from(this._session.conversations.keys());
+    const ids = drawnConversationOrder(this._session);
     if (ids.length < 2) return;
 
     // Cycling starts from the conversation behind a workspace panel as readily

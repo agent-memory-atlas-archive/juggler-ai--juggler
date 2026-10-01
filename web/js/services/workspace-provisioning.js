@@ -338,6 +338,19 @@ export function workspaceGroups(session) {
 }
 
 /**
+ * Every conversation id in the order the tab bar draws them: boxes at their
+ * places, each box's members inside it. Anything that steps through the
+ * conversations "as the user sees them" — keyboard cycling, jump-to-next —
+ * walks this, never the flat order, which differs as soon as a box's members
+ * sit apart from its place.
+ * @param {any} session - The session holding the conversations and the table.
+ * @returns {string[]} Conversation ids, top to bottom.
+ */
+export function drawnConversationOrder(session) {
+  return workspaceGroups(session).flatMap(group => group.conversations.map(conversation => conversation.id));
+}
+
+/**
  * The row a conversation created here would be boxed in, if any.
  *
  * A workspace has a box only when it can be worked in, so this is also the

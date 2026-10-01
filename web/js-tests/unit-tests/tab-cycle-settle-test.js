@@ -125,6 +125,34 @@ export async function runTests() {
       assert(session.switches.join() === 'b', `a → c → b must show b — got [${session.switches.join()}]`);
     });
 
+    await run('cycling follows the order the strip draws, boxes included', async (session) => {
+      // w1 was bumped to the head of the flat order by activity, but it lives in
+      // a box drawn after b, so the strip reads a, b, [w1, w2].
+      session.workspaces = [{ id: 'ws', label: 'W', providerId: 'group', state: 'ready', place: 'b' }];
+      session.conversations = new Map([
+        ['w1', { id: 'w1', name: 'w1', workspaceId: 'ws' }],
+        ['a', { id: 'a', name: 'a' }],
+        ['b', { id: 'b', name: 'b' }],
+        ['w2', { id: 'w2', name: 'w2', workspaceId: 'ws' }],
+      ]);
+      bar.render();
+      const drawn = [...bar.querySelectorAll('.conversation-tab')]
+        .map((tab) => /** @type {HTMLElement} */ (tab).dataset.conversationId).join();
+      assert(drawn === 'a,b,w1,w2', `the strip must draw a,b,w1,w2 — got ${drawn}`);
+
+      /** @type {string[]} */
+      const visited = [];
+      for (let i = 0; i < 4; i++) {
+        press('next');
+        visited.push(String(highlighted(bar)));
+      }
+      assert(visited.join() === 'b,w1,w2,a', `next from a must walk the strip b,w1,w2,a — got ${visited.join()}`);
+      for (let i = 0; i < 4; i++) press('prev');
+      assert(highlighted(bar) === 'a', `four prevs must come back to a — got ${highlighted(bar)}`);
+      press('prev');
+      assert(highlighted(bar) === 'w2', `prev from a wraps to the last drawn tab, w2 — got ${highlighted(bar)}`);
+    });
+
     await run('a click mid-burst wins, and the burst does not land afterwards', async (session) => {
       press('next');
       bar._switchConversation('d');

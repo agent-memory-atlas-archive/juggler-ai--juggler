@@ -19,6 +19,7 @@
 import { getFlaggedConversationIds } from '../utils/attention-manager.js';
 import { hasPendingApprovalInTree } from '../model/thread-navigation.js';
 import { toggleFileEditing } from './file-editing-permission.js';
+import { drawnConversationOrder } from './workspace-provisioning.js';
 
 /**
  * Request creation of a new conversation (and switch to it). Handled by the
@@ -98,7 +99,7 @@ function conversationIsRunning(session, id) {
  * @returns {string|null} A conversation id, or null.
  */
 function nextConversationMatching(session, predicate) {
-  const order = [...session.conversations.keys()];
+  const order = drawnConversationOrder(session);
   if (order.length === 0) return null;
   const start = order.indexOf(session.visibleConversationId ?? '');
   for (let step = 1; step <= order.length; step++) {
