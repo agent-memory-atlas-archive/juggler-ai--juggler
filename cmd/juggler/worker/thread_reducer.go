@@ -409,10 +409,15 @@ const maxReconcilePasses = 10
 // A pass may run while turns are live, but admission rejects their own threads
 // and preserves the single write-capable slot. This lets the walk-down discover
 // stamped read-only siblings without letting it dispatch over an owned thread.
-func (r *run) drainReconcile() {
-	for i := 0; i < maxReconcilePasses && r.needsReconcile.Load(); i++ {
+//
+// It returns the number of passes it ran, for the run() loop's slow-iteration
+// report.
+func (r *run) drainReconcile() int {
+	passes := 0
+	for ; passes < maxReconcilePasses && r.needsReconcile.Load(); passes++ {
 		r.tryReconcile()
 	}
+	return passes
 }
 
 // requestReconcile asks for a reducer pass without running one here. Under a
@@ -529,13 +534,15 @@ func (r *run) tryReconcile() {
 		}
 		visited[target.threadItemID] = true
 
+		// Read through the reducer's view (reducer_view.go): this runs after every
+		// event, and the full conversion would copy every sub-thread's transcript.
 		var items []ConversationItem
 		if target.threadItemID != "" {
 			if arr := r.doc.GetThreadItemsArray(target.threadItemID); arr != nil {
-				items = r.doc.GetItemsFromArray(arr)
+				items = r.doc.GetReducerItemsFromArray(arr)
 			}
 		} else {
-			items = r.doc.GetItems()
+			items = r.doc.GetReducerItems()
 		}
 		isRoot := target.threadItemID == ""
 
@@ -577,7 +584,7 @@ func (r *run) tryReconcile() {
 				// bug. An empty/unreadable child is therefore not a descent
 				// target; it rests until the user sends a message.
 				childArr := r.doc.GetThreadItemsArray(item.ItemID)
-				if childArr == nil || len(effectiveItems(r.doc.GetItemsFromArray(childArr))) == 0 {
+				if childArr == nil || len(effectiveItems(r.doc.GetReducerItemsFromArray(childArr))) == 0 {
 					continue
 				}
 				// A child holding a run of its own is evaluated on that run's

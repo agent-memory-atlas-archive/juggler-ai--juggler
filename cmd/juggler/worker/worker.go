@@ -1081,18 +1081,26 @@ func (r *run) run(ctx context.Context) {
 	r.livenessTicker = time.NewTicker(livenessInterval)
 	defer r.livenessTicker.Stop()
 	for {
+		// Each case stamps what it handled and when it began, for the
+		// slow-iteration report below (loop_timing.go).
+		var event string
+		var started time.Time
 		select {
 		case <-ctx.Done():
 			return
 		case <-r.done:
 			return
 		case msg := <-r.inbound:
+			event, started = "message "+msg.Type, time.Now()
 			r.handleMessage(msg)
 		case <-r.doc.UpdateSignal():
+			event, started = "doc update signal", time.Now()
 			r.batcher.Schedule()
 		case <-r.saveRequest:
+			event, started = "save request", time.Now()
 			r.armSaveDebounce()
 		case <-r.saveChan:
+			event, started = "save", time.Now()
 			// Skip if marked for deletion — the folder is about to be
 			// removed, and saving would recreate it as "Untitled--<id>",
 			// which reconcileConversationOrder would then ghost back into
@@ -1103,6 +1111,7 @@ func (r *run) run(ctx context.Context) {
 				}
 			}
 		case ack := <-r.flushReq:
+			event, started = "flush", time.Now()
 			var err error
 			if !r.deleting.Load() {
 				if r.saveTimer != nil {
@@ -1112,14 +1121,19 @@ func (r *run) run(ctx context.Context) {
 			}
 			ack <- err
 		case <-r.docChangeChan:
+			event, started = "items change", time.Now()
 			r.handleItemsChange()
 		case <-r.reconcileRequest:
+			event, started = "reconcile request", time.Now()
 			r.needsReconcile.Store(true)
 		case t := <-r.threadDispatch:
+			event, started = "thread dispatch", time.Now()
 			r.startPreparedThreadRun(t)
 		case t := <-r.turnRetired:
+			event, started = "turn retired", time.Now()
 			r.finishRetiredTurn(t)
 		case <-r.livenessC():
+			event, started = "liveness tick", time.Now()
 			r.detectFrozenGap()
 			liveThreads := r.liveThreadSet()
 			// Periodic recovery remains actor-owned and skips only the subtrees whose
@@ -1127,11 +1141,14 @@ func (r *run) run(ctx context.Context) {
 			r.finalizeToolsAbsentFromExecReportExcept(liveThreads)
 			r.driveToolActionsExcept(liveThreads)
 		}
+		handled := time.Since(started)
 		// After every event, drain the reducer. A dispatch may complete
 		// and set needsReconcile again (e.g., child thread completes →
 		// parent needs dispatch). Loop until the reducer is quiet.
 		// Bounded to prevent spin loops from observer re-triggering.
-		r.drainReconcile()
+		reconcileStarted := time.Now()
+		passes := r.drainReconcile()
+		r.reportSlowIteration(event, handled, time.Since(reconcileStarted), passes)
 	}
 }
 
@@ -1820,30 +1837,38 @@ func (r *run) checkForNewThreads() bool {
 		return false
 	}
 
-	items := r.doc.GetItems()
-	for _, item := range items {
-		if item.Type != ItemTypeThread {
-			continue
+	// Read the root's threads straight from the CRDT, once, under one lock. This
+	// runs on every items change and every reducer pass, and only the thread
+	// maps' own flags matter here — converting the root items would copy every
+	// sub-thread's whole transcript to answer that.
+	type rootThread struct {
+		itemID       string
+		noAutoSelect bool
+	}
+	var candidates []rootThread
+	ycrdtMu.Lock()
+	if root := r.doc.getItems(); root != nil {
+		for _, raw := range root.ToArray() {
+			threadYMap, ok := raw.(*ycrdt.YMap)
+			if !ok {
+				continue
+			}
+			if itemType, _ := threadYMap.Get("type").(string); itemType != ItemTypeThread {
+				continue
+			}
+			itemID, _ := threadYMap.Get("itemId").(string)
+			needsStrategyRun, _ := threadYMap.Get("needsStrategyRun").(bool)
+			if itemID == "" || !needsStrategyRun || threadRunSettledLocked(threadYMap) {
+				continue
+			}
+			noAutoSelect, _ := threadYMap.Get("noAutoSelect").(bool)
+			candidates = append(candidates, rootThread{itemID: itemID, noAutoSelect: noAutoSelect})
 		}
+	}
+	ycrdtMu.Unlock()
 
-		threadYMap := r.doc.GetThreadYMap(item.ItemID)
-		if threadYMap == nil {
-			continue
-		}
-
-		// Read raw Y.Map fields under the lock
-		ycrdtMu.Lock()
-		needsStrategyRun, _ := threadYMap.Get("needsStrategyRun").(bool)
-		noAutoSelect, _ := threadYMap.Get("noAutoSelect").(bool)
-		settled := threadRunSettledLocked(threadYMap)
-		ycrdtMu.Unlock()
-
-		if !needsStrategyRun {
-			continue
-		}
-		if settled {
-			continue
-		}
+	for _, candidate := range candidates {
+		threadID := candidate.itemID
 
 		// Polite stop (Pause): a mark stands over this thread, so the pickup leaves
 		// it exactly as it is. `continue` rather than `return`, because a mark is
@@ -1856,17 +1881,17 @@ func (r *run) checkForNewThreads() bool {
 		// licenses then rests at runOneTurn's gate having done nothing, and the
 		// reducer will not re-drive a thread whose trigger is spent. Resting here
 		// instead leaves the trigger armed, which is what handleUnpause resumes.
-		if r.politeStopCovers(item.ItemID) {
+		if r.politeStopCovers(threadID) {
 			continue
 		}
 
 		// A thread with no items array has nothing to run. startThreadRun
 		// re-resolves the array it actually runs against.
-		if r.doc.GetThreadItemsArray(item.ItemID) == nil {
+		if r.doc.GetThreadItemsArray(threadID) == nil {
 			continue
 		}
 
-		modelConfig := r.doc.ResolveEffectiveModelConfig(item.ItemID)
+		modelConfig := r.doc.ResolveEffectiveModelConfig(threadID)
 		if modelConfig == nil || modelConfig.Model == "" {
 			continue
 		}
@@ -1878,13 +1903,13 @@ func (r *run) checkForNewThreads() bool {
 		// conversation-wide claim exclusion at the point of dispatch. Keeping it
 		// here still lets reconcile settle the currently claimed thread.
 		if (!r.actorStarted.Load() && r.isLLMClaimed()) ||
-			(r.actorStarted.Load() && !r.canAdmitThread(item.ItemID)) ||
-			!r.claimLLM(item.ItemID) {
+			(r.actorStarted.Load() && !r.canAdmitThread(threadID)) ||
+			!r.claimLLM(threadID) {
 			r.needsReconcile.Store(true)
 			return false
 		}
 
-		r.log.Debug("Auto-processing thread %s (doc-driven)", item.ItemID)
+		r.log.Debug("Auto-processing thread %s (doc-driven)", threadID)
 		// Compaction-style threads (noAutoSelect) must undo as a single
 		// atomic operation from the user's perspective — they didn't
 		// author the LLM turns inside the sub-thread, only the act of
@@ -1895,13 +1920,13 @@ func (r *run) checkForNewThreads() bool {
 		// back into it on idle. Regular sub-threads (the user typed
 		// /thread, or the LLM did create_thread) DO get their natural
 		// per-turn grouping — we only merge for noAutoSelect.
-		if noAutoSelect {
+		if candidate.noAutoSelect {
 			r.compactionMergeFromIdx = r.tracker.UndoStackLen() - 1
 		}
 		// Consume the one-shot trigger before running. Completion is tracked by
 		// the thread result; cancellation must not leave a persistent trigger that
 		// restarts the thread immediately on the next observer tick.
-		r.clearThreadNeedsStrategyRun(item.ItemID)
+		r.clearThreadNeedsStrategyRun(threadID)
 
 		// Publish the busy frame HERE, not in startThreadRun — the pickup, not the
 		// start, is the moment this conversation became busy, and the two are no
@@ -1921,7 +1946,7 @@ func (r *run) checkForNewThreads() bool {
 		r.sendStatus("preparing", "")
 		r.batcher.Flush()
 
-		r.dispatchThreadRun(item.ItemID)
+		r.dispatchThreadRun(threadID)
 		return true // Process one thread at a time
 	}
 	return false
