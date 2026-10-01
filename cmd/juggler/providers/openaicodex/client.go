@@ -23,14 +23,14 @@ const (
 	// the only thing it affects: it rides that one query and no turn request.
 	// The catalog gates rows on it: each model declares a minimal_client_version
 	// and is simply omitted from the response for anything older, with no error
-	// to notice — the model just never appears. gpt-6-sol and gpt-6-luna require
-	// 0.155.0, so this must not be moved backwards past the newest slug we list.
+	// to notice — the model just never appears. gpt-6.1-sol is withheld below
+	// 0.159.0, so this must not be moved backwards past the newest slug we list.
 	//
 	// The gate is a numeric comparison and nothing more: the backend serves an
 	// unreleased future version quite happily, and a version it has never heard
 	// of returns the same rows as the newest one it has. We pin a real published
 	// release anyway, so that a claim we make about ourselves stays true.
-	codexClientVersion = "0.156.1"
+	codexClientVersion = "0.160.0"
 )
 
 // Register adds the OpenAI Codex-plan provider to the global registry. It
@@ -52,7 +52,12 @@ func Register() {
 		// gpt-6-luna, because nothing asks the user before spending this model:
 		// GPT-6 access is off by default for Enterprise accounts, and a cheap
 		// model the account cannot call fails work the user never chose it for.
-		CheapModel:         "gpt-5.6-luna",
+		CheapModel: "gpt-5.6-luna",
+		// The catalog's priority order puts gpt-6-astra, its most expensive
+		// model, first, and the automatic default would then spend plan quota
+		// on it that the user never chose to. Sol is the everyday tier; newest
+		// first, with gpt-5.6-sol for accounts without GPT-6.
+		DefaultModels:      []string{"gpt-6.1-sol", "gpt-6-sol", "gpt-5.6-sol"},
 		ListModelsOverride: listModels,
 		UsageStatsOverride: usageStats,
 		ThinkingSpecFn:     codexThinkingSpec,
@@ -195,7 +200,7 @@ func thinkingSpecFromCatalog(model codexModel) openaibase.ThinkingSpec {
 //
 // `visibility` gates the picker, not the model: "list" is the catalog's own
 // front page, while "hide" marks a model that is fully usable but which Codex
-// declines to show — gpt-6-astra ships that way, configurable by name only.
+// declines to show, configurable by name only.
 // Admitting every hidden row instead would put the catalog's internal and
 // evaluation entries in front of users, so the second gate is our own list:
 // a hidden model is admitted when it is a slug we ship in ModelContextWindows.

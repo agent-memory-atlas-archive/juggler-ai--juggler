@@ -16,6 +16,8 @@ of changes; this project follows semantic versioning.
 - Images the read tool opens now reach the model, instead of failing to upload with HTTP 404
 - Redesigned the tab UIs
 - On touch, hold a tab or workspace to reorder it, or release in place for its menu
+- The automatic default model on Codex is now Sol, not the pricier Astra
+- GPT-6.1 Sol on the ChatGPT plan now offers thinking levels
 
 ## [0.7.3] - 2026-09-30
 

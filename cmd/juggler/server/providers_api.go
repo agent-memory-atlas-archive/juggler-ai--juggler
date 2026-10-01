@@ -455,10 +455,12 @@ func (s *Server) awaitProvidersReady(ctx context.Context) {
 // so the preference must impose its own stable ordering.)
 var defaultProviderPreference = []string{"claudecode", "openaicodex"}
 
-// preferredAvailableModel returns the (provider, first model) for the
-// highest-ranked available provider that exposes at least one model, or
-// ok=false when no provider is usable.
-func preferredAvailableModel(providers []ProviderStatus) (core.ModelRef, bool) {
+// preferredAvailableModel returns the (provider, model) for the highest-ranked
+// available provider that exposes at least one model, or ok=false when no
+// provider is usable. The model is the provider's preferred default
+// (defaultModels, normally ProviderInfo.DefaultModels) when one is listed, and
+// otherwise its first visible model.
+func preferredAvailableModel(providers []ProviderStatus, defaultModels func(providerName string) []string) (core.ModelRef, bool) {
 	rank := func(name string) int {
 		for i, p := range defaultProviderPreference {
 			if p == name {
@@ -489,7 +491,44 @@ func preferredAvailableModel(providers []ProviderStatus) (core.ModelRef, bool) {
 		return candidates[i].Name < candidates[j].Name
 	})
 	best := candidates[0]
+	if defaultModels != nil {
+		if id := firstListedModel(best, defaultModels(best.Name)); id != "" {
+			return core.ModelRef{Provider: best.Name, Model: id}, true
+		}
+	}
 	return core.ModelRef{Provider: best.Name, Model: firstVisibleModel(best)}, true
+}
+
+// firstListedModel returns the first of wanted that p lists and the user has
+// not hidden, or "". When p's list came from its live catalog, a built-in
+// stand-in (FromAPI false) does not count: it is listed whether or not the
+// account can call it, and a default is spent without the user choosing it.
+func firstListedModel(p ProviderStatus, wanted []string) string {
+	live := false
+	for _, m := range p.ModelsWithContext {
+		if m.FromAPI {
+			live = true
+			break
+		}
+	}
+	for _, id := range wanted {
+		for _, m := range p.ModelsWithContext {
+			if m.ID == id && !m.Hidden && (m.FromAPI || !live) {
+				return m.ID
+			}
+		}
+	}
+	return ""
+}
+
+// providerDefaultModels is the registry's ProviderInfo.DefaultModels for a
+// provider, as preferredAvailableModel consumes it.
+func providerDefaultModels(providerName string) []string {
+	info, found := provider.GetProviderInfo(providerName)
+	if !found {
+		return nil
+	}
+	return info.DefaultModels
 }
 
 // firstVisibleModel returns the id of the provider's first model the user has
@@ -519,7 +558,7 @@ func (s *Server) resolveDefaultModel(ctx context.Context) (core.ModelRef, bool) 
 	// moment would otherwise see an empty cache and be seeded with no model,
 	// which nothing retargets later. Wait out the discovery window first.
 	s.awaitProvidersReady(ctx)
-	ref, _ := preferredAvailableModel(s.cachedProviders())
+	ref, _ := preferredAvailableModel(s.cachedProviders(), providerDefaultModels)
 	return ref, false
 }
 

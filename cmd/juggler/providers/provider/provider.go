@@ -817,6 +817,15 @@ type ProviderInfo struct {
 	// step, or no-op). Presentation/selection only — never sent on the wire as-is
 	// without validation against the live model list.
 	CheapModel string
+	// DefaultModels names, in order of preference, the model ids a new
+	// conversation starts on when the user has no explicit default and this is
+	// the preferred provider. The first one the provider's live catalog lists
+	// and the user has not hidden wins; with none of them present the
+	// provider's first visible model is used. Empty ⇒ always that first model.
+	//
+	// This exists because a catalog's own order puts its flagship first, and
+	// the automatic default is spent without the user ever choosing it.
+	DefaultModels []string
 	// FreeToRun marks a provider that bills nothing per token — a local runtime
 	// serving models off the user's own hardware. It is the property the cheap
 	// model's last resolution step depends on: with nothing billed, re-running

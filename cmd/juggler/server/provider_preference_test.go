@@ -28,6 +28,72 @@ func hideModels(p ProviderStatus, hidden ...string) ProviderStatus {
 	return p
 }
 
+// fromCatalog marks every model of p as listed by the provider's live catalog,
+// leaving the named ones as built-in stand-ins (FromAPI false).
+func fromCatalog(p ProviderStatus, standIns ...string) ProviderStatus {
+	for i, m := range p.ModelsWithContext {
+		p.ModelsWithContext[i].FromAPI = true
+		for _, id := range standIns {
+			if m.ID == id {
+				p.ModelsWithContext[i].FromAPI = false
+			}
+		}
+	}
+	return p
+}
+
+func noDefaultModels(string) []string { return nil }
+
+func TestPreferredAvailableModelHonoursProviderDefaults(t *testing.T) {
+	codexDefaults := func(name string) []string {
+		if name == "openaicodex" {
+			return []string{"gpt-6.1-sol", "gpt-6-sol", "gpt-5.6-sol"}
+		}
+		return nil
+	}
+	tests := []struct {
+		name      string
+		provider  ProviderStatus
+		wantModel string
+	}{
+		{
+			name:      "first preferred model wins over catalog order",
+			provider:  fromCatalog(providerWith("openaicodex", true, "gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol")),
+			wantModel: "gpt-6.1-sol",
+		},
+		{
+			name:      "a preference the catalog lacks falls to the next",
+			provider:  fromCatalog(providerWith("openaicodex", true, "gpt-6-astra", "gpt-5.6-sol")),
+			wantModel: "gpt-5.6-sol",
+		},
+		{
+			name:      "a hidden preference is skipped",
+			provider:  hideModels(fromCatalog(providerWith("openaicodex", true, "gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol")), "gpt-6.1-sol"),
+			wantModel: "gpt-6-sol",
+		},
+		{
+			// An account without GPT-6 still sees the GPT-6 slugs as stand-ins;
+			// seeding a conversation with one fails its first turn.
+			name:      "a stand-in the account's catalog did not list is skipped",
+			provider:  fromCatalog(providerWith("openaicodex", true, "gpt-5.6-terra", "gpt-5.6-sol", "gpt-6.1-sol"), "gpt-6.1-sol"),
+			wantModel: "gpt-5.6-sol",
+		},
+		{
+			name:      "no preference present falls back to the first visible model",
+			provider:  fromCatalog(providerWith("openaicodex", true, "gpt-6-astra", "gpt-5.5")),
+			wantModel: "gpt-6-astra",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ref, ok := preferredAvailableModel([]ProviderStatus{tt.provider}, codexDefaults)
+			if !ok || ref.Model != tt.wantModel {
+				t.Fatalf("got %s (ok=%v), want %s", ref.Model, ok, tt.wantModel)
+			}
+		})
+	}
+}
+
 func TestPreferredAvailableModel(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -121,7 +187,7 @@ func TestPreferredAvailableModel(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ref, ok := preferredAvailableModel(tt.providers)
+			ref, ok := preferredAvailableModel(tt.providers, noDefaultModels)
 			if ok != tt.wantOK {
 				t.Fatalf("ok = %v, want %v", ok, tt.wantOK)
 			}

@@ -52,11 +52,15 @@ type knownModel struct {
 // Adding a model is one line, with two things to get right in it:
 //   - Copy MinClientVersion from the catalog's record for that slug. If it is
 //     above codexClientVersion, raise that too — the tests will tell you.
+//     The declared value is not always the gate the backend applies: confirm
+//     the slug is in the live response at codexClientVersion, and if it is
+//     not, find the lowest client_version that returns it and record that.
 //   - A slug the catalog has retired must be deleted from here. Left in place
 //     it stays selectable long after the backend stops accepting it.
 var knownModels = []knownModel{
 	{Slug: "gpt-6-astra", ContextWindow: catalogContextWindow, MinClientVersion: "0.153.0"},
-	{Slug: "gpt-6.1-sol", ContextWindow: catalogContextWindow, MinClientVersion: "0.153.0"},
+	// The row declares 0.153.0, but the backend withholds it below 0.159.0.
+	{Slug: "gpt-6.1-sol", ContextWindow: catalogContextWindow, MinClientVersion: "0.159.0"},
 	{Slug: "gpt-6-sol", ContextWindow: catalogContextWindow, MinClientVersion: "0.155.0"},
 	{Slug: "gpt-6-luna", ContextWindow: catalogContextWindow, MinClientVersion: "0.155.0"},
 	{Slug: "gpt-5.6-sol", ContextWindow: catalogContextWindow, MinClientVersion: "0.144.0"},

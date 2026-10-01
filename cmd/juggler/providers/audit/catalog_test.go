@@ -165,3 +165,30 @@ func TestCheapModelHintsNameACataloguedModel(t *testing.T) {
 	}
 	t.Logf("checked %d cheap-model hints", checked)
 }
+
+// TestDefaultModelsNameCataloguedModels checks each provider's preferred
+// default models against its own catalog. Matching is exact, as it is when the
+// default is resolved: a preference naming a retired slug matches nothing, and
+// new conversations quietly fall back to the catalog's first model — which is
+// the one the preference was written to avoid.
+func TestDefaultModelsNameCataloguedModels(t *testing.T) {
+	registerCatalogProviders()
+
+	checked := 0
+	for _, info := range provider.ListProviderInfos() {
+		if len(info.DefaultModels) == 0 || len(info.ModelContextWindows) == 0 {
+			continue
+		}
+		for _, id := range info.DefaultModels {
+			checked++
+			if _, ok := info.ModelContextWindows[id]; !ok {
+				t.Errorf("%s: default model %q is not in its own catalog — drop it or replace it with the slug that succeeded it",
+					info.Name, id)
+			}
+		}
+	}
+
+	if checked == 0 {
+		t.Fatal("no default models were checked — either every provider lost its preference, or registration is not doing anything")
+	}
+}

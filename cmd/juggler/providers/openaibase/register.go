@@ -40,6 +40,9 @@ type Descriptor struct {
 	// Surfaced on ProviderInfo.CheapModel; validated against the live list
 	// before use.
 	CheapModel string
+	// DefaultModels ranks the models a new conversation may start on when the
+	// user has no explicit default. Surfaced on ProviderInfo.DefaultModels.
+	DefaultModels []string
 	// FreeToRun marks a local runtime that bills nothing per token, so a
 	// micro-task may re-run the conversation's own model rather than needing a
 	// CheapModel of its own. Surfaced on ProviderInfo.FreeToRun.
@@ -158,6 +161,7 @@ func Register(d Descriptor) {
 		APIKeyOptional:      d.APIKeyOptional,
 		ModelContextWindows: d.ContextWindows,
 		CheapModel:          d.CheapModel,
+		DefaultModels:       d.DefaultModels,
 		FreeToRun:           d.FreeToRun,
 		Successor:           d.Successor,
 		// A provider that does not opt into forced tool choice cannot reliably
