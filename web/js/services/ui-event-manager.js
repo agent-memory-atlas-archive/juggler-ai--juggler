@@ -5,6 +5,7 @@
 import { presentPopup } from '../utils/popup-surface.js';
 import { markPopupOpen } from '../utils/popup-manager.js';
 import { attachSwipeDismiss } from '../utils/swipe-dismiss.js';
+import { holdLifted } from '../utils/reorder-drag.js';
 import { openSettings } from './settings-launcher.js';
 
 /**
@@ -508,10 +509,13 @@ class UIEventManager {
    *
    * A vertical drag is the tab list scrolling and must stay the browser's, which
    * the axis claim leaves alone — and is also why the drawer declares
-   * `touch-action: pan-y` rather than `none`. Drags starting on the resize grip,
-   * a reorder grip or the rename editor belong to those. One class covers every
-   * grip in the bar — a tab's and a workspace box's alike — because they are the
-   * same element from the same place (utils/drag-grip.js). Nothing inside the bar
+   * `touch-action: pan-y` rather than `none`. Drags starting on the resize grip
+   * or the rename editor belong to those. A tab or a workspace box lifted for a
+   * reorder by a held finger (utils/reorder-drag.js) owns the pointer from the
+   * lift, so the swipe stands aside while one is lifted — asked again when the
+   * swipe would claim, which is after any lift. A press that has not lifted is
+   * still the drawer's to swipe: it moves past the hold's tolerance before the
+   * swipe's slop, and lets go as it does. Nothing inside the bar
    * scrolls horizontally, and `pan-y` forbids a horizontal pan in any case, so
    * there is no scroller here to hand the gesture to.
    *
@@ -526,8 +530,9 @@ class UIEventManager {
     this._detachSidebarSwipe = attachSwipeDismiss(sidebar, {
       direction: 'left',
       thresholdPx: 60,
-      isActive: () => isOpen() && window.getComputedStyle(sidebar).position === 'absolute',
-      exclude: 'col-resize-handle, .drag-grip, .inline-rename',
+      isActive: () => isOpen() && window.getComputedStyle(sidebar).position === 'absolute'
+        && !holdLifted(),
+      exclude: 'col-resize-handle, .inline-rename',
       onDismiss: close,
     });
   }

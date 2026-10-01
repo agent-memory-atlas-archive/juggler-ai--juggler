@@ -4,11 +4,10 @@
  *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
  */
 
-/* The grip a reorderable row is dragged by. A pattern rather than a component's
-   own, because three unrelated strips draw one: the conversation sidebar's tabs,
-   its workspace boxes, and the pinboard's tab strip. They had three copies of
-   these rules, differing only in the width of the target — and the workspace
-   box, having no copy, could not be dragged by a finger at all.
+/* The grip a reorderable row is dragged by, for a strip that lets a finger
+   reorder from a handle: the pinboard's tab strip. (The conversation sidebar
+   lifts its rows on a long-press instead — utils/reorder-drag.js `hold` — and
+   carries no grip.)
 
    The element and the gate that goes with it are js/utils/drag-grip.js. What
    stays with each component is geometry alone: how wide its grip is, and how big

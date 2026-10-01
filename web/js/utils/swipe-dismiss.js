@@ -82,7 +82,7 @@ const DIRECTIONS = {
  * @property {() => void} onDismiss - Called when a swipe finishes past the threshold.
  * @property {number} thresholdPx - How far the surface must travel to dismiss on release.
  * @property {HTMLElement} [surface] - The element that moves. Defaults to the element listened on; give it when the grab handle is not the surface.
- * @property {() => boolean} [isActive] - Whether the surface is currently dismissible. Called on every press, so it can read live layout. Default always.
+ * @property {() => boolean} [isActive] - Whether the surface is currently dismissible. Called on every press, so it can read live layout, and again when the drag would claim its axis, so something that took the pointer in between (a row lifted for a reorder) keeps it. Default always.
  * @property {number} [slopPx] - Movement before the drag commits to an axis. Ignored when `claim` is `'immediate'`.
  * @property {'axis'|'immediate'} [claim] - How the gesture is won: `'axis'` (default) waits out the slop and takes only a decisive move along `direction`; `'immediate'` takes the first move, for a dedicated handle that nothing else competes for.
  * @property {string} [exclude] - Selector for descendants whose drags belong to them — resize grips, drag handles, inline editors.
@@ -177,6 +177,12 @@ export function attachSwipeDismiss(element, options) {
           release();
           return;
         }
+      }
+      // Asked again at the claim: a press that began dismissible can have been
+      // taken since by something else on the surface.
+      if (!isActive()) {
+        release();
+        return;
       }
       swiping = true;
       surface.style.transition = 'none'; // track the finger 1:1

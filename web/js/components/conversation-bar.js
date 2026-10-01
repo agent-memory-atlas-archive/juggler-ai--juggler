@@ -24,18 +24,22 @@ import { MAX_CONVERSATIONS, CONVERSATION_LIMIT_MESSAGE } from '../model/session.
 import { UNTITLED_BASE } from '../model/conversation-naming.js';
 import { BIN_LARGE_BYTES, MAX_CONVERSATION_NAME_LENGTH, MAX_WORKSPACE_LABEL_LENGTH } from '../utils/constants.js';
 import { setupColumnResize, applyColumnWidthPx } from '../utils/column-resize.js';
-import { startReorderDrag, settledRect } from '../utils/reorder-drag.js';
-import { DRAG_GRIP_HTML, pointerMayGrab } from '../utils/drag-grip.js';
+import { startReorderDrag, settledRect, holdGestureLive } from '../utils/reorder-drag.js';
 import { openInlineRename } from '../utils/inline-rename.js';
 import { workspaceTint } from '../utils/workspace-colour.js';
 import { formatBytes } from '../utils/format.js';
-import { registerContextMenuProvider } from '../services/context-menu-service.js';
+import {
+  registerContextMenuProvider,
+  registerContextMenuSuppressor,
+  resolveMenu,
+  openMenuAt
+} from '../services/context-menu-service.js';
 import scheduledSendService, { SCHEDULED_SEND_ARMED_EVENT } from '../services/scheduled-send-service.js';
-import { CLOCK_SVG } from '../utils/icons.js';
+import { CLOCK_SVG, ALERT_SVG } from '../utils/icons.js';
+import { TYPE_ICONS } from '../utils/icon-message-renderer.js';
 import { isPinboardView } from '../utils/view-mode.js';
 import keyShortcutManager from '../services/key-shortcut-manager.js';
 import { isAutoNameEnabled, refreshAutoNameSetting } from '../services/auto-name-setting.js';
-import { isTabHighlightEnabled, ATTENTION_PREFS_EVENT } from '../utils/attention-manager.js';
 import { workspaceGroups, drawnConversationOrder, selectedWorkspace } from '../services/workspace-provisioning.js';
 import { openWorkspaceMove } from './workspace-move-dialog.js';
 import { openWorkspaceCreate } from './workspace-create-dialog.js';
@@ -117,6 +121,16 @@ const BIN_UNDO_TIMEOUT_MS = 5000;
  * creating, deleting, and drag-reordering conversations along the Y axis.
  */
 /**
+ * How long a finger holds a tab or a box still before it lifts to be dragged.
+ * Short of the platform's own long-press (about 400–500ms), so the lift comes
+ * first and that menu is the one suppressed rather than the drag.
+ */
+const TOUCH_HOLD_MS = 300;
+
+/** How far a held finger may stray before the press is taken for a scroll. */
+const TOUCH_HOLD_TOLERANCE_PX = 8;
+
+/**
  * The currently-connected ConversationBar instance. Tracked at module scope so
  * the single context-menu provider (registered once below) can reach the live
  * bar's session + helpers without re-registering on every connect/disconnect.
@@ -145,6 +159,9 @@ class ConversationBar extends JugglerElement {
 
     /** @type {boolean} @private Track if a drag just occurred to prevent click/dblclick */
     this._dragJustOccurred = false;
+
+    /** @type {number} @private How long a finger holds still to lift a row (TOUCH_HOLD_MS; a test takes it to 0). */
+    this._touchHoldMs = TOUCH_HOLD_MS;
 
     /**
      * Cache of DOM elements for diff-based rendering to preserve scroll position
@@ -399,11 +416,6 @@ class ConversationBar extends JugglerElement {
       const id = this._session?.visibleConversationId;
       if (id) this._enterRenameMode(id);
     });
-
-    // The tab-highlight preference decides whether an awaiting tab pulses at
-    // all, so a change to it must repaint the tabs currently pulsing — the whole
-    // point of the toggle is to quiet them now, not once their approval clears.
-    this.onWindow(ATTENTION_PREFS_EVENT, () => this._refreshAllTabStatus());
 
     // Arming or cancelling a scheduled send changes which tabs show a clock,
     // and nothing else repaints them: the schedule lives on a draft, which the
@@ -688,7 +700,9 @@ class ConversationBar extends JugglerElement {
           event.type === 'workspace:selected' ||
           event.type === 'session:workspaces-changed') {
         this.render();
-      } else if (event.type === 'conversation:changed') {
+      } else if (event.type === 'conversation:changed' || event.type === 'conversation:loadstate-changed') {
+        // A load landing hands the tab the items its empty / failed states are
+        // read from.
         this._scheduleRender();
       }
     });
@@ -1168,25 +1182,18 @@ class ConversationBar extends JugglerElement {
       // in front of something, and until now an empty box had nothing to be in
       // front of.
       //
-      // The "+" and the grip are the box's rather than the header's.
+      // The "+" is the box's rather than the header's.
       // `<workspace-box-header>` shows the name and nothing else — a title, a
       // status line and a row of controls in the width of a tab is what the
-      // workspace panel exists to undo — so the affordances the box carries sit
-      // outside that element: the button laid over its top corner, and the grip
-      // in a row alongside the header, where a tab keeps its own.
-      //
-      // The grip is the same one the tabs have, from the same place, and a box
-      // needs it for the same reason: a finger cannot start a reorder anywhere
-      // that has not taken the gesture off the browser, and the header spans the
-      // whole width, so it is not allowed to.
+      // workspace panel exists to undo — so the button sits outside that
+      // element, on the box's top edge beside the name.
       box.innerHTML = `
         <div class="conversation-box-top">
-          ${DRAG_GRIP_HTML}
           <workspace-box-header class="conversation-box-header"></workspace-box-header>
         </div>
         <button class="conversation-box-add" type="button"
                 title="New conversation in this workspace"
-                aria-label="New conversation in this workspace">+</button>
+                aria-label="New conversation in this workspace">${ADD_ICON_SVG}</button>
         <menu class="conversation-box-tabs">
           <li class="conversation-box-empty" hidden>(empty)</li>
         </menu>
@@ -1204,7 +1211,7 @@ class ConversationBar extends JugglerElement {
       /**
        * Whether a press here is a press on the box itself.
        *
-       * The top row — the name, and the grip beside it — is always the box. So
+       * The top row — the name on the box's edge — is always the box. So
        * is the whole of an empty box: there is nothing else in it to aim at, and
        * a band of dead space around a short line of text is a box that looks
        * draggable and is not. A box with tabs in it keeps them for themselves —
@@ -1243,17 +1250,16 @@ class ConversationBar extends JugglerElement {
         this._session?.selectWorkspace?.(workspaceId);
       });
 
-      // Same rule as a tab's, from the same place: a mouse drags the box from
-      // anywhere on it, a finger only from the grip. Without that gate a touch
-      // anywhere on a full-width header would be taken for a drag and the
-      // sidebar would lose its scroll.
+      // Same rule as a tab's: a mouse drags the box from anywhere on it, and a
+      // finger from anywhere too, by holding still first (_startBoxDrag passes
+      // the hold). A finger that moves straight away is scrolling the sidebar,
+      // and the gesture steps aside for it.
       dragged.addEventListener('pointerdown', (e) => {
         const event = /** @type {PointerEvent} */ (e);
         if (event.button !== 0 || event.ctrlKey) return;
         const target = /** @type {HTMLElement|null} */ (event.target);
         if (!onTheBox(target)) return;
         if (target?.closest('.inline-rename')) return;
-        if (!pointerMayGrab(event)) return;
         this._startBoxDrag(event, dragged);
       });
     }
@@ -1458,13 +1464,30 @@ class ConversationBar extends JugglerElement {
     }
     // Past the last tab in a box is the end of that box, which is a place in the
     // strip and not the end of it: every box ends with its "Nothing here." line,
-    // so name that and the landing stays inside the box it was read from. A null
-    // anchor is the end of the strip, and the strip is the only thing with one —
-    // a box that reported one would be asking for its conversation to be sent to
-    // the bottom of the sidebar, and the box is drawn wherever its conversations
-    // are, so the box would follow it there.
+    // so name that and the landing stays inside the box it was read from. The
+    // end of the strip is the strip's alone (_stripEnd) — a box that reported it
+    // would be asking for its conversation to be sent to the bottom of the
+    // sidebar, and the box is drawn wherever its conversations are, so the box
+    // would follow it there.
     const end = box?.querySelector('.conversation-box-empty') ?? null;
-    return { parent: list, anchor: box ? end : null };
+    return { parent: list, anchor: box ? end : this._stripEnd(tabsMenu) };
+  }
+
+  /**
+   * What a drop at the very end of the strip lands in front of: the row that
+   * makes a workspace, which is always the strip's last child.
+   *
+   * Not null, which would append the dropped item after that row. And a drop
+   * at the end that changes nothing — the last box let go where it was — writes
+   * nothing, so no render follows to put the row back: the drop has to land in
+   * the right place itself.
+   * @param {HTMLElement} tabsMenu - The strip.
+   * @returns {Element|null} The row, or null while it is not in the strip.
+   * @private
+   */
+  _stripEnd(tabsMenu) {
+    const row = this._cachedElements.get('new-workspace');
+    return row && row.parentElement === tabsMenu ? row : null;
   }
 
   /**
@@ -1562,8 +1585,19 @@ class ConversationBar extends JugglerElement {
       tab.className = 'conversation-tab';
       tab.dataset.conversationId = conv.id;
 
+      // The status circle is the shared badge circle (patterns/item-badge.css):
+      // a preset fill for the state and one of four white glyphs, both set by
+      // _refreshTabStatus — the assistant; a question while the user is waited
+      // on or nothing has been said yet; a "!" when the last turn failed; a
+      // clock while a send is scheduled. The glyphs are the app's own: the
+      // panel's assistant icon, the ask item's question, the scheduler's clock.
       tab.innerHTML = `
-        ${DRAG_GRIP_HTML}
+        <span class="item-circle conversation-tab-status color-meta" aria-hidden="true">
+          <span class="conversation-tab-glyph conversation-tab-glyph-assistant">${TYPE_ICONS.assistant}</span>
+          <span class="conversation-tab-glyph conversation-tab-glyph-question icon-question"></span>
+          <span class="conversation-tab-glyph conversation-tab-glyph-clock">${CLOCK_SVG}</span>
+          <span class="conversation-tab-glyph conversation-tab-glyph-alert">${ALERT_SVG}</span>
+        </span>
         <button class="conversation-tab-button">
           <span class="conversation-tab-name"></span>
         </button>
@@ -1610,32 +1644,6 @@ class ConversationBar extends JugglerElement {
       });
     }
 
-    // Clock, shown while a send is scheduled on any of this conversation's
-    // threads. It has its own slot ahead of the trailing one because a send
-    // waiting for the end of the turn is armed WHILE that turn runs — so the
-    // clock and the activity blob have to be readable at the same time.
-    let schedule = /** @type {HTMLElement|null} */ (tab.querySelector('.conversation-tab-schedule'));
-    if (!schedule) {
-      schedule = document.createElement('span');
-      schedule.className = 'conversation-tab-schedule';
-      schedule.title = 'A send is scheduled';
-      schedule.setAttribute('aria-hidden', 'true');
-      schedule.innerHTML = CLOCK_SVG;
-      tab.appendChild(schedule);
-    }
-
-    // The trailing slot holds two mutually-exclusive elements at the same size:
-    // the activity blob (pulsing green circle, shown while the LLM loop runs)
-    // and the bin button. CSS shows whichever fits the tab's state —
-    // archiving is suppressed mid-loop, so the layout never shifts.
-    let activity = tab.querySelector('.conversation-tab-activity');
-    if (!activity) {
-      activity = document.createElement('span');
-      activity.className = 'conversation-tab-activity';
-      activity.setAttribute('aria-hidden', 'true');
-      tab.appendChild(activity);
-    }
-
     // Every tab carries a "move to bin" button (the last one included —
     // binning to an empty session is allowed). It's hover-only (see CSS); the
     // Bin entry at the bottom of the bar keeps the feature discoverable
@@ -1670,15 +1678,18 @@ class ConversationBar extends JugglerElement {
 
   /**
    * Toggle the indicator classes (.is-running / .is-awaiting from the current
-   * LLMState, .has-scheduled-send from scheduledSendService) on a single tab.
-   * Targeted update — no full re-render.
+   * LLMState, .has-scheduled-send from scheduledSendService, .is-failed /
+   * .is-empty from {@link _conversationOutcome}) on a single tab, and fill its
+   * status circle and pick its glyph to match. Targeted update — no full
+   * re-render.
    *
-   * `.is-awaiting` pulses the whole tab yellow for as long as the approval is
-   * parked, which makes it the tab bar's loudest demand for attention — so it is
-   * suppressed when the user has turned tab highlighting off, leaving an
-   * awaiting tab looking exactly like an idle one. Only the paint is gated:
-   * {@link _conversationActivity} still reports the true state, so the bin guard
-   * and every other consumer are unaffected.
+   * The circle's preset is the state: the ask family's yellow while the user is
+   * waited on, green while the turn runs, red when the last turn failed, the
+   * meta slate at rest. Its glyph, in priority order: a question while waited
+   * on, a "!" for a failure, a clock for a scheduled send, a question for a
+   * conversation with nothing said yet, otherwise the assistant. It is status,
+   * steady and small, so the tab-highlight preference does not reach it — that
+   * gates the attention manager's tint and flash, the strip's actual alerts.
    * @param {string} convId
    * @private
    */
@@ -1686,19 +1697,73 @@ class ConversationBar extends JugglerElement {
     const tab = this._cachedElements.get(convId);
     if (!tab) return;
     const { awaiting, running } = this._conversationActivity(convId);
-    tab.classList.toggle('is-awaiting', awaiting && isTabHighlightEnabled());
-    tab.classList.toggle('is-running', running);
+    const { failed, empty } = running ? { failed: false, empty: false } : this._conversationOutcome(convId);
     // Read from the service's set rather than the drafts: this runs on every
     // render, and walking the thread tree here would allocate a MessageThread
     // per thread once a frame while a turn streams.
-    tab.classList.toggle('has-scheduled-send', scheduledSendService.hasArmedSchedule(convId));
+    const scheduled = scheduledSendService.hasArmedSchedule(convId);
+    tab.classList.toggle('is-awaiting', awaiting);
+    tab.classList.toggle('is-running', running);
+    tab.classList.toggle('is-failed', failed);
+    tab.classList.toggle('is-empty', empty);
+    tab.classList.toggle('has-scheduled-send', scheduled);
+    const circle = /** @type {HTMLElement|null} */ (tab.querySelector('.conversation-tab-status'));
+    if (!circle) return;
+    const preset = awaiting ? 'color-ask'
+      : running ? 'color-green'
+        : failed ? 'color-red'
+          : 'color-meta';
+    // Only on a change: swapping the class restarts the running pulse.
+    if (!circle.classList.contains(preset)) {
+      circle.classList.remove('color-ask', 'color-green', 'color-red', 'color-meta');
+      circle.classList.add(preset);
+    }
+    const glyph = awaiting ? 'question'
+      : failed ? 'alert'
+        : scheduled ? 'clock'
+          : empty ? 'question'
+            : 'assistant';
+    if (circle.dataset.glyph !== glyph) circle.dataset.glyph = glyph;
+  }
+
+  /**
+   * What a conversation at rest has to show for itself, for its tab's circle:
+   *  - `failed`: the root thread's last item is an error — the worker appends
+   *    one when a turn fails, and anything after it (a retry, the next message)
+   *    makes it history.
+   *  - `empty`: no user or assistant message yet. Only a loaded conversation is
+   *    judged: an unloaded one has no items in hand, and would look empty.
+   *
+   * Reads the thread's Y.Array directly — `MessageThread#items` copies the
+   * whole array on every read, once per tab per frame while a turn streams —
+   * looking only at the last item and scanning forward until the first message.
+   * @param {string} convId
+   * @returns {{failed: boolean, empty: boolean}} The outcome flags.
+   * @private
+   */
+  _conversationOutcome(convId) {
+    const conv = /** @type {any} */ (this._session?.conversations.get(convId));
+    const items = conv?.loadState === 'loaded' ? conv.rootMessageThread?.yarray : null;
+    if (!items) return { failed: false, empty: false };
+    // A corrupt entry need not be a Y.Map; it has no type to read.
+    const typeAt = (/** @type {number} */ i) => {
+      const item = items.get(i);
+      return typeof item?.get === 'function' ? item.get('type') : undefined;
+    };
+    const failed = items.length > 0 && typeAt(items.length - 1) === 'error';
+    let empty = true;
+    for (let i = 0; i < items.length && empty; i++) {
+      const type = typeAt(i);
+      if (type === 'user' || type === 'assistant') empty = false;
+    }
+    return { failed, empty };
   }
 
   /**
    * Repaint every tab's status classes. Used when something other than a
-   * conversation's own state changes what a tab should look like — namely the
-   * tab-highlight preference, which must take effect on tabs already pulsing
-   * rather than at the next status change.
+   * conversation's own state changes what a tab should look like — namely a
+   * scheduled send being armed or cancelled, which lives on a draft the bar
+   * doesn't read.
    * @private
    */
   _refreshAllTabStatus() {
@@ -1714,7 +1779,7 @@ class ConversationBar extends JugglerElement {
    * processing_tools, so isConversationProcessing() stays true — we report
    * `awaiting` and subtract it back out of `running`. Both consumers read from
    * here so they can never drift:
-   *  - _refreshTabStatus paints .is-awaiting (orange) / .is-running (green).
+   *  - _refreshTabStatus paints .is-awaiting (yellow) / .is-running (green).
    *  - _isConversationBusy gates binning on `running` ALONE — an awaiting tab is
    *    parked on the user, executes nothing, and bins reversibly, so it is
    *    deliberately NOT busy for the purpose of the bin guard.
@@ -1770,9 +1835,8 @@ class ConversationBar extends JugglerElement {
     // rapid taps across different elements): first click switches to the tab, a
     // second click on the now-active tab renames it.
 
-    // Drag to reorder. Which pointers may grab where is the shared rule
-    // (utils/drag-grip.js): a mouse anywhere on the tab, a finger or pen only
-    // from the grip.
+    // Drag to reorder: a mouse from anywhere on the tab, and a finger or pen
+    // from anywhere too, by holding still first (_startDrag passes the hold).
     tab.addEventListener('pointerdown', (e) => {
       const event = /** @type {PointerEvent} */ (e);
       if (event.button !== 0) return;
@@ -1782,7 +1846,6 @@ class ConversationBar extends JugglerElement {
       const target = /** @type {HTMLElement|null} */ (event.target);
       if (target?.closest('.conversation-tab-bin')) return;
       if (target?.closest('.inline-rename')) return;
-      if (!pointerMayGrab(event)) return;
       this._startDrag(event, tab);
     });
   }
@@ -1996,16 +2059,35 @@ class ConversationBar extends JugglerElement {
     const dx = (to.left + to.width / 2) - (from.left + from.width / 2);
     const dy = (to.top + to.height / 2) - (from.top + from.height / 2);
 
-    // Detach from layout so neighbouring tabs collapse smoothly.
+    // Detach from layout so neighbouring tabs collapse smoothly — but not from
+    // the bar. Every rule that draws a tab is scoped to it, so a tab parked
+    // anywhere else flies as an unstyled heap of all its status glyphs. The
+    // surface it lay on goes with it, being its box's when it sat in one.
+    //
+    // `fixed` resolves against the viewport only while no ancestor sets a
+    // transform, and the phone sidebar slides in under one: so it is placed at
+    // the origin, the origin measured, and the offset taken from there — as the
+    // drag clone is (utils/reorder-drag.js).
+    //
+    // Staying in the bar, it gives up its id: it is no longer the
+    // conversation's tab, and every lookup by id — the reconciler, a keyboard
+    // move, attention — must find the strip's tab or nothing.
     this._cachedElements.delete(conversationId);
+    tabEl.removeAttribute('data-conversation-id');
+    tabEl.style.setProperty('--tab-surface',
+      getComputedStyle(tabEl).getPropertyValue('--tab-surface'));
     tabEl.style.position = 'fixed';
-    tabEl.style.left = `${from.left}px`;
-    tabEl.style.top = `${from.top}px`;
+    tabEl.style.left = '0';
+    tabEl.style.top = '0';
     tabEl.style.width = `${from.width}px`;
+    tabEl.style.height = `${from.height}px`;
     tabEl.style.margin = '0';
     tabEl.style.pointerEvents = 'none';
     tabEl.style.zIndex = '1000';
-    document.body.appendChild(tabEl);
+    this.appendChild(tabEl);
+    const origin = tabEl.getBoundingClientRect();
+    tabEl.style.left = `${from.left - origin.left}px`;
+    tabEl.style.top = `${from.top - origin.top}px`;
 
     const anim = tabEl.animate(
       [
@@ -2335,6 +2417,12 @@ class ConversationBar extends JugglerElement {
     startReorderDrag(e, {
       item: tab,
       items: listTabs,
+      // The boxes are not places a tab lands, but a tab moving in or out of
+      // one pushes the rest of the strip about, boxes included — and a box
+      // that jumped while the tabs around it glided would arrive ahead of
+      // its own conversations.
+      groups: () => /** @type {HTMLElement[]} */ (
+        Array.from(this.querySelectorAll('.conversation-box:not(.drag-ghost)'))),
       strip: tabsMenu,
       ghostHost: this,
       scrollContainer: tabsMenu,
@@ -2347,6 +2435,7 @@ class ConversationBar extends JugglerElement {
         clone.classList.remove('is-renaming');
         clone.removeAttribute('data-conversation-id');
       },
+      hold: this._touchHold(e, tab),
       onDragStart: () => this._dragStarted(),
       onDragEnd: ({ dragged }) => this._dragEnded(dragged),
       onCommit: () => {
@@ -2457,7 +2546,7 @@ class ConversationBar extends JugglerElement {
           const rect = settledRect(slot);
           if (clientY < rect.top + rect.height / 2) return { parent: tabsMenu, anchor: slot };
         }
-        return { parent: tabsMenu, anchor: null };
+        return { parent: tabsMenu, anchor: this._stripEnd(tabsMenu) };
       },
       prepareGhost: (clone) => {
         // A copy of a box is not a box, and the tabs drawn in the copy are not
@@ -2468,10 +2557,43 @@ class ConversationBar extends JugglerElement {
           tab.removeAttribute('data-conversation-id');
         }
       },
+      hold: this._touchHold(e, box),
       onDragStart: () => this._dragStarted(),
       onDragEnd: ({ dragged }) => this._dragEnded(dragged),
       onCommit: () => this._commitArrangement(),
     });
+  }
+
+  /**
+   * The hold a finger or pen must make before a row lifts, and what a lift let
+   * go where it was means: that row's menu, which is how a finger right-clicks.
+   * @param {PointerEvent} press - The pointerdown.
+   * @param {HTMLElement} row - The tab or box it pressed.
+   * @returns {{ms: number, tolerancePx: number, onHeldRelease: (point: {clientX: number, clientY: number}) => void}} The hold.
+   * @private
+   */
+  _touchHold(press, row) {
+    const pressed = press.target instanceof Element && row.contains(press.target) ? press.target : row;
+    return {
+      ms: this._touchHoldMs,
+      tolerancePx: TOUCH_HOLD_TOLERANCE_PX,
+      onHeldRelease: (point) => this._openMenuFromHold(pressed, point),
+    };
+  }
+
+  /**
+   * Open the menu a right-click on `subject` would open, at a point. A held
+   * row's long-press arrives here: the native `contextmenu` a long-press fires
+   * on Android is suppressed for the length of the hold, and iOS fires none.
+   * @param {Element} subject - What was held.
+   * @param {{clientX: number, clientY: number}} point - Where it was let go.
+   * @returns {void}
+   * @private
+   */
+  _openMenuFromHold(subject, point) {
+    const event = new MouseEvent('contextmenu', { clientX: point.clientX, clientY: point.clientY });
+    const resolved = resolveMenu(subject, event);
+    if (resolved) openMenuAt(resolved.items, point.clientX, point.clientY, resolved.subject);
   }
 
   /**
@@ -2564,6 +2686,10 @@ customElements.define('conversation-bar', ConversationBar);
 
 // Export for modules
 /** @type {WindowWithConversationBar} */ (/** @type {any} */ (window)).ConversationBar = ConversationBar;
+
+// A long-press on a row is a lift, not a right-click, until it is let go where
+// it was (see _touchHold).
+registerContextMenuSuppressor(holdGestureLive);
 
 // Right-click menu for conversation tabs in the bar. Wired to the active bar's
 // own helpers so rename/duplicate/bin behave exactly like the built-in

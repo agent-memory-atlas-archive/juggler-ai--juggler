@@ -1175,10 +1175,10 @@ action-confirmation:focus {
     min-width: 0;
 }
 
-/* Badge marking a bash command launched as a detached background process. Reuses
-   `.context-item-type-badge` for exact height/shape parity with the type badge
-   beside it, overriding only the fill (a distinct accent) and adding the inline
-   spacing before the command text. */
+/* Badge marking a bash command launched as a detached background process. A
+   `.context-item-type-badge` (patterns/item-badge.css) for exact height/shape
+   parity with the type badge beside it, overriding only the fill (a distinct
+   accent) and adding the inline spacing before the command text. */
 .action-summary-background-tag {
     background: var(--text-tertiary);
     margin-right: 1rem;
@@ -1209,10 +1209,12 @@ action-confirmation:focus {
     min-width: 0;
 }
 
-/* Diffstat rendered as a lozenge matching `.context-item-type-badge` (same
-   padding, radius and mono weight), sitting just after the type badge. Neutral
-   raised fill so the green `+added` / red `-removed` accents carry the meaning
-   in both light and dark themes. */
+/* Diffstat: an `.item-lozenge` (patterns/item-badge.css — padding, radius,
+   size and weight are the shared badge's), sitting
+   just after the type badge. What differs is said here: mono digits that are
+   neither uppercased nor tracked, a neutral raised fill so the green `+added` /
+   red `-removed` accents carry the meaning in both themes, and an inline-flex
+   row for the two counts. */
 .action-edit-stat {
     flex: none;
     display: inline-flex;
@@ -1224,15 +1226,10 @@ action-confirmation:focus {
        in the icon group, the stat is the first thing in the content box), so only
        the right margin to the filename is set here — matching that 1rem gap. */
     margin: 0 1rem 0 0;
-
-    /* Box matches `.context-item-type-badge` exactly (padding, radius, weight,
-       baseline placement) so the two lozenges line up as a matched pair. */
     font-family: var(--font-mono);
-    font-size: 0.6875rem;
-    font-weight: 600;
-    line-height: 1;
-    padding: 0.25rem 0.5rem 0.125rem;
-    border-radius: 0.25rem;
+    text-transform: none;
+    letter-spacing: normal;
+    color: inherit;
     background: var(--bg-raised);
 }
 

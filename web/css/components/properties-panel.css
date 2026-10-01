@@ -476,7 +476,7 @@ reveal-button {
 
 /* Pulse the icon box in the properties panel header while the tool action is running */
 properties-panel-section[data-processing="true"] .message-icon-box {
-    animation: icon-pulse 0.8s ease-in-out infinite;
+    animation: var(--item-badge-pulse);
 }
 
 /* Context item content fills available space and scrolls internally */
@@ -985,23 +985,6 @@ properties-panel-tx-metadata .meta-item {
 .conversation-item {
     cursor: pointer;
     padding: 0.4rem 0.75rem;
-}
-
-/* ===================================================================
-   Context Item Type Badge (used by renderResultStatusMessage lozenge)
-   ================================================================== */
-
-.context-item-type-badge {
-    display: inline-block;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    line-height: 1;
-    text-transform: uppercase;
-    letter-spacing: 0.0625rem;
-    color: white;
-    background: var(--preset-badge-bg, var(--preset-bg, var(--bg-primary)));
-    padding: 0.25rem 0.5rem 0.125rem;
-    border-radius: 0.25rem;
 }
 
 /* Approval-provenance badge in a tool-action's properties-panel header. Reuses

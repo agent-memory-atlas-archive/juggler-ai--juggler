@@ -223,14 +223,21 @@ export async function runTests() {
         bar.querySelector('.conversation-box[data-workspace-id="ws_a"]'));
       const header = /** @type {HTMLElement} */ (
         box.querySelector('.conversation-box-header'));
-      const unchosen = getComputedStyle(box).backgroundColor;
+      const unchosen = getComputedStyle(box).backgroundImage;
 
       session.selectWorkspace('ws_a');
       bar.render();
 
-      const painted = getComputedStyle(box).backgroundColor;
-      assert(painted !== unchosen,
-        `what is chosen is the box, so the box is what changes colour, got ${painted}`);
+      // Chosen the way a conversation-panel item is: the neutral selection
+      // wash laid over the box's own surface, never a hue of its own.
+      const probe = document.createElement('span');
+      probe.style.background = 'var(--item-selected-bg)';
+      bar.appendChild(probe);
+      const wash = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      const painted = getComputedStyle(box).backgroundImage;
+      assert(painted !== unchosen && painted.includes(wash),
+        `what is chosen is the box, so the box is what takes the selection wash, got ${painted}`);
       assert(getComputedStyle(header).backgroundColor === 'rgba(0, 0, 0, 0)',
         'and nothing inside it is painted as a second selected surface, which reads as a tab in a box '
         + `rather than as the box being chosen, got ${getComputedStyle(header).backgroundColor}`);

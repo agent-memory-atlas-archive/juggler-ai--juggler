@@ -427,7 +427,9 @@ class EditBase extends ContextItem {
     wrap.className = 'action-edit-summary';
 
     const stat = document.createElement('span');
-    stat.className = 'action-edit-stat';
+    // The shared lozenge shape (not a type badge, so not that class — the
+    // icon row hoists the first type badge it finds), restyled for digits.
+    stat.className = 'item-lozenge action-edit-stat';
     if (stats.added) {
       const add = document.createElement('span');
       add.className = 'action-edit-stat-add';

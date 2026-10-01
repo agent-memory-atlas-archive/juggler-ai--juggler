@@ -14,6 +14,8 @@ of changes; this project follows semantic versioning.
 - The file viewer plays video and audio, and shows BMP, AVIF, TIFF and HEIC images
 - Binary files over 10 MB open in the file viewer instead of reading as missing
 - Images the read tool opens now reach the model, instead of failing to upload with HTTP 404
+- Redesigned the tab UIs
+- On touch, hold a tab or workspace to reorder it, or release in place for its menu
 
 ## [0.7.3] - 2026-09-30
 

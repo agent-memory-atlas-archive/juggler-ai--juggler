@@ -366,43 +366,114 @@ export async function runTests() {
     }
   });
 
-  check('a box carries the same grip a tab does', () => {
+  check('the row that makes a workspace stays the last thing in the strip, whatever is dropped at the end', () => {
+    // A drop past the last box is a drop at the end of the strip, and the end
+    // of the strip is in front of that row — never after it. Dropping the last
+    // box back where it was changes nothing in the session, so no render comes
+    // along to tidy up after it: the drop itself has to land in the right place.
     const { bar, teardown } = mountBar(
-      [workspace('ws_a')],
-      [['c1', 'ws_a']]
+      [workspace('ws_a'), workspace('ws_b')],
+      [['c1', 'ws_a'], ['c2', 'ws_b']]
     );
     try {
-      const box = boxFor(bar, 'ws_a');
-      const grip = /** @type {HTMLElement|null} */ (box.querySelector('.drag-grip'));
-      assert(!!grip, 'a box is draggable, so it says so with a grip — the affordance a tab has');
-      assert(!!tabFor(bar, 'c1').querySelector('.drag-grip'),
-        'and it is the same grip, from the same place, not a second one that looks like it');
-      assert(getComputedStyle(/** @type {HTMLElement} */ (grip)).touchAction === 'none',
-        'which claims the gesture from the browser: without this the drawer keeps a finger for '
-        + `scrolling and the drag is cancelled as soon as it moves, got ${getComputedStyle(/** @type {HTMLElement} */ (grip)).touchAction}`);
+      const menu = /** @type {HTMLElement} */ (bar.querySelector('.conversation-tabs'));
+      const isLast = () => /** @type {Element} */ (menu.lastElementChild).classList.contains('conversation-box-new');
+      assert(isLast(), 'precondition: the row starts last');
+
+      const last = boxFor(bar, 'ws_b');
+      dragBoxToY(bar, last, last.getBoundingClientRect().bottom + 40);
+      assert(isLast(), `dropping the last box back at the end leaves the row last, got ${menu.lastElementChild?.className}`);
+
+      const first = boxFor(bar, 'ws_a');
+      dragBoxToY(bar, first, boxFor(bar, 'ws_b').getBoundingClientRect().bottom + 40);
+      assert(isLast(), `moving a box to the end puts it in front of the row, got ${menu.lastElementChild?.className}`);
     } finally {
       teardown();
     }
   });
 
-  check('a finger may drag a box by its grip, and may scroll from anywhere else', () => {
+  check('nothing in the sidebar carries a grip', () => {
+    const { bar, teardown } = mountBar(
+      [workspace('ws_a')],
+      [['c1', 'ws_a'], ['c2', '']]
+    );
+    try {
+      assert(!bar.querySelector('.drag-grip'),
+        'a finger lifts a row by holding it and a mouse drags it from anywhere, so no row needs a handle');
+    } finally {
+      teardown();
+    }
+  });
+
+  check('a finger begins a hold anywhere on a box header, and a mouse drags from there as before', () => {
+    const { bar, teardown } = mountBar(
+      [workspace('ws_a')],
+      [['c1', 'ws_a']]
+    );
+    try {
+      const header = /** @type {HTMLElement} */ (boxFor(bar, 'ws_a').querySelector('.conversation-box-header'));
+      assert(pressStartsDrag(bar, header, 'touch'),
+        'a finger on the header begins the gesture: the hold, not a handle, tells a drag from a scroll');
+      assert(pressStartsDrag(bar, header, 'mouse'), 'a mouse still drags a box from anywhere on its header');
+    } finally {
+      teardown();
+    }
+  });
+
+  /**
+   * Hold a row with a finger and let go where it was, through the real
+   * listener and the real gesture, with the hold taken down to nothing.
+   * @param {any} bar - The mounted bar.
+   * @param {HTMLElement} target - What the finger is on.
+   * @param {HTMLElement} row - The row that takes the pointer.
+   * @returns {Element[]} What the bar was asked to open a menu for.
+   */
+  const holdAndLetGo = (bar, target, row) => {
+    for (const el of [target, row]) {
+      /** @type {any} */ (el).setPointerCapture = () => {};
+      /** @type {any} */ (el).releasePointerCapture = () => {};
+    }
+    /** @type {Element[]} */
+    const menus = [];
+    bar._touchHoldMs = 0;
+    bar._openMenuFromHold = (/** @type {Element} */ subject) => menus.push(subject);
+    const rect = target.getBoundingClientRect();
+    const at = { pointerId: 4, pointerType: 'touch', button: 0, bubbles: true, composed: true,
+      clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 };
+    target.dispatchEvent(new PointerEvent('pointerdown', { ...at, buttons: 1 }));
+    document.dispatchEvent(new PointerEvent('pointerup', { ...at, buttons: 0 }));
+    return menus;
+  };
+
+  check('a box held and let go where it was opens its menu, and is not clicked', () => {
     const { bar, teardown } = mountBar(
       [workspace('ws_a')],
       [['c1', 'ws_a']]
     );
     try {
       const box = boxFor(bar, 'ws_a');
-      const grip = /** @type {HTMLElement} */ (box.querySelector('.drag-grip'));
       const header = /** @type {HTMLElement} */ (box.querySelector('.conversation-box-header'));
+      const menus = holdAndLetGo(bar, header, box);
+      assert(menus.length === 1 && box.contains(menus[0]),
+        `a long-press is how a finger asks for the box's menu, got ${menus.length} menu(s)`);
+      assert(bar._dragJustOccurred === true, 'and the click that follows the release is not a selection');
+    } finally {
+      teardown();
+    }
+  });
 
-      assert(pressStartsDrag(bar, grip, 'touch'),
-        'a finger on the grip is reordering the strip');
-      assert(!pressStartsDrag(bar, header, 'touch'),
-        'a finger anywhere else on the box is scrolling the list it is in — a box header spans '
-        + 'the whole width, so taking a touch there would cost the sidebar its scroll');
-      assert(pressStartsDrag(bar, header, 'mouse'),
-        'a mouse still drags a box from anywhere on it: it has a hover to find the grip with, '
-        + 'and nothing else is competing for the press');
+  check('a tab held and let go where it was opens its menu, and is not clicked', () => {
+    const { bar, teardown } = mountBar(
+      [workspace('ws_a')],
+      [['c1', 'ws_a']]
+    );
+    try {
+      const tab = tabFor(bar, 'c1');
+      const name = /** @type {HTMLElement} */ (tab.querySelector('.conversation-tab-name'));
+      const menus = holdAndLetGo(bar, name, tab);
+      assert(menus.length === 1 && tab.contains(menus[0]),
+        `a long-press is how a finger asks for a tab's menu, got ${menus.length} menu(s)`);
+      assert(bar._dragJustOccurred === true, 'and the click that follows the release does not switch to it');
     } finally {
       teardown();
     }

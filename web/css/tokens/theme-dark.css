@@ -68,35 +68,35 @@
     --workspace-box-bg: #202935;
     --workspace-box-border: #404b5a;
 
-    /* What tells one box from another at a glance. A workspace picks a hue by
-       hashing its id (utils/workspace-colour.js), and the box mixes it into the
-       pair above rather than replacing them — so every hue lands in this theme's
-       own lightness range, and one palette serves both themes without a second
-       set of values tuned for each.
+    /* What tells one box from another at a glance. A workspace picks a slot by
+       hashing its id (utils/workspace-colour.js), and each slot is one of the
+       context-item presets below — the same fills the conversation panel's
+       circles and lozenges wear — so a workspace's name chip and a tool's icon
+       draw from one palette. Same order in both themes, so the hash keeps
+       pointing at the same hue when the theme changes.
 
-       Eight, spread around the wheel far enough apart to be told apart at the
-       width of a border, and no signal colours: a box's hue says which place it
-       is, never how it is doing. The strengths are the whole of how loud this
-       gets, which is why they are three numbers here and not sixteen. */
-    --workspace-tint-1: #58a6ff;
-    --workspace-tint-2: #39c5cf;
-    --workspace-tint-3: #3fb950;
-    --workspace-tint-4: #9ecb5a;
-    --workspace-tint-5: #e3b341;
-    --workspace-tint-6: #ff8f6b;
-    --workspace-tint-7: #f778ba;
-    --workspace-tint-8: #b98cff;
+       Eight, spread around the wheel, and no signal colours: green says a tab
+       is running, yellow that it waits on you, red that something failed, and
+       a box's hue says which place it is, never how it is doing. Dark has no
+       badge mid-tones, so these are the presets themselves.
 
-    /* Dark takes more of it: the tint has to clear a fill that is already dark
-       and already coloured, where light has white to spend. */
-    --workspace-tint-fill: 16%;
-    --workspace-tint-edge: 60%;
-    --workspace-tint-text: 45%;
+       The fill is a breath of the tint, because the colour is in the name chip;
+       the edge is a hairline mixed toward it. */
+    --workspace-tint-1: var(--ci-preset-blue);
+    --workspace-tint-2: var(--ci-preset-teal);
+    --workspace-tint-3: var(--ci-preset-indigo);
+    --workspace-tint-4: var(--ci-preset-slate);
+    --workspace-tint-5: var(--ci-preset-brown);
+    --workspace-tint-6: var(--ci-preset-magenta);
+    --workspace-tint-7: var(--ci-preset-pink);
+    --workspace-tint-8: var(--ci-preset-purple);
+    --workspace-tint-fill: 2%;
+    --workspace-tint-edge: 35%;
 
     /* How strongly the line pattern behind the header and sidebar is inked
        (layout/app-shell.css). Per theme because light lines on dark and dark
        lines on light don't read at the same opacity. */
-    --chrome-pattern-strength: 0.07;
+    --chrome-pattern-strength: 0.06;
 
     /* ANSI foreground palette (dark) — used by utils/ansi.js to colour bash
        output text in the properties panel. Tuned to read well on --bg-primary.
@@ -238,6 +238,11 @@
     /* Selected conversation item — stronger than the generic overlay so the
        highlight reads clearly against the dark background. */
     --item-selected-bg: rgb(255 255 255 / 18%);
+
+    /* The chosen tab in the sidebar: the same neutral wash, in a stronger
+       measure, because a strip of tabs is read at a glance from across the
+       window where an item row is read up close. */
+    --item-selected-strong-bg: rgb(255 255 255 / 26%);
 
     /* Tooltips — a small, borderless surface (see components.css ▸ TOOLTIP).
        A raised solid fill that sits above the chrome, separated by a strong drop

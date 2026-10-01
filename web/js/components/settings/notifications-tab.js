@@ -192,7 +192,7 @@ export class NotificationsTab {
 
     const highlightRow = buildToggleRow(
       'Highlight conversations that need attention',
-      'Pulse a conversation’s tab while it’s waiting for you. With this off the tab stays plain, but the “Jump to conversation needing attention” shortcut still finds it.',
+      'Flash and tint a conversation’s tab when it needs you while you’re elsewhere. With this off the tab stays plain, though its status circle still shows when it’s waiting, and the “Jump to conversation needing attention” shortcut still finds it.',
       prefs.tabHighlight,
       (on) => setTabHighlightEnabled(on),
     );

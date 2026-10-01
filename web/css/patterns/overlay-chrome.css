@@ -4,47 +4,12 @@
  *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
  */
 
-/* ===================================================================
-   APP TIER CSS — components.css
-   Styles app custom elements and chrome. Not plugin content.
-
-   Compare:
-     styles.css              — design tokens + core layout
-     utilities.css           — reusable utility classes
-     components.css          — app custom elements  ← this file
-     context-items.css       — plugin content rendering
-     plugin-catalog.css      — plugin catalog UI
-
-   TABLE OF CONTENTS
-   -----------------
-    1.  Reusable Close Button             ln   5
-    2.  Shared Modal Styles               ln  33
-    3.  Token Display                     ln  58
-    4.  Code Block                        ln  93
-    5.  Conversation Bar                  ln 168
-    6.  Properties Panel                  ln 661
-    7.  Context Item Type Badge           ln 1074
-    8.  Model Selector                    ln 1090
-    9.  Diff Viewer                       ln 1235
-   10.  Composer                         ln 1382
-   11.  Permission Controls               ln 1628
-   12.  Welcome Modal                     ln 2055
-   13.  About Modal                       ln 2293
-   14.  Settings Panel                    ln 2405
-   15.  modal-dialog                      ln 2752  (→ Context Preview Modal)
-   16.  Action Confirmation               ln 2986
-   17.  Transaction Summary               ln 3041
-   18.  Multi-Question Form               ln 3143
-   19.  Action Result Status              ln 3204
-   20.  Dropdown Menu List                ln 3286
-   21.  Semantic Badge Colors             ln 3321
-   22.  Preformatted Output               ln 3360
-   23.  Ask User Question                 ln 3372
-   24.  Text Utilities                    ln 3419
-   25.  Disconnection Overlay             ln 3431
-   26.  Message Context Menu              ln 3471
-   27.  Project Picker Modal              ln 3749
-   ================================================================== */
+/* Chrome shared by the overlays and blocks several components host:
+     - Shared modal styles   modal-backdrop, modal-panel
+     - Image lightbox        .image-lightbox
+     - Token display         token-display
+     - Code block            code-block
+   The type lozenge and the icon circle are patterns/item-badge.css. */
 
 /* ===================================================================
    Shared Modal Styles

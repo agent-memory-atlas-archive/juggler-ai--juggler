@@ -40,6 +40,11 @@
        .message-row-body utility; see it for when a block wants this. */
     --message-icon-indent: calc(var(--message-icon-row-height) + var(--message-icon-badge-gap));
 
+    /* A badge circle that is busy pulses, everywhere one is drawn — the
+       conversation rows, the properties-panel header, the sidebar tabs. The
+       keyframes are in patterns/item-badge.css. */
+    --item-badge-pulse: icon-pulse 0.8s ease-in-out infinite;
+
     /* Z-Index Scale - use these instead of arbitrary values */
     --z-base: 1;           /* Default stacking */
     --z-raised: 10;        /* Slightly elevated elements */

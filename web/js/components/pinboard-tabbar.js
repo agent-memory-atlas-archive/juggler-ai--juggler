@@ -159,11 +159,10 @@ class PinboardTabbar extends JugglerElement {
     // stops its own click below.
     wrapper.addEventListener('click', () => this._emit('pinboard-select', { pinId }));
 
-    // The grip a finger drags by — the shared one (utils/drag-grip.js), which
-    // the conversation sidebar's tabs and workspace boxes also carry. A touch has
-    // no hover to reveal an affordance and no way to say "this is a drag and not
-    // a scroll"; the grip's `touch-action: none` is what says it, and is why a
-    // touch may only start a reorder from here.
+    // The grip a finger drags by — the shared one (utils/drag-grip.js). A touch
+    // has no hover to reveal an affordance and no way to say "this is a drag and
+    // not a scroll"; the grip's `touch-action: none` is what says it, and is why
+    // a touch may only start a reorder from here.
     const grip = createDragGrip();
 
     const button = document.createElement('button');

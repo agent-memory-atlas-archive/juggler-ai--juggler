@@ -62,25 +62,22 @@
     --workspace-box-bg: #fff;
     --workspace-box-border: #c2ccd6;
 
-    /* The same eight hues as the dark theme, at this theme's depth: a workspace
-       keeps the hue it is known by when the theme is switched, and only the
-       lightness moves. Same order, so the hash keeps pointing at the same one. */
-    --workspace-tint-1: #0969da;
-    --workspace-tint-2: #1b7c83;
-    --workspace-tint-3: #1a7f37;
-    --workspace-tint-4: #5c7a1e;
-    --workspace-tint-5: #9a6700;
-    --workspace-tint-6: #bc4c00;
-    --workspace-tint-7: #bf3989;
-    --workspace-tint-8: #8250df;
-
-    /* Light needs far less, for the same reason the box itself does. */
-    --workspace-tint-fill: 7%;
-    --workspace-tint-edge: 45%;
-    --workspace-tint-text: 40%;
+    /* The same eight presets as the dark theme (see there), at the saturated
+       badge mid-tones this theme gives its lozenges and circles, so white reads
+       on them. Same order, so the hash keeps pointing at the same one. */
+    --workspace-tint-1: var(--ci-preset-badge-blue);
+    --workspace-tint-2: var(--ci-preset-badge-teal);
+    --workspace-tint-3: var(--ci-preset-badge-indigo);
+    --workspace-tint-4: var(--ci-preset-badge-slate);
+    --workspace-tint-5: var(--ci-preset-badge-brown);
+    --workspace-tint-6: var(--ci-preset-badge-magenta);
+    --workspace-tint-7: var(--ci-preset-badge-pink);
+    --workspace-tint-8: var(--ci-preset-badge-purple);
+    --workspace-tint-fill: 2%;
+    --workspace-tint-edge: 35%;
 
     /* The header/sidebar line pattern's strength (see tokens/theme-dark.css). */
-    --chrome-pattern-strength: 0.05;
+    --chrome-pattern-strength: 0.06;
 
     /* ANSI foreground palette (light) — tuned to read well on the light
        --bg-primary. Mirrors GitHub's light ANSI colours. Backgrounds use the
@@ -212,6 +209,7 @@
     --overlay-light-20: rgb(0 0 0 / 12%);
     --overlay-light-30: rgb(0 0 0 / 18%);
     --item-selected-bg: rgb(0 0 0 / 8%);
+    --item-selected-strong-bg: rgb(0 0 0 / 15%);
 
     /* Scrollbar colours for light theme. The metrics are in tokens/scale.css. */
     --scrollbar-track-bg: rgb(0 0 0 / 5%);

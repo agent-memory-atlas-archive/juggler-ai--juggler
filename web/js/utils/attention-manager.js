@@ -29,12 +29,11 @@
  *  - An **out-of-app signal** (the `notify` pref) on top: a dock-icon bounce in
  *    the desktop app, or a leading ● on this browser tab's title in a browser.
  *
- * `tabHighlight` reaches one surface this module does not own: the sidebar tab's
- * standing **awaiting pulse**, which the conversation bar paints from live
- * approval state (not from an alert, and regardless of focus). It is the loudest
- * and longest-lived yellow on a tab, so a user turning tab highlighting off means
- * that one above all — `conversation-bar._refreshTabStatus` reads
- * {@link isTabHighlightEnabled} for exactly that reason.
+ * `tabHighlight` reaches the blink and the tint and nothing else. The sidebar
+ * tab's status circle — yellow, with a question mark, while an approval is
+ * parked — is painted by the conversation bar from live approval state and is
+ * not an alert: it is status, steady and small like the running green, and the
+ * setting leaves it alone.
  *
  * A standing alert clears when you view the conversation, and only then. Being
  * away is exactly the case it exists for, so a turn that finished while you were
@@ -78,8 +77,8 @@ export const ATTENTION_PREFS_EVENT = 'juggler:attention-prefs-changed';
  *   dock-icon bounce in the desktop app, or a ● on this browser tab's title in a
  *   browser. Independent of the in-app conversation-tab highlight.
  * @property {boolean} tabHighlight - Let a conversation's sidebar tab change
- *   appearance to get noticed: the alert blink and standing tint here, plus the
- *   conversation bar's awaiting pulse. Off leaves tabs looking untouched; the
+ *   appearance to get noticed: the alert blink and standing tint. Off leaves the
+ *   tab's colour alone (its status circle still says what state it is in); the
  *   conversation is still flagged, so the other surfaces and jump-to-attention
  *   are unaffected.
  * @property {boolean} tabReorder - Let a conversation's tab float up the list in
@@ -194,16 +193,6 @@ export function isNotifyEnabled() {
 export function setNotifyEnabled(on) {
   savePrefs({ notify: !!on });
   syncBrowserTitleBadge();
-}
-
-/**
- * Whether a conversation's sidebar tab may change appearance to get noticed.
- * Read here for the alert marks, and by `conversation-bar._refreshTabStatus` for
- * the awaiting pulse.
- * @returns {boolean} True when tab highlighting is enabled.
- */
-export function isTabHighlightEnabled() {
-  return getAttentionPrefs().tabHighlight;
 }
 
 /**
@@ -416,6 +405,7 @@ function clearAllFlash() {
 export function getFlaggedConversationIds() {
   return [...flagged];
 }
+
 
 // ── Edge detection + gating ─────────────────────────────────────────────────
 

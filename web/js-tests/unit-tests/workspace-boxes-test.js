@@ -344,9 +344,9 @@ export async function runTests() {
         empty.dispatchEvent(new PointerEvent('pointerdown', {
           bubbles: true, button: 0, pointerType: 'touch'
         }));
-        assert(dragged.length === 1,
-          'but a finger there is scrolling the strip, not lifting the box out of it — the grip is '
-          + `the one place a touch may start a drag, got ${dragged.length} drag(s)`);
+        assert(dragged.length === 2 && dragged[1] === box,
+          'and a finger there begins the same gesture, which the hold then decides is a drag or a '
+          + `scroll, got ${dragged.length} drag(s)`);
 
         // The "+" is a button, and a press on a button is a press on that
         // button — it must neither select the box nor start dragging it.
@@ -354,7 +354,7 @@ export async function runTests() {
         add.dispatchEvent(new PointerEvent('pointerdown', {
           bubbles: true, button: 0, pointerType: 'mouse'
         }));
-        assert(dragged.length === 1,
+        assert(dragged.length === 2,
           `pressing the "+" does not drag the box, got ${dragged.length} drag(s)`);
 
         // And the moment the box has a tab in it, the tab is what a press there
@@ -367,7 +367,7 @@ export async function runTests() {
         tab.dispatchEvent(new PointerEvent('pointerdown', {
           bubbles: true, button: 0, pointerType: 'mouse'
         }));
-        assert(dragged.length === 1,
+        assert(dragged.length === 2,
           `a press on a tab does not take hold of the box around it, got ${dragged.length} drag(s)`);
         tab.dispatchEvent(new MouseEvent('click', { bubbles: true }));
         assert(selected.join(',') === 'ws_a',
@@ -378,7 +378,7 @@ export async function runTests() {
         header.dispatchEvent(new PointerEvent('pointerdown', {
           bubbles: true, button: 0, pointerType: 'mouse'
         }));
-        assert(dragged.length === 2 && dragged[1] === box,
+        assert(dragged.length === 3 && dragged[2] === box,
           `and the header still takes hold of it, got ${dragged.length} drag(s)`);
 
         bar._session.conversations.delete('c9');
@@ -395,8 +395,17 @@ export async function runTests() {
         bar.querySelector('.conversation-box[data-workspace-id="ws_a"]'));
       const add = /** @type {HTMLButtonElement} */ (box.querySelector('.conversation-box-add'));
       assert(add, 'an empty box offers the way to put something in it');
-      assert(add.textContent === '+',
-        `it is the same mark as the one at the top of the strip, got ${JSON.stringify(add.textContent)}`);
+      // A drawn mark rather than a "+" character: a glyph sits wherever its
+      // font's ascent and descent put it, which is not the middle of a circle.
+      const mark = add.querySelector('svg');
+      assert(mark, 'it is a drawn mark, not a character placed by font metrics');
+      const ring = add.getBoundingClientRect();
+      const drawn = mark.getBoundingClientRect();
+      const off = Math.hypot(
+        (drawn.left + drawn.width / 2) - (ring.left + ring.width / 2),
+        (drawn.top + drawn.height / 2) - (ring.top + ring.height / 2));
+      assert(drawn.width > 0 && off < 0.5,
+        `and it is centred in its circle, got ${off.toFixed(2)}px out (${drawn.width}px wide)`);
       assert(add.getAttribute('aria-label') === 'New conversation in this workspace',
         `and says which workspace it means, got ${JSON.stringify(add.getAttribute('aria-label'))}`);
 
@@ -555,36 +564,56 @@ export async function runTests() {
         + 'also put the keyboard in the strip — that left the box wearing a focus ring no clicked tab ever wears');
     });
 
-    await check('a box begins where a tab begins, down the same two columns', () => {
-      // The strip is one list, whatever a row is a row of: a box is dragged by
-      // the same grip as the tab above it, so the two stand in one column and
-      // their names start on one line. A box pays for its own padding and its
-      // top row must spend that much less on the inset — counted twice, the box
-      // header sat a handle's width right of every unboxed row beside it.
+    await check('a box names itself on its top edge, over the column of its tabs\' circles', async () => {
+      // The name is a lozenge standing on the box's border, the way a
+      // fieldset's legend does: the box needs no header row of its own, and the
+      // border runs out from the name to the "+" on the other corner. It stands
+      // over the column the circles of its tabs are in, so a box reads as one
+      // more row of the strip's left edge rather than as a caption above it.
       bar._session = stubSession([workspace('ws_a', 'feature/auth')], [['c1', 'ws_a'], ['c3', '']]);
       bar.render();
 
-      const menu = /** @type {HTMLElement} */ (bar.querySelector('.conversation-tabs'));
-      const box = /** @type {HTMLElement} */ (
-        menu.querySelector('.conversation-box[data-workspace-id="ws_a"]'));
-      // The unboxed one. A tab lying inside a box is indented by the box, which
-      // is the point of the box, and is not what this is measured against.
-      const tab = /** @type {HTMLElement} */ (menu.querySelector(':scope > .conversation-tab'));
+      const box = /** @type {HTMLElement} */ (bar.querySelector('.conversation-box[data-workspace-id="ws_a"]'));
+      const label = /** @type {HTMLElement} */ (box.querySelector('.conversation-box-label'));
+      const add = /** @type {HTMLElement} */ (box.querySelector('.conversation-box-add'));
+      const circle = /** @type {HTMLElement} */ (box.querySelector('.conversation-tab .conversation-tab-status'));
+      const edge = box.getBoundingClientRect().top + 0.5;
+      const middle = (/** @type {Element} */ el) => {
+        const r = el.getBoundingClientRect();
+        return r.top + r.height / 2;
+      };
 
-      // Measured from each row's own left edge, which is the same edge for both
-      // — they are siblings in the strip — but says so in the failure.
-      const indent = (/** @type {Element} */ row, /** @type {Element} */ part) =>
-        part.getBoundingClientRect().left - row.getBoundingClientRect().left;
+      assert(Math.abs(middle(label) - edge) < 1,
+        `the name stands on the box's top edge, got its middle ${middle(label)}px against the edge at ${edge}px`);
+      assert(Math.abs(middle(add) - edge) < 1,
+        `and so does the "+", got its middle ${middle(add)}px against the edge at ${edge}px`);
+      assert(Math.abs(label.getBoundingClientRect().left - circle.getBoundingClientRect().left) < 0.5,
+        `it starts over the box's column of status circles, got ${label.getBoundingClientRect().left}px `
+        + `against ${circle.getBoundingClientRect().left}px`);
+      assert(label.getBoundingClientRect().bottom <= /** @type {Element} */ (box.querySelector('.conversation-tab')).getBoundingClientRect().top,
+        'and clears the first tab below it');
+      assert(getComputedStyle(/** @type {Element} */ (box.querySelector('.conversation-tab'))).backgroundColor === 'rgba(0, 0, 0, 0)',
+        'a tab in a box has no fill of its own: the box\'s surface is its surface');
 
-      const tabGrip = indent(tab, /** @type {Element} */ (tab.querySelector(':scope > .drag-grip')));
-      const boxGrip = indent(box, /** @type {Element} */ (box.querySelector('.conversation-box-top > .drag-grip')));
-      assert(Math.abs(tabGrip - boxGrip) < 0.5,
-        `a box is dragged from the column its neighbours are dragged from, got ${boxGrip}px against a tab's ${tabGrip}px`);
+      assert(label.classList.contains('item-lozenge'), 'the name is the shared lozenge');
+      const probe = document.createElement('span');
+      probe.style.background = 'var(--workspace-tint)';
+      box.appendChild(probe);
+      const tint = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      assert(getComputedStyle(label).backgroundColor === tint,
+        `filled with the box's own tint, got ${getComputedStyle(label).backgroundColor} against ${tint}`);
+      assert(getComputedStyle(label).color === 'rgb(255, 255, 255)', 'and lettered in white');
 
-      const tabName = indent(tab, /** @type {Element} */ (tab.querySelector('.conversation-tab-name')));
-      const boxLabel = indent(box, /** @type {Element} */ (box.querySelector('.conversation-box-label')));
-      assert(Math.abs(tabName - boxLabel) < 0.5,
-        `and names the place where a tab names itself, got ${boxLabel}px against a tab's ${tabName}px`);
+      // The fixture provider reports the tree dirty: the mark for it is a dot in
+      // the name, not a colour beside it.
+      await waitFor(() => /** @type {HTMLElement} */ (box.querySelector('.conversation-box-header')).classList.contains('is-dirty'),
+        { description: 'the header to hear the tree is dirty' });
+      assert(getComputedStyle(label, '::after').content !== 'none',
+        'uncommitted work is marked inside the name');
+      assert(label.querySelector('.conversation-box-label-text')?.textContent === 'feature/auth',
+        `and the name's text is its own element, so a long one ellipsises before the mark, got `
+        + `${JSON.stringify(label.querySelector('.conversation-box-label-text')?.textContent)}`);
     });
 
     await check('the strip ends with the outline of a box to make', () => {
@@ -989,6 +1018,27 @@ export async function runTests() {
       bar.render();
       assert(tintOf('ws_one') === first,
         `the colour is derived from the id and nothing else, so a redraw cannot change it, got "${tintOf('ws_one')}" after "${first}"`);
+    });
+
+    await check('the eight workspace tints are the panel\'s own presets', () => {
+      // One palette for the chips and the item circles: a workspace's tint is
+      // a preset fill, so the two read as one set and a theme change moves both.
+      const presets = ['blue', 'teal', 'indigo', 'slate', 'brown', 'magenta', 'pink', 'purple'];
+      const fill = (/** @type {string} */ css, /** @type {string} */ className = '') => {
+        const probe = document.createElement('span');
+        probe.className = className;
+        if (css) probe.style.background = css;
+        container.appendChild(probe);
+        const colour = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return colour;
+      };
+      presets.forEach((preset, i) => {
+        const tint = fill(`var(--workspace-tint-${i + 1})`);
+        const circle = fill('', `message-icon-box color-${preset}`);
+        assert(tint === circle,
+          `--workspace-tint-${i + 1} is the ${preset} preset, got ${tint} against ${circle}`);
+      });
     });
   } finally {
     container.remove();

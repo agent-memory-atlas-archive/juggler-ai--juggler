@@ -1,0 +1,245 @@
+/*
+ *     ▄▄ ▄▄ ▄▄  ▄▄▄▄  ▄▄▄▄ ▄▄    ▄▄▄▄▄ ▄▄▄▄
+ *     ██ ██ ██ ██ ▄▄ ██ ▄▄ ██    ██▄▄  ██▄█▄   Copyright (c) 2026 Julian Storer
+ *   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
+ */
+
+/* The badge language: three devices, one meaning each.
+
+   - The circle says what KIND of thing a row is: a preset fill and a white
+     glyph.
+   - The circle pulsing (--item-badge-pulse, tokens/scale.css) says it is BUSY.
+   - The lozenge NAMES a category, white on the same fill.
+
+   Each shape has two names, and they are not interchangeable. The
+   .message-icon-box and .context-item-type-badge classes are also how the
+   conversation panel FINDS an item's icon and type badge (wrapWithIcon hoists
+   the first type badge in a row's content), so they go on those and nothing
+   else. Anything else drawn in the same shape — a diffstat, a tab's status
+   circle, a workspace's name — takes .item-circle or .item-lozenge, which are
+   the same definitions under a name nothing searches for.
+
+   A pattern because two unrelated components draw them: the conversation
+   panel's item rows (and the properties-panel header that repeats them), and
+   the sidebar's tabs and workspace boxes. Both consume these definitions rather
+   than copies of them, so a change here moves both. What stays with each
+   component is placement and what state sets which colour.
+
+   Selection is not here on purpose: a selected row is a neutral overlay, never
+   a hue, and each component lays that overlay on its own surface. */
+
+/* The circle: shape and padding. How big the glyph inside it is belongs to
+   whoever draws it (messages.css sizes the conversation panel's). */
+.message-icon-box {
+    border-radius: 50%;
+    padding: var(--message-icon-pad);
+    margin-top: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+/* The same circle drawn on chrome rather than in an item row: filled from its
+   preset and given a white glyph in both themes, because nothing around it
+   tints the glyph. No padding — whoever draws one sizes it. */
+.item-circle {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    color: white;
+    background: var(--preset-badge-bg, var(--preset-bg));
+}
+
+/* The lozenge. */
+.context-item-type-badge,
+.item-lozenge {
+    display: inline-block;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    line-height: 1;
+    text-transform: uppercase;
+    letter-spacing: 0.0625rem;
+    color: white;
+    background: var(--preset-badge-bg, var(--preset-bg, var(--bg-primary)));
+    padding: 0.25rem 0.5rem 0.125rem;
+    border-radius: 0.25rem;
+}
+
+/* Color presets - unified utility classes that set --preset-bg and --preset-badge-bg */
+.color-slate {
+    --preset-bg: var(--ci-preset-slate);
+    --preset-badge-bg: var(--ci-preset-badge-slate, var(--ci-preset-slate));
+}
+
+.color-blue {
+    --preset-bg: var(--ci-preset-blue);
+    --preset-badge-bg: var(--ci-preset-badge-blue, var(--ci-preset-blue));
+}
+
+.color-indigo {
+    --preset-bg: var(--ci-preset-indigo);
+    --preset-badge-bg: var(--ci-preset-badge-indigo, var(--ci-preset-indigo));
+}
+
+.color-purple {
+    --preset-bg: var(--ci-preset-purple);
+    --preset-badge-bg: var(--ci-preset-badge-purple, var(--ci-preset-purple));
+}
+
+.color-magenta {
+    --preset-bg: var(--ci-preset-magenta);
+    --preset-badge-bg: var(--ci-preset-badge-magenta, var(--ci-preset-magenta));
+}
+
+.color-pink {
+    --preset-bg: var(--ci-preset-pink);
+    --preset-badge-bg: var(--ci-preset-badge-pink, var(--ci-preset-pink));
+}
+
+.color-red {
+    --preset-bg: var(--ci-preset-red);
+    --preset-badge-bg: var(--ci-preset-badge-red, var(--ci-preset-red));
+}
+
+.color-orange {
+    --preset-bg: var(--ci-preset-orange);
+    --preset-badge-bg: var(--ci-preset-badge-orange, var(--ci-preset-orange));
+}
+
+.color-amber {
+    --preset-bg: var(--ci-preset-amber);
+    --preset-badge-bg: var(--ci-preset-badge-amber, var(--ci-preset-amber));
+}
+
+.color-yellow {
+    --preset-bg: var(--ci-preset-yellow);
+    --preset-badge-bg: var(--ci-preset-badge-yellow, var(--ci-preset-yellow));
+}
+
+.color-lime {
+    --preset-bg: var(--ci-preset-lime);
+    --preset-badge-bg: var(--ci-preset-badge-lime, var(--ci-preset-lime));
+}
+
+.color-green {
+    --preset-bg: var(--ci-preset-green);
+    --preset-badge-bg: var(--ci-preset-badge-green, var(--ci-preset-green));
+}
+
+.color-emerald {
+    --preset-bg: var(--ci-preset-emerald);
+    --preset-badge-bg: var(--ci-preset-badge-emerald, var(--ci-preset-emerald));
+}
+
+.color-teal {
+    --preset-bg: var(--ci-preset-teal);
+    --preset-badge-bg: var(--ci-preset-badge-teal, var(--ci-preset-teal));
+}
+
+.color-cyan {
+    --preset-bg: var(--ci-preset-cyan);
+    --preset-badge-bg: var(--ci-preset-badge-cyan, var(--ci-preset-cyan));
+}
+
+.color-sky {
+    --preset-bg: var(--ci-preset-sky);
+    --preset-badge-bg: var(--ci-preset-badge-sky, var(--ci-preset-sky));
+}
+
+.color-brown {
+    --preset-bg: var(--ci-preset-brown);
+    --preset-badge-bg: var(--ci-preset-badge-brown, var(--ci-preset-brown));
+}
+
+.color-stone {
+    --preset-bg: var(--ci-preset-stone);
+    --preset-badge-bg: var(--ci-preset-badge-stone, var(--ci-preset-stone));
+}
+
+.color-zinc {
+    --preset-bg: var(--ci-preset-zinc);
+    --preset-badge-bg: var(--ci-preset-badge-zinc, var(--ci-preset-zinc));
+}
+
+.color-crimson {
+    --preset-bg: var(--ci-preset-crimson);
+    --preset-badge-bg: var(--ci-preset-badge-crimson, var(--ci-preset-crimson));
+}
+
+/* Semantic family classes — the labels context-item plugins return from
+   getBadgeOptions(). They resolve through the --ci-family-* tokens so the
+   family→hue mapping lives here, not hard-coded in each tool. */
+.color-read {
+    --preset-bg: var(--ci-family-read);
+    --preset-badge-bg: var(--ci-family-badge-read, var(--ci-family-read));
+}
+
+.color-search {
+    --preset-bg: var(--ci-family-search);
+    --preset-badge-bg: var(--ci-family-badge-search, var(--ci-family-search));
+}
+
+.color-web {
+    --preset-bg: var(--ci-family-web);
+    --preset-badge-bg: var(--ci-family-badge-web, var(--ci-family-web));
+}
+
+.color-edit {
+    --preset-bg: var(--ci-family-edit);
+    --preset-badge-bg: var(--ci-family-badge-edit, var(--ci-family-edit));
+}
+
+.color-memory {
+    --preset-bg: var(--ci-family-memory);
+    --preset-badge-bg: var(--ci-family-badge-memory, var(--ci-family-memory));
+}
+
+.color-execute {
+    --preset-bg: var(--ci-family-execute);
+    --preset-badge-bg: var(--ci-family-badge-execute, var(--ci-family-execute));
+}
+
+.color-plan {
+    --preset-bg: var(--ci-family-plan);
+    --preset-badge-bg: var(--ci-family-badge-plan, var(--ci-family-plan));
+}
+
+.color-meta {
+    --preset-bg: var(--ci-family-meta);
+    --preset-badge-bg: var(--ci-family-badge-meta, var(--ci-family-meta));
+}
+
+.color-ask {
+    --preset-bg: var(--ci-family-ask);
+    --preset-badge-bg: var(--ci-family-badge-ask, var(--ci-family-ask));
+}
+
+.color-thread {
+    --preset-bg: var(--ci-family-thread);
+    --preset-badge-bg: var(--ci-family-badge-thread, var(--ci-family-thread));
+}
+
+/* Apply preset background to icon boxes and context item containers */
+.message-icon-box:where([class*="color-"]) { background: var(--preset-badge-bg, var(--preset-bg)); }
+
+/* In light theme, colored icon boxes use saturated dark backgrounds — force
+   icons to white. That reaches a mask icon too: patterns/icons.css fills one
+   with currentcolor, which it inherits from here. */
+:where(:root[data-theme="light"]) .message-icon-box:where([class*="color-"]) { color: white; }
+
+/* The busy pulse, which --item-badge-pulse names. Here rather than with the
+   element defaults because nothing but a badge circle wears it. */
+@keyframes icon-pulse {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    50% {
+        opacity: 0.4;
+        transform: scale(0.9);
+    }
+}

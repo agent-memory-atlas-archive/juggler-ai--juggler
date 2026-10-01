@@ -13,12 +13,10 @@
  * without a hover — which is this element, styled by `css/patterns/drag-grip.css`.
  * The two files are halves of one thing; change neither alone.
  *
- * Shared by every strip that reorders through {@link module:utils/reorder-drag}:
- * the conversation sidebar's tabs, its workspace boxes, and the pinboard's tab
- * strip. It was three hand-written copies of one span, one `touch-action` and
- * one gate — and the workspace box's copy was never written, which is what a
- * missing copy looks like from the outside: a row a mouse can reorder and a
- * finger cannot.
+ * For a strip that reorders through {@link module:utils/reorder-drag} from a
+ * handle: the pinboard's tab strip. The other way to give a finger a reorder is
+ * to make it hold still first — reorder-drag's `hold` option — which is what
+ * the conversation sidebar does, and why it carries no grip.
  * @module utils/drag-grip
  */
 

@@ -149,18 +149,6 @@ a:hover {
     50% { opacity: 0.5; }
 }
 
-@keyframes icon-pulse {
-    0%, 100% {
-        opacity: 1;
-        transform: scale(1);
-    }
-
-    50% {
-        opacity: 0.4;
-        transform: scale(0.9);
-    }
-}
-
 /* Below a tablet the whole type scale steps down one notch. */
 @media (width <= 48rem) {
     body {

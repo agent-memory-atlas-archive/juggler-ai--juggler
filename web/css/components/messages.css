@@ -672,19 +672,14 @@ tool-action-message {
     gap: 1rem;
 }
 
-.message-icon-box {
-    border-radius: 50%;
-    padding: var(--message-icon-pad);
-    margin-top: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-}
-
-/* Icon sizing - applies to both inline SVGs and CSS mask icons */
-.message-icon-box svg,
-.message-icon-box > span[class^="icon-"] {
+/* The circle itself, its colour presets and its pulse are the shared badge
+   pattern (patterns/item-badge.css). The glyph's size is the panel's, so it is
+   written from the two groups the panel puts a circle in (createIconBox's only
+   parents, utils/icon-message-renderer.js). */
+.message-icon-badge > .message-icon-box svg,
+.message-icon-badge > .message-icon-box > span[class^="icon-"],
+.message-with-icon > .message-icon-box svg,
+.message-with-icon > .message-icon-box > span[class^="icon-"] {
     width: var(--message-icon-size);
     height: var(--message-icon-size);
 }
@@ -714,174 +709,13 @@ tool-action-message {
 }
 
 
-/* Color presets - unified utility classes that set --preset-bg and --preset-badge-bg */
-.color-slate {
-    --preset-bg: var(--ci-preset-slate);
-    --preset-badge-bg: var(--ci-preset-badge-slate, var(--ci-preset-slate));
-}
-
-.color-blue {
-    --preset-bg: var(--ci-preset-blue);
-    --preset-badge-bg: var(--ci-preset-badge-blue, var(--ci-preset-blue));
-}
-
-.color-indigo {
-    --preset-bg: var(--ci-preset-indigo);
-    --preset-badge-bg: var(--ci-preset-badge-indigo, var(--ci-preset-indigo));
-}
-
-.color-purple {
-    --preset-bg: var(--ci-preset-purple);
-    --preset-badge-bg: var(--ci-preset-badge-purple, var(--ci-preset-purple));
-}
-
-.color-magenta {
-    --preset-bg: var(--ci-preset-magenta);
-    --preset-badge-bg: var(--ci-preset-badge-magenta, var(--ci-preset-magenta));
-}
-
-.color-pink {
-    --preset-bg: var(--ci-preset-pink);
-    --preset-badge-bg: var(--ci-preset-badge-pink, var(--ci-preset-pink));
-}
-
-.color-red {
-    --preset-bg: var(--ci-preset-red);
-    --preset-badge-bg: var(--ci-preset-badge-red, var(--ci-preset-red));
-}
-
-.color-orange {
-    --preset-bg: var(--ci-preset-orange);
-    --preset-badge-bg: var(--ci-preset-badge-orange, var(--ci-preset-orange));
-}
-
-.color-amber {
-    --preset-bg: var(--ci-preset-amber);
-    --preset-badge-bg: var(--ci-preset-badge-amber, var(--ci-preset-amber));
-}
-
-.color-yellow {
-    --preset-bg: var(--ci-preset-yellow);
-    --preset-badge-bg: var(--ci-preset-badge-yellow, var(--ci-preset-yellow));
-}
-
-.color-lime {
-    --preset-bg: var(--ci-preset-lime);
-    --preset-badge-bg: var(--ci-preset-badge-lime, var(--ci-preset-lime));
-}
-
-.color-green {
-    --preset-bg: var(--ci-preset-green);
-    --preset-badge-bg: var(--ci-preset-badge-green, var(--ci-preset-green));
-}
-
-.color-emerald {
-    --preset-bg: var(--ci-preset-emerald);
-    --preset-badge-bg: var(--ci-preset-badge-emerald, var(--ci-preset-emerald));
-}
-
-.color-teal {
-    --preset-bg: var(--ci-preset-teal);
-    --preset-badge-bg: var(--ci-preset-badge-teal, var(--ci-preset-teal));
-}
-
-.color-cyan {
-    --preset-bg: var(--ci-preset-cyan);
-    --preset-badge-bg: var(--ci-preset-badge-cyan, var(--ci-preset-cyan));
-}
-
-.color-sky {
-    --preset-bg: var(--ci-preset-sky);
-    --preset-badge-bg: var(--ci-preset-badge-sky, var(--ci-preset-sky));
-}
-
-.color-brown {
-    --preset-bg: var(--ci-preset-brown);
-    --preset-badge-bg: var(--ci-preset-badge-brown, var(--ci-preset-brown));
-}
-
-.color-stone {
-    --preset-bg: var(--ci-preset-stone);
-    --preset-badge-bg: var(--ci-preset-badge-stone, var(--ci-preset-stone));
-}
-
-.color-zinc {
-    --preset-bg: var(--ci-preset-zinc);
-    --preset-badge-bg: var(--ci-preset-badge-zinc, var(--ci-preset-zinc));
-}
-
-.color-crimson {
-    --preset-bg: var(--ci-preset-crimson);
-    --preset-badge-bg: var(--ci-preset-badge-crimson, var(--ci-preset-crimson));
-}
-
-/* Semantic family classes — the labels context-item plugins return from
-   getBadgeOptions(). They resolve through the --ci-family-* tokens so the
-   family→hue mapping lives here, not hard-coded in each tool. */
-.color-read {
-    --preset-bg: var(--ci-family-read);
-    --preset-badge-bg: var(--ci-family-badge-read, var(--ci-family-read));
-}
-
-.color-search {
-    --preset-bg: var(--ci-family-search);
-    --preset-badge-bg: var(--ci-family-badge-search, var(--ci-family-search));
-}
-
-.color-web {
-    --preset-bg: var(--ci-family-web);
-    --preset-badge-bg: var(--ci-family-badge-web, var(--ci-family-web));
-}
-
-.color-edit {
-    --preset-bg: var(--ci-family-edit);
-    --preset-badge-bg: var(--ci-family-badge-edit, var(--ci-family-edit));
-}
-
-.color-memory {
-    --preset-bg: var(--ci-family-memory);
-    --preset-badge-bg: var(--ci-family-badge-memory, var(--ci-family-memory));
-}
-
-.color-execute {
-    --preset-bg: var(--ci-family-execute);
-    --preset-badge-bg: var(--ci-family-badge-execute, var(--ci-family-execute));
-}
-
-.color-plan {
-    --preset-bg: var(--ci-family-plan);
-    --preset-badge-bg: var(--ci-family-badge-plan, var(--ci-family-plan));
-}
-
-.color-meta {
-    --preset-bg: var(--ci-family-meta);
-    --preset-badge-bg: var(--ci-family-badge-meta, var(--ci-family-meta));
-}
-
-.color-ask {
-    --preset-bg: var(--ci-family-ask);
-    --preset-badge-bg: var(--ci-family-badge-ask, var(--ci-family-ask));
-}
-
-.color-thread {
-    --preset-bg: var(--ci-family-thread);
-    --preset-badge-bg: var(--ci-family-badge-thread, var(--ci-family-thread));
-}
-
-/* Apply preset background to icon boxes and context item containers */
-.message-icon-box[class*="color-"] { background: var(--preset-badge-bg, var(--preset-bg)); }
-
-/* In light theme, colored icon boxes use saturated dark backgrounds — force icons to white */
-:root[data-theme="light"] .message-icon-box[class*="color-"] { color: white; }
-:root[data-theme="light"] .message-icon-box[class*="color-"] > span[class^="icon-"] { background-color: white; }
-
 /* Pulse animation for busy message icons */
 assistant-message[is-processing="true"] .message-icon-box,
 thinking-message[is-processing="true"] .message-icon-box,
 tool-action-message article[data-processing="true"] .message-icon-box,
 thread-message article[data-processing="true"] .message-icon-box,
 tool-group-message article[data-processing="true"] .message-icon-box {
-    animation: icon-pulse 0.8s ease-in-out infinite;
+    animation: var(--item-badge-pulse);
 }
 
 .message-text {

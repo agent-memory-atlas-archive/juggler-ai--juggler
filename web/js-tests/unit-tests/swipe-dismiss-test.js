@@ -17,7 +17,8 @@
  *   5. A mouse is not a finger, unless the surface is a dedicated handle that
  *      asks for one (`allowMouse`, which the sheet grabber does).
  *   6. `isActive` and `exclude` keep the gesture off surfaces and descendants
- *      that are not swipeable.
+ *      that are not swipeable — `isActive` asked at the press and again when
+ *      the swipe would claim its axis.
  *   7. `yieldToScroll` concedes a press over something with room to scroll the
  *      way the finger is going, and takes it back at the end of that room —
  *      the rule that lets the pinboard sit over a code block wider than the
@@ -291,6 +292,33 @@ export async function runTests(_ctx) {
       assert(dismissed === 0, 'a drag from the handle belongs to the handle');
       drag(surface, [[-20, 0], [-120, 0]]);
       assert(dismissed === 1, `and the surface itself still swipes, got ${dismissed}`);
+    } finally {
+      detach();
+      teardown();
+    }
+  });
+
+  await run('isActive is asked again when the swipe would claim its axis', () => {
+    // A press can start dismissible and stop being so before the finger moves:
+    // the drawer's rows lift for a reorder on a hold, and a row being dragged
+    // leftwards must not take the drawer with it.
+    const { surface, teardown } = mountSurface();
+    let active = true;
+    let dismissed = 0;
+    const detach = attachSwipeDismiss(surface, {
+      direction: 'left',
+      thresholdPx: 60,
+      isActive: () => active,
+      onDismiss: () => { dismissed++; },
+    });
+    try {
+      pointer(surface, 'pointerdown', START);
+      active = false;
+      pointer(surface, 'pointermove', { x: START.x - 20, y: START.y });
+      pointer(surface, 'pointermove', { x: START.x - 120, y: START.y });
+      assert(surface.style.transform === '', `the surface must not follow, got "${surface.style.transform}"`);
+      pointer(surface, 'pointerup', { x: START.x - 120, y: START.y });
+      assert(dismissed === 0, 'and must not dismiss');
     } finally {
       detach();
       teardown();

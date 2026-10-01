@@ -22,14 +22,13 @@
  *    which is what these cases exist to catch. The tab still floats for the
  *    conversation on screen — only the alert is suppressed there.
  *
- * `tabHighlight` spans two modules, and the SECOND one is the louder: the
- * attention manager's standing tint waits quietly until the conversation is
- * viewed, while `conversation-bar`'s `.is-awaiting` pulse runs, yellow and
- * moving, for as long as an approval is parked. Gating only the former looks,
- * from the outside, like the setting does nothing — so the bar's half is pinned
- * here too, including the repaint of tabs ALREADY pulsing when the preference
- * changes (the pulse must stop then and there, not whenever the approval
- * resolves).
+ * `tabHighlight` gates the attention manager's alerts — the standing tint and
+ * the one-shot flash — and nothing else. A tab parked on an approval wears
+ * `.is-awaiting` whatever the setting says: that paints the tab's status circle
+ * (yellow, a question mark), which is status in the way the green running
+ * circle is, steady and small, and switching it off would leave nothing on the
+ * strip saying the conversation is waiting on the user. Pinned here, including
+ * across a change of the setting while an approval is parked.
  *
  * The bump half runs `Session.prototype.bumpConversation` against a minimal
  * stand-in `this` (a conversations Map plus the real order-rebuild methods),
@@ -239,26 +238,24 @@ export async function runTests() {
       assert(__attention.isFlagged(convId), 'the conversation still needs the user — the flag stays');
     });
 
-    // ── The awaiting pulse: the long-lived yellow, painted by the bar ──────
-    await run('highlight on: a tab parked on an approval pulses (.is-awaiting)', () => {
+    // ── The awaiting circle: status, so the highlight setting leaves it be ──
+    await run('a tab parked on an approval is marked awaiting (.is-awaiting)', () => {
       setTabHighlightEnabled(true);
       const { bar, tab } = fakeBar('conv_await_on1', true);
       bar._refreshTabStatus('conv_await_on1');
-      assert(tab.classList.contains('is-awaiting'), 'an awaiting tab must pulse while highlighting is on');
+      assert(tab.classList.contains('is-awaiting'), 'an awaiting tab must be marked awaiting');
     });
 
-    await run('highlight off: a tab parked on an approval looks exactly like an idle one', () => {
+    await run('highlight off: a tab parked on an approval is still marked awaiting', () => {
       setTabHighlightEnabled(false);
       const convId = 'conv_await_off1';
       const { bar, tab } = fakeBar(convId, true);
       bar._refreshTabStatus(convId);
-      assert(!tab.classList.contains('is-awaiting'), 'the awaiting pulse must be withheld with highlighting off');
-      // The state itself must be untouched — the bin guard and the rest read it.
-      assert(bar._conversationActivity(convId).awaiting === true,
-        'only the paint is gated: the conversation must still report awaiting');
+      assert(tab.classList.contains('is-awaiting'),
+        'the awaiting circle is status, not an alert: the highlight setting must not hide it');
     });
 
-    await run('turning highlighting off stops a tab that is ALREADY pulsing', () => {
+    await run('changing the highlight setting leaves a parked tab marked awaiting', () => {
       setTabHighlightEnabled(true);
       const convId = 'conv_await_live';
       const { bar, tab } = fakeBar(convId, true);
@@ -267,17 +264,12 @@ export async function runTests() {
       bar._setupKeyboardNavigation();
       try {
         bar._refreshTabStatus(convId);
-        assert(tab.classList.contains('is-awaiting'), 'precondition: the tab is pulsing');
-
-        // The user opens settings and flips the toggle. The pulse must stop now,
-        // not when the approval resolves — the whole complaint this pins.
+        assert(tab.classList.contains('is-awaiting'), 'precondition: the tab is marked awaiting');
         setTabHighlightEnabled(false);
-        assert(!tab.classList.contains('is-awaiting'),
-          'a live pulse must stop the moment highlighting is turned off');
-
-        setTabHighlightEnabled(true);
         assert(tab.classList.contains('is-awaiting'),
-          'turning highlighting back on must restore the pulse on a still-awaiting tab');
+          'turning highlighting off must not take the awaiting mark off a parked tab');
+        setTabHighlightEnabled(true);
+        assert(tab.classList.contains('is-awaiting'), 'nor must turning it back on');
       } finally {
         bar.disconnectedCallback();
       }

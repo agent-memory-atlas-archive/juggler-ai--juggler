@@ -30,7 +30,7 @@
  */
 
 import { assert } from '../utilities/test-helpers.js';
-import { startReorderDrag } from '../../js/utils/reorder-drag.js';
+import { startReorderDrag, settledRect } from '../../js/utils/reorder-drag.js';
 
 /** Item box size, in CSS pixels, for the stand-in strips below. */
 const ITEM_W = 100;
@@ -88,9 +88,11 @@ function mountStrip({ count, wrap, width = ITEM_W }) {
  * @param {Array<{x: number, y: number}>} opts.moves - Pointer positions to visit, in client coordinates.
  * @param {'up'|'cancel'|'none'} [opts.end] - How the gesture finishes.
  * @param {() => void} [opts.afterMoves] - Runs once the pointer has travelled, before the gesture ends — for disturbing the strip mid-gesture.
+ * @param {() => HTMLElement[]} [opts.items] - The slots, for a strip that is not one flat list. Defaults to the strip's children.
+ * @param {() => HTMLElement[]} [opts.groups] - Containers that move with the rearrangement.
  * @returns {{commits: Array<{fromIndex: number, toIndex: number}>, ends: Array<{dragged: boolean, moved: boolean}>, handle: any}} What was committed, how it ended, and the gesture handle.
  */
-function drag({ item, strip, host, wrap, axis, moves, end = 'up', afterMoves }) {
+function drag({ item, strip, host, wrap, axis, moves, end = 'up', afterMoves, items, groups }) {
   item.setPointerCapture = () => {};
   item.releasePointerCapture = () => {};
 
@@ -106,9 +108,10 @@ function drag({ item, strip, host, wrap, axis, moves, end = 'up', afterMoves }) 
     /** @type {any} */ ({ clientX: startX, clientY: startY, pointerId: 1 }),
     {
       item,
-      items: () => /** @type {HTMLElement[]} */ (
+      items: items ?? (() => /** @type {HTMLElement[]} */ (
         Array.from(strip.children).filter((el) => !el.classList.contains('rd-ghost'))
-      ),
+      )),
+      groups,
       strip,
       ghostHost: host,
       axis,
@@ -426,6 +429,52 @@ export async function runTests() {
         `a pointer inside the dragged item's own slot must leave it there, got "${orderOf(strip)}"`);
       assert(commits.length === 1 && commits[0]?.toIndex === 1,
         `and commit that slot, got ${JSON.stringify(commits)}`);
+    } finally {
+      teardown();
+    }
+  });
+
+  // A strip of nested lists draws some of its slots inside a container — the
+  // conversation bar's workspace box — that is not a slot itself but is pushed
+  // about by the rearrangement all the same. Left out of the FLIP it jumps to
+  // its new place while the slots inside it glide, so the frame arrives a
+  // beat before its contents. Put into it, its contents must glide relative to
+  // it, or each travels its distance twice: once carried, once on its own.
+  run('a group pushed aside glides with the strip, carrying its slots', () => {
+    const { strip, host, items, teardown } = mountStrip({ count: 3, wrap: false });
+    try {
+      const [a, b, c] = /** @type {HTMLElement[]} */ (items);
+      const group = document.createElement('div');
+      group.style.cssText = 'flex:0 0 auto;margin:0;padding:0;';
+      strip.insertBefore(group, b);
+      group.appendChild(b);
+      const bTop = b.getBoundingClientRect().top;
+      const cBox = c.getBoundingClientRect();
+      const slots = () => [a, b, c];
+
+      // c up past a's midpoint: a and the group holding b both move down a row.
+      const aBox = a.getBoundingClientRect();
+      drag({
+        item: c, strip, host, wrap: false, axis: 'y', end: 'none',
+        items: slots,
+        groups: () => [group],
+        moves: [{ x: cBox.left + 10, y: aBox.top + 5 }],
+      });
+      assert(strip.firstElementChild === c,
+        'the fixture must actually move c to the top of the strip');
+      const groupShift = new DOMMatrixReadOnly(getComputedStyle(group).transform).f;
+      assert(groupShift === -ITEM_H,
+        `the group must start its glide from where it was, ${-ITEM_H}px up, got ${groupShift}px`);
+      const bOwn = b.style.transform
+        ? new DOMMatrixReadOnly(getComputedStyle(b).transform).f : 0;
+      assert(bOwn === 0,
+        `a slot carried by its group must not travel the group's distance again, got ${bOwn}px of its own`);
+      const bSettled = settledRect(b).top;
+      assert(Math.abs(bSettled - (bTop + ITEM_H)) < 0.5,
+        `a slot inside a gliding group is measured where it is going, ${bTop + ITEM_H}, got ${bSettled}`);
+      document.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 1, bubbles: true }));
+      assert(!group.style.transform && !group.style.transition,
+        `the group must be left with no inline glide, got "${group.style.transform}" / "${group.style.transition}"`);
     } finally {
       teardown();
     }

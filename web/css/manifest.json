@@ -205,6 +205,17 @@
 			]
 		},
 		{
+			"file": "patterns/item-badge.css",
+			"layer": "patterns",
+			"owns": [
+				"color-*",
+				"context-item-type-badge",
+				"item-circle",
+				"item-lozenge",
+				"message-icon-box"
+			]
+		},
+		{
 			"file": "components/messages.css",
 			"layer": "components",
 			"owns": [
@@ -212,7 +223,6 @@
 				"assistant-message",
 				"collapsible",
 				"collapsible-toggle",
-				"color-*",
 				"context-item-message",
 				"conversation-empty-hint",
 				"conversation-footer",
@@ -227,7 +237,7 @@
 				"message-action-btn",
 				"message-content-box",
 				"message-copy-button",
-				"message-icon-*",
+				"message-icon-badge",
 				"message-row-body",
 				"message-text",
 				"message-with-icon",
@@ -302,7 +312,6 @@
 			"file": "components/properties-panel.css",
 			"layer": "components",
 			"owns": [
-				"context-item-type-badge",
 				"conversation-item",
 				"file-*",
 				"live-*",
@@ -636,6 +645,7 @@
 	"$jsSetProperties": "Custom properties set from JS rather than declared in CSS, so a bare var() referring to one is not a dangling reference.",
 	"jsSetProperties": [
 		"--strategy-color",
-		"--logo-with-name-url"
+		"--logo-with-name-url",
+		"--workspace-tint"
 	]
 }

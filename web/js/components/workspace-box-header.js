@@ -122,7 +122,7 @@ class WorkspaceBoxHeader extends HTMLElement {
     const label = this._label();
     const dirty = this._status?.dirty === true;
 
-    const name = this.querySelector('.conversation-box-label');
+    const name = this.querySelector('.conversation-box-label-text');
     if (name && name.textContent !== label) name.textContent = label;
     this.classList.toggle('is-dirty', dirty);
     this.title = dirty ? `${label} — holding uncommitted work` : label;
@@ -137,8 +137,14 @@ class WorkspaceBoxHeader extends HTMLElement {
     const title = document.createElement('div');
     title.className = 'conversation-box-title';
 
+    // The name is a lozenge (patterns/item-badge.css) filled with the box's
+    // tint. Its text is an element of its own so that a long name ellipsises
+    // inside the lozenge and leaves room for the uncommitted-work mark after it.
     const name = document.createElement('span');
-    name.className = 'conversation-box-label';
+    name.className = 'item-lozenge conversation-box-label';
+    const text = document.createElement('span');
+    text.className = 'conversation-box-label-text';
+    name.appendChild(text);
     title.appendChild(name);
 
     this.replaceChildren(title);

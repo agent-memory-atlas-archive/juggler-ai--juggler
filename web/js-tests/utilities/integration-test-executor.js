@@ -183,6 +183,8 @@ import { runTests as runConversationWorkspaceMoveTests } from '../unit-tests/con
 import { runTests as runWorkspaceFinishDialogTests } from '../unit-tests/workspace-finish-dialog-test.js';
 import { runTests as runWorkspaceGroupsTests } from '../unit-tests/workspace-groups-test.js';
 import { runTests as runWorkspaceBoxesTests } from '../unit-tests/workspace-boxes-test.js';
+import { runTests as runConversationTabStatusTests } from '../unit-tests/conversation-tab-status-test.js';
+import { runTests as runReorderDragHoldTests } from '../unit-tests/reorder-drag-hold-test.js';
 import { runTests as runWorkspaceCreateDialogTests } from '../unit-tests/workspace-create-dialog-test.js';
 import { runTests as runWorkspaceBoxDragTests } from '../unit-tests/workspace-box-drag-test.js';
 import { runTests as runWorkspaceSelectionTests } from '../unit-tests/workspace-selection-test.js';
@@ -612,6 +614,8 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:workspace-create-dialog', run: runWorkspaceCreateDialogTests, needsExclusiveRun: true },
   { name: 'unit:workspace-groups', run: runWorkspaceGroupsTests },
   { name: 'unit:workspace-boxes', run: runWorkspaceBoxesTests },
+  { name: 'unit:conversation-tab-status', run: runConversationTabStatusTests },
+  { name: 'unit:reorder-drag-hold', run: runReorderDragHoldTests },
   { name: 'unit:workspace-box-drag', run: runWorkspaceBoxDragTests },
   { name: 'unit:workspace-selection', run: runWorkspaceSelectionTests },
   { name: 'unit:workspace-rename', run: runWorkspaceRenameTests },

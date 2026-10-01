@@ -177,6 +177,33 @@ export async function runTests() {
     assert(session.restored[session.restored.length - 1] === 'conv_b',
       `Undo reversed the wrong bin: ${JSON.stringify(session.restored)}`);
     passed++;
+
+    // --- 5: the tab flies to the Bin looking like the tab it was ------------
+    // It leaves the strip's layout so the tabs below close up under it, but it
+    // must not leave the bar: every rule that draws a tab is the bar's, and a
+    // tab out from under them is a tangle of every status glyph it carries at
+    // whatever size an unstyled SVG takes.
+    session.conversations.set('conv_fly', { id: 'conv_fly', name: 'Flying' });
+    bar.render();
+    const flying = /** @type {HTMLElement} */ (
+      bar.querySelector('li.conversation-tab[data-conversation-id="conv_fly"]'));
+    assert(!!flying, 'no tab to fly');
+    const resting = flying.getBoundingClientRect();
+    bar._flyTabToBin('conv_fly');
+    try {
+      const launched = flying.getBoundingClientRect();
+      assert(Math.abs(launched.height - resting.height) < 1,
+        `the tab changed shape as it took off: ${resting.height}px tall in the strip, ${launched.height}px in flight`);
+      assert(Math.abs(launched.left - resting.left) < 1 && Math.abs(launched.top - resting.top) < 1,
+        `the tab took off from somewhere else: (${resting.left}, ${resting.top}) in the strip, `
+        + `(${launched.left}, ${launched.top}) in flight`);
+      const glyphs = Array.from(flying.querySelectorAll('.conversation-tab-glyph'))
+        .filter((g) => getComputedStyle(g).display !== 'none');
+      assert(glyphs.length === 1, `the flying tab shows ${glyphs.length} status glyphs, not one`);
+    } finally {
+      for (const a of flying.getAnimations()) a.cancel();
+    }
+    passed++;
   } catch (e) {
     failed++;
     errors.push(`bin-undo-toast: ${/** @type {any} */ (e)?.message || e}`);

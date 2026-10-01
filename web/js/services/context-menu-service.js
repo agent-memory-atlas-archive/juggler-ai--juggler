@@ -558,6 +558,22 @@ function showMenu(items, x, y, anchor) {
   window.addEventListener('scroll', _onScroll, true);
 }
 
+/** @type {(() => boolean)[]} @private */
+const _suppressors = [];
+
+/**
+ * Stand the menu down while some gesture owns the pointer. A long-press is how
+ * Android asks for a context menu, and the same press is how a finger lifts a
+ * row to reorder it: a strip that lifts on a hold registers its "is a hold in
+ * progress?" here, and while it says yes a `contextmenu` opens nothing — native
+ * or ours. The strip opens its own menu if the hold is let go where it was.
+ * @param {() => boolean} isOwned - Whether a gesture currently owns the pointer.
+ * @returns {void}
+ */
+export function registerContextMenuSuppressor(isOwned) {
+  _suppressors.push(isOwned);
+}
+
 /**
  * Capture-phase `contextmenu` handler. Three-tier dispatch (see module doc):
  * registered providers → built-in text-edit menu → native fallback (dev only).
@@ -567,6 +583,12 @@ function showMenu(items, x, y, anchor) {
  * @private
  */
 function onContextMenu(e) {
+  if (_suppressors.some((isOwned) => isOwned())) {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    return;
+  }
+
   // Only Element targets support closest()/matches() that providers rely on.
   const t = /** @type {any} */ (e.target);
   const start = t && typeof t.closest === 'function' ? /** @type {Element} */ (t) : null;

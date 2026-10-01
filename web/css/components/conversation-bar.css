@@ -6,10 +6,17 @@
 
 /* Conversation Bar Component — vertical sidebar of tabs */
 conversation-bar {
-    /* The column every tab keeps to the left of its name for the grab handle.
-       Named because two rules have to agree on it: the handle that stands in it,
-       and the row below the list whose text is set to start where names do. */
-    --tab-handle-width: 1rem;
+    /* The column every tab keeps to the left of its name for its status
+       circle, and the space between the circle and the name. Named because two
+       rules have to agree on them: the circle that stands in the column, and
+       the row below the list whose text is set to start where names do. The
+       gap is the circle's margin plus the tab's own 0.2rem flex gap.
+
+       The circle is the conversation panel's item circle exactly — its glyph
+       size plus its padding on both sides — so a tab and an item row show the
+       same badge at the same size. */
+    --tab-status-column: var(--message-icon-row-height);
+    --tab-status-gap: 0.6rem;
 
     position: relative;
     display: flex;
@@ -86,6 +93,10 @@ conversation-bar .conversation-tabs {
     /* Thin, unobtrusive scrollbar — matches .conversation-message-list */
     scrollbar-width: thin;
     scrollbar-color: var(--overlay-light-10) transparent;
+
+    /* A finger lifts a row by holding it (utils/reorder-drag.js), and iOS
+       answers a hold with a callout of its own unless told not to. */
+    -webkit-touch-callout: none;
 }
 
 /* A workspace's box: the conversations working in one tree, drawn inside it.
@@ -96,16 +107,27 @@ conversation-bar .conversation-tabs {
    the conversations started in it, and this is the only thing that shows it. */
 conversation-bar .conversation-box {
     /* The workspace's own hue, mixed into the theme's tray colours rather than
-       replacing them: the strength is the theme's (--workspace-tint-*), so every
-       hue lands in the range that theme's fill and edge already occupy, and one
-       palette serves light and dark without a second set tuned for each.
+       replacing them: a breath of it in the fill and a hairline's worth in the
+       edge (--workspace-tint-fill / -edge), because the colour itself is in the
+       name chip on the edge.
 
        --workspace-tint comes from the element, set per box by the bar. Each mix
        falls back to the colour it is mixing into, which makes it a no-op — a box
-       with no hue is drawn exactly as it was before there were any. */
+       with no hue is drawn exactly as it would be without one.
+
+       The whole fill is one property, --workspace-box-paint, because two things
+       paint it: the box, and the backing behind its name, which stands across
+       the edge and has to hide it. Hover and selection change the overlay in it,
+       never the surface, so both move together. */
     --workspace-box-surface: color-mix(in srgb,
         var(--workspace-tint, var(--workspace-box-bg)) var(--workspace-tint-fill),
         var(--workspace-box-bg));
+    --workspace-box-overlay: transparent;
+    --workspace-box-paint: linear-gradient(var(--workspace-box-overlay), var(--workspace-box-overlay)),
+        var(--workspace-box-surface);
+    --workspace-box-edge: color-mix(in srgb,
+        var(--workspace-tint, var(--workspace-box-border)) var(--workspace-tint-edge),
+        var(--workspace-box-border));
 
     position: relative;
     display: flex;
@@ -113,17 +135,18 @@ conversation-bar .conversation-box {
     flex-shrink: 0;
     gap: 0.375rem;
     width: 100%;
-    padding: 0.375rem;
-    background: var(--workspace-box-surface);
-    border: 0.0625rem solid color-mix(in srgb,
-        var(--workspace-tint, var(--workspace-box-border)) var(--workspace-tint-edge),
-        var(--workspace-box-border));
-    border-radius: 0.9rem;
+
+    /* Room at the top for the lower half of the name standing on the edge. */
+    padding: 0.875rem 0.5rem 0.5rem;
+    background: var(--workspace-box-paint);
+    border: 0.0625rem solid var(--workspace-box-edge);
+    border-radius: 0.75rem;
 }
 
 /* The air around a tray is about where it sits rather than what it is: a box
    wants more room from its neighbours than two tabs want from each other, and
-   the strip's own gap is the tabs' rhythm. So the margins hang off the box's
+   the strip's own gap is the tabs' rhythm — and above it, room for the upper
+   half of the name standing on its edge. So the margins hang off the box's
    place in the list, which is also why the floating clone of one goes without
    them — it is positioned, not placed.
 
@@ -132,62 +155,54 @@ conversation-bar .conversation-box {
    rule that loses that fight is a rule that stops working the day the sheets are
    wrapped in layers. */
 conversation-bar .conversation-tabs > .conversation-box {
-    margin-top: 0.5rem;
+    margin-top: 1rem;
     margin-bottom: 0.5rem;
 }
 
-/* The box's top row: the grip it is dragged by, then the name. A row of its own
-   rather than the header element, because <workspace-box-header> holds the name
-   and nothing else — so the grip sits alongside it, the way the "+" sits over the
-   corner.
+/* The box's name stands on its top edge, the way a fieldset's legend does: no
+   header row of its own, and the edge runs out from the name to the "+" on the
+   other corner. The row is centred on the edge line — half the border's width
+   above the padding edge `top` is measured from.
 
-   The row begins where a tab's row begins, and the gap after the grip is the
-   tab's gap, so a box and the unboxed tabs it sits between are dragged from one
-   column and their names start on one line. A tab's inset is its own padding
-   (0.4rem, both sharing the same 0.0625rem border, which cancels); the box has
-   already spent 0.375rem of that on its own padding, so the difference is all
-   that is left to add here. Counted as a whole tab's inset instead, the header
-   stood most of a handle's width right of every row around it. */
+   It starts over the column its tabs' status circles are in: the box's padding,
+   then a tab's border and its own inset. And it stops short of the "+", so a
+   long name ellipsises before it reaches the button.
+
+   The row is what the box is renamed from, and the rename editor opens inside
+   whatever it is renaming — so this row is the positioned element that keeps it
+   over the name rather than over the whole box and the conversations in it. */
 conversation-bar .conversation-box-top {
-    /* The row is what the box is renamed from, and the rename editor opens
-       inside whatever it is renaming — so this row is the positioned ancestor
-       that keeps it over the name rather than over the whole box and the
-       conversations in it. */
-    position: relative;
+    position: absolute;
+    top: calc(-0.0625rem / 2);
+    left: calc(0.5rem + 0.0625rem + 0.4rem);
+    right: calc(0.5rem + 1.25rem + 0.25rem);
     display: flex;
     align-items: center;
-    gap: 0.2rem;
     min-width: 0;
-    padding-left: calc(0.4rem - 0.375rem);
+    transform: translateY(-50%);
     cursor: pointer;
 }
 
-/* The header is the workspace's own row: what the place is called and how it is
-   doing. Everything in it is true of the tree rather than of any one
-   conversation in it.
-
-   The right-hand padding is the room the box's own "+" sits in, so a long name
-   ellipsises before it reaches the button rather than running underneath it. It
-   takes no leading padding: the grip beside it provides that inset. */
+/* The header is the workspace's own name: what the place is called and how it
+   is doing. Everything in it is true of the tree rather than of any one
+   conversation in it. */
 conversation-bar .conversation-box-header {
     display: flex;
-    flex: 1 1 auto;
-    flex-direction: column;
-    gap: 0.1rem;
+    flex: 0 1 auto;
     min-width: 0;
-    padding: 0.2rem 1.6rem 0.2rem 0;
     cursor: pointer;
 }
 
-/* Adding a conversation to this workspace. The same green and the same answer
-   to the pointer as the "+" at the top of the strip, because it is the same
-   act — but round and small, because that one is the strip's one wide control
-   and this is a mark in the corner of a box. Laid over the top corner rather
-   than placed in the header, which holds the name alone. */
+/* Adding a conversation to this workspace: a mark on the box's edge, opposite
+   the name and on the same line. Its own fill and the box's edge, so the edge
+   it sits on is hidden behind it rather than drawn through it.
+
+   The mark is drawn rather than typed: a "+" character sits where its font's
+   ascent and descent put it, which is not the middle of the circle. */
 conversation-bar .conversation-box-add {
     position: absolute;
-    top: 0.3125rem;
-    right: 0.3125rem;
+    top: calc(-0.0625rem / 2);
+    right: 0.5rem;
     z-index: 1;
     display: flex;
     align-items: center;
@@ -195,50 +210,38 @@ conversation-bar .conversation-box-add {
     width: 1.25rem;
     height: 1.25rem;
     padding: 0;
-    background: transparent;
-    border: 0.0625rem solid transparent;
+    background: var(--workspace-box-paint);
+    border: 0.0625rem solid var(--workspace-box-edge);
     border-radius: 50%;
-    color: var(--accent-green);
-    font-size: 1rem;
-    font-weight: 600;
-    line-height: 1;
+    color: var(--text-tertiary);
+    transform: translateY(-50%);
     cursor: pointer;
-    transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+    transition: color 150ms ease;
+}
+
+conversation-bar .conversation-box-add > svg {
+    flex: none;
+    width: 0.875rem;
+    height: 0.875rem;
 }
 
 conversation-bar .conversation-box-add:hover {
-    background: var(--bg-raised);
-    border-color: var(--border-color);
-    color: var(--accent-green-bright);
+    color: var(--accent-blue);
 }
 
-/* The box answers the pointer, all of it at once. Nothing inside it takes a
-   surface of its own: a lit, rounded panel around the title is a tab shape,
-   and there are real tabs directly below it to be confused with.
-
-   A lift of its own fill rather than a rung of the background ramp: the box no
-   longer sits on that ramp, and --bg-raised is now darker than the box in dark
-   mode, so borrowing it would make the hover read as a press. */
+/* The box answers the pointer, all of it at once, with the overlay a tab's
+   hover lays down. Nothing inside it takes a surface of its own: a lit, rounded
+   panel around the title is a tab shape, and there are real tabs directly
+   below it to be confused with. */
 conversation-bar .conversation-box:not(.active):hover {
-    background: color-mix(in srgb, var(--text-primary) 7%, var(--workspace-box-surface));
+    --workspace-box-overlay: var(--overlay-light-5);
 }
 
-/* A box is chosen the way a tab is chosen, in the same colours, because the
-   strip is one list of things to choose between. What is chosen is the box, so
-   the box is what changes colour. Mixed against --bg-raised for the same reason
-   the tab is — bare --accent-blue under white text is about 2.7:1.
-
-   It colours its own text and nothing else's. The tabs inside a box are still
-   tabs, drawn and lit by their own rules against their own backgrounds, and an
-   inherited colour from the frame around them reaches straight through to their
-   labels. */
+/* A box is chosen the way a conversation-panel item is chosen: a neutral
+   overlay, never a hue. The hue is the workspace's own, and its name chip
+   comes up to full strength. */
 conversation-bar .conversation-box.active {
-    background: color-mix(in srgb, var(--accent-blue) 70%, var(--bg-raised));
-    border-color: color-mix(in srgb, var(--accent-blue) 70%, var(--bg-raised));
-}
-
-conversation-bar .conversation-box.active .conversation-box-label {
-    color: #fff;
+    --workspace-box-overlay: var(--item-selected-bg);
 }
 
 conversation-bar.tab-list-focused:focus-within .conversation-box.active {
@@ -247,45 +250,54 @@ conversation-bar.tab-list-focused:focus-within .conversation-box.active {
     box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--accent-blue) 30%, transparent);
 }
 
+/* The backing behind the name: the box's own paint, so the edge it stands on is
+   hidden behind the chip rather than showing through it (a badge tint is
+   translucent in the light theme, and a chip is dimmed when its box is not the
+   chosen one). Shaped like the chip, and as wide as it. */
 conversation-bar .conversation-box-title {
     display: flex;
     align-items: center;
-    gap: 0.25rem;
     min-width: 0;
+    background: var(--workspace-box-paint);
+    border-radius: 0.25rem;
 }
 
-/* The tray's title, and drawn like one: the name of the place is the most
-   important thing in the box, not the quietest. Read at a glance against the
-   tabs below it, which are longer, lighter and more numerous.
-
-   Carrying the box's hue too, but only part of the way: the text colour stays
-   mostly --text-primary, which is what keeps a name legible whichever of the
-   eight it drew and whichever theme it is read in. Enough to tie the name to
-   the frame around it, not enough to make the name the colour's. */
+/* The name, as the shared lozenge (patterns/item-badge.css) filled with the
+   workspace's tint: white on the hue, as a category name is in the
+   conversation panel. Dimmed until its box is the chosen one. */
 conversation-bar .conversation-box-label {
-    flex: 1 1 auto;
+    --preset-badge-bg: var(--workspace-tint);
+
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    min-width: 0;
+    max-width: 100%;
+    opacity: 0.8;
+}
+
+conversation-bar .conversation-box.active .conversation-box-label {
+    opacity: 1;
+}
+
+conversation-bar .conversation-box-label-text {
     min-width: 0;
     overflow: hidden;
-    font-size: 0.8125rem;
-    font-weight: var(--font-weight-semibold);
-    color: color-mix(in srgb,
-        var(--workspace-tint, var(--text-primary)) var(--workspace-tint-text),
-        var(--text-primary));
     white-space: nowrap;
     text-overflow: ellipsis;
 }
 
 /* Uncommitted work: the one piece of state worth a mark rather than a word,
-   because it is what makes a destructive ending cost something. */
+   because it is what makes a destructive ending cost something. A dot in the
+   name's own white, after the text, which ellipsises before it. */
 conversation-bar .conversation-box-header.is-dirty .conversation-box-label::after {
     content: "";
-    display: inline-block;
+    flex-shrink: 0;
     width: 0.375rem;
     height: 0.375rem;
-    margin-left: 0.3rem;
-    background: var(--accent-yellow);
+    margin-top: -0.125rem;
+    background: currentcolor;
     border-radius: 50%;
-    vertical-align: middle;
 }
 
 conversation-bar .conversation-box-tabs {
@@ -298,16 +310,6 @@ conversation-bar .conversation-box-tabs {
     list-style: none;
 }
 
-/* A tab lying in a tray keeps its own fill — it is the same tab it would be
-   anywhere else in the strip — but takes the tray's edge colour, because its
-   own is tuned to read against the page and the tray is not the page. Without
-   this the cards blur into the thing holding them, which is the failure the
-   tray was drawn to fix. Not the selected one: that has a blue edge of its own
-   and needs no help being found. */
-conversation-bar .conversation-box .conversation-tab:not(.active) {
-    border-color: var(--workspace-box-border);
-}
-
 /* The last row of the list, shown only while there is nothing above it.
    Centred: it stands in for the box's contents rather than starting a list. */
 conversation-bar .conversation-box-empty {
@@ -317,7 +319,7 @@ conversation-bar .conversation-box-empty {
     color: var(--text-tertiary);
 }
 
-/* A box with nothing in it is a grip all over. There is nothing inside it to
+/* A box with nothing in it is a handle all over. There is nothing inside it to
    aim at, so the whole card answers the pointer the way its name does —
    otherwise the band around one short line of text looks draggable and is not.
    A box with tabs in it leaves the cursor to them: they are what a press there
@@ -325,12 +327,6 @@ conversation-bar .conversation-box-empty {
 conversation-bar .conversation-box:not(:has(.conversation-tab)),
 conversation-bar .conversation-box:not(:has(.conversation-tab)) .conversation-box-empty {
     cursor: pointer;
-}
-
-/* Still the quietest thing in the box, but quiet against the selected surface
-   rather than against the one it is no longer sitting on. */
-conversation-bar .conversation-box.active .conversation-box-empty {
-    color: color-mix(in srgb, #fff 70%, transparent);
 }
 
 /* The way to make a workspace, drawn as the outline of one. Same width, same
@@ -357,11 +353,11 @@ conversation-bar .conversation-box-new-button {
     min-width: 0;
 
     /* The mark and the words are one phrase, and the phrase starts where a tab's
-       name starts: the tab's own inset, then the handle column and the gap after
-       it. Left of that line the strip is margin, and a mark parked out there
-       left the words one step further in than every row above them — which read
-       as a caption under the list rather than as the last row of it. */
-    padding: 0.4rem 0.4rem 0.4rem calc(0.4rem + var(--tab-handle-width) + 0.2rem);
+       name starts: the tab's own inset, then the status column and the space
+       after it. Left of that line the strip is margin, and a mark parked out
+       there left the words one step further in than every row above them —
+       which read as a caption under the list rather than as the last row of it. */
+    padding: 0.4rem 0.4rem 0.4rem calc(0.4rem + var(--tab-status-column) + var(--tab-status-gap));
     font-size: 0.8125rem;
     color: var(--text-tertiary);
     background: none;
@@ -369,7 +365,7 @@ conversation-bar .conversation-box-new-button {
     /* Transparent while the outline is dashed, so the dashes and the solid edge
        hover draws sit on exactly the same line. */
     border: 0.0625rem solid transparent;
-    border-radius: 0.9rem;
+    border-radius: 0.75rem;
     cursor: pointer;
 }
 
@@ -384,7 +380,7 @@ conversation-bar .conversation-box-new-button::before {
     inset: -0.0625rem;
     pointer-events: none;
     background: var(--workspace-box-border);
-    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect width='100%25' height='100%25' rx='14' ry='14' fill='none' stroke='black' stroke-width='2' stroke-dasharray='2 6'/%3E%3C/svg%3E") center/100% 100% no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect width='100%25' height='100%25' rx='12' ry='12' fill='none' stroke='black' stroke-width='2' stroke-dasharray='2 6'/%3E%3C/svg%3E") center/100% 100% no-repeat;
 }
 
 /* Sized to the words it leads, and never squeezed by them. */
@@ -420,79 +416,88 @@ conversation-bar .conversation-add-item {
     width: 100%;
 }
 
+/* A tab is a row, not a card: no edge of its own (a transparent one holds the
+   layout), and its fill is whatever it lies on — --tab-surface, the page for a
+   tab in the open strip and the box's surface for one in a box. The open
+   strip's tabs still paint theirs, the page colour, so the line pattern behind
+   the sidebar shows in the gaps between them and not under their names.
+
+   Hover and selection are overlays laid on that surface, as a conversation
+   panel item's are, so they read the same on the page and in any box. */
 conversation-bar .conversation-tab {
+    --tab-surface: var(--bg-primary);
+
     position: relative;
-    background: var(--bg-primary);
-    border: 0.0625rem solid var(--border-color);
-    border-radius: 0.8rem;
+    background-color: var(--tab-surface);
+    border: 0.0625rem solid transparent;
+    border-radius: 0.5rem;
     padding: 0.5rem 0.75rem;
     align-items: center;
     gap: 0.2rem;
-    transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+    transition: background 150ms ease, color 150ms ease;
     cursor: default;
+}
+
+conversation-bar .conversation-box .conversation-tab {
+    --tab-surface: var(--workspace-box-surface);
+
+    background-color: transparent;
 }
 
 conversation-bar .conversation-tab.has-close {
     padding: 0.25rem 0.4rem;
 }
 
-/* Activity indicators, shown on every tab regardless of selection.
-   - .is-running   → pulsing green blob in the trailing slot (LLM loop active),
-                     replacing the bin button so a tab can't be binned
-                     mid-loop. Same size as the button, so the layout is stable.
-    - .is-awaiting  → tab background pulses between orange and the regular
-                      tab background (needs your input). Withheld entirely when
-                      the user turns tab highlighting off, so such a tab is
-                      indistinguishable from an idle one — see
-                      conversation-bar._refreshTabStatus.
-    - .has-scheduled-send → a static clock in its own slot before the trailing
-                      one (a send is armed on one of the conversation's
-                      threads). Its own slot because an end-of-turn send is
-                      armed while the turn runs, so it shares the tab with the
-                      green blob.
-    Idle tabs get nothing. */
-conversation-bar .conversation-tab.is-running .conversation-tab-activity {
-    display: flex;
+/* The status circle: the shared badge circle (patterns/item-badge.css), the
+   same size as the one a conversation-panel item wears, ahead of the name.
+   _refreshTabStatus sets both halves of it from the tab's state — the preset
+   fill (the meta slate at rest, green while the turn runs, red when it failed,
+   the ask family's yellow while the user is waited on) and, as data-glyph,
+   which one glyph shows, in priority order:
+
+   - a question while the user is waited on;
+   - a "!" when the last turn failed;
+   - a clock while a send is scheduled;
+   - a question when nothing has been said yet;
+   - otherwise the assistant, at rest and while running.
+
+   Running pulses with the badge pulse, as a busy item circle does. Nothing else
+   on the tab moves: the circle is the whole of its status. */
+conversation-bar .conversation-tab-status {
+    width: var(--tab-status-column);
+    height: var(--tab-status-column);
+    margin-right: calc(var(--tab-status-gap) - 0.2rem);
 }
 
-conversation-bar .conversation-tab.is-running .conversation-tab-bin {
+conversation-bar .conversation-tab-glyph {
     display: none;
+    width: var(--message-icon-size);
+    height: var(--message-icon-size);
 }
 
-conversation-bar .conversation-tab.has-scheduled-send .conversation-tab-schedule {
+/* Shown as a flex box, which lays its svg out as a block without the svg
+   being told to. */
+conversation-bar .conversation-tab-glyph svg {
+    width: 100%;
+    height: 100%;
+}
+
+conversation-bar .conversation-tab-status:not([data-glyph]) .conversation-tab-glyph-assistant,
+conversation-bar .conversation-tab-status[data-glyph="assistant"] .conversation-tab-glyph-assistant,
+conversation-bar .conversation-tab-status[data-glyph="question"] .conversation-tab-glyph-question,
+conversation-bar .conversation-tab-status[data-glyph="clock"] .conversation-tab-glyph-clock,
+conversation-bar .conversation-tab-status[data-glyph="alert"] .conversation-tab-glyph-alert {
     display: flex;
 }
 
-/* Awaiting approval: pulse the whole tab. The static value is also the
-   reduced-motion fallback (animation disabled below). */
-conversation-bar .conversation-tab:not(.active).is-awaiting {
-    background: color-mix(in srgb, var(--tab-awaiting) 85%, var(--bg-primary));
-    animation: tab-awaiting-pulse 2s ease-in-out infinite;
+conversation-bar .conversation-tab.is-running .conversation-tab-status {
+    animation: var(--item-badge-pulse);
 }
 
-@keyframes tab-running-pulse {
-    0%, 100% {
-        opacity: 1;
-        transform: scale(1);
-    }
-
-    50% {
-        opacity: 0.4;
-        transform: scale(0.7);
-    }
-}
-
-@keyframes tab-awaiting-pulse {
-    0%, 100% {
-        background: color-mix(in srgb, var(--tab-awaiting) 85%, var(--bg-primary));
-        box-shadow: 0 0 0 0 color-mix(in srgb, var(--tab-awaiting) 25%, transparent);
-    }
-
-    50% {
-        background: var(--bg-primary);
-    }
-
-    70% { box-shadow: 0 0 0 0.5rem transparent; }
+/* A tab can't be binned mid-loop, so its bin is out of reach while it runs —
+   hidden in place, so the name beside it keeps its width. */
+conversation-bar .conversation-tab.is-running .conversation-tab-bin {
+    visibility: hidden;
 }
 
 /* Needs-attention alert (attention-manager): a one-shot flash when a
@@ -500,53 +505,49 @@ conversation-bar .conversation-tab:not(.active).is-awaiting {
    the tab until you view it. Distinct from .is-awaiting (which tracks live
    approval state regardless of focus) — this is the focus-gated "come back"
    signal and persists until the tab is seen. A flat background tint (not an
-   edge marker) so it never curves at the tab's rounded corners; on awaiting
-   tabs the stronger .is-awaiting pulse simply overrides it.
+   edge marker) so it never curves at the tab's rounded corners.
 
-   Mixed into the tab's own fill rather than laid over it at 22% alpha: a tab
-   lying in a workspace box has that box's surface behind it, not the page, and
-   a selected box is blue — through which a translucent yellow reads as a muddy
-   green. Every colour a tab can wear has to be a colour, not a glaze. */
+   Mixed into the surface the tab lies on rather than laid over it at 22% alpha,
+   so the tint is the same colour on the page and in any box, and the hover
+   overlay still lands on top of it. */
 conversation-bar .conversation-tab:not(.active).needs-attention {
-    background-color: color-mix(in srgb, var(--tab-awaiting) 22%, var(--bg-primary));
+    background-color: color-mix(in srgb, var(--tab-awaiting) 22%, var(--tab-surface));
 }
 
 /* Snap the awaiting colour hard on/off (no fade) ~200ms per state, three times,
-   then fall back to the underlying state. The :not(.active) selector matches the
-   awaiting rule's specificity and, ordered later, wins the `animation` cascade so
-   the one-shot flash overrides the awaiting pulse for its duration — when it ends
-   (fill-mode none) the tab returns to its normal pulsing. */
+   then fall back to the underlying state (fill-mode none). */
 conversation-bar .conversation-tab:not(.active).attention-flash {
     animation: tab-attention-flash 0.4s step-end 3;
 }
 
-/* The dark half of the flash is the tab's ordinary fill — the colour it would
-   be with nothing wrong — so the flash reads as the alert colour arriving and
-   leaving. Not `transparent`, which is a hole: in a workspace box it shows the
-   box, and the flash alternates yellow with the blue of a selected one. */
+/* The dark half of the flash is the surface the tab lies on — the colour it
+   would be with nothing wrong — so the flash reads as the alert colour arriving
+   and leaving. */
 @keyframes tab-attention-flash {
     0% { background-color: var(--tab-awaiting); }
-    50% { background-color: var(--bg-primary); }
+    50% { background-color: var(--tab-surface); }
     100% { background-color: var(--tab-awaiting); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-    conversation-bar .conversation-tab-activity::before { animation: none; }
-    conversation-bar .conversation-tab:not(.active).is-awaiting { animation: none; }
+    conversation-bar .conversation-tab.is-running .conversation-tab-status { animation: none; }
     conversation-bar .conversation-tab.attention-flash { animation: none; }
 }
 
+/* Hover is a step toward selected, in the same neutral, not a colour of its own. */
 conversation-bar .conversation-tab:hover {
-    background: var(--bg-raised);
+    background-image: linear-gradient(var(--overlay-light-5), var(--overlay-light-5));
 }
 
+/* Chosen the way a conversation-panel item is chosen — a neutral wash, never a
+   hue — in the stronger measure a strip read at a glance needs, with the name
+   set heavier. The text keeps the theme's colour. */
 conversation-bar .conversation-tab.active {
-    /* Darken the accent-blue surface so white text clears WCAG AA at all
-       times — bare --accent-blue (#58a6ff in dark mode) on #fff is ~2.7:1
-       and was barely legible. */
-    background: color-mix(in srgb, var(--accent-blue) 70%, var(--bg-raised));
-    border-color: color-mix(in srgb, var(--accent-blue) 70%, var(--bg-raised));
-    color: #fff;
+    background-image: linear-gradient(var(--item-selected-strong-bg), var(--item-selected-strong-bg));
+}
+
+conversation-bar .conversation-tab.active .conversation-tab-name {
+    font-weight: 600;
 }
 
 conversation-bar:focus {
@@ -583,40 +584,8 @@ conversation-bar .drag-ghost {
     will-change: transform;
 }
 
-/* Keep the grip lit on the ghost — a clone is never hovered, so the pattern's
-   hover-reveal would otherwise hide it for the whole of the drag. Written against
-   the ghost class rather than against the tab, because a box is dragged by the
-   same gesture and carries the same grip. */
-conversation-bar .drag-ghost .drag-grip {
-    opacity: 1;
-}
-
 conversation-bar .drag-source {
     visibility: hidden;
-}
-
-/* A grip's shape, and which pointers may use it, are patterns/drag-grip.css.
-   What belongs to the bar is the width of the column it occupies — the same for
-   a tab and for a box's top row, so the two line up down the left edge — and
-   that width is a variable because the "new workspace" row starts its text on
-   the same line. */
-conversation-bar .conversation-tab > .drag-grip,
-conversation-bar .conversation-box-top > .drag-grip {
-    width: var(--tab-handle-width);
-    font-size: 0.75rem;
-}
-
-/* Coarse pointers (touch) have no hover to reveal a grip and need a larger
-   target to grab reliably. */
-@media (pointer: coarse) {
-    conversation-bar {
-        --tab-handle-width: 2.75rem;
-    }
-
-    conversation-bar .conversation-tab > .drag-grip,
-    conversation-bar .conversation-box-top > .drag-grip {
-        font-size: 1.25rem;
-    }
 }
 
 /* A tab moved from the keyboard (⇧Page Up/Down) is lifted above the neighbour
@@ -705,18 +674,19 @@ conversation-bar .conversation-tab-button {
 }
 
 /* Subtle "+" tab — no chrome by default, picks up a faint background on hover.
-   The "+" glyph itself carries the accent colour. */
+   The glyph is quiet until pointed at: green in this strip says a tab is
+   running, and says nothing else. */
 conversation-bar .conversation-add {
     display: flex;
     align-items: center;
     justify-content: center;
     background: transparent;
     border: 0.0625rem solid transparent;
-    border-radius: 0.8rem;
+    border-radius: 0.5rem;
     padding: 0.25rem 0.75rem;
     cursor: pointer;
     transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
-    color: var(--accent-green);
+    color: var(--text-tertiary);
     font-size: 1.25rem;
     font-weight: 600;
     line-height: 1;
@@ -731,11 +701,16 @@ conversation-bar .conversation-add-labelled {
     padding: 0.5rem 0.75rem;
     font-size: 0.875rem;
     font-weight: 500;
+    color: var(--accent-green);
 }
 
 conversation-bar .conversation-add:hover {
     background: var(--bg-raised);
     border-color: var(--border-color);
+    color: var(--accent-blue);
+}
+
+conversation-bar .conversation-add-labelled:hover {
     color: var(--accent-green-bright);
 }
 
@@ -763,46 +738,6 @@ conversation-bar > col-resize-handle {
 conversation-bar > col-resize-handle.hovered,
 conversation-bar > col-resize-handle.dragging {
     background: var(--accent-blue);
-}
-
-/* Pulsing green activity blob — same footprint as the bin button so the
-   two can swap in the trailing slot without shifting the layout. Hidden by
-   default; .is-running flips it on (see the status-indicators section). */
-conversation-bar .conversation-tab-activity {
-    width: 1.25rem;
-    height: 1.25rem;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-}
-
-conversation-bar .conversation-tab-activity::before {
-    content: "";
-    width: 0.625rem;
-    height: 0.625rem;
-    border-radius: 50%;
-    background: #08dc3c;
-    box-shadow: 0 0 0.5rem rgb(93 255 133 / 60%);
-    animation: tab-running-pulse 1.4s ease-in-out infinite;
-}
-
-/* Scheduled-send clock. Static and muted — it reports a pending send, it isn't
-   asking for anything. Hidden by default; .has-scheduled-send flips it on (see
-   the status-indicators section). */
-conversation-bar .conversation-tab-schedule {
-    width: 0.875rem;
-    height: 0.875rem;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    opacity: 0.7;
-}
-
-conversation-bar .conversation-tab-schedule svg {
-    width: 0.875rem;
-    height: 0.875rem;
 }
 
 conversation-bar .conversation-tab-bin {
@@ -845,10 +780,6 @@ conversation-bar .conversation-tab-bin svg {
 conversation-bar .conversation-tab-bin:hover {
     opacity: 1;
     background: rgb(0 0 0 / 15%);
-}
-
-conversation-bar .conversation-tab.active .conversation-tab-bin:hover {
-    background: rgb(255 255 255 / 15%);
 }
 
 /* "Auto-name", in the actions row of a tab's rename editor: a low-key ghost

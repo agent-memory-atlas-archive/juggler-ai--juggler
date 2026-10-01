@@ -28,14 +28,77 @@
  * strip that wraps is not a special case — an item crossing from the end of one
  * row to the start of the next travels the diagonal it actually travels.
  *
+ * A strip of nested lists also has the containers the lists are drawn in, which
+ * are not places to drop but are pushed about by every shift all the same. The
+ * caller names them (`groups`) and they glide with the items; an item inside
+ * one glides only by what it moves within it, since the container's transform
+ * already carries it the rest of the way. Both run on one transition, so the
+ * two add up to the item's whole journey at every frame of it.
+ *
  * Pointer events are taken on the document rather than on the item: a strip
  * that re-renders mid-drag takes the pointerdown target out of the DOM, and
  * with it the implicit capture, stranding the gesture.
+ *
+ * A finger has no hover and arrives already meaning "scroll", so a strip that
+ * offers no grip asks a touch or pen press to HOLD first (the `hold` option).
+ * Held still for the hold time it lifts: the clone comes up and the page stops
+ * scrolling under it. A finger that moves past the tolerance first was
+ * scrolling, and the gesture steps aside before it has touched anything. A lift
+ * let go where it was is a long-press, which the strip is told about so it can
+ * open a menu. A mouse never holds: it drags past the threshold, as before.
+ *
+ * Stopping the scroll cannot be done from pointer events at all — panning is
+ * not their default action — so it is done by cancelling `touchmove`, from a
+ * listener registered when this module loads. WebKit only honours a cancel from
+ * a non-passive listener that was in place before the touch began, and only if
+ * it cancels the first touchmove that would have scrolled: so while a press is
+ * held still, its tremor's touchmoves are cancelled too, and the moment it moves
+ * past the tolerance they are not. This is the part a desktop test lane cannot
+ * reach — it never scrolls — and is checked on a phone.
  * @module utils/reorder-drag
  */
 
 /** How far a pointer must travel before a press becomes a drag. */
 const DEFAULT_THRESHOLD_PX = 5;
+
+/** Held presses still waiting or lifted. While any is, the strip's own menu is not a right-click's. */
+let liveHolds = 0;
+
+/** Held presses that have lifted their item and are dragging it. */
+let liftedHolds = 0;
+
+/** Gestures that currently own the touch, so the page must not scroll under them. */
+let scrollBlockers = 0;
+
+document.addEventListener('touchmove', (e) => {
+  if (scrollBlockers > 0 && e.cancelable) e.preventDefault();
+}, { passive: false });
+
+/**
+ * Whether a held press is in progress — waiting for its hold, or lifted.
+ *
+ * A long-press is also how Android asks for a context menu, and it would open
+ * one over a row the finger is in the middle of lifting. The context-menu
+ * service is told to stand down while this is true (see
+ * registerContextMenuSuppressor); the strip opens its own menu when a lift is
+ * let go where it was.
+ * @returns {boolean} True while one is.
+ */
+export function holdGestureLive() {
+  return liveHolds > 0;
+}
+
+/**
+ * Whether a held press has lifted its item — not merely landed and waiting.
+ *
+ * What a surface the strip sits on asks before claiming a gesture of its own:
+ * a drawer that swipes away must not take a lifted row with it, but must still
+ * swipe from a press that has not lifted, which is every press until it has.
+ * @returns {boolean} True while one has.
+ */
+export function holdLifted() {
+  return liftedHolds > 0;
+}
 
 /** How close to an edge the pointer must be for the strip to scroll itself. */
 const EDGE_HOTZONE_PX = 30;
@@ -50,6 +113,9 @@ const MAX_SCROLL_STEP_PX = 18;
  */
 const SCROLL_OVERFLOW_MIN_PX = 4;
 
+/** Groups a shift has set gliding, whose transforms {@link settledRect} takes out of what is inside them. */
+const glided = new WeakSet();
+
 /**
  * An element's box where the layout has it, with whatever transform it is
  * moving under taken back out.
@@ -62,6 +128,12 @@ const SCROLL_OVERFLOW_MIN_PX = 4;
  * pointer reports faster than the animation finishes and every shift starts
  * another one.
  *
+ * The same goes for a group the element is drawn inside: its glide carries
+ * everything in it. So the element's own translation is taken out, and so is
+ * that of every ancestor a shift has set gliding — and no other ancestor's,
+ * since a transform this module did not apply (a drawer sliding the whole
+ * sidebar) moves the pointer's target along with it and is part of the answer.
+ *
  * Only the translation is taken back out, translation being all that is ever
  * applied here.
  * @param {Element} element - The element to measure.
@@ -69,9 +141,16 @@ const SCROLL_OVERFLOW_MIN_PX = 4;
  */
 export function settledRect(element) {
   const rect = element.getBoundingClientRect();
-  const { transform } = getComputedStyle(element);
-  if (!transform || transform === 'none') return rect;
-  const { e: dx, f: dy } = new DOMMatrixReadOnly(transform);
+  let dx = 0;
+  let dy = 0;
+  for (let el = /** @type {Element|null} */ (element); el; el = el.parentElement) {
+    if (el !== element && !glided.has(el)) continue;
+    const { transform } = getComputedStyle(el);
+    if (!transform || transform === 'none') continue;
+    const m = new DOMMatrixReadOnly(transform);
+    dx += m.e;
+    dy += m.f;
+  }
   if (!dx && !dy) return rect;
   return new DOMRect(rect.left - dx, rect.top - dy, rect.width, rect.height);
 }
@@ -80,6 +159,7 @@ export function settledRect(element) {
  * @typedef {object} ReorderDragOptions
  * @property {HTMLElement} item - The element being dragged.
  * @property {() => HTMLElement[]} items - The reorderable items, in strip order. Called live, and must exclude the floating clone. They need not share a parent: a strip built from nested lists is read as one sequence, and the item lands in the list its new neighbour is in.
+ * @property {() => HTMLElement[]} [groups] - Containers the items are drawn inside that are not places to drop but are moved by a shift — a box round a nested list. Called live. They glide with the items rather than jumping, and the stylesheet's transition must cover them with the items' own timing.
  * @property {HTMLElement} [captureTarget] - Which element takes the pointer. Must be the one carrying the click handler. Defaults to the item.
  * @property {HTMLElement|null} [strip] - The element holding the items, marked while a drag is live so a stylesheet can gate its transitions. Defaults to the item's parent, which is only right for a flat strip: where the items live in nested lists, name the element the stylesheet looks for.
  * @property {HTMLElement} [ghostHost] - Where the clone is parked. Defaults to the item's parent; give a host outside any clipping scroll box.
@@ -91,7 +171,8 @@ export function settledRect(element) {
  * @property {{ghost?: string, source?: string, dragging?: string}} [classes] - Class for the clone, for the placeholder left behind, and for the strip while a drag is live.
  * @property {(clone: HTMLElement) => void} [prepareGhost] - Scrub the clone before it is shown — identity attributes, transient state.
  * @property {(detail: {item: HTMLElement, fromIndex: number, toIndex: number, parent: HTMLElement|null, anchor: Element|null}) => void} [onCommit] - The drop landed somewhere new. `toIndex` indexes the strip WITHOUT the dragged item; a strip of nested lists should read `anchor` instead, which names what the item landed in front of — null for the end of `parent`.
- * @property {() => void} [onDragStart] - The threshold was passed.
+ * @property {{ms: number, tolerancePx: number, onHeldRelease?: (point: {clientX: number, clientY: number}) => void}} [hold] - For a touch or pen press: how long it must be held still before it lifts, how far it may stray meanwhile before it is taken for a scroll, and what to do when a lift is let go where it was. A hold of 0 lifts at the press. Ignored for a mouse.
+ * @property {() => void} [onDragStart] - The threshold was passed, or the hold lifted the item.
  * @property {(detail: {dragged: boolean, moved: boolean}) => void} [onDragEnd] - The gesture is over: whether it ever became a drag, and whether it committed.
  */
 
@@ -114,6 +195,7 @@ export function startReorderDrag(event, options) {
   const {
     item,
     items,
+    groups,
     captureTarget = item,
     strip = /** @type {HTMLElement} */ (item.parentElement),
     ghostHost = /** @type {HTMLElement} */ (item.parentElement),
@@ -122,6 +204,7 @@ export function startReorderDrag(event, options) {
     wrap = false,
     dropPlaceAt,
     thresholdPx = DEFAULT_THRESHOLD_PX,
+    hold,
     classes = {},
     prepareGhost,
     onCommit,
@@ -170,6 +253,23 @@ export function startReorderDrag(event, options) {
   let autoScrollRaf = null;
   let lastClientX = event.clientX;
   let lastClientY = event.clientY;
+
+  // The hold. `pending` is a press waiting to lift; `lifted` is one that has.
+  const holding = !!hold && (event.pointerType === 'touch' || event.pointerType === 'pen');
+  let pending = holding;
+  let lifted = false;
+  /** How far the pointer has strayed from the press, at most. */
+  let travelled = 0;
+  /** @type {ReturnType<typeof setTimeout>|null} */
+  let holdTimer = null;
+  let blocking = false;
+
+  /** @param {boolean} on - Whether this gesture owns the touch. */
+  const blockScroll = (on) => {
+    if (on === blocking) return;
+    blocking = on;
+    scrollBlockers += on ? 1 : -1;
+  };
 
   // Where the placeholder goes back to if the gesture is abandoned.
   const homeParent = item.parentElement;
@@ -315,31 +415,49 @@ export function startReorderDrag(event, options) {
    * @param {DropPlace} place - Where the item is going.
    */
   const shiftTo = (place) => {
-    const before = items();
+    const boxes = new Set(groups?.() ?? []);
+    const moving = [...new Set([...boxes, ...items()])].filter((el) => el !== item);
     /** @type {Map<HTMLElement, DOMRect>} */
     const first = new Map();
-    for (const el of before) first.set(el, el.getBoundingClientRect());
+    for (const el of moving) first.set(el, el.getBoundingClientRect());
 
     place.parent?.insertBefore(item, place.anchor);
 
-    for (const el of before) {
-      const start = first.get(el);
-      if (!start || el === item) continue;
-      // Where it is going, not where the animation it is already running has it
-      // at this instant: the inversion below replaces that transform, so
-      // measuring through it would count the same offset twice and the item
-      // would start its travel from somewhere it has never been.
-      const end = settledRect(el);
-      const dx = start.left - end.left;
-      const dy = start.top - end.top;
+    // Where everything is going, not where the animations already running have
+    // it at this instant: the inversion below replaces those transforms, so
+    // measuring through them would count the same offset twice and start the
+    // travel from somewhere it has never been. Every glide comes off before
+    // anything is measured, because a group's carries what is inside it.
+    for (const el of moving) {
       el.style.transition = 'none';
+      el.style.transform = 'none';
+    }
+    /** @type {Map<HTMLElement, {dx: number, dy: number}>} */
+    const travel = new Map();
+    for (const el of moving) {
+      const start = /** @type {DOMRect} */ (first.get(el));
+      const end = el.getBoundingClientRect();
+      travel.set(el, { dx: start.left - end.left, dy: start.top - end.top });
+    }
+
+    for (const el of moving) {
+      let { dx, dy } = /** @type {{dx: number, dy: number}} */ (travel.get(el));
+      // The nearest group it is drawn in carries it that group's distance
+      // (and any group above that one's), so it travels only the rest.
+      let holder = el.parentElement;
+      while (holder && !boxes.has(holder)) holder = holder.parentElement;
+      const carried = holder ? travel.get(holder) : undefined;
+      if (carried) {
+        dx -= carried.dx;
+        dy -= carried.dy;
+      }
+      if (boxes.has(el)) glided.add(el);
       el.style.transform = dx || dy ? `translate(${dx}px, ${dy}px)` : '';
     }
     // Two frames: one for the browser to accept the inverted position as the
     // starting point, one for the transition to run from it.
     requestAnimationFrame(() => {
-      for (const el of before) {
-        if (el === item) continue;
+      for (const el of moving) {
         el.style.transition = '';
         el.style.transform = '';
       }
@@ -436,7 +554,7 @@ export function startReorderDrag(event, options) {
     ghost?.remove();
     ghost = null;
     item.classList.remove(sourceClass);
-    for (const el of items()) {
+    for (const el of [...items(), ...(groups?.() ?? [])]) {
       el.style.transition = '';
       el.style.transform = '';
     }
@@ -446,6 +564,30 @@ export function startReorderDrag(event, options) {
     } catch {
       // Already released, or never held — either way there is nothing to give back.
     }
+  };
+
+  /** Pick the item up: the threshold was passed, or the hold ran out. */
+  const begin = () => {
+    active = true;
+    capturePointer();
+    strip?.classList.add(draggingClass);
+    createGhost();
+    try {
+      onDragStart?.();
+    } catch (err) {
+      console.error('[ReorderDrag] Drag start handler failed:', err);
+    }
+  };
+
+  /** The hold ran out with the finger still down and still: lift. */
+  const lift = () => {
+    holdTimer = null;
+    if (finished || !pending) return;
+    pending = false;
+    lifted = true;
+    liftedHolds++;
+    begin();
+    if (ghost) ghost.style.transform = 'scale(1.02)';
   };
 
   /** @param {PointerEvent} move - A pointermove. */
@@ -463,17 +605,16 @@ export function startReorderDrag(event, options) {
     }
     const dx = move.clientX - event.clientX;
     const dy = move.clientY - event.clientY;
+    travelled = Math.max(travelled, Math.hypot(dx, dy));
+    if (pending) {
+      // Still waiting on the hold: a tremor is a finger holding still, and
+      // anything more is a finger scrolling — which is the browser's.
+      if (travelled > /** @type {NonNullable<typeof hold>} */ (hold).tolerancePx) finish(false);
+      return;
+    }
     if (!active) {
       if (!passedThreshold(dx, dy)) return;
-      active = true;
-      capturePointer();
-      strip?.classList.add(draggingClass);
-      createGhost();
-      try {
-        onDragStart?.();
-      } catch (err) {
-        console.error('[ReorderDrag] Drag start handler failed:', err);
-      }
+      begin();
     }
 
     lastClientX = move.clientX;
@@ -494,6 +635,10 @@ export function startReorderDrag(event, options) {
   const finish = (commit) => {
     if (finished) return;
     finished = true;
+    if (holdTimer !== null) clearTimeout(holdTimer);
+    if (holding) liveHolds--;
+    if (lifted) liftedHolds--;
+    blockScroll(false);
     document.removeEventListener('pointermove', onMove);
     document.removeEventListener('pointerup', onUp);
     document.removeEventListener('pointercancel', onCancel);
@@ -536,14 +681,35 @@ export function startReorderDrag(event, options) {
     } catch (err) {
       console.error('[ReorderDrag] Drag end handler failed:', err);
     }
+    // A lift let go where it was: the long-press, not a drag.
+    if (commit && lifted && !moved && travelled < thresholdPx) {
+      try {
+        hold?.onHeldRelease?.({ clientX: lastClientX, clientY: lastClientY });
+      } catch (err) {
+        console.error('[ReorderDrag] Held-release handler failed:', err);
+      }
+    }
   };
 
-  const onUp = () => finish(true);
+  /** @param {PointerEvent} up - The release. */
+  const onUp = (up) => {
+    lastClientX = up.clientX;
+    lastClientY = up.clientY;
+    finish(true);
+  };
   const onCancel = () => finish(false);
 
   document.addEventListener('pointermove', onMove);
   document.addEventListener('pointerup', onUp);
   document.addEventListener('pointercancel', onCancel);
+
+  if (holding) {
+    liveHolds++;
+    blockScroll(true);
+    const ms = /** @type {NonNullable<typeof hold>} */ (hold).ms;
+    if (ms <= 0) lift();
+    else holdTimer = setTimeout(lift, ms);
+  }
 
   return {
     isActive: () => active && !finished,
