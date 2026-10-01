@@ -273,8 +273,95 @@ export const attentionFiresOnTurnEndTest = {
   }
 };
 
+/**
+ * A conversation that sends the user elsewhere mid-turn does not chime when that
+ * turn ends. The engine's `new_conversation` tool asks viewers to follow it to
+ * the conversation it opened, and the turn that called it still has its closing
+ * message to write — so it comes to rest a moment after the window has left it,
+ * an unwatched turn-end the user never chose to walk away from.
+ *
+ * The excuse covers that one rest and nothing after it: a later turn finishing
+ * while the user is still elsewhere is ordinary news and alerts as usual.
+ * @type {import('../utilities/integration-test-runner.js').IntegrationTestDefinition}
+ */
+export const attentionExcusesTurnEndAfterFollowTest = {
+  name: 'attention-excuses-turn-end-after-follow',
+  description: 'A turn that ends just after a followed focus request does not alert; the next one does',
+  fixture: 'unit-test-fixture',
+
+  llmResponses: [
+    textResponse('Opened it for you.', { pauseBeforeReturn: true }),
+    textResponse('Second turn done.')
+  ],
+
+  operations: [],
+
+  /**
+   * @param {any} conversation
+   * @param {{harness: any}} ctx
+   */
+  customAssertions: async (conversation, { harness }) => {
+    const session = harness.innerHarness.session;
+    const convId = conversation.id;
+    const prevNotify = getAttentionPrefs().notify;
+
+    // The conversation the request sends the user to. Creating it moves the
+    // harness onto it, so step back to the one under test.
+    const spawnedId = await harness.createConversation('Spawned', []);
+    harness.switchConversation(convId);
+
+    setNotifyEnabled(false);
+    // Watching the conversation under test: focused, and it is on screen.
+    __attention.setFocusedForTest(true);
+
+    try {
+      initAttention(session);
+      const baseline = __attention.alertsFor(convId);
+
+      let sinceTurn = conversation.completedTurns;
+      await harness.driver.typeAndSend('Open a new conversation');
+      harness.consumeResponse();
+      await harness.awaitPendingSend();
+      await harness.waitForMockPaused();
+
+      // Mid-turn, the conversation asks viewers to follow it elsewhere.
+      session.applyConversationFocus(spawnedId, convId);
+      if (session.visibleConversationId !== spawnedId) {
+        throw new Error(`the focus request was not followed (visible ${session.visibleConversationId})`);
+      }
+
+      harness.releaseMock();
+      await harness.waitForTurnComplete(6000, sinceTurn);
+
+      const excused = __attention.alertsFor(convId) - baseline;
+      if (excused !== 0) {
+        throw new Error(`expected no alert for ${convId}'s turn ending after the user was sent away, got ${excused}`);
+      }
+      if (__attention.isFlagged(convId)) {
+        throw new Error(`${convId} was flagged for a turn-end it sent the user away from`);
+      }
+
+      // The user stays on the other conversation; the next turn here is news.
+      sinceTurn = conversation.completedTurns;
+      await harness.driver.typeAndSend('And again');
+      harness.consumeResponse();
+      await harness.awaitPendingSend();
+      await harness.waitForTurnComplete(6000, sinceTurn);
+
+      const later = __attention.alertsFor(convId) - baseline;
+      if (later !== 1) {
+        throw new Error(`expected the following turn-end to alert once, got ${later}`);
+      }
+    } finally {
+      __attention.setFocusedForTest(null);
+      setNotifyEnabled(prevNotify);
+    }
+  }
+};
+
 export const tests = [
   attentionFiresWhenNotLookingTest,
   attentionSuppressedWhenLookingTest,
-  attentionFiresOnTurnEndTest
+  attentionFiresOnTurnEndTest,
+  attentionExcusesTurnEndAfterFollowTest
 ];

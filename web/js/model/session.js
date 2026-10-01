@@ -562,7 +562,7 @@ class Session {
     if (!id) return;
     if (!this.shouldFollowRequest(from)) return;
     if (this.conversations.has(id) && !this._remoteCreates.has(id)) {
-      this.switchConversation(id);
+      this._followFocus(id, from);
     } else {
       this._pendingFocus = { id, from };
     }
@@ -600,8 +600,25 @@ class Session {
     if (!pending || pending.id !== id) return;
     this._pendingFocus = null;
     if (this.shouldFollowRequest(pending.from)) {
-      this.switchConversation(id);
+      this._followFocus(id, pending.from);
     }
+  }
+
+  /**
+   * Follow a focus request: switch to `id`, then announce that the user was
+   * moved there by `from` rather than leaving it of their own accord. The
+   * attention manager listens for `conversation:focus-followed`, because the
+   * requesting conversation is usually mid-turn and will come to rest moments
+   * after the user has been taken away from it.
+   * @param {string} id - Conversation to switch to.
+   * @param {string} from - Conversation that requested the switch; empty when
+   *   unattributed.
+   * @returns {void}
+   * @private
+   */
+  _followFocus(id, from) {
+    this.switchConversation(id);
+    if (from) this._notify('conversation:focus-followed', { id, from });
   }
 
   /**

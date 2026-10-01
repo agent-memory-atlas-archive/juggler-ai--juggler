@@ -20,6 +20,15 @@
  * is the one on screen. So the thread you're actively watching never beeps; a
  * backgrounded window, or an off-screen tab, does.
  *
+ * One turn-end is excused besides: the one a conversation reaches after it sent
+ * the user away mid-turn (a followed focus request — the engine's
+ * `new_conversation` tool opening another conversation and taking the viewer
+ * there). The turn that made the call still has its closing message to write,
+ * so it comes to rest just after the window has left it; the user didn't walk
+ * away, they were moved, and alerting them back is a false alarm. The excuse is
+ * for that one rest only, and is dropped if the user returns first. An approval
+ * the turn parks on after the move still alerts.
+ *
  * Two layers of visual signal, each with its own toggle:
  *  - The conversation's **tab highlight** (the `tabHighlight` pref): a one-shot
  *    blink plus a standing tint on its sidebar tab. Turning it off silences the
@@ -433,6 +442,14 @@ const prevTurns = new Map();
  */
 const alertsByConversation = new Map();
 /**
+ * Conversations whose next come-to-rest is not news: each sent the user away
+ * with a followed focus request while its turn was still running. An entry is
+ * consumed by the conversation's next observation at rest, and dropped early if
+ * the user looks at it again.
+ * @type {Set<string>}
+ */
+const excusedRest = new Set();
+/**
  * Test seam: overrides the focus check when set.
  * @type {boolean|null}
  */
@@ -513,6 +530,10 @@ function onActivity(convId) {
   // "Came to rest": a turn completed and the conversation is now idle.
   const turnEdge = seeded && turns > /** @type {number} */ (hadTurns) && !processing;
   const wantsUser = awaitingEdge || turnEdge;
+  // The turn that sent the user elsewhere has come to rest: that edge is excused
+  // (an approval edge is not), and the excuse is spent either way.
+  const excused = turnEdge && !awaitingEdge && excusedRest.has(convId);
+  if (!processing) excusedRest.delete(convId);
 
   // Float the tab on these two edges and on nothing else. The tab list is not a
   // progress bar: a running turn writes to its conversation several times a
@@ -525,11 +546,25 @@ function onActivity(convId) {
   // If the user is looking at this conversation, it's not "needing attention" —
   // keep baselines current and clear any leftover flash.
   if (isLookingAt(convId)) {
+    excusedRest.delete(convId);
     clearFlash(convId);
     return;
   }
 
-  if (wantsUser) raiseAttention(convId);
+  if (wantsUser && !excused) raiseAttention(convId);
+}
+
+/**
+ * The user was just taken from `convId` by a focus request it made. If its turn
+ * is still running, excuse the rest that turn is about to reach (see
+ * {@link excusedRest}). An idle conversation has no such rest coming, and an
+ * excuse left standing would swallow whatever turn it ran next.
+ * @param {string} convId
+ * @private
+ */
+function excuseRestAfterFollow(convId) {
+  const conv = session?.conversations.get(convId);
+  if (conv?.llmState?.isConversationProcessing(convId)) excusedRest.add(convId);
 }
 
 /**
@@ -539,7 +574,10 @@ function onActivity(convId) {
  */
 function reconcileVisible() {
   const id = session?.visibleConversationId;
-  if (id && isLookingAt(id)) clearFlash(id);
+  if (id && isLookingAt(id)) {
+    excusedRest.delete(id);
+    clearFlash(id);
+  }
 }
 
 /**
@@ -620,6 +658,7 @@ export function initAttention(sess) {
   armAudioOnFirstGesture();
   prevAwaiting.clear();
   prevTurns.clear();
+  excusedRest.clear();
   clearAllFlash();
 
   sess.onLLMStatusChange((id) => onActivity(id));
@@ -631,10 +670,16 @@ export function initAttention(sess) {
     // time anything waiting on that same transaction resumes.
     if (e.type === 'conversation:changed' && e.data?.conversationId) onActivity(e.data.conversationId);
     if (e.type === 'conversation:switched') reconcileVisible();
+    // Emitted after the switch, so the `conversation:switched` above has already
+    // reconciled the new view; this only concerns the conversation left behind.
+    if (e.type === 'conversation:focus-followed' && e.data?.from) excuseRestAfterFollow(e.data.from);
     // An alert outlives everything but a view, so a binned or deleted
     // conversation has to take its own with it — otherwise the title badge
     // stands for a conversation that no longer exists and nothing can clear it.
-    if (e.type === 'conversation:deleted' && e.data?.id) clearFlash(e.data.id);
+    if (e.type === 'conversation:deleted' && e.data?.id) {
+      excusedRest.delete(e.data.id);
+      clearFlash(e.data.id);
+    }
   });
 
   window.addEventListener('focus', reconcileVisible);
