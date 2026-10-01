@@ -47,6 +47,9 @@ var (
 	}
 )
 
+// Host returns the LM Studio server URL this provider is configured for.
+func Host() string { return server.Host() }
+
 // autoDetect reports whether an LM Studio server answers at the configured host.
 func autoDetect() bool {
 	return server.AutoDetect()() || legacyServer.AutoDetect()()

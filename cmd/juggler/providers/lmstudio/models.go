@@ -88,9 +88,10 @@ type nativeModel struct {
 	} `json:"capabilities"`
 }
 
-// legacyTable is GET /api/v0/models, the only table LM Studio 0.3 serves. Its
-// documented rows state no loaded length; loaded_context_length is read when a
-// build supplies it.
+// legacyTable is GET /api/v0/models, the only table LM Studio 0.3 serves. LM
+// Studio's documentation shows no loaded length on its rows, but 0.4.25 sends
+// loaded_context_length on every loaded row (realLegacyModels in
+// fixtures_test.go), so it is read wherever it is present.
 type legacyTable struct {
 	Object string         `json:"object"`
 	Data   *[]legacyModel `json:"data"`
@@ -165,6 +166,15 @@ func (t legacyTable) models() []Model {
 		out = append(out, model)
 	}
 	return out
+}
+
+// IsServer reports whether the server at host is LM Studio: whether it serves
+// either of LM Studio's own model tables. It answers for any host, not only the
+// one this provider is configured with, so another provider can ask it about
+// the server it is pointed at.
+func IsServer(ctx context.Context, host string) bool {
+	_, err := Models(ctx, host, nil)
+	return err == nil
 }
 
 // isNativeTable reports whether body is LM Studio's v1 model table.

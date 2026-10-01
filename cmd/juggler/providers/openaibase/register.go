@@ -44,6 +44,9 @@ type Descriptor struct {
 	// micro-task may re-run the conversation's own model rather than needing a
 	// CheapModel of its own. Surfaced on ProviderInfo.FreeToRun.
 	FreeToRun bool
+	// Successor names a provider better suited to the server this one is
+	// pointed at. Surfaced on ProviderInfo.Successor.
+	Successor func(ctx context.Context) *provider.Successor
 
 	// Static context-window map exposed via ProviderInfo.ModelContextWindows.
 	// May be nil for providers whose model list is discovered at runtime. When
@@ -156,6 +159,7 @@ func Register(d Descriptor) {
 		ModelContextWindows: d.ContextWindows,
 		CheapModel:          d.CheapModel,
 		FreeToRun:           d.FreeToRun,
+		Successor:           d.Successor,
 		// A provider that does not opt into forced tool choice cannot reliably
 		// honor a named tool_choice, so the worker runs those turns unforced
 		// rather than send a choice the upstream rejects.

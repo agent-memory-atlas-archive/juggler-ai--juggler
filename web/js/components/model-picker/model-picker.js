@@ -50,6 +50,8 @@ import { escapeHtml } from '../../../sdk/lib/html.js';
 import JugglerElement from '../juggler-element.js';
 import { cachedUserPref, setUserPref } from '../../services/prefs.js';
 import { openSettings } from '../../services/settings-launcher.js';
+import providersCache from '../../services/providers-cache.js';
+import { httpErrorText } from '../../services/http.js';
 import './model-tuning.js';
 
 /** The user preference holding the per-provider list view-state override map. */
@@ -812,8 +814,51 @@ class ModelPicker extends JugglerElement {
             <div class="model-current">
                 <div class="model-current-label">Current model</div>
                 <div class="model-current-name">${escapeHtml(modelLabel(entry?.displayName, cfg.model))}</div>
-                <div class="model-current-sub">${escapeHtml(subParts.join(' · '))}${assumedHTML}</div>${this._usageHTML(cfg.provider)}
+                <div class="model-current-sub">${escapeHtml(subParts.join(' · '))}${assumedHTML}</div>${this._switchHTML(providerEntry)}${this._usageHTML(cfg.provider)}
             </div>`;
+  }
+
+  /**
+   * The offer to move to the provider the current one names as better suited
+   * to its server (LocalAI pointed at LM Studio). The card is where the user
+   * meets the assumed window that is the symptom, so it is where the cure is
+   * offered too.
+   * @param {any} providerEntry - The current model's provider, as published.
+   * @returns {string} HTML for the offer, or '' when there is none.
+   * @private
+   */
+  _switchHTML(providerEntry) {
+    const target = providerEntry?.switchTo;
+    if (!target?.provider) return '';
+    return `
+                <div class="model-current-switch" title="${escapeHtml(target.reason || '')}">
+                    <span class="model-current-switch-text">${escapeHtml(target.displayName)} reads this server's real context windows.</span>
+                    <button type="button" class="model-provider-switch" data-from="${escapeHtml(providerEntry.name)}" data-to="${escapeHtml(target.provider)}">Switch</button>
+                </div>`;
+  }
+
+  /**
+   * Switch providers, then move this conversation onto the same model under the
+   * new one: the id is the server's own, so it names the same model either way.
+   * Other conversations are left where they are (see switchProvider on the
+   * server).
+   * @param {HTMLButtonElement} button - The card's Switch button.
+   * @returns {Promise<void>}
+   * @private
+   */
+  async _switchProvider(button) {
+    const from = button.getAttribute('data-from');
+    const to = button.getAttribute('data-to');
+    const model = this._value?.model;
+    if (!from || !to || !model) return;
+    button.disabled = true;
+    try {
+      const switched = await providersCache.switchProvider(from);
+      this._pick(switched || to, model);
+    } catch (err) {
+      button.disabled = false;
+      button.title = httpErrorText(err, "Couldn't switch provider");
+    }
   }
 
   /**
@@ -988,6 +1033,13 @@ class ModelPicker extends JugglerElement {
         e.stopPropagation();
         const providerName = toggle.getAttribute('data-provider');
         if (providerName) this._cycleProviderView(providerName);
+        return;
+      }
+
+      const switchButton = /** @type {HTMLButtonElement|null} */ (target.closest('.model-provider-switch'));
+      if (switchButton) {
+        e.stopPropagation();
+        void this._switchProvider(switchButton);
         return;
       }
 

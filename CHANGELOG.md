@@ -8,6 +8,9 @@ of changes; this project follows semantic versioning.
 - Codex and Copilot subscription providers can now be switched off in Provider settings
 - Ollama models that can think now offer thinking levels, including off
 - On Windows, a slow-starting WSL no longer leaves commands failing until restart
+- LocalAI pointed at an LM Studio server says so and offers a one-click switch
+- Provider model lists are easier to find, and open when a context window is assumed
+- Token-limit columns have headings, and their tooltips explain where each figure came from
 
 ## [0.7.3] - 2026-09-30
 

@@ -40,9 +40,9 @@ const nativeModels = `{"models":[
    "loaded_instances":[],"max_context_length":2048,"format":"gguf"}
 ]}`
 
-// legacyModels is GET /api/v0/models, the only table LM Studio 0.3 serves. The
-// documented rows carry no loaded length; loaded_context_length is read when a
-// build supplies it.
+// legacyModels is GET /api/v0/models, the only table LM Studio 0.3 serves. A
+// loaded row may or may not state loaded_context_length (LM Studio 0.4.25 does;
+// see realLegacyModels), so this has one of each.
 const legacyModels = `{"object":"list","data":[
   {"id":"qwen3-8b","object":"model","type":"llm","state":"loaded","max_context_length":131072,"loaded_context_length":32768},
   {"id":"llava-7b","object":"model","type":"vlm","state":"loaded","max_context_length":4096},

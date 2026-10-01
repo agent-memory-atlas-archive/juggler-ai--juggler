@@ -860,6 +860,28 @@ type ProviderInfo struct {
 	// provider running on this machine is fine anywhere, because the turn reaches
 	// it the same way from any workspace.
 	SpawnsLocalProcess bool
+	// Successor, when set, asks whether the server this provider is pointed at
+	// would be better served by another provider, and returns nil when it would
+	// not. It exists for a keyless local provider aimed at a server it can talk to
+	// but not understand — LocalAI pointed at LM Studio lists LM Studio's models
+	// through the OpenAI-compatible API, yet can read none of their windows. It
+	// may make a network request, so it is asked only of a provider that is
+	// switched on.
+	Successor func(ctx context.Context) *Successor
+}
+
+// Successor names a provider better suited than the asking one to the server
+// that one is pointed at, with what switching to it has to carry over.
+type Successor struct {
+	// Provider is the registered name of the provider to switch to.
+	Provider string
+	// Reason says, in one or two sentences a user can act on, what the server is
+	// and what staying on the asking provider costs.
+	Reason string
+	// Adopt points Provider at the server the asking provider is configured
+	// for, so the switch keeps talking to the same server. Nil when there is
+	// nothing to carry.
+	Adopt func() error
 }
 
 // EffectiveAuthType preserves the legacy convention where an empty

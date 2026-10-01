@@ -18,6 +18,18 @@ import { showAlert, showConfirm } from '../modal-dialog.js';
 import { sortModelsByVersion } from '../../utils/model-filter.js';
 import { buildEndpointCard, buildAddEndpointForm } from './custom-endpoint-card.js';
 import { apiUrl } from '../../utils/api-url.js';
+import { formatTokens } from '../../utils/format.js';
+
+/**
+ * Whether a published model's context window is a guess nobody has corrected:
+ * the server reported none, and the user has set no window of their own.
+ * @param {{windowAssumed?: boolean, providerContextWindow?: number|null}} model
+ * @returns {boolean} True for an uncorrected assumed window.
+ */
+function isAssumedWindow(model) {
+  return !!model.windowAssumed
+    && (model.providerContextWindow === undefined || model.providerContextWindow === null);
+}
 
 // Standard refresh glyph for the OAuth "re-check sign-in" button. Fill is left to
 // CSS (currentColor) so it tracks the button's theme colour.
@@ -179,8 +191,10 @@ export class ProvidersTab {
   /**
    * Open one model's row and focus its Context window field: the destination
    * of the "assumed" marker in the model picker and of a compaction notice
-   * about an assumed window. The model list is collapsed by default, so without
-   * this a user sent here would still have to find the field by hand.
+   * about an assumed window. A model list is collapsed unless it holds an
+   * assumed window, and even an open one may be filtered or scrolled away from
+   * the row, so without this a user sent here could still have to find the
+   * field by hand.
    * @param {string} providerName - Provider the model belongs to
    * @param {string} modelId - Model id, as the row's data-model carries it
    * @returns {Promise<boolean>} True if the field existed and now has focus
@@ -587,11 +601,32 @@ export class ProvidersTab {
    * @private
    */
   async _recheckOAuthProvider(providerName) {
-    const next = new Promise((resolve) => {
+    const next = this._nextProvidersUpdate();
+    await providersCache.refresh();
+    const list = await next;
+    return list.find((p) => p.name === providerName);
+  }
+
+  /**
+   * Resolve with the provider list the next `providers-update` carries, or with
+   * the list in hand if none arrives within four seconds, so a caller waiting on
+   * the server's recompute never hangs. Subscribe before asking for the change,
+   * or the push can land first.
+   *
+   * `accept` skips pushes that cannot be the one asked for. Any refresh can
+   * publish — opening a model picker asks for one — so the next push after a
+   * change may be a recompute that started before it.
+   * @param {(list: any[]) => boolean} [accept] - Whether a pushed list is the one awaited.
+   * @returns {Promise<any[]>} The published provider list.
+   * @private
+   */
+  _nextProvidersUpdate(accept = () => true) {
+    return new Promise((resolve) => {
       /** @type {ReturnType<typeof setTimeout>|null} */
       let timer = null;
       /** @param {unknown} data */
       const handler = (data) => {
+        if (Array.isArray(data) && !accept(data)) return;
         if (timer) clearTimeout(timer);
         wsService.off('providers-update', handler);
         resolve(Array.isArray(data) ? data : this.providers);
@@ -602,9 +637,6 @@ export class ProvidersTab {
         resolve(this.providers);
       }, 4000);
     });
-    await providersCache.refresh();
-    const list = /** @type {any[]} */ (await next);
-    return list.find((p) => p.name === providerName);
   }
 
   /**
@@ -834,6 +866,13 @@ export class ProvidersTab {
       controlColumn.appendChild(buttonGroup);
     }
 
+    // A provider pointed at a server another provider understands better — LocalAI
+    // aimed at LM Studio — works, but assumes every model's window. Nothing else
+    // on the card would say the provider is the wrong one.
+    if (toggle.checked && provider.switchTo) {
+      controlColumn.appendChild(this._buildSwitchNotice(provider));
+    }
+
     // Ollama: expose the daemon host so users can point at a
     // non-default (LAN / remote) Ollama instance without
     // restarting the app. Saved as the `ollama_host` raw
@@ -905,6 +944,61 @@ export class ProvidersTab {
     fieldGroup.appendChild(infoColumn);
     fieldGroup.appendChild(controlColumn);
     container.appendChild(fieldGroup);
+  }
+
+  /**
+   * Build the notice offering a switch to the provider `switchTo` names: why,
+   * the button, and what the switch does. The server republishes the provider
+   * list once it has switched, and the tab is redrawn from that list, which
+   * shows both toggles flipped and drops this notice.
+   * @param {any} provider - Provider info object carrying `switchTo`
+   * @returns {HTMLElement} The notice
+   * @private
+   */
+  _buildSwitchNotice(provider) {
+    const target = provider.switchTo;
+    const notice = document.createElement('div');
+    notice.className = 'provider-switch-notice';
+
+    const reason = document.createElement('div');
+    reason.className = 'provider-switch-reason';
+    reason.textContent = target.reason;
+    notice.appendChild(reason);
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'settings-btn primary small';
+    button.textContent = `Switch to ${target.displayName}`;
+    notice.appendChild(button);
+
+    const effect = document.createElement('div');
+    effect.className = 'provider-switch-effect';
+    effect.textContent = `Turns ${provider.displayName} off and ${target.displayName} on at the same address, `
+      + 'bringing your context-window settings and hidden models with it. Conversations already using '
+      + `${provider.displayName} keep it until you pick their model again.`;
+    notice.appendChild(effect);
+
+    const status = document.createElement('div');
+    status.className = 'provider-switch-status';
+    notice.appendChild(status);
+
+    button.addEventListener('click', async () => {
+      button.disabled = true;
+      status.textContent = 'Switching…';
+      const next = this._nextProvidersUpdate((list) =>
+        list.some((p) => p.name === provider.name && !p.credentialed));
+      try {
+        await providersCache.switchProvider(provider.name);
+        status.textContent = `Switched. ${target.displayName} is on.`;
+        this.providers = await next;
+        this.renderProviderFields();
+        this.updateAllButtons();
+      } catch (err) {
+        button.disabled = false;
+        status.textContent = httpErrorText(err, "Couldn't switch provider");
+      }
+    });
+    return notice;
   }
 
   /**
@@ -1044,6 +1138,12 @@ export class ProvidersTab {
    *
    * The filter isn't decoration: OpenRouter publishes several hundred models, and
    * an unfiltered list of that is unusable.
+   *
+   * The list opens on its own only when it holds a window the server didn't
+   * report and the user hasn't corrected: a guess that decides when every
+   * conversation on that model compacts. That is in practice a local server,
+   * whose list is short; an API provider's dozens of models, or OpenRouter's
+   * hundreds, would bury the page if every list started open.
    * @param {any} provider - Provider info object, including `modelsWithContext`
    * @returns {HTMLElement|null} The row to append, or null when the provider
    *   lists no models (nothing to choose between).
@@ -1058,9 +1158,13 @@ export class ProvidersTab {
     // triggers a providers refresh, but the fields aren't rebuilt on that, so
     // this Set is the live truth for the summary and the checkboxes.
     const hidden = new Set(models.filter(m => m.hidden).map(m => m.id));
+    // Models whose window is a guess nobody has corrected, kept in step the same
+    // way: an override arriving from another window takes a model out.
+    const assumed = new Set(models.filter(isAssumedWindow).map(m => m.id));
 
     const details = document.createElement('details');
     details.className = 'model-visibility';
+    details.open = assumed.size > 0;
 
     const summary = document.createElement('summary');
     summary.className = 'model-visibility-summary';
@@ -1068,7 +1172,7 @@ export class ProvidersTab {
 
     const summaryLabel = document.createElement('span');
     summaryLabel.className = 'model-visibility-label';
-    summaryLabel.textContent = 'Models';
+    summaryLabel.textContent = 'Models and token limits';
     summary.appendChild(summaryLabel);
 
     // The count carries the state, so it's the part that stays legible when the
@@ -1077,10 +1181,16 @@ export class ProvidersTab {
     summaryCount.className = 'model-visibility-count';
     summary.appendChild(summaryCount);
 
+    const summaryAssumed = document.createElement('span');
+    summaryAssumed.className = 'model-visibility-assumed';
+    summary.appendChild(summaryAssumed);
+
     const updateSummary = () => {
       summaryCount.textContent = hidden.size === 0
         ? `${models.length}`
         : `${models.length - hidden.size} of ${models.length} shown`;
+      summaryAssumed.textContent = assumed.size > 0 ? `${assumed.size} assumed` : '';
+      summaryAssumed.hidden = assumed.size === 0;
     };
     updateSummary();
 
@@ -1100,6 +1210,21 @@ export class ProvidersTab {
 
     const list = document.createElement('div');
     list.className = 'model-visibility-list';
+
+    // Column headings, inside the scroller and pinned to its top, so they stay
+    // over the numbers they name however far the list is scrolled.
+    const header = document.createElement('div');
+    header.className = 'model-visibility-header';
+    const nameHeading = document.createElement('span');
+    nameHeading.textContent = 'Model';
+    const windowHeading = document.createElement('span');
+    windowHeading.className = 'model-visibility-header-limit';
+    windowHeading.textContent = 'Context window';
+    const outputHeading = document.createElement('span');
+    outputHeading.className = 'model-visibility-header-limit';
+    outputHeading.textContent = 'Max output';
+    header.append(nameHeading, windowHeading, outputHeading);
+    list.appendChild(header);
 
     const empty = document.createElement('div');
     empty.className = 'model-visibility-empty';
@@ -1166,20 +1291,21 @@ export class ProvidersTab {
       input.spellcheck = false;
       input.setAttribute('aria-label', `${label} for ${model.id}`);
       // Four numbers that look identical in a box: one the provider stated, one
-      // from Juggler's catalogue for this model, one assumed because neither
+      // from Juggler's catalogue for this model, one guessed because neither
       // knows the model, and one typed here. Which it is decides how much to
       // trust it, and nothing else on the row says. windowAssumed describes the
-      // context window only; an assumed window's output cap is derived from it.
+      // context window only; a guessed window's output cap is worked out from it.
+      const who = provider.displayName;
       if (overridden) {
-        input.title = `Your figure. Clearing the field goes back to ${reported}.`;
+        input.title = `You set this. Clear the field to go back to ${reported}.`;
       } else if (model.fromAPI && !(field === 'contextWindow' && model.windowAssumed)) {
-        input.title = `${reported} — reported by the provider for this model.`;
+        input.title = `${reported} tokens, as reported by ${who} for this model.`;
       } else if (model.windowAssumed) {
         input.title = field === 'contextWindow'
-          ? `${reported} — assumed. The server didn't report this model's context window, so Juggler used a conservative default; enter the size the model is loaded with.`
-          : `${reported} — derived from the assumed context window; it follows the window unless you set it here.`;
+          ? `${reported} tokens is a guess. The server didn't say how large this model's context window is, so Juggler assumed a small, safe size. Enter the size the model is loaded with.`
+          : 'Worked out from the guessed context window. Type a number to set it yourself.';
       } else {
-        input.title = `${reported} — Juggler's built-in figure. This provider doesn't publish its limits; correct it here if you know better.`;
+        input.title = `${reported} tokens, from Juggler's list of ${who}'s models. ${who} doesn't report limits itself — if it's out of date, type the right figure.`;
       }
 
       input.addEventListener('change', async () => {
@@ -1217,7 +1343,7 @@ export class ProvidersTab {
       return input;
     };
 
-    /** @type {Array<{row: HTMLElement, haystack: string, id: string, box: HTMLInputElement, applyRowState: () => void, fields: Record<string, HTMLInputElement>}>} */
+    /** @type {Array<{row: HTMLElement, haystack: string, id: string, box: HTMLInputElement, applyRowState: () => void, marker: HTMLButtonElement|null, fields: Record<string, HTMLInputElement>}>} */
     const rows = [];
     // Same lineage grouping the model menu uses, so the two lists read alike.
     for (const model of sortModelsByVersion(models)) {
@@ -1283,6 +1409,23 @@ export class ProvidersTab {
       const outputInput = buildLimitInput(model, 'maxOutputTokens', 'Max output tokens');
       limitFields.appendChild(contextInput);
       limitFields.appendChild(outputInput);
+
+      // The picker's "assumed" marker, beside the number it qualifies. Outside
+      // the label, so clicking it focuses the field instead of hiding the model.
+      /** @type {HTMLButtonElement|null} */
+      let marker = null;
+      const published = /** @type {any} */ (model);
+      if (published.windowAssumed) {
+        marker = document.createElement('button');
+        marker.type = 'button';
+        marker.className = 'model-window-assumed';
+        marker.textContent = 'assumed';
+        const guess = published.providerContextWindow ?? published.contextWindow ?? 0;
+        marker.title = `The server didn't report this model's context window, so Juggler assumed ${formatTokens(guess)}. Enter the real size in the Context window field.`;
+        marker.hidden = !assumed.has(model.id);
+        marker.addEventListener('click', () => contextInput.focus());
+        row.appendChild(marker);
+      }
       row.appendChild(limitFields);
 
       list.appendChild(row);
@@ -1292,6 +1435,7 @@ export class ProvidersTab {
         id: model.id,
         box,
         applyRowState,
+        marker,
         fields: { contextWindow: contextInput, maxOutputTokens: outputInput },
       });
     }
@@ -1338,6 +1482,10 @@ export class ProvidersTab {
         if (Object.keys(overrides).length > 0) limits[entry.id] = overrides;
         else delete limits[entry.id];
 
+        if (isAssumedWindow(next)) assumed.add(entry.id);
+        else assumed.delete(entry.id);
+        if (entry.marker) entry.marker.hidden = !assumed.has(entry.id);
+
         for (const field of ['contextWindow', 'maxOutputTokens']) {
           const input = entry.fields[field];
           if (!input || document.activeElement === input) continue;
@@ -1354,7 +1502,7 @@ export class ProvidersTab {
 
     const legend = document.createElement('div');
     legend.className = 'model-limit-legend';
-    legend.textContent = 'Context and output token limits. Blank uses the provider’s own.';
+    legend.textContent = 'Token limits. Leave a field blank to use the figure shown in grey; type a number to override it.';
 
     details.appendChild(filter);
     details.appendChild(legend);

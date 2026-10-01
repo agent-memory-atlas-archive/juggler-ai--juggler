@@ -110,8 +110,12 @@ type ProviderStatus struct {
 	// subprocess in the conversation's directory, so a workspace of a kind this
 	// machine only reaches over a wire cannot host it. The browser pairs it with
 	// the workspace kind's HostsLocalProviders to say so before the turn.
-	SpawnsLocalProcess bool               `json:"spawnsLocalProcess,omitempty"`
-	ModelsWithContext  []ModelWithContext `json:"modelsWithContext"`
+	SpawnsLocalProcess bool `json:"spawnsLocalProcess,omitempty"`
+	// SwitchTo names a provider better suited to the server this one is pointed
+	// at (ProviderInfo.Successor), for the UI to offer the switch. Nil for
+	// nearly every provider, and for any provider that is switched off.
+	SwitchTo          *ProviderSwitch    `json:"switchTo,omitempty"`
+	ModelsWithContext []ModelWithContext `json:"modelsWithContext"`
 }
 
 // applyModelLimits replaces a published model's token limits with the user's
@@ -281,6 +285,11 @@ func (s *Server) computeProviders(ctx context.Context) []ProviderStatus {
 				authHint = ""
 			}
 
+			var switchTo *ProviderSwitch
+			if credentialed {
+				switchTo = providerSwitchFor(ctx, pInfo)
+			}
+
 			providers[idx] = ProviderStatus{
 				Name:               pInfo.Name,
 				DisplayName:        pInfo.DisplayName,
@@ -297,6 +306,7 @@ func (s *Server) computeProviders(ctx context.Context) []ProviderStatus {
 				Credentialed:       credentialed,
 				Disabled:           disabled,
 				SpawnsLocalProcess: pInfo.SpawnsLocalProcess,
+				SwitchTo:           switchTo,
 				ModelsWithContext:  modelsWithContext,
 			}
 		}(i, info)

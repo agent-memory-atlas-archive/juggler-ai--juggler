@@ -751,6 +751,37 @@ model-tuning:empty {
     color: var(--text-primary);
 }
 
+/* The offer to switch to the provider that suits this server: one line under
+   the sub-line, its button a small action rather than a link, because it changes
+   settings and moves the conversation. */
+.model-current-switch {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding-top: 0.375rem;
+    font-size: 0.75rem;
+    color: var(--accent-orange);
+}
+
+/* The sentence gives way to the button, never the reverse. */
+.model-current-switch-text {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.model-provider-switch {
+    padding: 0.0625rem 0.5rem;
+    font: inherit;
+    color: var(--text-primary);
+    background: var(--bg-raised);
+    border: 0.0625rem solid var(--border-color);
+    border-radius: 0.25rem;
+}
+
+.model-provider-switch:hover:not(:disabled) {
+    border-color: var(--accent-blue);
+}
+
 /* The chosen provider's quota meters, closing the card. They belong to the model
    in effect rather than to the list, so they sit inside the card and take no
    heading of their own — the card's own label already names what they describe.

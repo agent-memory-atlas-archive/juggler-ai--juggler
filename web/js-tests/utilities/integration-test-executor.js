@@ -310,6 +310,7 @@ import { runTests as runUpdatesSettingsTests } from '../unit-tests/updates-setti
 import { runTests as runSettingsFirstLoadTests } from '../unit-tests/settings-first-load-test.js';
 import { runTests as runProxySettingsTests } from '../unit-tests/proxy-settings-test.js';
 import { runTests as runModelLimitsTests } from '../unit-tests/model-limits-test.js';
+import { runTests as runProviderSwitchTests } from '../unit-tests/provider-switch-test.js';
 import { runTests as runReconnectPolicyTests } from '../unit-tests/reconnect-policy-test.js';
 import { runTests as runResyncOfflineEditTests } from '../unit-tests/resync-offline-edit-test.js';
 import { runTests as runOpenDuringLoadTests } from '../unit-tests/open-during-load-test.js';
@@ -712,6 +713,7 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:settings-first-load', run: runSettingsFirstLoadTests },
   { name: 'unit:proxy-settings', run: runProxySettingsTests },
   { name: 'unit:model-limits', run: runModelLimitsTests },
+  { name: 'unit:provider-switch', run: runProviderSwitchTests },
   { name: 'unit:reconnect-policy', run: runReconnectPolicyTests },
   { name: 'unit:resync-offline-edit', run: runResyncOfflineEditTests },
   { name: 'unit:open-during-load', run: runOpenDuringLoadTests },

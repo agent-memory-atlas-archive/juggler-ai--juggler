@@ -17,7 +17,9 @@ import { apiUrl } from '../utils/api-url.js';
 /** `windowAssumed` marks a provider-wide fallback window (the server reported none and no catalogue entry knew the model); `providerContextWindow` is present only when the user overrode the window. */
 /** @typedef {{ id: string, contextWindow: number, maxOutputTokens: number, fromAPI: boolean, windowAssumed?: boolean, providerContextWindow?: number|null, inputModalities?: string[], streamsLiveUsage?: boolean }} ModelWithContext */
 /** `spawnsLocalProcess` marks a provider Juggler runs as a subprocess in the conversation's own directory (the CLI agents), so it can only serve a workspace this machine can spawn into. */
-/** @typedef {{ name: string, displayName: string, description: string, authType: string, authSource?: string, authHint?: string, configKeyName: string, envVarName: string, apiKeyURL: string, keySource: string, available: boolean, spawnsLocalProcess?: boolean, modelsWithContext: ModelWithContext[] }} Provider */
+/** `switchTo` names a provider better suited to the server this one is pointed at (LocalAI aimed at LM Studio), for the UI to offer the switch. */
+/** @typedef {{ provider: string, displayName: string, reason: string }} ProviderSwitch */
+/** @typedef {{ name: string, displayName: string, description: string, authType: string, authSource?: string, authHint?: string, configKeyName: string, envVarName: string, apiKeyURL: string, keySource: string, available: boolean, spawnsLocalProcess?: boolean, switchTo?: ProviderSwitch, modelsWithContext: ModelWithContext[] }} Provider */
 
 /** @type {Provider[]} */
 let _cache = [];
@@ -113,6 +115,22 @@ const providersCache = {
    */
   async refresh() {
     await fetchJson(apiUrl('/providers/refresh'), { method: 'POST', errorPrefix: 'Provider refresh failed' });
+  },
+
+  /**
+   * Move from a provider to the one its `switchTo` names. The server asks the
+   * provider again before acting, carries the user's per-model settings across,
+   * turns the old provider off and the new one on, and republishes the list.
+   * @param {string} from - Name of the provider being left.
+   * @returns {Promise<string>} Name of the provider switched to.
+   */
+  async switchProvider(from) {
+    const result = await fetchJson(apiUrl('/providers/switch'), {
+      method: 'POST',
+      body: { from },
+      errorPrefix: "Couldn't switch provider",
+    });
+    return /** @type {any} */ (result)?.provider || '';
   }
 };
 

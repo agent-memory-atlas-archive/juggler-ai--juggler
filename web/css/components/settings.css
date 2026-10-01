@@ -30,10 +30,37 @@ settings-panel .key-source-hint {
     padding-left: 0.125rem;
 }
 
-/* Per-provider model visibility: a collapsed disclosure listing every model the
-   provider publishes, each with a checkbox deciding whether the model menu
-   offers it. Collapsed by default because most providers are left alone, and the
-   list is long enough to bury the API-key field it sits under. */
+/* The offer to switch to the provider that suits this server better — LocalAI
+   pointed at LM Studio. A boxed notice rather than a hint line, because staying
+   put costs the user every model's real context window. */
+settings-panel .provider-switch-notice {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.375rem;
+    padding: 0.5rem 0.625rem;
+    border: 0.0625rem solid var(--accent-orange);
+    border-radius: 0.375rem;
+    background: var(--bg-primary);
+    font-size: 0.75rem;
+    color: var(--text-primary);
+}
+
+settings-panel .provider-switch-effect,
+settings-panel .provider-switch-status {
+    color: var(--text-secondary);
+}
+
+settings-panel .provider-switch-status:empty {
+    display: none;
+}
+
+/* Per-provider model visibility: a disclosure listing every model the provider
+   publishes, each with a checkbox deciding whether the model menu offers it and
+   its token limits. Collapsed unless it holds an assumed window, because most
+   providers are left alone and the list is long enough to bury the API-key field
+   it sits under. The summary is primary text, not a footnote: it is the only way
+   into the limits. */
 settings-panel .model-visibility {
     margin-top: 0.625rem;
     min-width: 0;
@@ -49,8 +76,9 @@ settings-panel .model-visibility-summary {
     padding: 0.1875rem 0.25rem;
     margin-left: -0.25rem;
     border-radius: 0.25rem;
-    font-size: 0.75rem;
-    color: var(--text-secondary);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-primary);
     cursor: pointer;
     user-select: none;
 }
@@ -89,7 +117,41 @@ settings-panel .model-visibility-summary:focus-visible {
    label rather than trailing off after it. */
 settings-panel .model-visibility-count {
     color: var(--text-tertiary);
+    font-weight: normal;
     font-variant-numeric: tabular-nums;
+}
+
+/* How many windows in the list are guesses: the reason the list opened itself. */
+settings-panel .model-visibility-assumed {
+    color: var(--accent-orange);
+    font-weight: normal;
+}
+
+/* Column headings, pinned to the top of the scroller and laid out like a row:
+   the name column takes the slack, the limit columns match the inputs' width. */
+settings-panel .model-visibility-header {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: 1fr 5.5rem 5.5rem;
+    column-gap: 0.25rem;
+    padding: 0.125rem 0.375rem;
+    background: var(--bg-primary);
+    border-bottom: 0.0625rem solid var(--border-color);
+    font-size: 0.6875rem;
+    color: var(--text-secondary);
+}
+
+settings-panel .model-visibility-header-limit {
+    text-align: right;
+    white-space: nowrap;
+}
+
+/* The picker's "assumed" marker, on the row whose window it qualifies. */
+settings-panel .model-visibility-row .model-window-assumed {
+    font-size: 0.6875rem;
+    color: var(--accent-orange);
 }
 
 /* Matches the panel's other compact sub-inputs (.mcp-input): a field on

@@ -115,6 +115,16 @@ function providerFixture() {
 }
 
 /**
+ * The fixture without its guessed model: nothing in it needs the user.
+ * @returns {any} A provider status object.
+ */
+function catalogueOnly() {
+  const provider = providerFixture();
+  provider.modelsWithContext = provider.modelsWithContext.filter((/** @type {any} */ m) => !m.windowAssumed);
+  return provider;
+}
+
+/**
  * @param {object} _ctx - Test context (unused).
  * @returns {Promise<TestResult>} Aggregated test results.
  */
@@ -144,7 +154,7 @@ export async function runTests(_ctx) {
    * The tab is driven directly rather than through a mounted settings-panel:
    * the panel's load fans out five fetches and waits on the providers cache,
    * none of which this behaviour depends on.
-   * @param {{reject?: boolean}} opts
+   * @param {{reject?: boolean, provider?: any}} opts - `provider` replaces the fixture.
    * @param {(host: HTMLElement, backend: ReturnType<typeof installFetch>, tab: any) => Promise<void>} body
    */
   const withTab = async (opts, body) => {
@@ -156,7 +166,7 @@ export async function runTests(_ctx) {
     document.body.appendChild(host);
     try {
       const tab = new ProvidersTab(/** @type {any} */ (host));
-      /** @type {any} */ (tab).providers = [providerFixture()];
+      /** @type {any} */ (tab).providers = [opts.provider || providerFixture()];
       /** @type {any} */ (tab).config = {};
       tab.renderProviderFields();
       await body(host, backend, tab);
@@ -257,18 +267,24 @@ export async function runTests(_ctx) {
       // stated, one Juggler assumed, one the user typed. Without this the only
       // way to tell an assumption from a measurement is to know the code.
       const measured = limitInput(host, 'measured-model', 'contextWindow');
-      assert(/reported/i.test(measured.title),
+      assert(/reported by Test Limits Gateway/.test(measured.title),
         `a discovered limit should say the provider reported it; got ${JSON.stringify(measured.title)}`);
 
+      // "Built-in" left a user asking built-in *what*: a catalogued figure says
+      // whose catalogue it is, and that it is a list of this provider's models.
       const catalogued = limitInput(host, 'plain-model', 'contextWindow');
-      assert(/built-in/i.test(catalogued.title) && !/assumed/i.test(catalogued.title),
-        `a catalogued limit should say it is built in, not assumed; got ${JSON.stringify(catalogued.title)}`);
+      assert(/Juggler's list of Test Limits Gateway's models/.test(catalogued.title)
+        && !/built-in|assumed|guess/i.test(catalogued.title),
+      `a catalogued limit should say it comes from Juggler's list, not that it was guessed; got ${JSON.stringify(catalogued.title)}`);
 
       // A provider-wide fallback is a different kind of number again: nobody,
       // not even Juggler's catalogue, knows this model's window.
       const guessed = limitInput(host, 'guessed-model', 'contextWindow');
-      assert(/assumed/i.test(guessed.title),
-        `a fallback window should say it was assumed; got ${JSON.stringify(guessed.title)}`);
+      assert(/guess/i.test(guessed.title) && /didn't say/.test(guessed.title),
+        `a fallback window should say it is a guess because the server didn't say; got ${JSON.stringify(guessed.title)}`);
+      const guessedOutput = limitInput(host, 'guessed-model', 'maxOutputTokens');
+      assert(/guessed context window/.test(guessedOutput.title),
+        `an output cap derived from a guess should say so; got ${JSON.stringify(guessedOutput.title)}`);
 
       const overridden = limitInput(host, 'fixed-model', 'contextWindow');
       assert(/128000/.test(overridden.title),
@@ -352,15 +368,15 @@ export async function runTests(_ctx) {
   // the model list starts collapsed, so landing on the tab alone would leave the
   // field to be found by hand.
   await run('revealModel opens the model list and focuses that model\'s window field', async () => {
-    await withTab({}, async (host, _backend, tab) => {
+    await withTab({ provider: catalogueOnly() }, async (host, _backend, tab) => {
       const details = host.querySelector('details.model-visibility');
       assert(details && !details.open, 'the model list starts collapsed (the case needs it to)');
-      const revealed = await tab.revealModel(PROVIDER, 'guessed-model');
+      const revealed = await tab.revealModel(PROVIDER, 'measured-model');
       assert(revealed === true, `revealModel returned ${revealed}, want true`);
       assert(details.open, 'the model list was left collapsed');
-      const field = limitInput(host, 'guessed-model', 'contextWindow');
+      const field = limitInput(host, 'measured-model', 'contextWindow');
       assert(document.activeElement === field,
-        `focus is on ${document.activeElement?.outerHTML?.slice(0, 80)}, want guessed-model's window field`);
+        `focus is on ${document.activeElement?.outerHTML?.slice(0, 80)}, want measured-model's window field`);
       assert(await tab.revealModel(PROVIDER, 'no-such-model') === false, 'an unknown model reported success');
     });
   });
@@ -376,6 +392,79 @@ export async function runTests(_ctx) {
       input.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await settle();
       assert(box.checked, 'clicking a limit field hid the model');
+    });
+  });
+
+  // The user who needed the Context window field only found it because he was
+  // told where it was. A list holding a guessed window is the one that needs
+  // the user, so it is open; every other list stays shut, because an API
+  // provider's dozens of models — or OpenRouter's hundreds — would bury the
+  // page.
+  await run('a list holding an assumed window starts open', async () => {
+    await withTab({}, async (host) => {
+      const details = host.querySelector('details.model-visibility');
+      assert(details && details.open, 'a list with a guessed window starts collapsed');
+    });
+  });
+
+  await run('a list with no assumed window starts closed', async () => {
+    await withTab({ provider: catalogueOnly() }, async (host) => {
+      const details = host.querySelector('details.model-visibility');
+      assert(details && !details.open, 'a list with nothing assumed starts open');
+      const count = /** @type {HTMLElement|null} */ (host.querySelector('.model-visibility-assumed'));
+      assert(!count || count.hidden, 'an assumed count shows with nothing assumed');
+    });
+  });
+
+  await run('an overridden guess does not hold the list open', async () => {
+    const provider = providerFixture();
+    provider.modelsWithContext[3].providerContextWindow = 8192;
+    provider.modelsWithContext[3].contextWindow = 262144;
+    await withTab({ provider }, async (host) => {
+      const details = host.querySelector('details.model-visibility');
+      assert(details && !details.open, 'a guess the user already corrected opened the list');
+    });
+  });
+
+  await run('the summary says what the list holds and counts the guesses', async () => {
+    await withTab({}, async (host) => {
+      const summary = host.querySelector('.model-visibility-summary');
+      const text = summary?.textContent || '';
+      assert(/Models and token limits/.test(text), `the summary does not say what is inside; got ${JSON.stringify(text)}`);
+      const count = summary?.querySelector('.model-visibility-count')?.textContent;
+      assert(count === '4', `the summary lost the model count; got ${JSON.stringify(count)}`);
+      const assumed = summary?.querySelector('.model-visibility-assumed');
+      assert(assumed && /1 assumed/.test(assumed.textContent || ''),
+        `the summary should count the guessed window; got ${JSON.stringify(assumed?.textContent)}`);
+    });
+  });
+
+  // The two number columns had no headers; their only explanation was a grey
+  // line under the list.
+  await run('the list has column headers', async () => {
+    await withTab({}, async (host) => {
+      const header = host.querySelector('.model-visibility-list .model-visibility-header');
+      assert(header, 'no header row in the model list');
+      const labels = Array.from(header.children).map((el) => (el.textContent || '').trim());
+      assert(JSON.stringify(labels) === JSON.stringify(['Model', 'Context window', 'Max output']),
+        `header labels = ${JSON.stringify(labels)}`);
+    });
+  });
+
+  // The same marker the picker shows, where the number it qualifies is edited.
+  await run('an assumed model carries the marker, and it focuses the window field', async () => {
+    await withTab({}, async (host) => {
+      const marker = /** @type {HTMLElement|null} */ (host.querySelector('[data-model="guessed-model"] .model-window-assumed'));
+      assert(marker && /assumed/.test(marker.textContent || ''), 'no assumed marker on the guessed model');
+      for (const id of ['plain-model', 'measured-model', 'fixed-model']) {
+        assert(!host.querySelector(`[data-model="${id}"] .model-window-assumed`), `${id} is marked assumed`);
+      }
+      const box = host.querySelector('[data-model="guessed-model"] .model-visibility-check');
+      marker.click();
+      await settle();
+      assert(document.activeElement === limitInput(host, 'guessed-model', 'contextWindow'),
+        'the marker did not lead to the window field');
+      assert(box && box.checked, 'clicking the marker hid the model');
     });
   });
 

@@ -30,10 +30,12 @@ nothing to say about that exact model id:
    says so: the model picker marks the window "assumed", and a compaction that
    runs against it leaves a notice naming the window with a link to the field
    that corrects it.
-4. **Your own figure**, which outranks all three. Settings → Providers → expand
-   a provider's model list gives every model a context-window and
-   maximum-output field. Set one when you know better than the list above —
-   most often for a gateway that publishes nothing.
+4. **Your own figure**, which outranks all three. In Settings → Providers, each
+   provider's **Models and token limits** list gives every model a
+   context-window and maximum-output field. The list starts open when it holds
+   an assumed window, and marks those models "assumed". Set a figure when you
+   know better than the list above — most often for a local server or a
+   gateway that publishes nothing.
 
 Some providers need more than a lookup:
 
@@ -57,7 +59,10 @@ Some providers need more than a lookup:
   it is ignored, which is where LocalAI's gallery configs put it, so gallery
   models report 8192 whatever their file says. The same capabilities route is
   read for any OpenAI-compatible endpoint that answers it, so a LocalAI reached
-  as a custom endpoint gets the same numbers.
+  as a custom endpoint gets the same numbers. If the LocalAI provider is
+  pointed at an LM Studio server, every window is assumed; its settings card
+  and the model picker say so and offer a switch to the LM Studio provider,
+  which carries your per-model settings across.
 - **LM Studio:** its OpenAI-compatible model list carries no windows, so the
   LM Studio provider reads LM Studio's own model table instead (`/api/v1/models`,
   or `/api/v0/models` on 0.3). A loaded model is enforced at the length it was

@@ -82,8 +82,9 @@ func Register() {
 	openaibase.Register(openaibase.Descriptor{
 		Name:        "localai",
 		DisplayName: "LocalAI (local)",
-		Description: "Runs models locally through LocalAI's OpenAI-compatible API. Start LocalAI yourself first (Juggler doesn't launch it); point at a non-default host (LAN, remote box, custom port) below, otherwise defaults to http://127.0.0.1:8080. Each model's context window is read from the server, which needs LocalAI v4.10.0 or later; before that, and for a model it describes no window for, Juggler assumes 8192 and says so.",
+		Description: "Runs models locally through LocalAI's OpenAI-compatible API. Start LocalAI yourself first (Juggler doesn't launch it); point at a non-default host (LAN, remote box, custom port) below, otherwise defaults to http://127.0.0.1:8080. Each model's context window is read from the server, which needs LocalAI v4.10.0 or later; before that, and for a model it describes no window for, Juggler assumes 8192 and says so. Using LM Studio? Use the LM Studio (local) provider instead.",
 		AutoDetect:  server.AutoDetect(),
+		Successor:   successor,
 		// LocalAI states a window per model on its own route, which the OpenAI
 		// model list carries nothing of.
 		DisplayProvider:    "LocalAI",
