@@ -9,6 +9,7 @@
 
 import { isThreadMessage } from '../../sdk/lib/message.js';
 import { createMessageThread } from '../model/message-thread.js';
+import { findFirstPendingApprovalId } from '../model/thread-navigation.js';
 import { ColumnSelectionState } from '../utils/column-selection.js';
 import { rootFontSizePx, columnScrollDelta } from '../utils/column-resize.js';
 import { isToolGroupingEnabled, TOOL_GROUPING_EVENT } from '../utils/tool-grouping-pref.js';
@@ -814,13 +815,17 @@ class ConversationTab extends JugglerElement {
 
   /**
    * Reveal whatever needs the user in this conversation, invoked after a "jump to
-   * attention" switch. When `selectApproval` is true, select the first pending
-   * approval (routing through {@link _maybeAutoSelectNextPendingInAllColumns} so
-   * the visual + properties panel stay consistent); otherwise scroll the root
-   * column to the end of the thread. First activation of a hidden tab defers its
-   * render, so retry across frames until the columns exist. When an approval is
-   * selected, keyboard focus is also moved onto its buttons so the user can
-   * immediately arrow up/down and press Enter without clicking first.
+   * attention" switch. When `selectApproval` is true, the first pending approval
+   * in the whole tree is revealed through {@link revealItem}: the column chain
+   * is rebuilt to lead to it, whatever was open before (another sub-thread, an
+   * item's properties), and its column is scrolled into view horizontally even
+   * when it was already selected — an approval selected off screen is no use.
+   * Keyboard focus then moves onto its buttons so the user can arrow up/down and
+   * press Enter without clicking first. Otherwise the root column becomes active,
+   * is brought into view, and scrolls to the end of the thread.
+   *
+   * First activation of a hidden tab defers its render, so retry across frames
+   * until the columns exist.
    * @param {boolean} selectApproval - Prefer the first pending approval over scroll.
    * @param {number} [_attempt] - Internal retry counter.
    * @returns {void}
@@ -834,10 +839,16 @@ class ConversationTab extends JugglerElement {
       }
       return;
     }
-    if (selectApproval) {
-      this._maybeAutoSelectNextPendingInAllColumns();
+    const approvalId = selectApproval && this._conversation
+      ? findFirstPendingApprovalId([...this._conversation.rootItems])
+      : null;
+    if (approvalId) {
+      this.revealItem(approvalId);
       this._engageSelectedApproval({ force: true });
-    } else if (typeof /** @type {any} */ (root).scrollToBottom === 'function') {
+      return;
+    }
+    this.revealThread(null);
+    if (typeof /** @type {any} */ (root).scrollToBottom === 'function') {
       /** @type {any} */ (root).scrollToBottom(true);
     }
   }
@@ -1374,22 +1385,44 @@ class ConversationTab extends JugglerElement {
    * resolver matches an item id before it asks whether the item is a thread, so
    * the same walk finds a tool action several threads deep. The difference is
    * where it stops — a thread gets a column of its own and becomes active, while
-   * an ordinary item is selected *in* the column that holds it.
+   * an ordinary item is selected *in* the column that holds it. An item folded
+   * into a tool group is reached the way a click reaches it: the group is
+   * selected in the thread's column, and the item in the group's column.
    * @param {string} itemId - The item to select.
    */
   revealItem(itemId) {
     if (!this._conversation || !itemId) return;
-    const chain = this._selection.resolveThreadChain(
-      [...this._conversation.rootItems],
-      itemId,
-      isThreadMessage
-    );
+    const rootItems = [...this._conversation.rootItems];
+    const chain = this._selection.resolveThreadChain(rootItems, itemId, isThreadMessage);
     if (chain.length === 0) return;
+    const groupId = this._foldingGroupOf(rootItems, chain);
+    if (groupId) chain.splice(chain.length - 1, 0, groupId);
     this._selection.selections = chain;
     this._selection.activeColumnIndex = chain.length - 1;
     this._selection.markManualInteraction();
     this._rebuildColumns(true);
     this._scrollSelectionsIntoView();
+  }
+
+  /**
+   * The tool group standing in for the last item of a resolved chain in the
+   * column that lists it, or null when that column shows the item as itself.
+   * @param {any[]} rootItems - Root-level items the chain was resolved against.
+   * @param {string[]} chain - Item ids from the root to the target, threads first.
+   * @returns {string|null} The group's display id, or null.
+   * @private
+   */
+  _foldingGroupOf(rootItems, chain) {
+    if (!isToolGroupingEnabled()) return null;
+    let items = rootItems;
+    for (const threadId of chain.slice(0, -1)) {
+      const thread = items.find((i) => i?.get?.('itemId') === threadId);
+      const nested = thread?.get?.('items');
+      if (!nested) return null;
+      items = nested.toArray();
+    }
+    const { memberToGroup } = buildDisplayItems(items, { enabled: true });
+    return memberToGroup.get(/** @type {string} */ (chain[chain.length - 1])) ?? null;
   }
 
   /**

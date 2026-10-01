@@ -193,6 +193,18 @@ function isUnderReview(item) {
 }
 
 /**
+ * The itemId of the first tool-action awaiting approval anywhere in a subtree,
+ * in document order (depth-first through nested threads) — the approval
+ * jump-to-attention lands on, which may sit several threads deep.
+ * @param {Array<*>|{toArray: () => Array<*>}|null|undefined} items - Items to
+ *   search (plain JS array or Y.Array).
+ * @returns {string|null} The approval's itemId, or null when nothing is parked.
+ */
+export function findFirstPendingApprovalId(items) {
+  return firstPendingApproval(items, true)?.get('itemId') ?? null;
+}
+
+/**
  * Shared walk behind the two pending-approval predicates.
  * @param {Array<*>|{toArray: () => Array<*>}|null|undefined} items - Items to search.
  * @param {boolean} countUnderReview - Whether a parked call a strategy reviewer
@@ -201,7 +213,19 @@ function isUnderReview(item) {
  * @private
  */
 function anyPendingApproval(items, countUnderReview) {
-  if (!items) return false;
+  return firstPendingApproval(items, countUnderReview) !== null;
+}
+
+/**
+ * The first descendant tool-action awaiting approval, depth-first.
+ * @param {Array<*>|{toArray: () => Array<*>}|null|undefined} items - Items to search.
+ * @param {boolean} countUnderReview - Whether a parked call a strategy reviewer
+ *   currently has in hand counts.
+ * @returns {*} The qualifying tool-action item, or null.
+ * @private
+ */
+function firstPendingApproval(items, countUnderReview) {
+  if (!items) return null;
   const arr = typeof (/** @type {any} */ (items).toArray) === 'function'
     ? /** @type {any} */ (items).toArray()
     : items;
@@ -213,13 +237,14 @@ function anyPendingApproval(items, countUnderReview) {
       // 'awaiting_approval' is a legacy/defensive alias for PENDING that some
       // callers still stamp; treat it as pending here too.
       if (state === TOOL_STATES.PENDING || state === 'awaiting_approval') {
-        if (countUnderReview || !isUnderReview(item)) return true;
+        if (countUnderReview || !isUnderReview(item)) return item;
       }
     } else if (type === 'thread') {
-      if (anyPendingApproval(item.get('items'), countUnderReview)) return true;
+      const found = firstPendingApproval(item.get('items'), countUnderReview);
+      if (found) return found;
     }
   }
-  return false;
+  return null;
 }
 
 /**

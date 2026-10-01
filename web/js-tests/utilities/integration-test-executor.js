@@ -235,6 +235,7 @@ import { runTests as runScrollToTopTests } from '../unit-tests/scroll-to-top-tes
 import { runTests as runAutoFollowHoldsTheEndTests } from '../unit-tests/auto-follow-holds-the-end-test.js';
 import { runTests as runUserSendFollowTests } from '../unit-tests/user-send-follow-test.js';
 import { runTests as runThreadColumnLandingTests } from '../unit-tests/thread-column-landing-test.js';
+import { runTests as runJumpToAttentionRevealTests } from '../unit-tests/jump-to-attention-reveal-test.js';
 import { runTests as runEmptyConversationHintTests } from '../unit-tests/empty-conversation-hint-test.js';
 import { runTests as runNoConversationsOnboardingTests } from '../unit-tests/no-conversations-onboarding-test.js';
 import { runTests as runNoProjectOnboardingTests } from '../unit-tests/no-project-onboarding-test.js';
@@ -657,6 +658,7 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:auto-follow-holds-the-end', run: runAutoFollowHoldsTheEndTests },
   { name: 'unit:user-send-follow', run: runUserSendFollowTests },
   { name: 'unit:thread-column-landing', run: runThreadColumnLandingTests },
+  { name: 'unit:jump-to-attention-reveal', run: runJumpToAttentionRevealTests },
   { name: 'unit:empty-conversation-hint', run: runEmptyConversationHintTests },
   { name: 'unit:no-conversations-onboarding', run: runNoConversationsOnboardingTests },
   { name: 'unit:no-project-onboarding', run: runNoProjectOnboardingTests },
