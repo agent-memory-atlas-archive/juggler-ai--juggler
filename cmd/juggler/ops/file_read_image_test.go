@@ -140,6 +140,56 @@ func TestLoadFileBinaryReports(t *testing.T) {
 	}
 }
 
+// TestLoadFileLargeBinaryReports: the read op's size ceiling guards decoding a
+// file as text, so a binary beyond it — a screen recording, a long audio take —
+// is reported like any other binary rather than refused. Refusing it is what
+// made a pinned video read as a file that does not exist.
+func TestLoadFileLargeBinaryReports(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "clip.mp4")
+	// Truncate makes a sparse file of zero bytes: binary, and costs no disk.
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := f.Truncate(MaxFileSize + 1); err != nil {
+		t.Fatalf("truncate: %v", err)
+	}
+	_ = f.Close()
+
+	ops := NewFileOperations(NewPathScope(dir, nil))
+	res, err := ops.Execute(context.Background(), "loadFile", map[string]any{"path": path})
+	if err != nil {
+		t.Fatalf("loadFile refused a large binary: %v", err)
+	}
+	m, ok := res.(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected result type %T", res)
+	}
+	if m["isBinary"] != true || m["exists"] != true {
+		t.Errorf("expected an existing binary, got %#v", m)
+	}
+	if m["mime"] != "video/mp4" {
+		t.Errorf("expected mime video/mp4, got %v", m["mime"])
+	}
+	if m["size"] != int64(MaxFileSize+1) {
+		t.Errorf("expected the on-disk size to be reported, got %v", m["size"])
+	}
+}
+
+// TestLoadFileLargeTextRefused: the ceiling still holds for what it protects.
+func TestLoadFileLargeTextRefused(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.log")
+	if err := os.WriteFile(path, bytes.Repeat([]byte("line of text\n"), MaxFileSize/13+1), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	ops := NewFileOperations(NewPathScope(dir, nil))
+	if _, err := ops.Execute(context.Background(), "loadFile", map[string]any{"path": path}); err == nil {
+		t.Fatal("expected a text file over MaxFileSize to be refused")
+	}
+}
+
 // TestMimeForPath covers the general mime table used by the content route and
 // reported on every read.
 func TestMimeForPath(t *testing.T) {
@@ -150,6 +200,15 @@ func TestMimeForPath(t *testing.T) {
 		"app.js":     "text/javascript",
 		"data.json":  "application/json",
 		"styles.css": "text/css",
+		"clip.mp4":   "video/mp4",
+		"clip.MOV":   "video/quicktime",
+		"clip.webm":  "video/webm",
+		"song.mp3":   "audio/mpeg",
+		"take.wav":   "audio/wav",
+		"take.m4a":   "audio/mp4",
+		"take.flac":  "audio/flac",
+		"icon.bmp":   "image/bmp",
+		"pic.avif":   "image/avif",
 		"unknown.qq": "",
 		"noext":      "",
 	}

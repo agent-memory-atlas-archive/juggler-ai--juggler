@@ -557,7 +557,7 @@ export async function uploadAssetBase64(convId, base64, mime, signal) {
     headers['X-Juggler-Token'] = token;
   }
   const response = await fetch(
-    `/session/conversations/${encodeURIComponent(convId)}/assets`,
+    apiUrl(`/session/conversations/${encodeURIComponent(convId)}/assets`),
     { method: 'POST', headers, body: bytes, signal }
   );
   if (!response.ok) {

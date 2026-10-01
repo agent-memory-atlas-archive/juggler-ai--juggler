@@ -43,6 +43,19 @@ func TestHTMLCSPFramesLoopbackOnly(t *testing.T) {
 	}
 }
 
+// A <video>/<audio> plays from the file content route, or — for a file outside
+// the project, which that route refuses — from a blob: of its bytes. Without
+// blob: here the second case silently plays nothing; nothing further is allowed.
+func TestHTMLCSPMediaFromSelfAndBlob(t *testing.T) {
+	rec := httptest.NewRecorder()
+	setHTMLSecurityHeaders(rec, "test-nonce")
+
+	csp := rec.Header().Get("Content-Security-Policy")
+	if got := directive(csp, "media-src"); got != "media-src 'self' blob:" {
+		t.Errorf("media-src = %q, want media-src 'self' blob:", got)
+	}
+}
+
 // Widening what the page may frame must not widen what may frame the page.
 func TestHTMLCSPFrameAncestorsStillNone(t *testing.T) {
 	rec := httptest.NewRecorder()

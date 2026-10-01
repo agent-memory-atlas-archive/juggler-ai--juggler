@@ -10,6 +10,7 @@
  */
 
 import { textResponse, toolUseResponse, multiToolResponse } from '../utilities/integration-test-runner.js';
+import { isToolActionMessage } from '../../sdk/lib/message.js';
 
 // ============================================================================
 // GOLDEN DATA - Expected file contents
@@ -287,11 +288,63 @@ export const readFileNonNumericOffsetTest = {
   }
 };
 
+/**
+ * Reading an image uploads its bytes to the conversation asset store from the
+ * engine, so the pixels ride the tool result to a multimodal model. The upload
+ * is the one leg no Go test sees: it is a fetch from the engine realm, and a
+ * wrong URL degrades silently to a warning in an otherwise successful read.
+ * The bytes need not decode — the read op recognises an image by extension and
+ * the asset store keeps an undecodable image without dimensions.
+ * @type {import('../utilities/integration-test-runner.js').IntegrationTestDefinition}
+ */
+export const readFileImageAttachesTest = {
+  name: 'read-file-image-attaches',
+  description: 'Read a PNG - bytes are uploaded and the tool-action carries the asset',
+  fixture: 'unit-test-fixture',
+  setupFiles: { 'read-file-image-attaches.png': 'not really a png' },
+
+  llmResponses: [
+    toolUseResponse(
+      'call_1',
+      'read',
+      { file_path: 'read-file-image-attaches.png' },
+      'Let me look at that image.'
+    ),
+    textResponse('I\'ve seen the image.')
+  ],
+
+  operations: [
+    { type: 'send-message', message: 'Look at read-file-image-attaches.png' }
+  ],
+
+  customAssertions(conversation) {
+    const action = [...conversation.rootItems].find(
+      item => isToolActionMessage(/** @type {any} */ (item)) &&
+      /** @type {any} */ (item).get('toolName') === 'read'
+    );
+    if (!action) {
+      throw new Error('read tool-action not found in items');
+    }
+    const rawResult = action.get('result');
+    const result = rawResult?.toJSON ? rawResult.toJSON() : rawResult;
+    const rawAttachments = action.get('attachments');
+    const attachments = rawAttachments?.toJSON ? rawAttachments.toJSON() : rawAttachments;
+    if (!Array.isArray(attachments) || attachments.length !== 1) {
+      throw new Error(`expected one attachment on the read tool-action, got ${JSON.stringify(attachments)}; result: ${JSON.stringify(result?.content)}`);
+    }
+    const [ref] = attachments;
+    if (!/^[0-9a-f]{64}$/.test(ref.id) || ref.mime !== 'image/png') {
+      throw new Error(`attachment is not a stored PNG asset ref: ${JSON.stringify(ref)}`);
+    }
+  }
+};
+
 // Export all tests
 export const tests = [
   readFileSingleTest,
   readFileNonExistentTest,
   readFileParallelTest,
   readFileStringOffsetTest,
-  readFileNonNumericOffsetTest
+  readFileNonNumericOffsetTest,
+  readFileImageAttachesTest
 ];

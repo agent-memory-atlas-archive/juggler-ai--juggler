@@ -73,6 +73,9 @@ func setHTMLSecurityHeadersFramed(w http.ResponseWriter, nonce string, sameOrigi
 		"script-src 'self' 'nonce-" + nonce + "' https://cdnjs.cloudflare.com; " +
 		"style-src 'self' 'unsafe-inline'; " +
 		"img-src 'self' data: blob:; " +
+		// The media file viewer plays from the content route, or from a blob of
+		// the bytes for a file outside the project, which that route refuses.
+		"media-src 'self' blob:; " +
 		"font-src 'self' data:; " +
 		connectSrc + "; " +
 		frameSrc + "; " +

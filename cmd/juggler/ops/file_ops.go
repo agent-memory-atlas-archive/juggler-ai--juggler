@@ -76,6 +76,30 @@ var mimeByExt = map[string]string{
 	".yaml":     "text/yaml",
 	".yml":      "text/yaml",
 	".toml":     "text/toml",
+	// Media the content route streams to a <video>/<audio>/<img>. Served with
+	// nosniff, so a format missing here reaches the player as octet-stream.
+	".mp4":  "video/mp4",
+	".m4v":  "video/mp4",
+	".mov":  "video/quicktime",
+	".webm": "video/webm",
+	".ogv":  "video/ogg",
+	".mp3":  "audio/mpeg",
+	".wav":  "audio/wav",
+	".m4a":  "audio/mp4",
+	".aac":  "audio/aac",
+	".flac": "audio/flac",
+	".ogg":  "audio/ogg",
+	".oga":  "audio/ogg",
+	".opus": "audio/ogg",
+	".aif":  "audio/aiff",
+	".aiff": "audio/aiff",
+	".bmp":  "image/bmp",
+	".ico":  "image/x-icon",
+	".avif": "image/avif",
+	".tif":  "image/tiff",
+	".tiff": "image/tiff",
+	".heic": "image/heic",
+	".heif": "image/heif",
 }
 
 // MimeForPath returns the mime type reported for a path — images first (so the
@@ -188,11 +212,6 @@ func (ops *FileOperations) loadFile(params map[string]any) (any, error) {
 		return nil, fmt.Errorf("path is a directory, not a file: %s", path)
 	}
 
-	// SECURITY: Check file size limit (prevent DoS via huge files)
-	if err := ValidateFileSize(absPath); err != nil {
-		return nil, err
-	}
-
 	// Images: a supported image type within the inline size cap is returned as an
 	// isImage marker carrying the base64 bytes, so the read tool can upload it to
 	// the conversation asset store (via the existing asset-upload endpoint) and
@@ -247,6 +266,14 @@ func (ops *FileOperations) loadFile(params map[string]any) (any, error) {
 			"mime":     MimeForPath(absPath),
 			"isBinary": true,
 		}, nil
+	}
+
+	// SECURITY: Check file size limit (prevent DoS via huge files). It guards
+	// reading the whole file as text, so it sits after the branches above, which
+	// read at most an inline-capped image and otherwise only report: a large
+	// binary — a video, a recording — is described like any other, not refused.
+	if err := ValidateFileSize(absPath); err != nil {
+		return nil, err
 	}
 
 	// Read file

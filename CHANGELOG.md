@@ -11,6 +11,9 @@ of changes; this project follows semantic versioning.
 - LocalAI pointed at an LM Studio server says so and offers a one-click switch
 - Provider model lists are easier to find, and open when a context window is assumed
 - Token-limit columns have headings, and their tooltips explain where each figure came from
+- The file viewer plays video and audio, and shows BMP, AVIF, TIFF and HEIC images
+- Binary files over 10 MB open in the file viewer instead of reading as missing
+- Images the read tool opens now reach the model, instead of failing to upload with HTTP 404
 
 ## [0.7.3] - 2026-09-30
 
