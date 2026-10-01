@@ -23,6 +23,29 @@ modal-backdrop {
     height: 100%;
     background: var(--modal-scrim);
     z-index: 1;
+
+    /* Fades in rather than snapping the page dark. An animation rather than a
+       transition, because a modal shows its scrim by inserting it or by taking
+       its host out of `display: none`, and either one restarts it. */
+    animation: modal-scrim-in var(--modal-scrim-fade) ease-out;
+}
+
+/* The stand-in a scrim leaves on <body> when its modal closes
+   (utils/modal-scrim.js). It sits where the modal was, takes no pointer events,
+   fades from whatever opacity the scrim had reached, and is removed on a timer. */
+modal-backdrop.is-leaving {
+    z-index: var(--z-modal);
+    pointer-events: none;
+    animation: modal-scrim-out var(--modal-scrim-fade) ease-in forwards;
+}
+
+@keyframes modal-scrim-in {
+    from { opacity: 0; }
+}
+
+@keyframes modal-scrim-out {
+    from { opacity: var(--scrim-from, 1); }
+    to { opacity: 0; }
 }
 
 /* Outer card chrome (bg/border/radius/shadow) comes from the shared

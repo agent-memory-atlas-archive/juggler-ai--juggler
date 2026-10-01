@@ -5,6 +5,7 @@
 import { openExternalURL } from '../../sdk/lib/window-control.js';
 import { createButton } from '../../sdk/lib/html.js';
 import { markPopupOpen } from '../utils/popup-manager.js';
+import { fadeOutScrims } from '../utils/modal-scrim.js';
 import { startInstall, requestRestart } from '../services/updater-control.js';
 import { showConfirm } from './modal-dialog.js';
 
@@ -605,6 +606,7 @@ class UpdateNotice extends HTMLElement {
     this._vm = null;
     this._renderKey = null;
     this._pendingInstall = false;
+    fadeOutScrims(this);
     this.innerHTML = '';
     this._teardownDismissal();
   }

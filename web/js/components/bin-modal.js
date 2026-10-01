@@ -5,6 +5,7 @@
 import { formatRelativeDateTime, formatBytes } from '../utils/format.js';
 import { BIN_LARGE_BYTES } from '../utils/constants.js';
 import { markPopupOpen } from '../utils/popup-manager.js';
+import { fadeOutScrims } from '../utils/modal-scrim.js';
 import { presentPopup } from '../utils/popup-surface.js';
 import { showAlert, showConfirm } from './modal-dialog.js';
 import JugglerElement from './juggler-element.js';
@@ -78,6 +79,7 @@ class BinModal extends JugglerElement {
 
   close() {
     this._closeEmptyMenu();
+    fadeOutScrims(this);
     this.classList.remove('is-open');
     if (this._releasePopupOpen) {
       this._releasePopupOpen();

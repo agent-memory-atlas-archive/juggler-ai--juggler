@@ -29,6 +29,7 @@
  */
 
 import { markPopupOpen } from './popup-manager.js';
+import { durationToken, fadeOutScrims } from './modal-scrim.js';
 
 /**
  * A presented modal overlay.
@@ -59,6 +60,14 @@ export function presentModal({ className, dismissSelectors = [], onClose }) {
   root.className = className;
   document.body.appendChild(root);
 
+  // Most of these redraw their whole root as they go — a wizard per screen, the
+  // workspace dialogs per state — and a new <modal-backdrop> makes the scrim's
+  // entrance again. Once the first one has faded in, later ones arrive already
+  // dark: the scrim is the page being covered, which only happens once.
+  const settleScrim = setTimeout(() => {
+    root.style.setProperty('--modal-scrim-fade', '0s');
+  }, durationToken('--modal-scrim-fade', 200));
+
   let closed = false;
   /** @type {(() => void)|null} */
   let release = null;
@@ -66,10 +75,12 @@ export function presentModal({ className, dismissSelectors = [], onClose }) {
   const close = (/** @type {any} */ result) => {
     if (closed) return;
     closed = true;
+    clearTimeout(settleScrim);
     if (release) {
       release();
       release = null;
     }
+    fadeOutScrims(root);
     root.remove();
     onClose?.(result);
   };

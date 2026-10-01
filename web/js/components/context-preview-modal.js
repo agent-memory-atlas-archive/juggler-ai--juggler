@@ -6,6 +6,7 @@ import { ContextBuilder } from '../services/context-builder.js';
 import { escapeHtml } from '../../sdk/lib/html.js';
 import { copyToClipboard } from '../../sdk/lib/clipboard.js';
 import { markPopupOpen } from '../utils/popup-manager.js';
+import { fadeOutScrims } from '../utils/modal-scrim.js';
 import { showAlert } from './modal-dialog.js';
 
 /**
@@ -84,6 +85,7 @@ class ContextPreviewModal extends HTMLElement {
    * Hide the modal
    */
   hide() {
+    fadeOutScrims(this);
     this.style.display = 'none';
     if (this._releasePopupOpen) {
       this._releasePopupOpen();

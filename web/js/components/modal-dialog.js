@@ -56,6 +56,7 @@
 import { markPopupOpen } from '../utils/popup-manager.js';
 import { createButton as makeButton } from '../../sdk/lib/html.js';
 import { focusWhenShown } from '../utils/focus.js';
+import { fadeOutScrims } from '../utils/modal-scrim.js';
 
 
 class ModalDialog extends HTMLElement {
@@ -427,6 +428,7 @@ class ModalDialog extends HTMLElement {
    * @param {any} result - Dialog result to resolve promise with
    */
   close(result) {
+    fadeOutScrims(this);
     this.classList.remove('show', 'is-notice');
     this._runShowCleanups();
     if (this.handleKeydown) {

@@ -50,12 +50,20 @@ export async function runTests() {
 
     // --- 3: and it opens again, every time the menu item is picked -----------
     /** @type {HTMLElement} */ (modal.querySelector('#about-close')).click();
+    // It is closed at once but leaves on screen, and nothing in it may catch
+    // the pointer while it does.
+    assert(modal.classList.contains('is-closing') && !!panel(), 'the about box must stay on screen to make its exit');
+    assert(getComputedStyle(modal).pointerEvents === 'none', 'a leaving about box must let the pointer through');
     await waitFor(() => !panel(), { description: 'the about box to close' });
+    assert(!modal.classList.contains('is-closing'), 'the exit must end once the box has gone');
     window.dispatchEvent(new CustomEvent('juggler:open-about'));
     await waitFor(() => !!panel(), { description: 'the about box to reopen from the menu event' });
     passed++;
 
     // Seek the animation synchronously: offscreen lanes need not deliver frames.
+    // That goes for the panel's entrance too, which leaves it scaled until it
+    // lands, and the geometry asserted below is the settled box's.
+    for (const entrance of /** @type {HTMLElement} */ (panel()).getAnimations()) entrance.finish();
     const logo = /** @type {HTMLElement} */ (modal.querySelector('.about-logo'));
     const clubs = [...logo.querySelectorAll('.logo-club')];
     // Lane viewport heights vary. Give the trajectory a known amount of

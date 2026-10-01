@@ -172,6 +172,11 @@ conversation-bar .conversation-tabs > .conversation-box {
    whatever it is renaming — so this row is the positioned element that keeps it
    over the name rather than over the whole box and the conversations in it. */
 conversation-bar .conversation-box-top {
+    /* Renaming the place is done on the box's own paint, edged in its hue rather
+       than in the strip's blue: the name being typed is the one the chip wears. */
+    --inline-rename-surface: var(--workspace-box-surface);
+    --inline-rename-accent: var(--workspace-tint, var(--accent-blue));
+
     position: absolute;
     top: calc(-0.0625rem / 2);
     left: calc(0.5rem + 0.0625rem + 0.4rem);
@@ -426,6 +431,10 @@ conversation-bar .conversation-add-item {
    panel item's are, so they read the same on the page and in any box. */
 conversation-bar .conversation-tab {
     --tab-surface: var(--bg-primary);
+
+    /* The rename editor (patterns/inline-rename.css) is the row taking the
+       keyboard, so it wears the row's own surface — the page, or its box's. */
+    --inline-rename-surface: var(--tab-surface);
 
     position: relative;
     background-color: var(--tab-surface);
@@ -782,27 +791,30 @@ conversation-bar .conversation-tab-bin:hover {
     background: rgb(0 0 0 / 15%);
 }
 
-/* "Auto-name", in the actions row of a tab's rename editor: a low-key ghost
-   button on the editor's accent surface, so it reads as secondary to typing a
-   name. It is the only button any rename editor offers, which is why it is
-   styled here rather than with the shared editor — and why it is written as a
-   descendant of the bar, which keeps it clear of the disabled-button rule in
-   base/ without a fight over specificity. */
+/* "Auto-name", in the actions row of a tab's rename editor: a quiet outlined
+   button in the strip's neutrals, so it reads as secondary to typing a name, and
+   answers the pointer with the same overlay a tab's hover lays down. It is the
+   only button any rename editor offers, which is why it is styled here rather
+   than with the shared editor — and why it is written as a descendant of the
+   bar, which keeps it clear of the disabled-button rule in base/ without a
+   fight over specificity. */
 conversation-bar .conversation-tab-auto-name {
     align-self: flex-start;
     padding: 0.125rem 0.5rem;
     font-family: var(--font-ui);
     font-size: 0.75rem;
     line-height: 1.4;
-    color: inherit;
-    background: rgb(255 255 255 / 12%);
-    border: 0.0625rem solid rgb(255 255 255 / 30%);
+    color: var(--text-secondary);
+    background: transparent;
+    border: 0.0625rem solid var(--border-color);
     border-radius: 0.5rem;
     cursor: pointer;
+    transition: background 150ms ease, color 150ms ease;
 }
 
 conversation-bar .conversation-tab-auto-name:hover {
-    background: rgb(255 255 255 / 22%);
+    color: var(--text-primary);
+    background: var(--overlay-light-5);
 }
 
 /* The rename editor a tab or a box opens is the shared one

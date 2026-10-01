@@ -10,6 +10,7 @@
 //   <https://www.gnu.org/licenses/agpl-3.0.html> for full terms.
 
 import { markPopupOpen } from '../utils/popup-manager.js';
+import { fadeOutScrims } from '../utils/modal-scrim.js';
 import { fetchJson } from '../services/http.js';
 import { getGlobalSettings, onGlobalSettings, offGlobalSettings } from '../services/prefs.js';
 import { registerSettingsOpener } from '../services/settings-launcher.js';
@@ -552,6 +553,7 @@ class SettingsPanel extends HTMLElement {
    * Close the settings panel
    */
   close() {
+    fadeOutScrims(this);
     this.classList.remove('show');
     if (this._releasePopupOpen) {
       this._releasePopupOpen();

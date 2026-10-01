@@ -248,25 +248,29 @@ export function openWorkspaceCreate(session) {
       return head;
     };
 
+    // The chrome every other dialog in the app wears: the shared scrim, and a
+    // panel whose surface, corner and shadow come from the one popup-surface
+    // rule. A modal that paints its own card is a modal that drifts from the
+    // rest of them one token at a time.
+    //
+    // Built once, outside `render`: both animate in when they are inserted, so
+    // a redraw that rebuilt them would play the entrance again on every choice
+    // in the rail. A redraw replaces what is inside the panel, never the panel.
+    const backdrop = document.createElement('modal-backdrop');
+    backdrop.className = 'workspace-create-backdrop';
+    root.appendChild(backdrop);
+
+    const dialog = document.createElement('modal-panel');
+    dialog.className = 'workspace-create-dialog';
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    dialog.setAttribute('aria-label', 'New workspace');
+    root.appendChild(dialog);
+
     /** Draw the dialog as it stands. */
     const render = () => {
       if (modal.closed) return;
-      root.replaceChildren();
-
-      // The chrome every other dialog in the app wears: the shared scrim, and a
-      // panel whose surface, corner and shadow come from the one popup-surface
-      // rule. A modal that paints its own card is a modal that drifts from the
-      // rest of them one token at a time.
-      const backdrop = document.createElement('modal-backdrop');
-      backdrop.className = 'workspace-create-backdrop';
-      root.appendChild(backdrop);
-
-      const dialog = document.createElement('modal-panel');
-      dialog.className = 'workspace-create-dialog';
-      dialog.setAttribute('role', 'dialog');
-      dialog.setAttribute('aria-modal', 'true');
-      dialog.setAttribute('aria-label', 'New workspace');
-      root.appendChild(dialog);
+      dialog.replaceChildren();
 
       const header = document.createElement('div');
       header.className = 'workspace-create-header';

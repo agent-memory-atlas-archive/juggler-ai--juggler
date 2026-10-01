@@ -18,13 +18,21 @@
 
 /* Appended INSIDE the row, which is positioned, so it tracks the row on reorder
    without any JS re-anchoring. It spills a small bleed beyond the row's box plus
-   a drop shadow below it.
+   a soft drop shadow below it.
 
-   The overlay IS the visual row while editing: same surface, one accent border.
-   The input has no border or background of its own, so there's only ever one
-   frame on screen. It inherits text colour, so the white-on-blue of a selected
-   row stays readable without a separate palette. */
+   The overlay IS the visual row while editing: the row's own surface, in the
+   theme's text colour, with the focus ring a chosen row wears when the strip has
+   the keyboard — so it reads as the row taking the keyboard, not as a second
+   thing laid over it. The input has no border or background of its own, so
+   there's only ever one frame on screen.
+
+   Two knobs are the row's to set, both inherited from it:
+     --inline-rename-surface  what the row is painted with (it must be opaque:
+                              the row's own name is still drawn underneath);
+     --inline-rename-accent   the colour of the edge and ring. */
 .inline-rename {
+    --inline-rename-ring: color-mix(in srgb, var(--inline-rename-accent, var(--accent-blue)) 30%, transparent);
+
     position: absolute;
 
     /* Slight halo around the row, on all sides. Only top/left/right are pinned —
@@ -40,17 +48,30 @@
     flex-direction: column;
     justify-content: center;
     gap: 0.25rem;
-    padding: 0.5rem 0.75rem;
+    padding: 0.4375rem 0.6875rem;
+    background: var(--inline-rename-surface, var(--bg-primary));
+    color: var(--text-primary);
+    border: 0.0625rem solid var(--inline-rename-accent, var(--accent-blue));
 
-    /* Match the selected-row surface (darkened accent-blue) so the overlay
-       reads as a "bigger version of the row" with one frame, not as a
-       second floating element. */
-    background: color-mix(in srgb, var(--accent-blue) 70%, var(--bg-raised));
-    color: #fff;
-    border: 0.125rem solid var(--accent-blue);
-    border-radius: 0.8rem;
-    box-shadow: 0 0.25rem 0.75rem rgb(0 0 0 / 30%);
+    /* A row's corner plus the bleed, so the two curves run concentric. */
+    border-radius: 0.75rem;
+    box-shadow: 0 0 0 0.1875rem var(--inline-rename-ring), var(--shadow-md);
     box-sizing: border-box;
+    animation: inline-rename-in var(--popup-enter-duration) var(--popup-enter-ease);
+}
+
+/* It grows out of the row it covers rather than appearing on top of it. */
+@keyframes inline-rename-in {
+    from {
+        opacity: 0;
+        transform: scale(0.97);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .inline-rename {
+        animation: none;
+    }
 }
 
 .inline-rename-input {
@@ -73,16 +94,9 @@
     outline: none;
 }
 
-/* The one surface that opts out of the shared --selection-bg: this field sits on
-   the accent-blue rename overlay in white text, where a blue tint would barely
-   show. A white wash is the readable equivalent there. */
-.inline-rename-input::selection {
-    background: rgb(255 255 255 / 35%);
-}
-
 /* What the editor says when a name was refused and the user can answer it. */
 .inline-rename-error {
-    color: #ffd9d9;
+    color: var(--accent-red);
     font-size: 0.75rem;
     line-height: 1.2;
 }

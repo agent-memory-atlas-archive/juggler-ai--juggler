@@ -196,6 +196,7 @@ import { runTests as runBinGhostResurrectionTests } from '../unit-tests/bin-ghos
 import { runTests as runBinEmptyMenuTests } from '../unit-tests/bin-empty-menu-test.js';
 import { runTests as runBinSizeNoticeTests } from '../unit-tests/bin-size-notice-test.js';
 import { runTests as runAboutMenuTests } from '../unit-tests/about-menu-test.js';
+import { runTests as runModalScrimTests } from '../unit-tests/modal-scrim-test.js';
 import { runTests as runRestoreSelectPanelTests } from '../unit-tests/restore-select-panel-test.js';
 import { runTests as runConversationFocusPolicyTests } from '../unit-tests/conversation-focus-policy-test.js';
 import { runTests as runRenameErrorCodeTests } from '../unit-tests/rename-error-code-test.js';
@@ -628,6 +629,7 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:bin-empty-menu', run: runBinEmptyMenuTests },
   { name: 'unit:bin-size-notice', run: runBinSizeNoticeTests },
   { name: 'unit:about-menu', run: runAboutMenuTests },
+  { name: 'unit:modal-scrim', run: runModalScrimTests },
   { name: 'unit:restore-select-panel', run: runRestoreSelectPanelTests },
   { name: 'unit:conversation-focus-policy', run: runConversationFocusPolicyTests },
   { name: 'unit:rename-error-code', run: runRenameErrorCodeTests },

@@ -20,6 +20,12 @@ about-modal:has(.about-backdrop) {
     display: flex;
 }
 
+/* Closed, but still leaving (about-modal.js _close): nothing in it answers the
+   pointer, so the page under it is live from the first frame of the exit. */
+about-modal.is-closing {
+    pointer-events: none;
+}
+
 about-modal .about-container {
     padding: 0;
     max-width: 24rem;
@@ -29,10 +35,55 @@ about-modal .about-container {
     /* Clubs paint above the panel; its other contents stay inside the corners. */
     overflow: visible;
 
-    /* Fade in without the shared grow: the club throw is sized from the logo's
-       on-screen rect the moment the box opens (about-modal.js _throwClubs), and
-       a panel mid-scale would hand it the wrong one. */
-    animation-name: popup-surface-fade;
+    /* Its own entrance rather than the shared one: it rises into place and
+       settles with a touch of overshoot, which a dialog asking a question would
+       not want but a box saying hello can afford. The club throw is sized from
+       the logo's on-screen rect, so about-modal.js holds the first throw until
+       this has finished. */
+    transform-origin: 50% 40%;
+    animation: about-enter 420ms cubic-bezier(0.34, 1.45, 0.64, 1);
+}
+
+/* And it leaves the way it came, quicker, as the scrim behind it fades. */
+about-modal.is-closing .about-container {
+    animation: about-exit var(--popup-exit-duration) var(--popup-exit-ease) forwards;
+}
+
+about-modal.is-closing .about-backdrop {
+    animation: modal-scrim-out var(--modal-scrim-fade) ease-in forwards;
+}
+
+@keyframes about-enter {
+    0% {
+        opacity: 0;
+        transform: translateY(1.5rem) scale(0.92);
+    }
+
+    /* Opaque well before it lands, so the overshoot is seen on a solid panel. */
+    40% {
+        opacity: 1;
+    }
+}
+
+@keyframes about-exit {
+    to {
+        opacity: 0;
+        transform: translateY(0.75rem) scale(0.96);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    about-modal .about-container {
+        animation: popup-surface-fade var(--popup-enter-duration) ease-out;
+    }
+
+    about-modal.is-closing .about-container {
+        animation: about-fade-out var(--popup-exit-duration) ease-in forwards;
+    }
+}
+
+@keyframes about-fade-out {
+    to { opacity: 0; }
 }
 
 about-modal .about-header {

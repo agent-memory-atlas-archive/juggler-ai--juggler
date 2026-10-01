@@ -384,6 +384,28 @@ export async function runTests() {
       }
     });
 
+    await run('choosing another kind keeps the dialog where it is', async () => {
+      // The panel and its scrim animate in when they are inserted, so a redraw
+      // that rebuilt them played the entrance again on every click in the rail:
+      // the dialog dropped back into place each time a kind was chosen. What a
+      // choice changes is what is inside the panel, never the panel.
+      const settled = openWorkspaceCreate(session);
+      try {
+        await chooseFixture();
+        const panel = document.querySelector('.workspace-create-overlay .workspace-create-dialog');
+        const backdrop = document.querySelector('.workspace-create-overlay .workspace-create-backdrop');
+        choose(SecondKindProvider.MANIFEST.id);
+        await waitFor(() => document.querySelector('.workspace-create-overlay #second-kind-dir') !== null, 2000);
+        assert(document.querySelector('.workspace-create-overlay .workspace-create-dialog') === panel,
+          'the panel is the same element after a choice, not one inserted (and animated in) again');
+        assert(document.querySelector('.workspace-create-overlay .workspace-create-backdrop') === backdrop,
+          'and so is the scrim behind it');
+      } finally {
+        press('.workspace-create-cancel');
+        await settled;
+      }
+    });
+
     await run('the rail names the kinds, and leaves the describing to the pane', async () => {
       // Master and detail: the rail is a column of names and the pane beside it
       // says what the chosen one means, in full. Printing the meaning in both
