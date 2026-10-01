@@ -32,3 +32,48 @@ modal-panel {
     border-radius: var(--radius-popup);
     box-shadow: var(--popup-shadow);
 }
+
+/* The entrance, the same for the whole family (plus the right-click menu, which
+   wears its own smaller card): fade in while growing the last few percent into
+   place. It replays whenever a surface goes from unrendered to rendered —
+   appended, or its `display: none` lifted — and the exit is instant.
+
+   Anchored surfaces grow out of their trigger: placement (positionDropdown,
+   the context menu) sets --popup-origin to the edge facing it. A centred modal
+   has none and grows from its middle.
+
+   A surface that rebuilds itself while open would replay this on every
+   rebuild; those switch it off in their own files (the completion menus,
+   the onboarding wizard, the skill preview). The phone bottom sheets replace
+   it with their slide-up. */
+.dropdown-menu,
+.pp-panel,
+.juggler-context-menu {
+    transform-origin: var(--popup-origin, center top);
+    animation: popup-surface-enter var(--popup-enter-duration) var(--popup-enter-ease);
+}
+
+modal-panel {
+    transform-origin: center;
+    animation: popup-surface-enter var(--popup-enter-duration) var(--popup-enter-ease);
+}
+
+@keyframes popup-surface-enter {
+    from {
+        opacity: 0;
+        transform: scale(var(--popup-enter-scale));
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .dropdown-menu,
+    .pp-panel,
+    .juggler-context-menu,
+    modal-panel {
+        animation-name: popup-surface-fade;
+    }
+}
+
+@keyframes popup-surface-fade {
+    from { opacity: 0; }
+}

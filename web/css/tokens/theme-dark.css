@@ -93,6 +93,11 @@
     --workspace-tint-edge: 60%;
     --workspace-tint-text: 45%;
 
+    /* How strongly the line pattern behind the header and sidebar is inked
+       (layout/app-shell.css). Per theme because light lines on dark and dark
+       lines on light don't read at the same opacity. */
+    --chrome-pattern-strength: 0.07;
+
     /* ANSI foreground palette (dark) — used by utils/ansi.js to colour bash
        output text in the properties panel. Tuned to read well on --bg-primary.
        Backgrounds use the theme-independent --ansi-bg-* palette (see :root). */

@@ -38,12 +38,16 @@ export function positionDropdown(dropdown, button, gap = 4, options = {}) {
   // based on actual content size, not a stale cap. The width clamp below may
   // also have pinned an inline `min-width`/`max-width` last time — clear those
   // too so the natural width is re-measured cleanly.
+  //
+  // The menu's own size is read from its layout box (offsetWidth/Height), not
+  // getBoundingClientRect: placement runs during the scale-up entrance
+  // (popup-surface.css), and a transformed rect would place the menu for the
+  // size it is mid-animation rather than the size it comes to rest at.
   dropdown.style.maxHeight = 'none';
   dropdown.style.removeProperty('min-width');
   dropdown.style.removeProperty('max-width');
   const buttonRect = measureRestingRect(button);
-  const naturalRect = dropdown.getBoundingClientRect();
-  const naturalHeight = naturalRect.height;
+  const naturalHeight = dropdown.offsetHeight;
 
   // --- Y: choose the side that fits, falling back to the larger side ---
   const spaceBelow = Math.max(0, window.innerHeight - buttonRect.bottom - gap - edge);
@@ -80,14 +84,14 @@ export function positionDropdown(dropdown, button, gap = 4, options = {}) {
   // max-width, so override both inline. Anchored mode only — narrow viewports
   // present these as full-width sheets (see popup-surface.js), governed by CSS.
   const maxWidth = window.innerWidth - 2 * edge;
-  if (dropdown.getBoundingClientRect().width > maxWidth) {
+  if (dropdown.offsetWidth > maxWidth) {
     dropdown.style.minWidth = '0';
     dropdown.style.maxWidth = `${maxWidth}px`;
   }
 
   // --- X: re-measure width AFTER applying max-height (a scrollbar may have
   // appeared, changing the width) and the width clamp above. ---
-  const widthAfter = dropdown.getBoundingClientRect().width;
+  const widthAfter = dropdown.offsetWidth;
   let x;
   if (align === 'right') {
     // Pin the menu's right edge to the button's right edge (grows left); if that
@@ -105,6 +109,11 @@ export function positionDropdown(dropdown, button, gap = 4, options = {}) {
 
   dropdown.style.setProperty('--dropdown-x', `${x}px`);
   dropdown.style.setProperty('--dropdown-y', `${Math.max(edge, y)}px`);
+
+  // The entrance grows the menu out of its trigger: from the edge that faces
+  // the button, centred on the button horizontally (clamped to the menu).
+  const originX = Math.min(widthAfter, Math.max(0, buttonRect.left + buttonRect.width / 2 - x));
+  dropdown.style.setProperty('--popup-origin', `${originX}px ${openBelow ? 'top' : 'bottom'}`);
 
   for (const [el, top] of scrollers) el.scrollTop = top;
 }

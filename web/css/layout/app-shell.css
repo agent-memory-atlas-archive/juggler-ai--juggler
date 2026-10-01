@@ -6,6 +6,27 @@
 
 /* App Layout */
 app-container {
+    /* The line pattern behind the header and the sidebar (app-header.css,
+       conversation-bar.css): a periodic Penrose approximant — P3 rhombs from a
+       pentagrid with φ taken as 3/2, so it repeats as a rectangular tile —
+       drawn as a mask over the theme's text colour so it takes the theme's
+       tint. Both surfaces anchor the repeat on the edge they share — the
+       header's bottom, the sidebar's top — so the pattern runs on across it
+       whatever height the header is.
+
+       --chrome-pattern-scale sizes it: at 1 a rhomb edge is 22px. The tile's
+       strokes are non-scaling, so the lines stay 1px at any scale. The tile
+       size below is the SVG's own width and height; keep it in step with the
+       file. Its strength, --chrome-pattern-strength, is set per theme in
+       tokens/theme-*.css. */
+    --chrome-pattern-url: url("../../resources/chrome-pattern.svg");
+    --chrome-pattern-scale: 1.4;
+    /* stylelint-disable rem-over-px/rem-over-px, unit-disallowed-list */
+    --chrome-pattern-size:
+        calc(639px * var(--chrome-pattern-scale))
+        calc(177px * var(--chrome-pattern-scale));
+    /* stylelint-enable rem-over-px/rem-over-px, unit-disallowed-list */
+
     display: flex;
     flex-direction: column;
     position: fixed;
@@ -458,7 +479,7 @@ conversation-area {
 }
 
 /* The floor a column will not shrink past, whoever is asking.
-   
+
    12.5rem is COL_MIN_WIDTH_REM in js/utils/column-resize.js: the narrowest a
    user may DRAG a column to. The arrangement that shrinks a column of its own
    accord raises it (--column-floor, set where that arrangement is named above),

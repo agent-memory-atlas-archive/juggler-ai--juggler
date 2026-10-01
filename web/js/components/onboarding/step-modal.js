@@ -84,6 +84,8 @@ export function presentWizard({ steps, start, dismissLabel = 'Close' }) {
     // Guards a render whose step function is still in flight when another
     // render starts: the slower one must not paint over the newer screen.
     let renderToken = 0;
+    // Whether a screen has been drawn yet: only the first makes the entrance.
+    let painted = false;
 
     const modal = presentModal({
       // Spelled out rather than taken as an option: the CSS architecture check
@@ -185,6 +187,10 @@ export function presentWizard({ steps, start, dismissLabel = 'Close' }) {
 
       actions = view.actions ?? [];
       modal.root.innerHTML = shell(view, actions, dismissLabel, ctx.canGoBack && !view.hideBack);
+      // Every screen is a fresh panel, but only the first is the wizard
+      // opening: later ones swap in place rather than pop in again.
+      if (painted) modal.root.querySelector('.wiz-panel')?.classList.add('wiz-panel--settled');
+      painted = true;
       view.onMount?.(modal.root);
       focusPrimary(modal.root);
     }

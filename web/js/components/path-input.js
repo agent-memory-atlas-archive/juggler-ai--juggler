@@ -198,6 +198,7 @@ class PathInput extends HTMLElement {
    * @private
    */
   _openMenu(items) {
+    const refreshing = this._menu !== null;
     this._closeMenuDOM();
     if (items.length === 0) return;
 
@@ -206,6 +207,9 @@ class PathInput extends HTMLElement {
 
     const menu = document.createElement('ul');
     menu.className = 'dropdown-menu completions-menu path-input-menu show';
+    // A re-filter replaces the open menu: it skips the entrance, or the menu
+    // would pop again on every keystroke.
+    if (refreshing) menu.classList.add('completions-menu--refresh');
 
     for (let i = 0; i < items.length; i++) {
       const path = /** @type {string} */ (items[i]); // bounded by i < items.length
@@ -268,6 +272,8 @@ class PathInput extends HTMLElement {
     this._menu.style.position = 'fixed';
     this._menu.style.left = `${Math.round(rect.left)}px`;
     this._menu.style.minWidth = `${Math.round(rect.width)}px`;
+    // The entrance grows from the edge that faces the input.
+    this._menu.style.setProperty('--popup-origin', openAbove ? 'left bottom' : 'left top');
     if (openAbove) {
       this._menu.classList.add('path-input-menu--above');
       this._menu.style.top = 'auto';

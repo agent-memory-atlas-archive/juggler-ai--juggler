@@ -95,6 +95,14 @@
     <!-- Utilities, last, so they win -->
     <link rel="stylesheet" href="{{.BasePath}}/v{{.StaticVersion}}/css/utilities/utilities.css">
 
+    <!-- Popups and modals scale into place as they open (popup-surface.css).
+         A test measuring a surface it just opened would read it however far
+         the machine let that entrance get, so here every surface opens at rest.
+         Placement during the entrance is tested with an explicit transform. -->
+    <style>
+        :root { --popup-enter-duration: 0s; }
+    </style>
+
     <!-- Vendor scripts -->
     <script src="{{.BasePath}}/v{{.StaticVersion}}/js/vendor/marked.min.js"></script>
     <script src="{{.BasePath}}/v{{.StaticVersion}}/js/vendor/prism-core.js"></script>

@@ -238,6 +238,12 @@ no-project-overlay .np-footnote {
     font-family: var(--font-ui);
 }
 
+/* Each step re-renders the panel (step-modal.js); only the first screen makes
+   the popup-surface entrance. */
+.onboarding-wizard .wiz-panel.wiz-panel--settled {
+    animation: none;
+}
+
 .onboarding-wizard .wiz-header {
     display: flex;
     align-items: center;

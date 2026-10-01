@@ -530,18 +530,26 @@ function showMenu(items, x, y, anchor) {
   // Escape and the browser/mobile Back button dismiss via popup-manager.
   _releaseOpenState = markPopupOpen(() => closeMenu());
 
-  const rect = menu.getBoundingClientRect();
+  // Layout size, not getBoundingClientRect: the menu is already scaling up
+  // through its entrance (popup-surface.css), and the clamp is for the size it
+  // comes to rest at.
+  const width = menu.offsetWidth;
+  const height = menu.offsetHeight;
   const margin = 4;
   let left = x;
   let top = y;
-  if (left + rect.width + margin > window.innerWidth) {
-    left = Math.max(margin, window.innerWidth - rect.width - margin);
+  if (left + width + margin > window.innerWidth) {
+    left = Math.max(margin, window.innerWidth - width - margin);
   }
-  if (top + rect.height + margin > window.innerHeight) {
-    top = Math.max(margin, window.innerHeight - rect.height - margin);
+  if (top + height + margin > window.innerHeight) {
+    top = Math.max(margin, window.innerHeight - height - margin);
   }
   menu.style.left = `${left}px`;
   menu.style.top = `${top}px`;
+  // Grow out of the click point, wherever the clamp left it on the menu.
+  const originX = Math.min(width, Math.max(0, x - left));
+  const originY = Math.min(height, Math.max(0, y - top));
+  menu.style.setProperty('--popup-origin', `${originX}px ${originY}px`);
   menu.style.visibility = '';
 
   document.addEventListener('pointerdown', _onOutside, true);

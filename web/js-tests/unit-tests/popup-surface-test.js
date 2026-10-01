@@ -244,6 +244,34 @@ export async function runTests() {
       }
     });
 
+    await run('a menu placed mid-entrance lands where it will rest, growing from its anchor', () => {
+      // Every anchored surface scales up into place as it opens, and placement
+      // runs during that entrance (the first frame, and every content change
+      // after). Measured through its transform the menu reads short, so one
+      // opened above its button would overlap the button once it reached full
+      // size.
+      const button = document.createElement('button');
+      button.style.cssText = 'position:fixed;left:40px;bottom:10px;width:80px;height:20px;';
+      const menu = document.createElement('nav');
+      menu.className = 'dropdown-menu show';
+      menu.style.cssText = 'animation:none;transform:scale(0.5);width:12rem;height:300px;padding:0;';
+      document.body.append(button, menu);
+      try {
+        positionDropdown(menu, button, 8);
+        const top = parseFloat(menu.style.getPropertyValue('--dropdown-y'));
+        const restingBottom = top + menu.offsetHeight;
+        const buttonTop = button.getBoundingClientRect().top;
+        assert(Math.abs(restingBottom - (buttonTop - 8)) < 1,
+          `the menu's resting bottom must sit one gap above the button: ${restingBottom} vs ${buttonTop - 8}`);
+        const origin = menu.style.getPropertyValue('--popup-origin');
+        assert(/ bottom$/.test(origin),
+          `a menu opened above its button grows up from its bottom edge, got "${origin}"`);
+      } finally {
+        menu.remove();
+        button.remove();
+      }
+    });
+
     await run('closing returns popup focus to the control used before opening', async () => {
       __resetPopupManagerForTests();
       const textarea = document.createElement('textarea');

@@ -158,6 +158,12 @@
     --popup-padding-inline: 1.5rem;    /* inline: one --radius-popup, to clear the curve */
     --popup-shadow: 0 1rem 3rem var(--overlay-dark-50);
 
+    /* The entrance every transient surface makes (popup-surface.css): a quick
+       fade while it grows the last few percent into place. Exits are instant. */
+    --popup-enter-duration: 200ms;
+    --popup-enter-ease: cubic-bezier(0.22, 1, 0.36, 1);
+    --popup-enter-scale: 0.96;
+
     /* Line height scale */
     --leading-tight: 1.4;
     --leading-normal: 1.5;

@@ -332,6 +332,7 @@ export class CompletionMenu {
 
     // Tear down any previous menu before building the next (this fires on every
     // keystroke that re-filters while the menu is already open).
+    const refreshing = this._popupCleanup !== null;
     if (this._popupCleanup) {
       this._popupCleanup();
       this._popupCleanup = null;
@@ -339,6 +340,9 @@ export class CompletionMenu {
 
     const menu = document.createElement('ul');
     menu.className = 'dropdown-menu completions-menu';
+    // A re-filter is the same menu changing, not a new one opening: it skips
+    // the entrance, or the menu would pop again on every keystroke.
+    if (refreshing) menu.classList.add('completions-menu--refresh');
 
     if (results.length === 0) {
       const li = document.createElement('li');

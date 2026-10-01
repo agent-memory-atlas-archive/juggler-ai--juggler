@@ -28,6 +28,11 @@ about-modal .about-container {
 
     /* Clubs paint above the panel; its other contents stay inside the corners. */
     overflow: visible;
+
+    /* Fade in without the shared grow: the club throw is sized from the logo's
+       on-screen rect the moment the box opens (about-modal.js _throwClubs), and
+       a panel mid-scale would hand it the wrong one. */
+    animation-name: popup-surface-fade;
 }
 
 about-modal .about-header {

@@ -14,6 +14,29 @@
     padding: 12px 20px;
     flex-shrink: 0;
     gap: 1.5rem;
+
+    /* Positioned and a stacking context of its own, so the pattern below can
+       fill it at z-index: -1 — above the page background, beneath every
+       control. */
+    position: relative;
+    isolation: isolate;
+}
+
+/* The header's half of the background pattern shared with the sidebar (see
+   app-shell.css). The repeat is anchored on this element's bottom edge, where
+   the sidebar's half picks it up. */
+.app-header::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-color: var(--text-primary);
+    opacity: var(--chrome-pattern-strength);
+    mask-image: var(--chrome-pattern-url);
+    mask-repeat: repeat;
+    mask-size: var(--chrome-pattern-size);
+    mask-position: left 0 bottom 0;
 }
 
 /* Sidebar drawer toggle (hamburger) is only meaningful on narrow viewports,

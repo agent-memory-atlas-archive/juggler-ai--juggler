@@ -440,6 +440,10 @@
 .skills-preview-panel {
   width: min(94vw, 54rem);
   max-height: min(92vh, 62rem);
+
+  /* Re-rendered whole as its body loads (loading shell, then content), so the
+     popup-surface entrance would play twice. */
+  animation: none;
 }
 
 .skills-preview-header {

@@ -79,6 +79,9 @@
     --workspace-tint-edge: 45%;
     --workspace-tint-text: 40%;
 
+    /* The header/sidebar line pattern's strength (see tokens/theme-dark.css). */
+    --chrome-pattern-strength: 0.05;
+
     /* ANSI foreground palette (light) — tuned to read well on the light
        --bg-primary. Mirrors GitHub's light ANSI colours. Backgrounds use the
        theme-independent --ansi-bg-* palette (see :root). */
