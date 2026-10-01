@@ -83,6 +83,9 @@ func Register() {
 		// The model catalog and its real serving windows live on Ollama's
 		// native endpoints, not the OpenAI-compatible /v1 ones.
 		ListModelsOverride: listModels,
+		// The override bypasses the shared list's thinking lookup, so listModels
+		// fills the levels itself; this resolves the same spec for each client.
+		ThinkingSpecFn: thinkingSpec,
 		// Deliberately no ContextWindows: the static family catalog holds
 		// training maximums, and admission must never enforce a window the
 		// daemon does not serve.
@@ -172,13 +175,22 @@ func listModels(ctx context.Context, _ string, headers map[string]string) ([]pro
 	// identical to the single-probe path; the short daemon timeout plus the pool
 	// bound total refresh time to roughly ceil(len/maxConcurrentProbes) probe
 	// intervals.
+	// The same /api/show answer carries each model's thinking support, which is
+	// remembered for the clients later built for it.
 	override := userNumCtxOverride()
-	numCtx := utils.MapConcurrent(ctx, names, maxConcurrentProbes, func(ctx context.Context, name string) int {
-		return probeModelfileNumCtx(ctx, name, headers)
+	probes := utils.MapConcurrent(ctx, names, maxConcurrentProbes, func(ctx context.Context, name string) modelProbe {
+		show, err := probeShow(ctx, name, headers)
+		if err != nil {
+			return modelProbe{}
+		}
+		spec := thinkingSpecFromShow(show.Capabilities, show.Thinking)
+		rememberThinkingSpec(name, spec)
+		return modelProbe{numCtx: parseNumCtx(show.Parameters), thinking: spec}
 	})
 	models := make([]provider.ModelInfo, 0, len(names))
 	for i, name := range names {
-		window := servingContextWindow(numCtx[i], override)
+		probe := probes[i]
+		window := servingContextWindow(probe.numCtx, override)
 		models = append(models, provider.ModelInfo{
 			ID:              name,
 			ContextWindow:   window,
@@ -187,10 +199,19 @@ func listModels(ctx context.Context, _ string, headers map[string]string) ([]pro
 			// Neither the Modelfile nor the user named a window, so this is the
 			// conservative fallback standing in for a daemon setting nobody can
 			// read back.
-			WindowAssumed: numCtx[i] <= 0 && override <= 0,
+			WindowAssumed:        probe.numCtx <= 0 && override <= 0,
+			ThinkingLevels:       probe.thinking.Options(),
+			DefaultThinkingLevel: probe.thinking.Default,
 		})
 	}
 	return models, nil
+}
+
+// modelProbe is what one /api/show answer contributes to a model's entry: its
+// Modelfile num_ctx (0 when unset or unprobeable) and its thinking levels.
+type modelProbe struct {
+	numCtx   int
+	thinking openaibase.ThinkingSpec
 }
 
 func listModelNames(ctx context.Context, headers map[string]string) ([]string, error) {
@@ -217,21 +238,23 @@ type showRequest struct {
 	Model string `json:"model"`
 }
 
-// probeModelfileNumCtx returns the num_ctx parameter the model was created
-// with, or 0 when unset or unprobeable. /api/show reports the Modelfile
-// `parameters` block as flat text ("num_ctx 32768\ntemperature 0.7\n...").
-func probeModelfileNumCtx(ctx context.Context, model string, headers map[string]string) int {
-	var show struct {
-		Parameters string `json:"parameters"`
-	}
+// showResponse is the part of /api/show listModels reads. `parameters` is the
+// Modelfile parameters block as flat text ("num_ctx 32768\ntemperature 0.7\n...");
+// `thinking` is absent on daemons that predate per-model thinking metadata.
+type showResponse struct {
+	Parameters   string              `json:"parameters"`
+	Capabilities []string            `json:"capabilities"`
+	Thinking     *thinkingDescriptor `json:"thinking"`
+}
+
+func probeShow(ctx context.Context, model string, headers map[string]string) (showResponse, error) {
+	var show showResponse
 	payload, err := json.Marshal(showRequest{Model: model})
 	if err != nil {
-		return 0
+		return show, err
 	}
-	if err := doJSON(ctx, http.MethodPost, daemon.Host()+"/api/show", headers, strings.NewReader(string(payload)), &show); err != nil {
-		return 0
-	}
-	return parseNumCtx(show.Parameters)
+	err = doJSON(ctx, http.MethodPost, daemon.Host()+"/api/show", headers, strings.NewReader(string(payload)), &show)
+	return show, err
 }
 
 // parseNumCtx extracts the num_ctx value from a Modelfile parameters block.
