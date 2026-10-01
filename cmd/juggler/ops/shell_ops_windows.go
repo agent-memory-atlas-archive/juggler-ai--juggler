@@ -14,7 +14,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 	"unsafe"
@@ -37,12 +36,12 @@ import (
 //     /mnt/<drive>/…, so relative paths in approved commands resolve unchanged.
 //     But bare presence of wsl.exe means nothing: Windows ships a stub on PATH
 //     that errors ("WSL is not installed") until a distro is provisioned, so we
-//     must actually run it to know (see wslUsable).
+//     must actually run it to know (see probeWSL).
 //  2. A Git-for-Windows POSIX shell (`bash.exe -c …`). The approval analyser
 //     explicitly supports git-bash-shaped commands — same POSIX tokenisation as
 //     WSL sh — so the executed language stays identical to the validated one.
-//  3. Nothing: command-start fails with an actionable message instead of a
-//     cryptic wsl.exe error.
+//  3. Nothing: command-start fails with a message saying which of these was
+//     tried and why it failed, instead of a cryptic wsl.exe error.
 
 // winPOSIX describes the POSIX toolchain resolved for this Windows host: the
 // argv prefix used to run an approved shell string, and the one used to run a
@@ -55,24 +54,43 @@ type winPOSIX struct {
 	pythonErr error
 }
 
-// winShell is memoised because resolving it spawns the WSL probe below — we pay
-// that at most once per server run. A WSL/Git install completed after startup
-// needs a restart to be picked up: an acceptable trade for not probing on every
-// command.
-var winShell = sync.OnceValue(resolveWinPOSIX)
+const (
+	// wslListTimeout bounds `wsl.exe -l -q`, which asks the WSL service for its
+	// distros without booting one. It is normally instant; the allowance covers
+	// the service itself starting.
+	wslListTimeout = 30 * time.Second
+	// wslShellTimeout bounds the first `sh` in WSL, which may have to boot the
+	// utility VM: WSL2 parks it when idle, and a cold boot on a busy machine or
+	// just after an update has been seen to take well over ten seconds.
+	wslShellTimeout = 60 * time.Second
+	// winShellRetry is how long a failed resolution stands before the next
+	// command probes again (see toolchainCache).
+	winShellRetry = 10 * time.Second
+)
 
-func resolveWinPOSIX() winPOSIX {
-	if wslUsable() {
+// winShellCache keeps the first toolchain that has a shell for the rest of the
+// server run, so the WSL probe is paid once. A resolution with no shell is
+// retried (see toolchainCache), which also picks up a WSL or Git install
+// completed after startup.
+var winShellCache = newToolchainCache(resolveWinPOSIX, winShellRetry)
+
+func winShell() winPOSIX { return winShellCache.get() }
+
+// resolveWinPOSIX resolves the toolchain and reports whether it is worth
+// keeping: it is exactly when it has a shell. Each outcome is logged, since the
+// error the user sees is all they have otherwise.
+func resolveWinPOSIX() (winPOSIX, bool) {
+	start := time.Now()
+	wsl := probeWSL()
+	if wsl.ready {
+		jlog.Info("ops: POSIX shell is WSL (distros: %s), probed in %s", strings.Join(wsl.distros, ", "), time.Since(start).Round(time.Millisecond))
 		return winPOSIX{
 			shell:  []string{"wsl.exe", "-e", "sh", "-c"},
 			python: []string{"wsl.exe", "-e", "python3", "-"},
-		}
+		}, true
 	}
 
-	res := winPOSIX{
-		shellErr:  errors.New("no POSIX shell available: install WSL (`wsl --install`) or Git for Windows"),
-		pythonErr: errors.New("no Python interpreter available: install WSL (`wsl --install`) or Python for Windows"),
-	}
+	res := winPOSIX{shellErr: noShellError(wsl), pythonErr: noPythonError(wsl)}
 
 	// Fall back to a Git-for-Windows POSIX shell for command execution.
 	if sh := findGitBashShell(); sh != "" {
@@ -88,23 +106,87 @@ func resolveWinPOSIX() winPOSIX {
 		res.pythonErr = nil
 	}
 
-	return res
+	elapsed := time.Since(start).Round(time.Millisecond)
+	switch {
+	case res.shell != nil && wsl.err != nil:
+		jlog.Info("ops: WSL unusable (%v); POSIX shell is %s, probed in %s", wsl.err, res.shell[0], elapsed)
+	case res.shell != nil:
+		jlog.Info("ops: POSIX shell is %s, probed in %s", res.shell[0], elapsed)
+	default:
+		jlog.Error("ops: no POSIX shell, probed in %s, retrying after %s: %v", elapsed, winShellRetry, res.shellErr)
+	}
+	return res, res.shell != nil
 }
 
-// wslUsable reports whether wsl.exe can actually run a POSIX shell — i.e. a
-// distro is provisioned. It runs the exact form newShellCmd uses, so the probe
-// can never disagree with what a real command would do. The stub wsl.exe (no
-// distro) exits non-zero and returns fast; a genuine distro may cold-boot, so we
-// allow a generous deadline.
-func wslUsable() bool {
+// wslProbe is what probeWSL learned. No distros means WSL is absent for our
+// purposes — wsl.exe missing, the stub, or nothing provisioned. Distros without
+// ready means WSL is there but could not run a shell, and err says why.
+type wslProbe struct {
+	distros  []string
+	ready    bool
+	timedOut bool // err is a deadline, not an answer: WSL may simply be starting
+	err      error
+}
+
+// probeWSL decides whether WSL can run a POSIX shell, in two steps so a slow
+// WSL is never mistaken for an absent one. Listing distros says whether WSL is
+// installed and provisioned without booting anything. Only then is the exact
+// form newShellCmd uses run, so the probe cannot disagree with what a real
+// command would do — given a deadline long enough for a cold VM boot.
+func probeWSL() wslProbe {
 	if _, err := exec.LookPath("wsl.exe"); err != nil {
-		return false
+		return wslProbe{}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	out, timedOut, err := runWSL(wslListTimeout, "-l", "-q")
+	if timedOut {
+		return wslProbe{timedOut: true, err: fmt.Errorf("`wsl.exe -l -q` did not answer within %s", wslListTimeout)}
+	}
+	distros := parseWSLDistroList(out)
+	if err != nil || len(distros) == 0 {
+		return wslProbe{}
+	}
+
+	out, timedOut, err = runWSL(wslShellTimeout, "-e", "sh", "-c", "exit 0")
+	switch {
+	case timedOut:
+		return wslProbe{distros: distros, timedOut: true, err: fmt.Errorf("WSL did not start a shell within %s", wslShellTimeout)}
+	case err != nil:
+		msg := strings.TrimSpace(strings.ReplaceAll(decodeWSLOutput(out), "\x00", ""))
+		return wslProbe{distros: distros, err: fmt.Errorf("`wsl.exe -e sh` failed: %v: %s", err, msg)}
+	}
+	return wslProbe{distros: distros, ready: true}
+}
+
+// runWSL runs wsl.exe with a deadline and returns its combined output, and
+// whether the deadline is what ended it. Capturing the output also keeps the
+// stub's "not installed" message off the server console.
+func runWSL(timeout time.Duration, args ...string) (out []byte, timedOut bool, err error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	// nil Stdout/Stderr route the stub's "not installed" message to the null
-	// device, so a broken WSL never spams the server console during the probe.
-	return exec.CommandContext(ctx, "wsl.exe", "-e", "sh", "-c", "exit 0").Run() == nil
+	cmd := exec.CommandContext(ctx, "wsl.exe", args...)
+	cmd.Env = append(os.Environ(), "WSL_UTF8=1")
+	out, err = cmd.CombinedOutput()
+	return out, errors.Is(ctx.Err(), context.DeadlineExceeded), err
+}
+
+// noShellError says why there is no shell, distinguishing a WSL that is there
+// but failing from one that is not there at all: telling a user with a working
+// but slow WSL to install WSL sends them the wrong way.
+func noShellError(wsl wslProbe) error {
+	switch {
+	case wsl.timedOut:
+		return fmt.Errorf("WSL is installed but not responding (%w); it may still be starting, and the next command will try again. Git for Windows would give a fallback shell", wsl.err)
+	case wsl.err != nil:
+		return fmt.Errorf("WSL is installed but cannot run a shell (%w); check the default distro with `wsl --list --verbose`, or install Git for Windows", wsl.err)
+	}
+	return errors.New("no POSIX shell available: install WSL (`wsl --install`) or Git for Windows")
+}
+
+func noPythonError(wsl wslProbe) error {
+	if wsl.err != nil {
+		return fmt.Errorf("no Python interpreter available: WSL cannot be used (%w) and no Python for Windows was found", wsl.err)
+	}
+	return errors.New("no Python interpreter available: install WSL (`wsl --install`) or Python for Windows")
 }
 
 // findGitBashShell locates a Git-for-Windows POSIX shell, preferring an explicit

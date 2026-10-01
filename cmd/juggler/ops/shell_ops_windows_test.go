@@ -53,6 +53,25 @@ func TestShellCmdFrom_NoShellSurfacesActionableError(t *testing.T) {
 	}
 }
 
+// A WSL that is installed but slow or failing must not be reported as missing:
+// "install WSL" sends a user with a working WSL the wrong way.
+func TestNoShellError_TellsSlowWSLFromAbsentWSL(t *testing.T) {
+	cases := []struct {
+		name string
+		wsl  wslProbe
+		want string
+	}{
+		{"absent", wslProbe{}, "install WSL"},
+		{"timed out", wslProbe{distros: []string{"Ubuntu"}, timedOut: true, err: errors.New("deadline")}, "not responding"},
+		{"failing", wslProbe{distros: []string{"Ubuntu"}, err: errors.New("exit status 1")}, "cannot run a shell"},
+	}
+	for _, tc := range cases {
+		if got := noShellError(tc.wsl).Error(); !strings.Contains(got, tc.want) {
+			t.Errorf("%s: noShellError = %q, want it to contain %q", tc.name, got, tc.want)
+		}
+	}
+}
+
 func TestPythonCmdFrom_NoInterpreterSurfacesActionableError(t *testing.T) {
 	want := errors.New("no Python interpreter available")
 	cmd := pythonCmdFrom(context.Background(), winPOSIX{pythonErr: want})

@@ -7,6 +7,7 @@ of changes; this project follows semantic versioning.
 
 - Codex and Copilot subscription providers can now be switched off in Provider settings
 - Ollama models that can think now offer thinking levels, including off
+- On Windows, a slow-starting WSL no longer leaves commands failing until restart
 
 ## [0.7.3] - 2026-09-30
 
