@@ -509,18 +509,17 @@ func summarizedCompactionThread(it ConversationItem) bool {
 }
 
 // condenseForRefold returns the form in which an item nests inside a new
-// compaction fold. A summarized prior compaction thread reduces to its compact
-// wire form — goal + result — dropping the raw folded transcript (Items), the
-// prompt pointer, and the run-control flags, so re-folding never nests
-// transcripts recursively and the reducer's source sees the prior summary
-// exactly as the live conversation rendered it. Every other item nests
-// verbatim.
+// compaction fold. A summarized prior compaction thread sheds its prompt pointer
+// and run-control flags, which belonged to the summarization run it has
+// finished. Every other item nests verbatim.
 //
-// The run records the prior fold swallowed (FoldedRuns) survive the
-// condensation, alone among the fields dropped here. They are not transcript:
-// they are the caller's pairing for calls that have already returned, and the
-// condensed form is the only copy of them left inside the new fold once Items
-// goes.
+// Its folded transcript (Items) nests with it, so every earlier compaction
+// stays browsable at any depth: compaction moves history, it never deletes it.
+// Keeping it costs the model nothing — a thread's wire form (appendThreadMessages)
+// is its goal + result and never reads Items, so the reducer's source and
+// fingerprint see the prior summary exactly as the live conversation rendered it.
+// FoldedRuns survive for the same reason: they are the caller's pairing for
+// calls that have already returned.
 func condenseForRefold(it ConversationItem) ConversationItem {
 	if !summarizedCompactionThread(it) {
 		return it
@@ -532,6 +531,7 @@ func condenseForRefold(it ConversationItem) ConversationItem {
 		Goal:              it.Goal,
 		Result:            it.Result,
 		BoundedCompaction: true,
+		Items:             it.Items,
 		FoldedRuns:        it.FoldedRuns,
 	}
 }
@@ -549,7 +549,7 @@ func condenseForRefold(it ConversationItem) ConversationItem {
 // undo group (compactionMergeFromIdx).
 //
 // Convergence invariant: each fold SWALLOWS prior summarized compaction
-// threads (nested in their condensed goal+result form, see condenseForRefold),
+// threads (nested whole, transcript included, see condenseForRefold),
 // so the conversation always converges to [standing context][one summary
 // thread][recent tail] — summaries never accumulate, and each new summary
 // carries the prior one's content forward as part of its source. A session
@@ -647,8 +647,8 @@ func (r *run) foldConversationForCompaction(handoffPromote bool) (string, bool, 
 	}
 	fingerprint := compactionSourceFingerprint(records)
 
-	// Nested items: the folded run (prior summaries condensed to goal+result,
-	// everything else verbatim) + the summarization prompt item. Its content is
+	// Nested items: the folded run (prior summaries stripped of their run-control
+	// flags, everything else verbatim) + the summarization prompt item. Its content is
 	// DefaultSummarizationPrompt, the same text the summarizer sends as the
 	// final user message, so the visible item states the instruction that
 	// actually ran; CompactionPromptItemID excludes it from the source history.

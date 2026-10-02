@@ -28,7 +28,7 @@
 // to its summarizer; honour the off switch; shrink an oversized trailing tool
 // result in place (a live tool_use/tool_result pair must survive, so it can
 // never be folded); then fold the leading run of history — prior summaries
-// condensed to goal+result so they never stack — into one summary thread,
+// nested inside it so they never stack — into one summary thread,
 // keeping a verbatim suffix within recoverySuffixBudgetFraction of the usable
 // window so the fold buys real headroom. Progress is judged structurally — by
 // the shape of the durable items, never by a token estimate — and the retry
@@ -564,7 +564,7 @@ func (r *run) compactToFit(limitErr *provider.ContextLimitExceededError, modelCo
 	// Recovery synthesizes the same folded-thread shape /compact produces rather
 	// than a bespoke flat summary item: the folded prefix is preserved as the
 	// thread's nested items (for undo/inspection and future re-folding) — prior
-	// summarized compaction threads condensed to goal+result (condenseForRefold),
+	// summarized compaction threads nested whole (condenseForRefold),
 	// everything else verbatim — a synthesized prompt item is referenced by
 	// CompactionPromptItemID (and thereby excluded from canonical history), and
 	// the reducer's summary + accounting live on the thread. It renders to the
@@ -843,8 +843,8 @@ func (r *run) shrinkOversizedTrailingToolResults(limitErr *provider.ContextLimit
 // (rules, plans, system prompts) are pinned in place.
 //
 // A prior summarized compaction thread is ordinary foldable content: a re-fold
-// nests it in its condensed goal+result form (condenseForRefold), never as a
-// recursive transcript, so the conversation converges to [standing context]
+// nests it, transcript and all (condenseForRefold), while the model sees only its
+// goal + result, so the conversation converges to [standing context]
 // [one summary thread][recent tail] exactly as the browser /compact fold does.
 // Pinning prior summaries instead is the stacking failure mode: each pinned
 // summary fragments the next fold's contiguous range, so passes fold ever

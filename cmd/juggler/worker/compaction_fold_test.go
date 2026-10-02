@@ -389,10 +389,9 @@ func TestFoldConversationForCompactionNothingFoldable(t *testing.T) {
 // TestFoldConversationForCompactionSwallowsPriorSummary verifies the
 // convergence invariant: a fold swallows an existing summarized compaction
 // thread, so the root converges to a single fold thread instead of
-// accumulating one summary per fold. The swallowed summary nests in condensed
-// form — goal + result only, its raw folded transcript and run-control flags
-// dropped — so the reducer's source sees the prior summary text without any
-// recursively nested history.
+// accumulating one summary per fold. The swallowed summary nests with its
+// run-control flags dropped and its folded transcript kept, so earlier history
+// stays browsable inside it.
 func TestFoldConversationForCompactionSwallowsPriorSummary(t *testing.T) {
 	w := NewConversationWorker("test-conv", "user:test")
 	defer w.doc.Destroy()
@@ -432,8 +431,8 @@ func TestFoldConversationForCompactionSwallowsPriorSummary(t *testing.T) {
 	if got := threadResultString(condensed); got != "earlier summary" {
 		t.Fatalf("condensed summary result = %q, want the prior summary text", got)
 	}
-	if len(condensed.Items) > 0 && string(condensed.Items) != "null" && string(condensed.Items) != "[]" {
-		t.Fatalf("condensed summary still carries a nested transcript: %s", condensed.Items)
+	if !strings.Contains(string(condensed.Items), "ancient history") {
+		t.Fatalf("condensed summary lost its folded transcript: %s", condensed.Items)
 	}
 	if condensed.NeedsStrategyRun || condensed.ForceTool != "" || condensed.CompactionPromptItemID != "" {
 		t.Fatalf("condensed summary kept run-control flags: %+v", condensed)

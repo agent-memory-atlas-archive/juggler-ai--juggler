@@ -693,8 +693,8 @@ func boundedSummaryItem(t *testing.T, id, summary string) ConversationItem {
 // TestContextRecoveryRefoldSwallowsPriorSummary pins the anti-stacking
 // contract, matching the browser /compact fold's convergence invariant: a
 // recovery fold SWALLOWS a prior summarized compaction thread — nested in its
-// condensed goal+result form (condenseForRefold), never as a recursive
-// transcript — so consecutive incidents leave exactly ONE summary thread
+// condensed form (condenseForRefold), its folded transcript kept nested inside
+// it — so consecutive incidents leave exactly ONE summary thread
 // instead of a growing stack. The stack was the runaway mode this replaces:
 // each pinned prior summary fragmented the next fold's contiguous range into
 // slivers ("records 5–6 only" summaries), while summaries accumulated at the
@@ -706,8 +706,8 @@ func TestContextRecoveryRefoldSwallowsPriorSummary(t *testing.T) {
 	w.doc.SetMetadata("defaultModelConfig", map[string]any{"provider": "test", "model": "test"})
 
 	prior := boundedSummaryItem(t, "prior-summary", "prior summary")
-	// A raw folded transcript on the prior summary: the re-fold must nest the
-	// CONDENSED form, so this payload must not survive into the new thread.
+	// A raw folded transcript on the prior summary: the re-fold keeps it nested
+	// inside the prior summary, where it stays browsable.
 	prior.Items = json.RawMessage(`[{"type":"user","itemId":"ancient-0","content":"ancient history"}]`)
 	w.doc.InsertMessage(0, append([]ConversationItem{prior}, recoveryTestItems()...)...)
 	pinned := &ModelConfig{Provider: "original", Model: "rejected"}
@@ -756,8 +756,8 @@ func TestContextRecoveryRefoldSwallowsPriorSummary(t *testing.T) {
 	if threadResultString(*condensed) != "prior summary" {
 		t.Fatalf("condensed prior summary result = %q, want its summary text carried forward", threadResultString(*condensed))
 	}
-	if len(condensed.Items) != 0 {
-		t.Fatalf("condensed prior summary still carries its folded transcript (%d bytes) — recursive nesting", len(condensed.Items))
+	if !strings.Contains(string(condensed.Items), "ancient history") {
+		t.Fatalf("condensed prior summary lost its folded transcript: %s", condensed.Items)
 	}
 }
 
