@@ -126,6 +126,11 @@ export async function runTests() {
     conversation._doc.setMetadata('processingState', { status: 'streaming', turnCounter: 1 });
     assert(undoBtn.disabled, 'undo button must be disabled while the LLM loop is running');
     assert(redoBtn.disabled, 'redo button must be disabled while the LLM loop is running');
+    // A disabled button says why, when the reason is something other than an
+    // empty history — otherwise it looks broken.
+    assert(undoBtn.title === 'Unavailable while the agent is running'
+      && redoBtn.title === 'Unavailable while the agent is running',
+    `busy undo/redo explain themselves, got "${undoBtn.title}" / "${redoBtn.title}"`);
     passed++;
 
     const callsBeforeBusyShortcut = undoCalls;
@@ -145,6 +150,11 @@ export async function runTests() {
     // --- Back to idle: re-enables and the shortcut works again -----------
     conversation._doc.setMetadata('processingState', { status: 'idle', turnCounter: 2 });
     assert(!undoBtn.disabled, 'undo button must re-enable once the worker idles');
+    assert(undoBtn.title === 'Undo', `idle undo is plain "Undo" again, got "${undoBtn.title}"`);
+    // Redo is still disabled — nothing has been undone — but that is the
+    // ordinary empty-history case, which needs no explanation.
+    assert(redoBtn.disabled && redoBtn.title === 'Redo',
+      `idle redo with nothing to redo is plain "Redo", got "${redoBtn.title}"`);
     passed++;
 
     const callsBeforeIdleShortcut = undoCalls;

@@ -122,6 +122,77 @@ app-container {
     background-color: var(--text-primary);
 }
 
+/* The count of OTHER connected clients, as a small neutral badge pinned over
+   the icon's top-right corner — positioned absolutely so it never widens the
+   button (on a phone the header row has no width to spare). The " connected"
+   suffix is only shown where the header has room for the count as a label.
+   One class of specificity, so nothing here outranks a later layer's rule, and
+   no `display` of its own, so the [hidden] attribute keeps hiding it. */
+.network-button__clients {
+    position: absolute;
+    top: 0.125rem;
+    right: 0;
+    min-width: 0.875rem;
+    height: 0.875rem;
+    padding: 0 0.1875rem;
+    border-radius: 0.4375rem;
+    background-color: var(--text-secondary);
+    color: var(--bg-primary);
+    font-size: 0.625rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    line-height: 0.875rem;
+    text-align: center;
+    pointer-events: none;
+}
+
+.network-button__suffix {
+    display: none;
+}
+
+:where(.network-button:hover) .network-button__clients {
+    background-color: var(--text-primary);
+}
+
+/* A wide header has room to say it: the badge becomes a "2 connected" label
+   beside the icon, and the button grows to hold it. `.has-clients` is set with
+   the count by header-controls.js. Pixel-sized like the rest of the header's
+   controls, so the zoom buttons leave them alone. */
+/* stylelint-disable rem-over-px/rem-over-px, unit-disallowed-list */
+@container app-header (width >= 1440px) {
+    .network-button.has-clients {
+        width: auto;
+        padding: 0 10px 0 32px;
+    }
+
+    .network-button.has-clients::before {
+        left: 16px;
+    }
+
+    /* One class of specificity, like the badge rules above that these follow
+       and override. */
+    :where(.network-button.has-clients) .network-button__clients {
+        position: static;
+        min-width: 0;
+        height: auto;
+        padding: 0;
+        background-color: transparent;
+        color: var(--text-secondary);
+        font-size: 12px;
+        line-height: normal;
+    }
+
+    :where(.network-button.has-clients:hover) .network-button__clients {
+        background-color: transparent;
+        color: var(--text-primary);
+    }
+
+    :where(.network-button.has-clients) .network-button__suffix {
+        display: inline;
+    }
+}
+/* stylelint-enable rem-over-px/rem-over-px, unit-disallowed-list */
+
 /* Notification Sounds (bell) Button — inline SVG bell (inherits the shared
    header icon sizing/colour). When sounds are off, a diagonal slash crosses the
    bell and the icon dims, so the "sounds off" state reads at a glance. The
@@ -152,23 +223,16 @@ app-container {
 }
 
 /* Group Tool Runs Button — the header on/off for folding consecutive tool rows.
-   The button carries both glyphs and shows the one for the action a click would
-   perform: with grouping off it offers to fold the rows together, with grouping
-   on it offers to unfold them. The pressed state is also tinted, the way the
-   other header toggles show theirs. */
-.tool-grouping-button svg {
-    opacity: 0.75;
-}
-
-.tool-grouping-button .tool-grouping-unfold,
-.tool-grouping-button.is-active .tool-grouping-fold {
+   The button carries both glyphs and shows the one for the transcript's current
+   state: folded while grouping is on, unfolded while it is off. The glyph is the
+   whole signal — both paint exactly like any other header icon, untinted. */
+.tool-grouping-button .tool-grouping-fold,
+.tool-grouping-button.is-active .tool-grouping-unfold {
     display: none;
 }
 
-.tool-grouping-button.is-active .tool-grouping-unfold {
+.tool-grouping-button.is-active .tool-grouping-fold {
     display: block;
-    opacity: 1;
-    fill: var(--accent-blue, #58a6ff);
 }
 
 /* Settings Button - mask icon with rotation on hover */

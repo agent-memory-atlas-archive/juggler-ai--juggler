@@ -1479,11 +1479,6 @@ conversation-bar .conversation-tabs::-webkit-scrollbar-thumb {
 }
 
 
-/* Project control in the header: a clickable chip showing the current project
-   (folder icon + path + chevron — click to change it) plus an inline
-   "open new window" button. Pushes header-actions to the right edge via
-   margin-right: auto. */
-
 /* ==========================================================================
    Phone: the sidebar becomes an off-canvas drawer
    Rather than permanently stealing ~15rem of the width it slides in over the

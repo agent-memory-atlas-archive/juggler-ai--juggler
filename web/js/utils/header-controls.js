@@ -3,7 +3,8 @@
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   AGPL-3.0-or-later - see LICENSE
 
 /**
- * Header controls: undo/redo buttons + project-path-display.
+ * Header controls: undo/redo buttons, project-path-display, and the network
+ * button's connected-clients count.
  * The buttons live once in .app-header and operate on the currently visible
  * conversation.
  * @module utils/header-controls
@@ -14,7 +15,6 @@ import wsService from '../services/websocket.js';
 import { hasNativeHost } from '../../sdk/lib/window-control.js';
 import { fetchJson } from '../services/http.js';
 import { showAlert } from '../components/modal-dialog.js';
-import { openSettings } from '../services/settings-launcher.js';
 import { apiUrl } from './api-url.js';
 
 /**
@@ -23,7 +23,76 @@ import { apiUrl } from './api-url.js';
  */
 
 /**
- * Wire up header controls (undo/redo + project path).
+ * @typedef {object} ClientsEventSource
+ * @property {(type: 'clients-changed', fn: (data: any) => void) => void} on - Start hearing joins and leaves.
+ * @property {(type: 'clients-changed', fn: (data: any) => void) => void} off - Stop hearing them.
+ */
+
+/**
+ * The server's count of connected clients, including this one; null when it
+ * cannot be read.
+ * @returns {Promise<number|null>} The count.
+ */
+async function fetchClientCount() {
+  const c = await fetchJson(apiUrl('/connectivity'), { fallback: null });
+  return c ? c.clientCount : null;
+}
+
+/**
+ * Show on the network button how many OTHER clients share this session. The
+ * server's count includes this one, so one is subtracted; alone, the button is
+ * plain "Network settings" with no count. The count is a badge over the icon
+ * (or, where the header has room, a "N connected" label) and is also spoken in
+ * the button's title and accessible name.
+ * @param {HTMLElement} button - The header's #network-button.
+ * @param {{events?: ClientsEventSource, seed?: () => Promise<number|null>}} [options]
+ *   Where joins and leaves are heard (the session socket by default), and how
+ *   the starting count is read (the /connectivity endpoint by default).
+ * @returns {{ready: Promise<void>, dispose: () => void}} `ready` settles once
+ *   the starting count is shown; `dispose` stops listening.
+ */
+export function bindNetworkClients(button, { events = wsService, seed = fetchClientCount } = {}) {
+  const clients = /** @type {HTMLElement|null} */ (button.querySelector('.network-button__clients'));
+  const count = /** @type {HTMLElement|null} */ (button.querySelector('.network-button__count'));
+
+  const show = (/** @type {number|null|undefined} */ total) => {
+    const others = Math.max(0, (total || 1) - 1);
+    const label = others === 0
+      ? 'Network settings'
+      : `Network settings — ${others} other client${others === 1 ? '' : 's'} connected`;
+    button.title = label;
+    button.setAttribute('aria-label', label);
+    if (count) count.textContent = String(others);
+    if (clients) clients.hidden = others === 0;
+    // Lets a wide header turn the badge into a "N connected" label.
+    button.classList.toggle('has-clients', others > 0);
+  };
+
+  let disposed = false;
+  const onChange = (/** @type {any} */ data) => show(data?.count);
+  events.on('clients-changed', onChange);
+  // The join broadcast may have fired before this listener was attached, so
+  // read the authoritative count once. A later clients-changed corrects an
+  // offline seed failure — and wins over a seed that resolves after it.
+  let heard = false;
+  const heardFirst = () => { heard = true; };
+  events.on('clients-changed', heardFirst);
+  const ready = seed().then((total) => {
+    events.off('clients-changed', heardFirst);
+    if (!disposed && !heard && total !== null) show(total);
+  });
+  return {
+    ready,
+    dispose: () => {
+      disposed = true;
+      events.off('clients-changed', onChange);
+      events.off('clients-changed', heardFirst);
+    },
+  };
+}
+
+/**
+ * Wire up header controls (undo/redo, project path, network clients count).
  * @param {Session} session
  */
 export function setupHeaderControls(session) {
@@ -33,8 +102,6 @@ export function setupHeaderControls(session) {
   const pathChip = /** @type {HTMLButtonElement|null} */ (document.getElementById('project-path-chip'));
   const pathLabel = /** @type {HTMLElement|null} */ (pathDisplay?.querySelector('.ppd-path') ?? null);
   const newWindowBtn = /** @type {HTMLButtonElement|null} */ (document.getElementById('project-new-window-button'));
-  const clientsIndicator = /** @type {HTMLButtonElement|null} */ (document.getElementById('project-clients-indicator'));
-  const clientsCountLabel = /** @type {HTMLElement|null} */ (clientsIndicator?.querySelector('.ppd-clients-count') ?? null);
 
   /** @type {Conversation|null} */
   let currentConversation = null;
@@ -54,12 +121,21 @@ export function setupHeaderControls(session) {
     return !!status && status !== 'idle';
   };
 
+  // A button disabled by a running turn says so; one disabled because there is
+  // nothing to step through needs no explanation and keeps its plain name.
+  const BUSY_TITLE = 'Unavailable while the agent is running';
   const updateButtons = () => {
     const busy = isBusy();
     const canUndo = !busy && !!currentConversation?.canUndo();
     const canRedo = !busy && !!currentConversation?.canRedo();
-    if (undoBtn) undoBtn.disabled = !canUndo;
-    if (redoBtn) redoBtn.disabled = !canRedo;
+    if (undoBtn) {
+      undoBtn.disabled = !canUndo;
+      undoBtn.title = busy ? BUSY_TITLE : 'Undo';
+    }
+    if (redoBtn) {
+      redoBtn.disabled = !canRedo;
+      redoBtn.title = busy ? BUSY_TITLE : 'Redo';
+    }
   };
 
   const bindToVisible = () => {
@@ -175,34 +251,8 @@ export function setupHeaderControls(session) {
   // seed.
   window.addEventListener('juggler:new-window', () => { void openNewWindow(); });
 
-  // Connected-clients indicator. Shows how many OTHER clients share this
-  // session (the server's count includes this one, so subtract it), and hides
-  // itself when this is the only client. Clicking opens Connectivity settings.
-  const updateClientsIndicator = (/** @type {number} */ total) => {
-    if (!clientsIndicator) return;
-    const others = Math.max(0, (total || 1) - 1);
-    if (others > 0) {
-      if (clientsCountLabel) clientsCountLabel.textContent = `+${others}`;
-      clientsIndicator.title = others === 1
-        ? '1 other client is connected'
-        : `${others} other clients are connected`;
-      clientsIndicator.hidden = false;
-    } else {
-      clientsIndicator.hidden = true;
-    }
-  };
-  if (clientsIndicator) {
-    clientsIndicator.addEventListener('click', () => {
-      openSettings('connectivity');
-    });
-    // Live updates as viewers join/leave.
-    wsService.on('clients-changed', (/** @type {any} */ data) => updateClientsIndicator(data?.count));
-    // Seed the initial count: the join broadcast may have fired before this
-    // listener was attached, so fetch the authoritative count once at startup.
-    // An offline seed failure is corrected by a later clients-changed.
-    fetchJson(apiUrl('/connectivity'), { fallback: null })
-      .then((c) => { if (c) updateClientsIndicator(c.clientCount); });
-  }
+  const networkButton = document.getElementById('network-button');
+  if (networkButton) bindNetworkClients(networkButton);
 
   // Native menu (Session ▸ Open…) bridges to the picker via this event, since the
   // Go side can't import the JS module directly. Same entry point as the

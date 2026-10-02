@@ -21,6 +21,18 @@
    the window's other controls, at every width.
    ========================================================================== */
 
+/* The toggle carries two glyphs and shows the one for the board's current
+   state, read from the aria-expanded the shell keeps on it: the right-hand
+   panel filled while the board is open, outlined while it is closed. */
+.pinboard-header-button .pinboard-glyph-open,
+.pinboard-header-button[aria-expanded="true"] .pinboard-glyph-closed {
+    display: none;
+}
+
+.pinboard-header-button[aria-expanded="true"] .pinboard-glyph-open {
+    display: block;
+}
+
 pinboard-shell {
     /* Named once: the slide's duration is also the delay before the panel is
        hidden on the way out, and the two must agree. */
@@ -683,7 +695,7 @@ pinboard-content:focus {
 [data-view="pinboard"] .sidebar-toggle-button,
 [data-view="pinboard"] project-path-display,
 [data-view="pinboard"] header-actions > :not(.header-actions-controls),
-[data-view="pinboard"] .header-actions-controls > :not(.theme-button) {
+[data-view="pinboard"] .header-actions-controls button:not(.theme-button) {
     display: none;
 }
 

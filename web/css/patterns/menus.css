@@ -202,6 +202,16 @@ body.hud-pointer-idle .dropdown-menu {
     flex: 1;
 }
 
+/* The keyboard shortcut for a row's action, set flush right and quieter than
+   the label: the other way to do the same thing, for next time. */
+.menu-item-shortcut {
+    flex-shrink: 0;
+    padding-left: 1.5rem;
+    color: var(--text-tertiary);
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+}
+
 /* Settings icon for menu items */
 .menu-settings-icon {
     width: 1rem;

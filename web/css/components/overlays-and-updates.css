@@ -693,7 +693,7 @@ update-notice .update-notice__progress--indeterminate .update-notice__progress-f
 
 /* ── Update button (header) ─────────────────────────────────────────────────
    The single header affordance for updates (web/js/components/update-button.js),
-   sitting first in header-actions before the undo control. Hidden until an
+   sitting first in header-actions, before the regular controls. Hidden until an
    update is relevant; an accent pill so it's noticeable without being loud.
    header-actions already opts out of the window drag region, so the pill is
    clickable inside the draggable header without extra rules. */

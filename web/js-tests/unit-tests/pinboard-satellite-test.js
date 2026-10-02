@@ -796,8 +796,15 @@ export async function runTests() {
           + '<project-path-display></project-path-display>'
           + '<header-actions><update-button></update-button>'
           + '<div class="header-actions-controls">'
-          + '<button class="settings-button"></button>'
+          // Grouped as index.html groups them, so hiding a control can never
+          // be done by hiding the group the theme button shares.
+          + '<div class="header-group header-group--view">'
+          + '<button class="zoom-in-button"></button>'
           + '<button class="theme-button"></button>'
+          + '</div>'
+          + '<div class="header-group header-group--app">'
+          + '<button class="settings-button"></button>'
+          + '</div>'
           + '</div></header-actions>'
           + '</header>';
         doc.body.appendChild(host);
@@ -812,11 +819,14 @@ export async function runTests() {
           'nor a toggle for a sidebar that is not there');
         assert(styleOf('project-path-display').display === 'none',
           'nor a project chip, since a board window navigates nothing');
-        assert(styleOf('.settings-button').display === 'none',
-          'nor controls belonging to the window that opened it');
+        assert(styleOf('.settings-button').display === 'none'
+          && styleOf('.zoom-in-button').display === 'none',
+        'nor controls belonging to the window that opened it — even one grouped with the theme button');
         assert(styleOf('update-button').display === 'none',
           'nor an update pill, which is the app’s news and not this window’s');
-        assert(styleOf('.theme-button').display !== 'none',
+        // Rendered, not merely un-hidden itself: a button whose group is hidden
+        // still reports its own display.
+        assert(/** @type {Element} */ (host.querySelector('.theme-button')).getClientRects().length > 0,
           'but the theme button stays: a board window is read where the window that opened it is not, and it is the one control that answers to that');
         assert(styleOf('.app-header').display !== 'none',
           'but the header itself stays: it is the window’s drag region, and on Windows and Linux it carries the only close button');

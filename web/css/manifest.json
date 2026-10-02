@@ -72,6 +72,7 @@
 				"conversation-tabs-container",
 				"logo",
 				"network-button",
+				"network-button__*",
 				"settings-button",
 				"sidebar-backdrop",
 				"tool-grouping-button",
@@ -128,6 +129,7 @@
 				"menu-item",
 				"menu-item-hint",
 				"menu-item-icon",
+				"menu-item-shortcut",
 				"menu-settings-icon"
 			]
 		},

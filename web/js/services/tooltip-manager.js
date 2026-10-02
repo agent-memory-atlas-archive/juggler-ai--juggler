@@ -215,14 +215,16 @@ class TooltipManager {
   }
 
   /**
-   * Put a stashed native title back on its element.
+   * Put a stashed native title back on its element — unless the element was
+   * given a new title while the tooltip held the old one (a control whose
+   * state changed under the pointer), in which case the new one stands.
    * @param {Element} anchor - The element to restore.
    * @private
    */
   _restore(anchor) {
     const text = this._stash.get(anchor);
     if (text !== undefined) {
-      anchor.setAttribute('title', text);
+      if (!anchor.hasAttribute('title')) anchor.setAttribute('title', text);
       this._stash.delete(anchor);
     }
     anchor.removeAttribute('data-has-tooltip');

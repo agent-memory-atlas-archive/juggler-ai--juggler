@@ -41,6 +41,7 @@ const THEME_BUTTON_UI = {
 import { toggleSound, isSoundEnabled, ATTENTION_PREFS_EVENT } from '../utils/attention-manager.js';
 import { isToolGroupingEnabled, toggleToolGrouping, TOOL_GROUPING_EVENT } from '../utils/tool-grouping-pref.js';
 import { zoomIn, zoomOut } from '../utils/zoom-manager.js';
+import { setupHeaderOverflowMenu } from '../utils/header-overflow-menu.js';
 import { isAutoNameEnabled } from './auto-name-setting.js';
 import keyShortcutManager from './key-shortcut-manager.js';
 
@@ -80,6 +81,9 @@ class UIEventManager {
     /** @type {(() => void)|null} @private */
     this._unregisterToolGrouping = null;
 
+    /** @type {{dispose: () => void}|null} @private */
+    this._overflowMenu = null;
+
     /**
      * Popup-manager token, held for as long as the sidebar drawer is open.
      * @type {(() => void)|null} @private
@@ -107,6 +111,7 @@ class UIEventManager {
     this._setupNetworkButton();
     this._setupHelpButton();
     this._setupSettingsButton();
+    this._setupOverflowButton();
     this._setupSidebarToggle();
   }
 
@@ -315,8 +320,8 @@ class UIEventManager {
     const reflect = () => {
       const on = isToolGroupingEnabled();
       // `is-active` also swaps which of the button's two glyphs is shown (see
-      // .tool-grouping-button in styles.css): each depicts the action a click
-      // would perform — fold the rows together, or unfold them again.
+      // .tool-grouping-button in app-shell.css): each depicts the transcript's
+      // current state — folded or unfolded.
       groupingButton.classList.toggle('is-active', on);
       groupingButton.setAttribute('title', on
         ? 'Consecutive tool uses are grouped — click to show them individually'
@@ -413,6 +418,32 @@ class UIEventManager {
       event: 'click',
       handler: handler
     });
+  }
+
+  /**
+   * Setup the "…" overflow button, which CSS shows only when the header is too
+   * narrow for every control. Its rows run the same actions as the buttons it
+   * stands in for (zoom −/+ and help).
+   * @private
+   */
+  _setupOverflowButton() {
+    const overflowButton = document.getElementById('header-overflow-button');
+    if (!overflowButton) {
+      console.error('[UIEventManager] Overflow button not found');
+      return;
+    }
+    this._overflowMenu = setupHeaderOverflowMenu(overflowButton, [
+      { label: 'Decrease font size', shortcutId: 'zoom-out', run: () => zoomOut() },
+      { label: 'Increase font size', shortcutId: 'zoom-in', run: () => zoomIn() },
+      {
+        label: 'Tips & keyboard shortcuts',
+        shortcutId: 'show-shortcuts',
+        run: () => openSettings('shortcuts'),
+        // The same reason the touch header drops the help button: a keyboard
+        // reference is a dead end on a device with no keyboard.
+        omit: () => window.matchMedia('(hover: none)').matches,
+      },
+    ]);
   }
 
   /**
@@ -740,6 +771,8 @@ class UIEventManager {
     this._unregisterZoomOut?.();
     this._unregisterShowShortcuts?.();
     this._unregisterToolGrouping?.();
+    this._overflowMenu?.dispose();
+    this._overflowMenu = null;
     this._detachSidebarSwipe?.();
     this._detachSidebarSwipe = null;
     this._releaseSidebarPopup?.();
