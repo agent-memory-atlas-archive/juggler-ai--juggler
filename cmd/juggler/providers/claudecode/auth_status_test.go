@@ -89,6 +89,39 @@ func stubAuthProbe(t *testing.T, verdict authProbeVerdict) *int {
 	return &calls
 }
 
+// stubCLIInstalled pins whether the claude CLI can be located, so readiness
+// tests don't depend on what this machine has installed.
+func stubCLIInstalled(t *testing.T, installed bool) {
+	t.Helper()
+	prev := claudeCLIInstalled
+	claudeCLIInstalled = func() bool { return installed }
+	t.Cleanup(func() { claudeCLIInstalled = prev })
+}
+
+// TestReadinessRefusesWhenCLIMissing covers a provider switched on in settings
+// on a machine without the CLI. Counted as available, it became the default
+// model and hid the setup wizard, and every turn then failed; not-ready greys
+// its models out with a hint that says what is missing instead.
+func TestReadinessRefusesWhenCLIMissing(t *testing.T) {
+	for _, state := range []loginState{loginUnknown, loginConfirmed, loginExpired} {
+		resetLoginState(t, state, false)
+		resetAuthProbeThrottle(t)
+		stubCLIInstalled(t, false)
+		calls := stubAuthProbe(t, authProbeSignedIn)
+
+		ready, hint := claudeReadiness()
+		if ready {
+			t.Errorf("state %v: ready = true, want false with no CLI to run", state)
+		}
+		if hint != claudeNotInstalledHint {
+			t.Errorf("state %v: hint = %q, want the not-installed hint", state, hint)
+		}
+		if *calls != 0 {
+			t.Errorf("state %v: probe ran %d times, want 0 — there is nothing to spawn", state, *calls)
+		}
+	}
+}
+
 // resetAuthProbeThrottle clears the rate limiter so a test's probe is due.
 func resetAuthProbeThrottle(t *testing.T) {
 	t.Helper()
@@ -104,6 +137,7 @@ func TestReadinessNeverProbesWhenNotExpired(t *testing.T) {
 	for _, state := range []loginState{loginUnknown, loginConfirmed} {
 		resetLoginState(t, state, false)
 		resetAuthProbeThrottle(t)
+		stubCLIInstalled(t, true)
 		calls := stubAuthProbe(t, authProbeSignedOut)
 
 		ready, hint := claudeReadiness()
@@ -125,6 +159,7 @@ func TestReadinessNeverProbesWhenNotExpired(t *testing.T) {
 func TestReadinessRefusesWhenProbeConfirmsSignedOut(t *testing.T) {
 	resetLoginState(t, loginExpired, false)
 	resetAuthProbeThrottle(t)
+	stubCLIInstalled(t, true)
 	stubAuthProbe(t, authProbeSignedOut)
 
 	ready, hint := claudeReadiness()
@@ -145,6 +180,7 @@ func TestReadinessRefusesWhenProbeConfirmsSignedOut(t *testing.T) {
 func TestReadinessRecoversWhenProbeSaysSignedIn(t *testing.T) {
 	resetLoginState(t, loginExpired, false)
 	resetAuthProbeThrottle(t)
+	stubCLIInstalled(t, true)
 	stubAuthProbe(t, authProbeSignedIn)
 
 	ready, hint := claudeReadiness()
@@ -166,6 +202,7 @@ func TestReadinessRecoversWhenProbeSaysSignedIn(t *testing.T) {
 func TestReadinessFailsOpenWhenProbeCannotAnswer(t *testing.T) {
 	resetLoginState(t, loginExpired, false)
 	resetAuthProbeThrottle(t)
+	stubCLIInstalled(t, true)
 	stubAuthProbe(t, authProbeUnknown)
 
 	ready, hint := claudeReadiness()
@@ -186,6 +223,7 @@ func TestReadinessFailsOpenWhenProbeCannotAnswer(t *testing.T) {
 func TestReadinessThrottlesTheProbe(t *testing.T) {
 	resetLoginState(t, loginExpired, false)
 	resetAuthProbeThrottle(t)
+	stubCLIInstalled(t, true)
 	calls := stubAuthProbe(t, authProbeSignedOut)
 
 	for i := 0; i < 5; i++ {

@@ -60,6 +60,55 @@ func TestIsExecutablePath_Symlinks(t *testing.T) {
 	}
 }
 
+// TestClaudeBinaryCandidates_VersionManagers covers the installs a GUI launch
+// misses when the login-shell PATH probe fails: claude installed with bun,
+// pnpm, volta, mise or asdf, or into an nvm-managed node.
+func TestClaudeBinaryCandidates_VersionManagers(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	got := map[string]int{}
+	for i, c := range claudeBinaryCandidates() {
+		got[c] = i
+	}
+	for _, rel := range []string{
+		".bun/bin/claude",
+		".volta/bin/claude",
+		".local/share/pnpm/claude",
+		"Library/pnpm/claude",
+		".local/share/mise/shims/claude",
+		".asdf/shims/claude",
+	} {
+		if _, ok := got[filepath.Join(home, rel)]; !ok {
+			t.Errorf("candidates omit ~/%s", rel)
+		}
+	}
+}
+
+// With several nvm-managed nodes the newest wins — by version, not by name,
+// under which v9 would sort after v22 — and it is found with nothing on PATH.
+func TestResolve_NewestNvmNodeWins(t *testing.T) {
+	userpathstest.Isolate(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("PATH", "")
+	var newest string
+	for _, v := range []string{"v9.11.2", "v22.1.0", "v22.10.0"} {
+		dir := filepath.Join(home, ".nvm", "versions", "node", v, "bin")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		bin := writeExecutable(t, dir, "claude")
+		if v == "v22.10.0" {
+			newest = bin
+		}
+	}
+
+	if got := resolveClaudeBinary(); got != newest {
+		t.Fatalf("resolveClaudeBinary() = %q, want the newest nvm node's %q", got, newest)
+	}
+}
+
 // The env override and login-shell probe both accept a symlinked claude.
 func TestResolve_SymlinkedClaudeAccepted(t *testing.T) {
 	userpathstest.Isolate(t)

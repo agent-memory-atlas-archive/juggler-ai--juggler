@@ -165,6 +165,9 @@ func (a *App) initLogging() error {
 	}
 
 	jlog.Init(opts)
+	if pathRepairReport != "" {
+		jlog.Info("[path] %s", pathRepairReport)
+	}
 	a.pushCleanup(func() {
 		// Only a session that started can end. This cleanup is registered
 		// before the phases that can fail, so on an aborted launch it is the

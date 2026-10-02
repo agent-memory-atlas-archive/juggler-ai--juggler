@@ -5,6 +5,10 @@ of changes; this project follows semantic versioning.
 
 ## [Unreleased]
 
+- Claude Code without its CLI installed greys out instead of failing every turn
+- A missing-CLI error offers another model and Provider settings, not just Retry
+- The claude CLI is found in nvm, fnm, bun, pnpm, volta, mise and asdf installs
+
 ## [0.7.4] - 2026-10-02
 
 - Codex and Copilot subscription providers can now be switched off in Provider settings

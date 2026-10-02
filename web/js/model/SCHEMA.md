@@ -269,9 +269,11 @@ A nested sub-conversation.
 
 `errorKind` is the worker's classification of the failure, and the only thing the
 row keys its extra actions off — matching on the error text in the client would
-put the taxonomy in two places and let them disagree. Today the sole value is
-`auth`: the provider refused on authentication grounds, so the row also offers a
-Provider settings action.
+put the taxonomy in two places and let them disagree. Two values are acted on:
+`auth`, the provider refused on authentication grounds, so the row also offers a
+Provider settings action; and `setup`, the provider can't run on this machine (a
+CLI it drives isn't installed), so the row offers Choose another model ahead of
+Provider settings.
 
 The row offers a Retry — delete this error and continue the thread — only while
 the error is the **last** item in its thread, since that is the only position

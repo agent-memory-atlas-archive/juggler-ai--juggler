@@ -624,6 +624,41 @@ func TestProviderUnavailableSurfacedAsValidationError(t *testing.T) {
 // text kept underneath, an errorKind the transcript row can key its action off,
 // and no retry: an expired sign-in does not heal by being asked again.
 func TestAuthErrorSurfacedWithRemediation(t *testing.T) {
+	// The exact failure a user reported, in the shape the claudecode parser now
+	// produces for it.
+	const cliText = "Failed to authenticate. API Error: 401 OAuth access token has expired. Re-authenticate to continue."
+	const hint = "Claude Code isn't signed in. Run claude in a terminal and use /login."
+	assertUserFixableFailure(t, &provider.AuthError{
+		Provider: "claudecode",
+		Status:   401,
+		Message:  cliText,
+		Hint:     hint,
+	}, "auth-required", "auth", hint, cliText)
+}
+
+// TestSetupErrorSurfacedWithRemediation covers a provider that cannot run on
+// this machine at all — the claude CLI not installed, or not where Juggler can
+// find it. Reported generically it reached a new user as a PATH search report
+// with only a Retry under it, which fails the same way forever. It gets the
+// same terminal shape as an auth failure, under its own errorKind so the row
+// can offer another model as well as settings.
+func TestSetupErrorSurfacedWithRemediation(t *testing.T) {
+	const detail = "claude executable not found. Searched $PATH and known install locations."
+	const hint = "Claude Code isn't installed, or Juggler can't find it."
+	assertUserFixableFailure(t, &provider.SetupError{
+		Provider: "claudecode",
+		Message:  detail,
+		Hint:     hint,
+	}, "provider-setup", "setup", hint, detail)
+}
+
+// assertUserFixableFailure runs one turn whose provider call fails with failErr
+// and asserts the terminal shape every user-fixable failure shares: one call
+// and no retry, a composer warning carrying only the hint under wantCode, and a
+// durable error item that leads with the hint, keeps the provider's own text,
+// and carries wantKind for the transcript row to key its actions off.
+func assertUserFixableFailure(t *testing.T, failErr error, wantCode, wantKind, hint, detail string) {
+	t.Helper()
 	w := NewConversationWorker("conv-auth", "user:test")
 	defer w.doc.Destroy()
 
@@ -637,20 +672,10 @@ func TestAuthErrorSurfacedWithRemediation(t *testing.T) {
 	})
 	w.currentRun().handleInit(initPayload)
 
-	// The exact failure a user reported, in the shape the claudecode parser now
-	// produces for it.
-	const cliText = "Failed to authenticate. API Error: 401 OAuth access token has expired. Re-authenticate to continue."
-	const hint = "Claude Code isn't signed in. Run claude in a terminal and use /login."
-
 	var calls int32
 	w.llmCallFunc = func(context.Context, json.RawMessage, func(StreamChunk)) (*LLMResponse, error) {
 		atomic.AddInt32(&calls, 1)
-		return nil, fmt.Errorf("LLM error: %w", &provider.AuthError{
-			Provider: "claudecode",
-			Status:   401,
-			Message:  cliText,
-			Hint:     hint,
-		})
+		return nil, fmt.Errorf("LLM error: %w", failErr)
 	}
 
 	statusCh := make(chan map[string]any, 16)
@@ -685,11 +710,11 @@ func TestAuthErrorSurfacedWithRemediation(t *testing.T) {
 			if m["status"] != "validation-error" {
 				continue
 			}
-			if code, _ := m["code"].(string); code != "auth-required" {
-				t.Fatalf("expected code 'auth-required', got %q (message=%v)", code, m["message"])
+			if code, _ := m["code"].(string); code != wantCode {
+				t.Fatalf("expected code %q, got %q (message=%v)", wantCode, code, m["message"])
 			}
 			if got := atomic.LoadInt32(&calls); got != 1 {
-				t.Fatalf("provider dispatch calls = %d, want 1 (an expired sign-in must not be retried)", got)
+				t.Fatalf("provider dispatch calls = %d, want 1 (a user-fixable failure must not be retried)", got)
 			}
 			// The composer warning gets the lead only — the detail needs room to
 			// read, which the transcript has and the warning strip does not.
@@ -712,7 +737,7 @@ func TestAuthErrorSurfacedWithRemediation(t *testing.T) {
 				t.Errorf("error item doesn't lead with the remediation: %q", errItem.Content)
 			}
 			// Dropping the provider's own words leaves nothing to search for.
-			if !strings.Contains(errItem.Content, cliText) {
+			if !strings.Contains(errItem.Content, detail) {
 				t.Errorf("error item dropped the provider's own text: %q", errItem.Content)
 			}
 
@@ -720,15 +745,15 @@ func TestAuthErrorSurfacedWithRemediation(t *testing.T) {
 			if err := json.Unmarshal(errItem.Data, &data); err != nil {
 				t.Fatalf("error item data is not decodable: %v", err)
 			}
-			if data["errorKind"] != "auth" {
-				t.Errorf("errorKind = %v, want \"auth\" — the transcript row keys its action off this", data["errorKind"])
+			if data["errorKind"] != wantKind {
+				t.Errorf("errorKind = %v, want %q — the transcript row keys its action off this", data["errorKind"], wantKind)
 			}
 			if data["provider"] != "claudecode" {
 				t.Errorf("provider = %v, want \"claudecode\"", data["provider"])
 			}
 			return
 		case <-deadline:
-			t.Fatal("timeout waiting for validation-error status with code auth-required")
+			t.Fatalf("timeout waiting for validation-error status with code %s", wantCode)
 		}
 	}
 }

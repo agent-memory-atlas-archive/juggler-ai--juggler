@@ -65,7 +65,7 @@ func (c *Client) UsageStats(ctx context.Context) (provider.UsageStats, error) {
 	}
 	bin := claudeBinary()
 	if bin == "" {
-		return provider.UsageStats{}, fmt.Errorf("failed to start claude CLI: claude executable not found. Searched $PATH, the login shell, and known install locations (%s). Set %s to its absolute path if it lives elsewhere", claudeInstallLocationsHint, claudePathEnvVar)
+		return provider.UsageStats{}, claudeNotFoundError()
 	}
 	// --setting-sources project,local omits "user", so the probe loads only
 	// project/local settings and fires none of the user's Claude Code plugins or

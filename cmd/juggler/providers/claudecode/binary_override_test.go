@@ -5,6 +5,7 @@
 package claudecode
 
 import (
+	"os"
 	"testing"
 
 	"juggler/cmd/juggler/core"
@@ -54,6 +55,28 @@ func TestConfiguredClaudeBinary_EnvFallbackWhenStoreEmpty(t *testing.T) {
 
 	if got := configuredClaudeBinary(); got != envBin {
 		t.Fatalf("env should be used when store is empty: got %q, want %q", got, envBin)
+	}
+}
+
+// A claude found at startup and since removed (uninstalled, or moved by a
+// version-manager upgrade) must not keep being handed out: the provider would
+// read as ready and every spawn would fail on a path that isn't there.
+func TestClaudeBinary_DropsVanishedStartupPath(t *testing.T) {
+	userpathstest.Isolate(t)
+	t.Setenv(claudePathEnvVar, "")
+	bin := writeExecutable(t, t.TempDir(), "claude")
+	prev := claudeBinaryPath
+	claudeBinaryPath = bin
+	t.Cleanup(func() { claudeBinaryPath = prev })
+
+	if got := claudeBinary(); got != bin {
+		t.Fatalf("precondition: claudeBinary() = %q, want the startup path %q", got, bin)
+	}
+	if err := os.Remove(bin); err != nil {
+		t.Fatal(err)
+	}
+	if got := claudeBinary(); got == bin {
+		t.Fatalf("claudeBinary() still returns %q after it was removed", got)
 	}
 }
 

@@ -61,23 +61,62 @@ func TestMergePath_DropsEmptyEntries(t *testing.T) {
 	}
 }
 
-// TestLoginShellPath simulates the macOS-GUI case: a fake $SHELL emits a PATH
-// the way `printf %s "$PATH"` would, including a leading banner line we must
-// not pick up. loginShellPath should capture exactly the PATH line.
+// TestLoginShellPath simulates the macOS-GUI case: a fake $SHELL whose rc files
+// set PATH runs the probe's command. loginShellPath should capture exactly it.
 func TestLoginShellPath(t *testing.T) {
 	loginPath := "/opt/homebrew/bin:/usr/local/go/bin:/usr/bin:/bin"
-	shell := writeFakeShell(t, "#!/bin/sh\nprintf '%s' '"+loginPath+"'\n")
-	t.Setenv("SHELL", shell)
+	t.Setenv("SHELL", fakeLoginShell(t, loginPath, ""))
 
-	if got := loginShellPath(); got != loginPath {
-		t.Fatalf("loginShellPath() = %q, want %q", got, loginPath)
+	if got, err := loginShellPath(); err != nil || got != loginPath {
+		t.Fatalf("loginShellPath() = %q, %v; want %q", got, err, loginPath)
+	}
+}
+
+// TestLoginShellPath_IgnoresRcOutput covers interactive rc files that print —
+// a greeting, a fortune, a version manager's notice — before and after the
+// probe's command runs. Read as the PATH, a banner glued to the first entry
+// breaks exactly the directory a version manager put first.
+func TestLoginShellPath_IgnoresRcOutput(t *testing.T) {
+	loginPath := "/Users/me/.nvm/versions/node/v22.0.0/bin:/usr/bin:/bin"
+	t.Setenv("SHELL", fakeLoginShell(t, loginPath, "Welcome back!\nNow using node v22.0.0"))
+
+	if got, err := loginShellPath(); err != nil || got != loginPath {
+		t.Fatalf("loginShellPath() = %q, %v; want %q", got, err, loginPath)
+	}
+}
+
+// A shell that never runs the command (or prints only its rc noise) yields no
+// PATH at all rather than the noise.
+func TestLoginShellPath_NoMarkersIsNoAnswer(t *testing.T) {
+	t.Setenv("SHELL", writeFakeShell(t, "#!/bin/sh\necho 'just a banner'\n"))
+
+	if got, err := loginShellPath(); err == nil || got != "" {
+		t.Fatalf("loginShellPath() = %q, %v; want \"\" and an error when the shell never printed a PATH", got, err)
 	}
 }
 
 func TestLoginShellPath_NoShellEnv(t *testing.T) {
 	t.Setenv("SHELL", "")
-	if got := loginShellPath(); got != "" {
-		t.Fatalf("loginShellPath() = %q, want \"\" when $SHELL is unset", got)
+	if got, err := loginShellPath(); err == nil || got != "" {
+		t.Fatalf("loginShellPath() = %q, %v; want \"\" and an error when $SHELL is unset", got, err)
+	}
+}
+
+// A failed probe leaves PATH alone and leaves an account for the log, which is
+// the only way to tell afterwards why a GUI launch couldn't find a tool.
+func TestRepairPathForGUILaunch_RecordsFailure(t *testing.T) {
+	t.Setenv("SHELL", writeFakeShell(t, "#!/bin/sh\nexit 3\n"))
+	t.Setenv("PATH", "/usr/bin:/bin")
+	prev := pathRepairReport
+	pathRepairReport = ""
+	t.Cleanup(func() { pathRepairReport = prev })
+
+	repairPathForGUILaunch(false)
+	if got := os.Getenv("PATH"); got != "/usr/bin:/bin" {
+		t.Fatalf("PATH after a failed probe = %q, want it untouched", got)
+	}
+	if !strings.Contains(pathRepairReport, "probe failed") || !strings.Contains(pathRepairReport, "/usr/bin:/bin") {
+		t.Fatalf("pathRepairReport = %q, want the failure and the PATH kept", pathRepairReport)
 	}
 }
 
@@ -86,8 +125,7 @@ func TestLoginShellPath_NoShellEnv(t *testing.T) {
 // process env. Mirrors how Run() calls it.
 func TestRepairPathForGUILaunch(t *testing.T) {
 	loginPath := "/opt/homebrew/bin:/usr/local/go/bin"
-	shell := writeFakeShell(t, "#!/bin/sh\nprintf '%s' '"+loginPath+"'\n")
-	t.Setenv("SHELL", shell)
+	t.Setenv("SHELL", fakeLoginShell(t, loginPath, ""))
 	t.Setenv("PATH", "/usr/bin:/bin")
 
 	repairPathForGUILaunch(false) // hasTerminal=false → GUI launch path
@@ -101,8 +139,7 @@ func TestRepairPathForGUILaunch(t *testing.T) {
 // A terminal launch must leave PATH untouched even when the probe would fire.
 func TestRepairPathForGUILaunch_NoopForTerminalLaunch(t *testing.T) {
 	// A shell that would mutate PATH if it were consulted.
-	shell := writeFakeShell(t, "#!/bin/sh\nprintf '%s' '/opt/homebrew/bin'\n")
-	t.Setenv("SHELL", shell)
+	t.Setenv("SHELL", fakeLoginShell(t, "/opt/homebrew/bin", ""))
 	original := "/usr/bin:/bin"
 	t.Setenv("PATH", original)
 
@@ -110,6 +147,20 @@ func TestRepairPathForGUILaunch_NoopForTerminalLaunch(t *testing.T) {
 	if got := os.Getenv("PATH"); got != original {
 		t.Fatalf("PATH after terminal-launch repair = %q, want %q (untouched)", got, original)
 	}
+}
+
+// fakeLoginShell writes a fake $SHELL that behaves like a real one invoked as
+// `shell -l -i -c <command>`: its "rc files" print banner (if any) and set PATH
+// to loginPath, then it runs the command it was given and prints the banner
+// again on the way out.
+func fakeLoginShell(t *testing.T, loginPath, banner string) string {
+	t.Helper()
+	echo := ""
+	if banner != "" {
+		echo = "printf '%s\\n' '" + banner + "'\n"
+	}
+	return writeFakeShell(t, "#!/bin/sh\n"+echo+
+		"PATH='"+loginPath+"' /bin/sh -c \"$4\"\n"+echo)
 }
 
 // writeFakeShell creates an executable fake $SHELL in the test's temp dir that

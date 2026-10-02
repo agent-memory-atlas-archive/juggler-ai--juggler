@@ -8,6 +8,8 @@ package app
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,41 +37,82 @@ var loginShellProbeTimeout = 4 * time.Second
 //
 // A terminal launch already has the full PATH, so this is a no-op there. Any
 // failure (no $SHELL, timeout, bad exit) leaves PATH untouched — no worse than
-// before.
+// a launch with no repair — and is recorded in pathRepairReport.
 func repairPathForGUILaunch(hasTerminal bool) {
 	if hasTerminal {
 		return
 	}
-	if loginPath := loginShellPath(); loginPath != "" {
-		_ = os.Setenv("PATH", mergePath(os.Getenv("PATH"), loginPath))
+	loginPath, err := loginShellPath()
+	if err != nil {
+		// Logging isn't up yet; initLogging reports this once it is. Without
+		// it, a failed probe is invisible, and so is the reason a GUI launch
+		// can't find tools a terminal launch finds.
+		pathRepairReport = fmt.Sprintf("login-shell PATH probe failed, keeping the launch PATH %q: %v", os.Getenv("PATH"), err)
+		return
 	}
+	_ = os.Setenv("PATH", mergePath(os.Getenv("PATH"), loginPath))
 }
 
-// loginShellPath runs the user's login shell and captures the $PATH it builds,
-// or "" if $SHELL is unset or the probe fails/times out. -l -i sources both the
-// profile and the interactive rc files (.zshrc/.bashrc), where version managers
-// register their bin dirs; the flags are separate (not -lic) for fish.
+// loginPathMarker brackets the PATH in the probe's output. An interactive
+// shell's rc files may print anything — a greeting, a fortune, a version
+// manager's notice — to the same stdout before and after the command runs, and
+// read as part of the PATH it would corrupt the first entry, which is usually
+// the version manager's. The marker is split in the command text ('%s' pieces)
+// so a shell that echoes its input can't produce a matching pair.
+const loginPathMarker = "__JUGGLER_LOGIN_PATH__"
+
+// loginShellPath runs the user's login shell and captures the $PATH it builds.
+// It fails when $SHELL is unset, the shell fails or times out, or its output
+// carries no marked PATH. -l -i sources both the profile and the interactive rc
+// files (.zshrc/.bashrc), where version managers register their bin dirs; the
+// flags are separate (not -lic) for fish, which joins a quoted "$PATH" with
+// colons as the other shells do.
 //
 // Setsid is load-bearing: it puts the shell in a new session with no controlling
 // terminal, so an interactive shell can't grab our tty's foreground group or
 // leave it in raw mode — which, when the timeout SIGKILLs a slow shell before
 // it restores the terminal, would background us (SIGTTIN → "suspended (tty
 // input)") and corrupt the terminal. Stdin is /dev/null by default.
-func loginShellPath() string {
+func loginShellPath() (string, error) {
 	shell := os.Getenv("SHELL")
 	if shell == "" {
-		return ""
+		return "", errors.New("$SHELL is not set")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), loginShellProbeTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, shell, "-l", "-i", "-c", "printf %s \"$PATH\"")
+	half := len(loginPathMarker) / 2
+	command := fmt.Sprintf(`printf '%%s%%s%%s%%s%%s' '%s' '%s' "$PATH" '%s' '%s'`,
+		loginPathMarker[:half], loginPathMarker[half:], loginPathMarker[:half], loginPathMarker[half:])
+	cmd := exec.CommandContext(ctx, shell, "-l", "-i", "-c", command)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	out, err := cmd.Output()
-	if err != nil {
-		return ""
+	if ctx.Err() != nil {
+		return "", fmt.Errorf("%s did not answer within %s", shell, loginShellProbeTimeout)
 	}
-	return strings.TrimSpace(string(out))
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", shell, err)
+	}
+	path, ok := markedLoginPath(string(out))
+	if !ok {
+		return "", fmt.Errorf("%s printed no PATH", shell)
+	}
+	return path, nil
+}
+
+// markedLoginPath extracts the PATH from between the last pair of markers in
+// the probe's output, so rc-file output on either side is ignored.
+func markedLoginPath(out string) (string, bool) {
+	end := strings.LastIndex(out, loginPathMarker)
+	if end < 0 {
+		return "", false
+	}
+	start := strings.LastIndex(out[:end], loginPathMarker)
+	if start < 0 {
+		return "", false
+	}
+	path := strings.TrimSpace(out[start+len(loginPathMarker) : end])
+	return path, path != ""
 }
 
 // mergePath unions two PATH-style strings, putting login's entries first and

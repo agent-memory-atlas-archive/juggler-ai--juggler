@@ -4,7 +4,9 @@
 
 /**
  * The error row's Provider settings offer, which appears only on a failure the
- * worker classified as an authentication problem.
+ * worker classified as an authentication or setup problem, and its Choose
+ * another model offer, which only a setup problem (a provider that can't run on
+ * this machine) carries.
  *
  * The classification is the worker's (`data.errorKind`) and the row only reads
  * the verdict — matching on the error text here would put the taxonomy in two
@@ -53,17 +55,34 @@ function errorItem(id, data) {
 /** An auth failure exactly as the worker now reports one. */
 const AUTH_DATA = { provider: 'claudecode', model: 'sonnet', duration: 1200, errorKind: 'auth' };
 
+/** A provider that cannot run on this machine, as the worker reports one. */
+const SETUP_DATA = { provider: 'claudecode', model: 'sonnet', duration: 3, errorKind: 'setup' };
+
+/**
+ * A `model-selector` that only counts opens. Its `open` is an own property, so
+ * it shadows the real component's method whether or not that is defined here.
+ * @returns {HTMLElement & {opened: number}} The stand-in selector
+ */
+function fakeSelector() {
+  const el = /** @type {any} */ (document.createElement('model-selector'));
+  el.opened = 0;
+  el.open = () => { el.opened++; };
+  return el;
+}
+
 /**
  * Mount a message list with the trailing managed non-item the diff positions
  * against.
+ * @param {HTMLElement} [parent] - Where to mount it; the document body by default
  * @returns {{list: HTMLElement, render: (items: any[]) => void, teardown: () => void}} The mounted list and a render pass over it
  */
-function mountList() {
+function mountList(parent) {
   const list = document.createElement('div');
   const anchor = document.createElement('div');
   anchor.className = 'thread-result-final';
   list.appendChild(anchor);
-  document.body.appendChild(list);
+  if (parent && !parent.isConnected) document.body.appendChild(parent);
+  (parent || document.body).appendChild(list);
 
   return {
     list,
@@ -197,6 +216,77 @@ export async function runTests() {
     } finally {
       restore();
       teardown();
+    }
+  });
+
+  test('a setup failure offers another model, then settings, then Retry', () => {
+    const { list, render, teardown } = mountList();
+    try {
+      render([errorItem('ERR_SETUP', SETUP_DATA)]);
+      const row = list.querySelector('error-message[message-id="ERR_SETUP"] .error-message-actions');
+      assert(!!row, 'a setup failure must carry an action row');
+      const classes = Array.from(row.children).map((c) => c.className);
+      // A missing install reads to a new user as "Juggler needs this", so the
+      // way round it has to read first, before the way to fix it.
+      assert(classes[0]?.includes('error-model-btn'),
+        `choosing another model must lead, got ${JSON.stringify(classes)}`);
+      assert(classes[1]?.includes('error-settings-btn'),
+        `settings must follow it, got ${JSON.stringify(classes)}`);
+      assert(classes[2]?.includes('error-retry-btn'),
+        `retry comes last, got ${JSON.stringify(classes)}`);
+      const btn = actionButton(list, 'ERR_SETUP', 'error-model-btn');
+      assert((btn?.textContent || '').includes('Choose another model'),
+        `the action must be labelled, got ${btn?.textContent}`);
+    } finally {
+      teardown();
+    }
+  });
+
+  test('neither an auth nor an ordinary failure offers another model', () => {
+    const { list, render, teardown } = mountList();
+    try {
+      render([errorItem('ERR_AUTH', AUTH_DATA), errorItem('ERR_PLAIN', { provider: 'openai', duration: 12 })]);
+      assert(!actionButton(list, 'ERR_AUTH', 'error-model-btn'), 'an auth failure keeps its own actions');
+      assert(!actionButton(list, 'ERR_PLAIN', 'error-model-btn'), 'an unclassified failure has no reason to');
+    } finally {
+      teardown();
+    }
+  });
+
+  test('the setup offers survive the error no longer being last', () => {
+    const { list, render, teardown } = mountList();
+    try {
+      render([errorItem('ERR_SETUP', SETUP_DATA), errorItem('ERR_2', null)]);
+      assert(!!actionButton(list, 'ERR_SETUP', 'error-model-btn'), 'another model is still the way round it');
+      assert(!!actionButton(list, 'ERR_SETUP', 'error-settings-btn'), 'settings still fixes it');
+    } finally {
+      teardown();
+    }
+  });
+
+  test('choosing another model opens the picker in the error\'s own column', () => {
+    // Two columns, each with its own selector, as a sub-thread beside its parent
+    // has. The row must open the one that drives the model it failed on.
+    const elsewhere = document.createElement('div');
+    const otherSelector = fakeSelector();
+    elsewhere.appendChild(otherSelector);
+    document.body.appendChild(elsewhere);
+
+    const column = document.createElement('div');
+    const ownSelector = fakeSelector();
+    const { list, render, teardown } = mountList(column);
+    column.appendChild(ownSelector);
+    try {
+      render([errorItem('ERR_SETUP', SETUP_DATA)]);
+      const btn = actionButton(list, 'ERR_SETUP', 'error-model-btn');
+      assert(!!btn, 'precondition: the action is present');
+      btn.click();
+      assert(ownSelector.opened === 1, `the column's own picker must open once, got ${ownSelector.opened}`);
+      assert(otherSelector.opened === 0, `another column's picker must stay shut, got ${otherSelector.opened}`);
+    } finally {
+      teardown();
+      column.remove();
+      elsewhere.remove();
     }
   });
 

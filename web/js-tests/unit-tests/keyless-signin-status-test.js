@@ -34,6 +34,7 @@ import '../../js/components/settings-panel.js';
  */
 
 const SIGN_IN_HINT = "Claude Code isn't signed in. Run claude in a terminal and use /login.";
+const NOT_INSTALLED_HINT = 'Claude Code CLI not found — install it, or enter the path to claude.';
 
 /**
  * A keyless provider row, in whichever of the three states a test needs.
@@ -172,6 +173,23 @@ export async function runTests(_ctx) {
       assert(!!refresh, 'the row must offer a re-check');
       assert((refresh.getAttribute('aria-label') || '').includes('Fake CLI'),
         `the re-check must name its provider, got ${refresh.getAttribute('aria-label')}`);
+    });
+  });
+
+  await run('a provider with nothing installed is not offered a sign-in re-check', async () => {
+    // A keyless row's hint is not always about signing in — a CLI that isn't
+    // installed reports through the same line — so its re-check must not claim
+    // to be checking a sign-in.
+    const provider = keylessProvider({ available: false, credentialed: true, authHint: NOT_INSTALLED_HINT });
+    await withPanel(provider, async (el) => {
+      const status = el.querySelector('#fake-cli-oauth-status');
+      assert(!!status && status.textContent === NOT_INSTALLED_HINT,
+        `the row must carry the hint as given, got ${status?.textContent}`);
+      const refresh = el.querySelector('#provider-fields-container .settings-btn.icon');
+      assert(!!refresh, 'the row must offer a re-check');
+      const words = `${refresh.title} ${refresh.getAttribute('aria-label')}`;
+      assert(!/sign-in/i.test(words), `a keyless re-check must not mention a sign-in, got "${words}"`);
+      assert(words.includes('Fake CLI'), `the re-check must still name its provider, got "${words}"`);
     });
   });
 

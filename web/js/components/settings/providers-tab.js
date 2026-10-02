@@ -540,19 +540,23 @@ export class ProvidersTab {
   }
 
   /**
-   * Build the refresh (re-check sign-in) button shared by every OAuth provider.
+   * Build the refresh (re-check) button shared by every OAuth provider and by a
+   * keyless provider that is reporting a hint.
    * @param {any} provider - Provider info object
+   * @param {string} [subject] - What is being re-checked, as the label words it.
+   *   An OAuth row checks a sign-in; a keyless row's hint may equally be about a
+   *   CLI that isn't installed, so it passes `status`.
    * @returns {HTMLButtonElement} The refresh button to append to the button group.
    * @private
    */
-  _buildOAuthRefreshButton(provider) {
+  _buildOAuthRefreshButton(provider, subject = 'sign-in') {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'settings-btn icon';
-    btn.title = 'Re-check sign-in';
-    btn.setAttribute('aria-label', `Re-check ${provider.displayName} sign-in`);
+    btn.title = `Re-check ${subject}`;
+    btn.setAttribute('aria-label', `Re-check ${provider.displayName} ${subject}`);
     btn.innerHTML = OAUTH_REFRESH_ICON;
-    btn.addEventListener('click', () => this._refreshOAuthProvider(provider, btn));
+    btn.addEventListener('click', () => this._refreshOAuthProvider(provider, btn, subject));
     return btn;
   }
 
@@ -566,14 +570,15 @@ export class ProvidersTab {
    * without this tab reaching across to poke them.
    * @param {any} provider
    * @param {HTMLButtonElement} button
+   * @param {string} [subject] - What is being re-checked, for the status line
    * @private
    */
-  async _refreshOAuthProvider(provider, button) {
+  async _refreshOAuthProvider(provider, button, subject = 'sign-in') {
     const status = /** @type {HTMLElement|null} */ (this.host.querySelector(`#${provider.name}-oauth-status`));
     const originalStatus = status ? status.textContent : '';
     button.disabled = true;
     button.classList.add('spinning');
-    if (status) status.textContent = 'Checking sign-in\u2026';
+    if (status) status.textContent = `Checking ${subject}\u2026`;
     try {
       const fresh = await this._recheckOAuthProvider(provider.name);
       if (fresh) {
@@ -862,7 +867,7 @@ export class ProvidersTab {
 
       const buttonGroup = document.createElement('div');
       buttonGroup.className = 'provider-buttons';
-      buttonGroup.appendChild(this._buildOAuthRefreshButton(provider));
+      buttonGroup.appendChild(this._buildOAuthRefreshButton(provider, 'status'));
       controlColumn.appendChild(buttonGroup);
     }
 

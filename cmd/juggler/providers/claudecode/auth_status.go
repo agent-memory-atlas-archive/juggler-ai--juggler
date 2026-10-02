@@ -40,6 +40,17 @@ var lastAuthProbeUnixNano atomic.Int64
 // runClaudeAuthStatus.
 var authStatusProbe = runClaudeAuthStatus
 
+// claudeCLIInstalled is the seam tests replace so readiness doesn't depend on
+// what the machine has installed. Production always uses detectClaudeCLI.
+var claudeCLIInstalled = detectClaudeCLI
+
+// claudeNotInstalledHint is the readiness hint when no claude CLI can be
+// located: shown beside the greyed-out models and on the provider's settings
+// card, directly above its CLI-path field. It names both ways out, since a CLI
+// Juggler can't find is fixed by pointing at it, and one that isn't there by
+// installing it — and names no place, because it is read in two.
+const claudeNotInstalledHint = "Claude Code CLI not found — install it, or enter the path to claude."
+
 // runClaudeAuthStatus asks the CLI whether it is signed in.
 //
 // `claude auth status` is the only supported way to ask: it is non-interactive,
@@ -110,9 +121,17 @@ func authProbeDue() bool {
 // why. Registered as the provider's ReadinessCheck, so a false here makes the
 // provider unavailable and shows the hint.
 //
-// It refuses on one signal only: a real turn that failed to authenticate. The
-// probe is never allowed to disable the provider, because `claude auth status`
-// has been observed reporting "loggedIn": true in a context where a turn had
+// It first refuses when no CLI can be located at all. The provider is a toggle,
+// so switching it on in settings credentials it whether or not claude is
+// installed; counted as available, a missing CLI would win the default model,
+// keep the setup wizard away, and fail every turn. This is no fail-closed probe:
+// the lookup is a stat, re-run on every refresh (claudeBinary re-resolves
+// whenever it holds no runnable path), so an install or a path set in settings re-enables the
+// provider on the next refresh.
+//
+// Beyond that it refuses on one signal only: a real turn that failed to
+// authenticate. The probe is never allowed to disable the provider, because
+// `claude auth status` has been observed reporting "loggedIn": true in a context where a turn had
 // just taken a genuine 401, and reporting false where an interactive login was
 // working fine. A wrong answer in that direction takes away the user's only way
 // of working.
@@ -124,6 +143,9 @@ func authProbeDue() bool {
 // could never be re-enabled by one. Letting the turn through means the worst
 // case is the same error again, reported properly, instead of a dead end.
 func claudeReadiness() (bool, string) {
+	if !claudeCLIInstalled() {
+		return false, claudeNotInstalledHint
+	}
 	if currentClaudeLoginState() != loginExpired {
 		return true, ""
 	}

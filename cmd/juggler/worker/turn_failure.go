@@ -77,8 +77,9 @@ func (r *run) runFoldedCompactionTurn() (verdict turnVerdict, handled bool) {
 //
 // The failures are tried in this order, and the order matters:
 //   - cancellation ends the turn silently;
-//   - an unusable provider (Guard B) and an authentication refusal are
-//     user-fixable setup problems, terminal and never retried, and are
+//   - an unusable provider (Guard B), an authentication refusal, and a
+//     provider that can't run here (a missing CLI) are user-fixable setup
+//     problems, terminal and never retried, and are
 //     checked before any context-limit handling because they are unrelated to
 //     it;
 //   - a context overflow (or a silent-truncation advisory) may stop, retry
@@ -102,7 +103,21 @@ func (r *run) handleTurnFailure(st *strategyRunState, err error, llmRequest json
 	// lapsed. Same terminal shape as Guard B, and equally never retried.
 	var authErr *provider.AuthError
 	if errors.As(err, &authErr) {
-		r.reportAuthFailure(authErr, err, duration)
+		r.reportUserFixableFailure(userFixableFailure{
+			provider: authErr.Provider, hint: authErr.Hint, message: authErr.Message,
+			defaultLead: "The provider isn't signed in.", kind: "auth", code: "auth-required", logLabel: "authentication",
+		}, err, duration)
+		return turnDone
+	}
+	// The provider can't run on this machine at all (a CLI it drives isn't
+	// installed). Nothing was attempted, so it is as terminal as an auth
+	// refusal and just as pointless to retry.
+	var setupErr *provider.SetupError
+	if errors.As(err, &setupErr) {
+		r.reportUserFixableFailure(userFixableFailure{
+			provider: setupErr.Provider, hint: setupErr.Hint, message: setupErr.Message,
+			defaultLead: "The provider isn't set up on this machine.", kind: "setup", code: "provider-setup", logLabel: "setup",
+		}, err, duration)
 		return turnDone
 	}
 
@@ -170,36 +185,50 @@ func (r *run) reportProviderUnavailable(err error, duration time.Duration) {
 	r.sendStatusWithCode("validation-error", msg, "provider-unavailable")
 }
 
-// reportAuthFailure handles a provider that refused the call on authentication
-// grounds, in the same terminal shape as reportProviderUnavailable.
-func (r *run) reportAuthFailure(authErr *provider.AuthError, err error, duration time.Duration) {
+// userFixableFailure describes a terminal failure the user fixes outside the
+// turn — a provider.AuthError or provider.SetupError — in the terms
+// reportUserFixableFailure reports it in.
+type userFixableFailure struct {
+	provider    string // registry name of the provider at fault, or ""
+	hint        string // the provider's remediation, written for the reader
+	message     string // the provider's own account, kept beneath the hint
+	defaultLead string // the lead when the provider gave no hint
+	kind        string // the error item's errorKind, which the row keys its actions off
+	code        string // the validation-error status code
+	logLabel    string // names the class in the server log
+}
+
+// reportUserFixableFailure handles a provider that refused the call on
+// authentication grounds, or that cannot run on this machine at all, in the
+// same terminal shape as reportProviderUnavailable.
+func (r *run) reportUserFixableFailure(f userFixableFailure, err error, duration time.Duration) {
 	// The provider's hint leads, because it is the only sentence here
 	// written for the person reading it — the provider's own error text
 	// is addressed to someone standing at its command line. That text
 	// still follows, since it is the only diagnosable part.
-	lead := authErr.Hint
+	lead := f.hint
 	if lead == "" {
-		lead = "The provider isn't signed in."
+		lead = f.defaultLead
 	}
 	msg := lead
-	if detail := strings.TrimSpace(authErr.Message); detail != "" {
+	if detail := strings.TrimSpace(f.message); detail != "" {
 		msg += "\n\n" + detail
 	}
 	errorData := r.turnErrorData(duration)
-	if authErr.Provider != "" {
-		errorData["provider"] = authErr.Provider
+	if f.provider != "" {
+		errorData["provider"] = f.provider
 	}
 	// errorKind lets the transcript row offer the remediation action
 	// without re-deriving the classification by matching on the text.
-	errorData["errorKind"] = "auth"
-	r.log.Error("❌ LLM error (authentication): %s", err.Error())
+	errorData["errorKind"] = f.kind
+	r.log.Error("❌ LLM error (%s): %s", f.logLabel, err.Error())
 	// Durable item first, for the same reason as Guard B: the status is
 	// a transient client-side notice and would leave nothing behind for
 	// a sign-in that lapsed while nobody was watching.
 	r.sendErrorWithData(msg, "", errorData)
 	// Only the lead goes to the composer warning. The detail belongs in
 	// the transcript, where there is room to read it.
-	r.sendStatusWithCode("validation-error", lead, "auth-required")
+	r.sendStatusWithCode("validation-error", lead, f.code)
 }
 
 // resolveContextOverflow gives a context-limit failure to the overflow handler.

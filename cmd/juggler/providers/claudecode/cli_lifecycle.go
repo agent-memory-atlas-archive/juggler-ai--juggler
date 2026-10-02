@@ -82,11 +82,14 @@ var claudeBinaryPath = resolveClaudeBinary()
 //  1. the test seam (pinnedBinaryPath);
 //  2. an explicit user override — the settings-panel path or JUGGLER_CLAUDE_PATH
 //     — read live so a change takes effect without restarting juggler;
-//  3. the path auto-detected at startup;
-//  4. a fresh auto-detect when startup found nothing (covers a claude installed
-//     after the process started).
+//  3. the path auto-detected at startup, while it is still a runnable file;
+//  4. a fresh auto-detect otherwise — covering a claude installed after the
+//     process started, and one removed or moved since (an uninstall, or a
+//     version-manager upgrade that retires the old node's bin dir).
 //
-// The happy path (auto-detected once, no override) is a plain field read.
+// The happy path (auto-detected once, no override) is a field read and a stat.
+// The startup path is never rewritten, so the field stays read-only after
+// package init and needs no lock.
 func claudeBinary() string {
 	if pinnedBinaryPath != "" {
 		return pinnedBinaryPath
@@ -94,7 +97,7 @@ func claudeBinary() string {
 	if p := configuredClaudeBinary(); p != "" {
 		return p
 	}
-	if claudeBinaryPath != "" {
+	if claudeBinaryPath != "" && isExecutablePath(claudeBinaryPath) {
 		return claudeBinaryPath
 	}
 	return resolveClaudeBinary()
@@ -234,6 +237,26 @@ func augmentPathEnv(environ []string, dir string) []string {
 		out = append(out, "PATH="+dir)
 	}
 	return out
+}
+
+// claudeNotFoundHint leads the transcript when a turn finds no claude CLI. The
+// person reading it is as likely to be new to Juggler and never to have
+// installed Claude Code as to have it somewhere Juggler can't see, so it says
+// first that this is one provider among several — the row beneath it offers
+// another model as well as settings.
+const claudeNotFoundHint = "Claude Code isn't installed, or Juggler can't find its claude CLI. It's only one way to run Juggler: choose another model, or install it — or set its path — in provider settings."
+
+// claudeNotFoundError is the failure for a spawn that finds no claude CLI: a
+// provider.SetupError, so the worker reports it as user-fixable rather than as
+// a generic error with only a Retry beneath it. The message keeps what was
+// searched, which is the diagnosable part for someone who has it installed.
+func claudeNotFoundError() error {
+	return &provider.SetupError{
+		Provider: "claudecode",
+		Message: fmt.Sprintf("claude executable not found. Searched $PATH, the login shell, and known install locations (%s). Its path can be set in provider settings, or with %s.",
+			claudeInstallLocationsHint, claudePathEnvVar),
+		Hint: claudeNotFoundHint,
+	}
 }
 
 // detectClaudeCLI reports whether a usable claude CLI can be located, honouring
@@ -626,7 +649,7 @@ func (c *Client) ensurePersistentCLI(req provider.MessageRequest) error {
 func (c *Client) spawnCLIPipes(args []string) error {
 	bin := claudeBinary()
 	if bin == "" {
-		return fmt.Errorf("failed to start claude CLI: claude executable not found. Searched $PATH, the login shell, and known install locations (%s). Set %s to its absolute path if it lives elsewhere", claudeInstallLocationsHint, claudePathEnvVar)
+		return claudeNotFoundError()
 	}
 	jlog.Debug("Claude CLI command: %s %s", bin, strings.Join(args, " "))
 
