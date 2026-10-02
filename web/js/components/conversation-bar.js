@@ -308,7 +308,7 @@ class ConversationBar extends JugglerElement {
    * @private
    */
   _setupKeyboardNavigation() {
-    this.onDocument('juggler:focus-tab-list', () => this._enterTabListFocus());
+    this.onDocument('juggler:focus-tab-list', () => this._enterTabListFocus({ ring: true }));
 
     // A click on the bar's empty background focuses the tab list — the same
     // mode ArrowLeft out of the leftmost conversation column enters — so a bar
@@ -429,10 +429,15 @@ class ConversationBar extends JugglerElement {
    * Esc leaves. Reached two ways — ArrowLeft out of the leftmost conversation
    * column (via the juggler:focus-tab-list event) and a click on the bar's
    * empty background (see the click handler in _setupKeyboardNavigation).
+   *
+   * Only the keyboard way in rings the active entry: a click on the bar puts
+   * the pointer where the keys went already, and a ring there only distracts.
+   * @param {{ring?: boolean}} [options] - ring: mark the active entry as focused.
    * @private
    */
-  _enterTabListFocus() {
+  _enterTabListFocus({ ring = false } = {}) {
     this.classList.add('tab-list-focused');
+    this.classList.toggle('tab-list-ring', ring);
     this.setAttribute('tabindex', '-1');
     this.focus({ preventScroll: true });
     this._scrollActiveTabIntoView();
@@ -440,7 +445,7 @@ class ConversationBar extends JugglerElement {
 
   /** @private */
   _exitTabListFocus() {
-    this.classList.remove('tab-list-focused');
+    this.classList.remove('tab-list-focused', 'tab-list-ring');
     if (document.activeElement === this) this.blur();
   }
 

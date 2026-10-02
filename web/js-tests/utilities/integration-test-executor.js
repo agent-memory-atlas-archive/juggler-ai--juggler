@@ -222,6 +222,7 @@ import { runTests as runThreadColumnSelectionTests } from '../unit-tests/thread-
 import { runTests as runThreadSelectionPinTests } from '../unit-tests/thread-selection-pin-test.js';
 import { runTests as runThreadPinSurvivesRevealTests } from '../unit-tests/thread-pin-survives-reveal-test.js';
 import { runTests as runThreadStreamPinTests } from '../unit-tests/thread-stream-pin-test.js';
+import { runTests as runArrowKeyThreadFocusTests } from '../unit-tests/arrow-key-thread-focus-test.js';
 import { runTests as runParallelThreadSelectionTests } from '../unit-tests/parallel-thread-selection-test.js';
 import { runTests as runPinboardThreadSourceTests } from '../unit-tests/pinboard-thread-source-test.js';
 import { runTests as runPinboardTasksTests } from '../unit-tests/pinboard-tasks-test.js';
@@ -673,6 +674,7 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:control-click-reveal', run: runControlClickRevealTests },
   { name: 'unit:tab-hide-focus', run: runTabHideFocusTests },
   { name: 'unit:new-thread-focus', run: runNewThreadFocusTests, needsExclusiveRun: true },
+  { name: 'unit:arrow-key-thread-focus', run: runArrowKeyThreadFocusTests, needsExclusiveRun: true },
   { name: 'unit:approval-focus-return', run: runApprovalFocusReturnTests, needsExclusiveRun: true },
   { name: 'unit:approval-draft-focus', run: runApprovalDraftFocusTests, needsExclusiveRun: true },
   { name: 'unit:nested-approval-status', run: runNestedApprovalStatusTests },

@@ -254,7 +254,7 @@ conversation-bar .conversation-box.active {
     --workspace-box-overlay: var(--item-selected-bg);
 }
 
-conversation-bar.tab-list-focused:focus-within .conversation-box.active {
+conversation-bar.tab-list-ring:focus-within .conversation-box.active {
     outline: 0.125rem solid var(--accent-blue);
     outline-offset: 0.125rem;
     box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--accent-blue) 30%, transparent);
@@ -568,7 +568,9 @@ conversation-bar:focus {
     outline: none;
 }
 
-conversation-bar.tab-list-focused:focus-within .conversation-tab.active {
+/* Rung only when ← brought the keyboard here (tab-list-ring): a click on the
+   bar's background already shows where the keys went. */
+conversation-bar.tab-list-ring:focus-within .conversation-tab.active {
     outline: 0.125rem solid var(--accent-blue);
     outline-offset: 0.125rem;
     box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--accent-blue) 30%, transparent);

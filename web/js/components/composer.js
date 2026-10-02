@@ -294,7 +294,14 @@ class Composer extends HTMLElement {
   connectedCallback() {
     this.render();
     this._watchPointerType();
-    if (document.activeElement === document.body && !document.querySelector('conversation-bar.tab-list-focused')) {
+    // Take an unclaimed keyboard on arrival — except in a sub-thread column,
+    // whose box gets focus only through conversation-tab's Rule 15. That rule
+    // stands down while the arrow keys are walking the item list, which is
+    // precisely when focus sits on <body>; a thread column created by ↑/↓
+    // landing on a thread tile would otherwise pull the keyboard out of the list.
+    if (document.activeElement === document.body
+      && !this.closest('.thread-column')
+      && !document.querySelector('conversation-bar.tab-list-focused')) {
       this.querySelector('textarea')?.focus();
     }
   }

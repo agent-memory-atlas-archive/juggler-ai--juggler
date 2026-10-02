@@ -577,6 +577,45 @@ export async function runTests() {
         + 'also put the keyboard in the strip — that left the box wearing a focus ring no clicked tab ever wears');
     });
 
+    await check('the focus ring marks a keyboard arrival in the strip, never a click on its background', () => {
+      const box = /** @type {HTMLElement} */ (
+        bar.querySelector('.conversation-box[data-workspace-id="ws_a"]'));
+      box.classList.add('active');
+      /**
+       * @param {string} how - Which way in is being read, for the message.
+       * @returns {boolean} Whether the bar is set to ring its active entry.
+       */
+      const ringed = (how) => {
+        // :focus-within needs the document to hold focus, which a headless page
+        // may not; the class is what the ring's rule keys on either way.
+        const rule = bar.classList.contains('tab-list-ring');
+        if (bar.matches(':focus-within')) {
+          assert((getComputedStyle(box).outlineStyle !== 'none') === rule,
+            `${how}: the ring's paint follows its class, got outline ${getComputedStyle(box).outlineStyle}`);
+        }
+        return rule;
+      };
+      try {
+        bar.classList.remove('tab-list-focused', 'tab-list-ring');
+        bar.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        assert(bar.classList.contains('tab-list-focused'),
+          'a click on the bare bar still puts the keyboard in the strip, so ↑/↓ switch tabs');
+        assert(!ringed('after a click'),
+          'but the active entry wears no ring: the pointer is already on the strip, and the ring only distracts');
+
+        bar._exitTabListFocus();
+        document.dispatchEvent(new CustomEvent('juggler:focus-tab-list'));
+        assert(bar.classList.contains('tab-list-focused') && ringed('after ←'),
+          'arriving by ← from the conversation is the one way in that leaves no other mark of where the keys went');
+
+        bar._exitTabListFocus();
+        assert(!bar.classList.contains('tab-list-ring'), 'and leaving the strip takes the ring with it');
+      } finally {
+        bar._exitTabListFocus();
+        box.classList.remove('active');
+      }
+    });
+
     await check('a box names itself on its top edge, over the column of its tabs\' circles', async () => {
       // The name is a lozenge standing on the box's border, the way a
       // fieldset's legend does: the box needs no header row of its own, and the
