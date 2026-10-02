@@ -40,46 +40,50 @@ export const COMPOSER_LONG_THREAD_ITEMS = 250;
  * `ready` is read on almost every turn, so it stays information. The others are
  * the tail — states most sessions reach rarely, where a line can carry some
  * voice — but every one of them still has to survive the ten-thousandth read.
+ *
+ * Every line is the app speaking TO the user — addressed to them, never in the
+ * first person. A placeholder sits exactly where the user's own words go, so a
+ * line they could plausibly send ("OK, let's carry on…") reads as a suggested
+ * message rather than a prompt.
  * @type {Readonly<Record<string, readonly string[]>>}
  */
 export const COMPOSER_PLACEHOLDERS = Object.freeze({
   /** A conversation with no history yet — seeded context items don't count. */
   fresh: Object.freeze([
-    "OK, let's get rolling…",
     'Type your message…',
-    'Here we go…',
-    "Let's build…",
+    'What would you like to build?',
+    'Describe your task…',
   ]),
 
   /** Mid-flow, with nothing in particular to report. The common case. */
   ready: Object.freeze([
     'Type your message…',
     'Enter your command…',
-    'Onwards and upwards…',
+    'Your turn…',
   ]),
 
   /** The last turn was cancelled — by the user, or by an action that preempted it. */
   cancelled: Object.freeze([
-    'OK. Now what?',
-    'Stopped. What should we do?',
+    'Stopped. What would you like instead?',
+    'Stopped. Your move…',
   ]),
 
   /** The last turn ended in an error. */
   error: Object.freeze([
-    "That didn't go so well…",
-    'Something else, then…',
+    'That failed. What would you like to try?',
+    'Not that way, then. Your call…',
   ]),
 
   /** Coming back to a conversation that has been quiet for a long time. */
   idle: Object.freeze([
-    "OK, let's carry on…",
-    'Ready to pick this up…',
+    'Welcome back. Type your message…',
+    'Welcome back. Where would you like to pick up?',
   ]),
 
   /** A thread long past the point of comfort. */
   long: Object.freeze([
-    "This one's getting long…",
-    'This is becoming a bit of an epic…',
+    "This one's getting long. What's your next step?",
+    "Quite an epic, this. What's your next move?",
   ]),
 });
 
