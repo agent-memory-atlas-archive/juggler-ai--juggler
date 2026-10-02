@@ -125,7 +125,10 @@ class WorkspaceBoxHeader extends HTMLElement {
     const name = this.querySelector('.conversation-box-label-text');
     if (name && name.textContent !== label) name.textContent = label;
     this.classList.toggle('is-dirty', dirty);
-    this.title = dirty ? `${label} — holding uncommitted work` : label;
+    // A tooltip repeating the name says nothing the lozenge doesn't, so there
+    // is one only to put the dirty dot into words.
+    if (dirty) this.title = 'Holding uncommitted work';
+    else this.removeAttribute('title');
   }
 
   /**

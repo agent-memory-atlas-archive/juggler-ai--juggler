@@ -214,8 +214,10 @@ export async function runTests() {
     const returningExplainer = /** @type {HTMLElement|null} */ (returning.querySelector('.np-explainer'));
     assert(!!returningExplainer && returningExplainer.hidden,
       'a returning user was given the first-launch explanation again');
-    assert(!(returning.querySelector('.np-heading')?.textContent || '').includes('Welcome'),
-      'a returning user was welcomed as if this were their first launch');
+    const returningHeading = /** @type {HTMLElement|null} */ (returning.querySelector('.np-heading'));
+    assert(!!returningHeading && returningHeading.hidden,
+      'a returning user was given a heading: the welcome is for a first launch, and the '
+      + 'empty window already says no project is open');
     passed++;
 
     // --- 9: a recent opens the project it names -----------------------------

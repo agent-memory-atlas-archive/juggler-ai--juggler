@@ -318,13 +318,14 @@ class NoProjectOverlay extends HTMLElement {
 
   /**
    * Trim the panel to what a returning user needs: they know what a project
-   * folder is, and their list is the thing they came back for.
+   * folder is, and their list is the thing they came back for. The welcome
+   * heading goes too, with nothing in its place — an empty window already says
+   * no project is open.
    * @returns {void}
    * @private
    */
   _setReturning() {
-    const heading = this.querySelector('.np-heading');
-    if (heading) heading.textContent = 'No project open';
+    this.querySelector('.np-heading')?.setAttribute('hidden', '');
     this.querySelector('.np-lead')?.setAttribute('hidden', '');
     this.querySelector('.np-explainer')?.setAttribute('hidden', '');
   }
