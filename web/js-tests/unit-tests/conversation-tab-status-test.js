@@ -68,6 +68,17 @@ function visibleGlyphs(circle) {
 }
 
 /**
+ * Whether this machine asks for reduced motion.
+ *
+ * The running pulse is dropped under the preference, and CI machines report
+ * it, so the pulse case asserts whichever behaviour this machine is entitled to.
+ * @returns {boolean} True when the reduce preference is set.
+ */
+function reducedMotion() {
+  return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+}
+
+/**
  * @returns {Promise<{passed: number, failed: number, errors: string[]}>} Aggregated test results.
  */
 export async function runTests() {
@@ -220,8 +231,12 @@ export async function runTests() {
     });
 
     await check('only running pulses, and nothing else on the tab animates', () => {
-      assert(getComputedStyle(circle('running')).animationName === 'icon-pulse',
-        `a running circle pulses with the badge pulse, got ${getComputedStyle(circle('running')).animationName}`);
+      const pulse = getComputedStyle(circle('running')).animationName;
+      if (reducedMotion()) {
+        assert(pulse === 'none', `under reduced motion a running circle holds still, got ${pulse}`);
+      } else {
+        assert(pulse === 'icon-pulse', `a running circle pulses with the badge pulse, got ${pulse}`);
+      }
       for (const id of ['idle', 'awaiting']) {
         assert(getComputedStyle(circle(id)).animationName === 'none', `tab ${id}'s circle must hold still`);
         assert(getComputedStyle(tab(id)).animationName === 'none', `tab ${id} itself must not animate`);

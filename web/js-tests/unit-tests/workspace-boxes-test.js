@@ -517,27 +517,40 @@ export async function runTests() {
       // them — which is opaque whatever the colour it is heading for. The
       // target is the thing under test, so the easing is turned off to see it.
       tab.style.transition = 'none';
+      // Both themes, because a box's tint is one of the theme's hues and the
+      // light theme's are translucent: a surface mixed from one is a glaze too.
+      const root = document.documentElement;
+      const was = root.dataset.theme;
       try {
-        tab.classList.add('needs-attention');
-        const standing = getComputedStyle(tab).backgroundColor;
-        assert(isOpaque(standing),
-          'the standing needs-attention tint must be a fill, not a glaze: '
-          + `got ${standing}, which is the blue of the box it lies in showing through it`);
+        for (const theme of ['dark', 'light']) {
+          root.dataset.theme = theme;
+          tab.classList.add('needs-attention');
+          const standing = getComputedStyle(tab).backgroundColor;
+          assert(isOpaque(standing),
+            `in ${theme}, the standing needs-attention tint must be a fill, not a glaze: `
+            + `got ${standing}, which is the blue of the box it lies in showing through it`);
 
-        // The flash's "off" frame is the tab as it would otherwise be, which is
-        // a colour — reachable only by driving the animation to that frame.
-        tab.classList.add('attention-flash');
-        const flash = tab.getAnimations().find(a => /** @type {any} */ (a).animationName === 'tab-attention-flash');
-        assert(flash !== undefined, 'precondition: the one-shot flash is running on the tab');
-        /** @type {any} */ (flash).currentTime = 200;
-        const off = getComputedStyle(tab).backgroundColor;
-        assert(isOpaque(off),
-          'and the dark half of the flash is the tab, not a hole through it: '
-          + `got ${off} where the box behind it is ${getComputedStyle(box).backgroundColor} `
-          + `(the standing tint measured ${standing})`);
+          // The flash's "off" frame is the tab as it would otherwise be, which
+          // is a colour — reachable only by driving the animation to that frame.
+          tab.classList.add('attention-flash');
+          const flash = tab.getAnimations().find(a => /** @type {any} */ (a).animationName === 'tab-attention-flash');
+          assert(flash !== undefined, 'precondition: the one-shot flash is running on the tab');
+          /** @type {any} */ (flash).currentTime = 200;
+          const off = getComputedStyle(tab).backgroundColor;
+          assert(isOpaque(off),
+            `in ${theme}, the dark half of the flash is the tab, not a hole through it: `
+            + `got ${off} where the box behind it is ${getComputedStyle(box).backgroundColor} `
+            + `(the standing tint measured ${standing})`);
+          tab.classList.remove('needs-attention', 'attention-flash');
+        }
       } finally {
+        if (was === undefined) delete root.dataset.theme; else root.dataset.theme = was;
         tab.classList.remove('needs-attention', 'attention-flash');
         box.classList.remove('active');
+        // The next render keeps this tab, so its easing comes back only once it
+        // has settled on its resting fill: restored in the same style change, it
+        // would ease from the alert to transparent under the next case's reading.
+        void getComputedStyle(tab).backgroundColor;
         tab.style.removeProperty('transition');
       }
     });

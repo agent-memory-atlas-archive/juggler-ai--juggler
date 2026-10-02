@@ -118,10 +118,15 @@ conversation-bar .conversation-box {
        The whole fill is one property, --workspace-box-paint, because two things
        paint it: the box, and the backing behind its name, which stands across
        the edge and has to hide it. Hover and selection change the overlay in it,
-       never the surface, so both move together. */
-    --workspace-box-surface: color-mix(in srgb,
+       never the surface, so both move together.
+
+       The surface is made opaque after the mix. A theme's hues can carry alpha
+       of their own (the light theme's are the translucent badge presets), and a
+       mix keeps a share of it, so the fill would be a glaze over the strip — and
+       so would everything mixed from it: a tab's alert tint, the name's backing. */
+    --workspace-box-surface: rgb(from color-mix(in srgb,
         var(--workspace-tint, var(--workspace-box-bg)) var(--workspace-tint-fill),
-        var(--workspace-box-bg));
+        var(--workspace-box-bg)) r g b / 100%);
     --workspace-box-overlay: transparent;
     --workspace-box-paint: linear-gradient(var(--workspace-box-overlay), var(--workspace-box-overlay)),
         var(--workspace-box-surface);
