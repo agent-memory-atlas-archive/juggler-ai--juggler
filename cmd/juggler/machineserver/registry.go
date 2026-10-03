@@ -35,6 +35,16 @@ type Session struct {
 	State     SessionState `json:"state"`
 	Error     string       `json:"error,omitempty"`
 	StartedAt time.Time    `json:"startedAt"`
+	// Busy and LastActive come from polling the child (see pollActivity), so
+	// both trail the child by up to activityPollInterval, and a turn that
+	// starts and ends between two polls is never seen.
+	//
+	// Busy is what the latest successful poll reported: a turn is running,
+	// not merely parked on a tool approval.
+	Busy bool `json:"busy"`
+	// LastActive is the time of the latest poll that found the child busy;
+	// absent when no poll has.
+	LastActive *time.Time `json:"lastActive,omitempty"`
 }
 
 // sessionEntry pairs the public record with the live child handle.
@@ -150,6 +160,7 @@ func (r *registry) setError(id, msg string) {
 			e.Error = msg
 			e.Addr = ""
 			e.PID = 0
+			e.Busy = false
 			e.child = nil
 		}
 	})
@@ -185,6 +196,7 @@ func (r *registry) noteExit(id string) {
 			e.Error = "session child exited"
 			e.Addr = ""
 			e.PID = 0
+			e.Busy = false
 			e.child = nil
 		}
 	})

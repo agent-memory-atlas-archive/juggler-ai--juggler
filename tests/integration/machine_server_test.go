@@ -329,6 +329,200 @@ func TestMachineServerProxiesWebSocket(t *testing.T) {
 	}
 }
 
+// TestMachineServerReportsSessionActivity runs a real turn in a session's
+// child and watches the sessions list follow it: idle with no last activity
+// before, busy with a last activity while the turn runs, idle again after,
+// keeping the time it was last seen busy.
+func TestMachineServerReportsSessionActivity(t *testing.T) {
+	ms, stop := startMachineServer(t)
+	defer stop()
+
+	sess := ms.openSession(newProjectDir(t), http.StatusCreated)
+	if sess.Busy || sess.LastActive != nil {
+		t.Fatalf("fresh session = %+v, want idle with no last activity", sess)
+	}
+
+	before := time.Now()
+	release := holdTurn(t, ms, sess)
+	busy := ms.waitForSession(sess.ID, "busy", 15*time.Second, func(s machineserver.Session) bool { return s.Busy })
+	if busy.LastActive == nil || busy.LastActive.Before(before) {
+		t.Fatalf("busy session = %+v, want a last activity after %s", busy, before.Format(time.RFC3339Nano))
+	}
+
+	release()
+	idle := ms.waitForSession(sess.ID, "idle", 15*time.Second, func(s machineserver.Session) bool { return !s.Busy })
+	if idle.LastActive == nil || idle.LastActive.Before(*busy.LastActive) {
+		t.Fatalf("idle session = %+v, want the last activity kept from when it was busy (%s)",
+			idle, busy.LastActive.Format(time.RFC3339Nano))
+	}
+}
+
+// holdTurn starts a turn in a new conversation on sess's child and holds it
+// open on a paused scripted response — the worker's test mock, which every
+// non-production build carries — talking to the child through the proxy as a
+// viewer would. It returns once the child reports the turn paused, with the
+// func that lets the turn finish.
+func holdTurn(t *testing.T, ms *machineServer, sess machineserver.Session) (release func()) {
+	t.Helper()
+	prefix := "/s/" + sess.ID
+
+	resp, err := ms.do(http.MethodGet, prefix+"/", nil)
+	if err != nil {
+		t.Fatalf("proxied GET index: %v", err)
+	}
+	page, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	m := apiTokenPattern.FindSubmatch(page)
+	if m == nil {
+		t.Fatalf("proxied index.html carries no API token")
+	}
+	token := string(m[1])
+
+	req, err := http.NewRequest(http.MethodPost, ms.url(prefix+"/api/conversations"),
+		strings.NewReader(`{"name":"held turn"}`))
+	if err != nil {
+		t.Fatalf("build create request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Juggler-Token", token)
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create conversation: status %d, body %s", resp.StatusCode, body)
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(body, &created); err != nil || created.ID == "" {
+		t.Fatalf("create conversation: body %s (%v)", body, err)
+	}
+	convID := created.ID
+
+	header := http.Header{"Origin": []string{"http://" + ms.Addr}}
+	wsURL := "ws://" + ms.Addr + prefix + apipaths.WebSocket + "?role=viewer&token=" + token
+	conn, wsResp, err := websocket.DefaultDialer.Dial(wsURL, header)
+	if wsResp != nil && wsResp.Body != nil {
+		_ = wsResp.Body.Close()
+	}
+	if err != nil {
+		t.Fatalf("proxied WebSocket dial: %v", err)
+	}
+	// Frames come from this goroutine and, as replies, from the reader below;
+	// one writer goroutine owns the socket's write side.
+	outbox, closed := make(chan any), make(chan struct{})
+	t.Cleanup(func() {
+		close(closed)
+		_ = conn.Close()
+	})
+	go func() {
+		for {
+			select {
+			case frame := <-outbox:
+				if err := conn.WriteJSON(frame); err != nil {
+					return
+				}
+			case <-closed:
+				return
+			}
+		}
+	}()
+	send := func(msgType string, payload any) {
+		raw, err := json.Marshal(payload)
+		if err != nil {
+			t.Errorf("marshal %s: %v", msgType, err)
+			return
+		}
+		select {
+		case outbox <- map[string]any{
+			"type": "worker-message", "conversationId": convID,
+			"workerMsgType": msgType, "payload": json.RawMessage(raw),
+		}:
+		case <-closed:
+		}
+	}
+
+	// The reader answers the turn's requests for tools and rendered context —
+	// the engine's job, done here so the turn needs no engine to reach the
+	// mock — and reports the frames the steps below wait for.
+	ready, acked, paused := make(chan struct{}, 1), make(chan struct{}, 1), make(chan struct{}, 1)
+	signal := func(ch chan struct{}) {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
+	go func() {
+		for {
+			_, raw, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			var env struct {
+				Type           string          `json:"type"`
+				ConversationID string          `json:"conversationId"`
+				Payload        json.RawMessage `json:"payload"`
+			}
+			if json.Unmarshal(raw, &env) != nil || env.Type != "worker-message" || env.ConversationID != convID {
+				continue
+			}
+			var msg struct {
+				Type      string `json:"type"`
+				Status    string `json:"status"`
+				RequestID string `json:"requestId"`
+			}
+			if json.Unmarshal(env.Payload, &msg) != nil {
+				continue
+			}
+			switch msg.Type {
+			case "ready":
+				signal(ready)
+			case "ack":
+				signal(acked)
+			case "status":
+				if msg.Status == "mock-paused" {
+					signal(paused)
+				}
+			case "request-tools":
+				send("tools-result", map[string]any{"type": "tools-result", "requestId": msg.RequestID, "tools": []any{}})
+			case "render-context-items-request":
+				send("render-context-items-response", map[string]any{"type": "render-context-items-response", "requestId": msg.RequestID})
+			}
+		}
+	}()
+	await := func(ch chan struct{}, what string) {
+		t.Helper()
+		select {
+		case <-ch:
+		case <-time.After(30 * time.Second):
+			t.Fatalf("held turn: no %s from the child", what)
+		}
+	}
+
+	send("init", map[string]any{
+		"type":         "init",
+		"conversation": map[string]any{"id": convID, "name": "held turn"},
+		"config":       map[string]any{"projectPath": sess.Project},
+	})
+	await(ready, "ready")
+	send("set-mock-responses", map[string]any{
+		"type": "set-mock-responses", "ackId": "held-turn",
+		"responses": []any{map[string]any{
+			"blocks":            []any{map[string]any{"type": "text", "content": "held"}},
+			"stopReason":        "end_turn",
+			"pauseBeforeReturn": true,
+		}},
+	})
+	await(acked, "ack for the scripted response")
+	send("send-message", map[string]any{"type": "send-message", "text": "hold this turn"})
+	await(paused, "mock-paused status")
+
+	return func() { send("release-mock", map[string]any{"type": "release-mock"}) }
+}
+
 // TestMachineServerChildCrashIsError kills a session's child out from under
 // the machine server: the session turns to the error state, the proxy stops
 // routing to it, and the next open for that project replaces it with a fresh

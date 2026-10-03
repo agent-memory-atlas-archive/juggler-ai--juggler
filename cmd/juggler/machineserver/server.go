@@ -161,6 +161,7 @@ func (s *Server) handleOpenSession(w http.ResponseWriter, r *http.Request) {
 		<-c.exited
 		s.reg.noteExit(sess.ID)
 	}()
+	go s.pollActivity(sess.ID, c, activityPollInterval)
 	jlog.Info("[machineserver] session %s: %s at %s (pid %d)", sess.ID, project, c.addr, c.cmd.Process.Pid)
 	sess, _ = s.reg.get(sess.ID)
 	writeJSON(w, http.StatusCreated, sess)

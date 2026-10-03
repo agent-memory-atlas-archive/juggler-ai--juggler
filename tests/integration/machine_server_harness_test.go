@@ -318,17 +318,25 @@ func (ms *machineServer) mustListSessions() []machineserver.Session {
 // waitForSessionState polls the sessions list until id reaches state.
 func (ms *machineServer) waitForSessionState(id string, state machineserver.SessionState, timeout time.Duration) machineserver.Session {
 	ms.t.Helper()
+	return ms.waitForSession(id, fmt.Sprintf("state %q", state), timeout,
+		func(s machineserver.Session) bool { return s.State == state })
+}
+
+// waitForSession polls the sessions list until id's record satisfies ok;
+// what names the condition in the failure.
+func (ms *machineServer) waitForSession(id, what string, timeout time.Duration, ok func(machineserver.Session) bool) machineserver.Session {
+	ms.t.Helper()
 	deadline := time.Now().Add(timeout)
 	var last []machineserver.Session
 	for {
 		last = ms.mustListSessions()
 		for _, s := range last {
-			if s.ID == id && s.State == state {
+			if s.ID == id && ok(s) {
 				return s
 			}
 		}
 		if time.Now().After(deadline) {
-			ms.t.Fatalf("session %s did not reach state %q within %s; sessions: %+v", id, state, timeout, last)
+			ms.t.Fatalf("session %s did not become %s within %s; sessions: %+v", id, what, timeout, last)
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
