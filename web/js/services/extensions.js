@@ -34,13 +34,14 @@ import { apiUrl } from '../utils/api-url.js';
 /**
  * @typedef {object} ExtensionSetting
  * @property {string} key - Stable configuration key
- * @property {'string'|'secret'|'boolean'|'number'|'enum'|'url'} type - Control and value type
+ * @property {'string'|'text'|'secret'|'boolean'|'number'|'enum'|'url'} type - Control and value type (`text` is a multi-line string)
  * @property {string} label - Human-readable label
  * @property {string} [help] - Supporting text
  * @property {string|number|boolean} [default] - Effective value when unset
  * @property {boolean} [required] - Whether the value must be supplied
  * @property {string[]} [options] - Allowed enum values
  * @property {'global'} [scope] - Persistence scope
+ * @property {string} [capability] - `<itemType>:<id>` of a capability whose page also shows this setting
  */
 
 /**

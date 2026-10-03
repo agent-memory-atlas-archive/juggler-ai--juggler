@@ -78,16 +78,24 @@ type Provides struct {
 // Setting describes one user-configurable extension value. Settings are global
 // in the first API version; Scope is retained in the manifest contract so later
 // versions can add project-scoped values without changing its shape.
+//
+// Capability optionally names one of the extension's own capabilities as
+// "<itemType>:<id>" (e.g. "strategy:auto-approve"); the settings UI then also
+// shows the setting on that capability's page. It changes where the setting is
+// displayed, never where it is stored or who can read it.
 type Setting struct {
-	Key      string          `json:"key"`
-	Type     string          `json:"type"`
-	Label    string          `json:"label"`
-	Help     string          `json:"help,omitempty"`
-	Default  json.RawMessage `json:"default,omitempty"`
-	Required bool            `json:"required,omitempty"`
-	Options  []string        `json:"options,omitempty"`
-	Scope    string          `json:"scope,omitempty"`
+	Key        string          `json:"key"`
+	Type       string          `json:"type"`
+	Label      string          `json:"label"`
+	Help       string          `json:"help,omitempty"`
+	Default    json.RawMessage `json:"default,omitempty"`
+	Required   bool            `json:"required,omitempty"`
+	Options    []string        `json:"options,omitempty"`
+	Scope      string          `json:"scope,omitempty"`
+	Capability string          `json:"capability,omitempty"`
 }
+
+var settingCapabilityRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]*:[^\s:]+$`)
 
 // EffectiveScope returns the normalized setting scope.
 func (s Setting) EffectiveScope() string {
@@ -174,7 +182,7 @@ func ValidateSettings(settings []Setting) error {
 			return fmt.Errorf("setting %q is missing label", setting.Key)
 		}
 		switch setting.Type {
-		case "string", "secret", "boolean", "number", "url":
+		case "string", "text", "secret", "boolean", "number", "url":
 			if len(setting.Options) != 0 {
 				return fmt.Errorf("setting %q type %q does not support options", setting.Key, setting.Type)
 			}
@@ -195,6 +203,9 @@ func ValidateSettings(settings []Setting) error {
 		if setting.EffectiveScope() != "global" {
 			return fmt.Errorf("setting %q has unsupported scope %q; only global is supported", setting.Key, setting.Scope)
 		}
+		if setting.Capability != "" && !settingCapabilityRe.MatchString(setting.Capability) {
+			return fmt.Errorf("setting %q has invalid capability %q (use \"<itemType>:<id>\", e.g. \"strategy:my-strategy\")", setting.Key, setting.Capability)
+		}
 		if len(setting.Default) != 0 {
 			var value any
 			if err := json.Unmarshal(setting.Default, &value); err != nil {
@@ -214,7 +225,7 @@ func ValidateSettings(settings []Setting) error {
 // ValidateSettingValue validates and normalizes a decoded JSON setting value.
 func ValidateSettingValue(setting Setting, value any) (any, error) {
 	switch setting.Type {
-	case "string", "secret":
+	case "string", "text", "secret":
 		v, ok := value.(string)
 		if !ok {
 			return nil, fmt.Errorf("must be a string")

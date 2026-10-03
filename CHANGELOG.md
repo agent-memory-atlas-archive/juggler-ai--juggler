@@ -9,6 +9,8 @@ of changes; this project follows semantic versioning.
 - A missing-CLI error offers another model and Provider settings, not just Retry
 - The claude CLI is found in nvm, fnm, bun, pnpm, volta, mise and asdf installs
 - Ollama models now honour a raised Max output tokens instead of stopping at 4096
+- Auto-approve's reviewer can be set to balanced, relaxed, or your own custom policy
+- Extension settings gain a multi-line text type and can appear on a capability's page
 
 ## [0.7.4] - 2026-10-02
 

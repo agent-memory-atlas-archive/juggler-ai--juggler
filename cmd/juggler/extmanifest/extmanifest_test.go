@@ -75,6 +75,7 @@ func TestValidateSettings(t *testing.T) {
 		{Key: "limit", Type: "number", Label: "Limit", Default: defaults(`5`)},
 		{Key: "mode", Type: "enum", Label: "Mode", Options: []string{"fast", "deep"}, Default: defaults(`"fast"`)},
 		{Key: "base_url", Type: "url", Label: "Base URL", Default: defaults(`"https://example.com/api"`), Scope: "global"},
+		{Key: "policy", Type: "text", Label: "Policy", Default: defaults(`"line one\nline two"`), Capability: "strategy:auto-approve"},
 	}
 	if err := ValidateSettings(good); err != nil {
 		t.Fatalf("ValidateSettings(valid): %v", err)
@@ -95,6 +96,10 @@ func TestValidateSettings(t *testing.T) {
 		{"wrong default type", Setting{Key: "enabled", Type: "boolean", Label: "Enabled", Default: defaults(`"yes"`)}},
 		{"invalid URL default", Setting{Key: "host", Type: "url", Label: "Host", Default: defaults(`"relative"`)}},
 		{"invalid enum default", Setting{Key: "mode", Type: "enum", Label: "Mode", Options: []string{"x"}, Default: defaults(`"y"`)}},
+		{"options on text", Setting{Key: "policy", Type: "text", Label: "Policy", Options: []string{"x"}}},
+		{"wrong text default type", Setting{Key: "policy", Type: "text", Label: "Policy", Default: defaults(`3`)}},
+		{"capability without type", Setting{Key: "name", Type: "string", Label: "Name", Capability: "auto-approve"}},
+		{"capability without id", Setting{Key: "name", Type: "string", Label: "Name", Capability: "strategy:"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

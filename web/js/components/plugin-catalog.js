@@ -695,7 +695,7 @@ class PluginCatalog extends JugglerElement {
 
     const right = this._createElement('div', 'catalog-header-right');
     right.appendChild(this._createElement('p', 'catalog-explanation',
-      'A Juggler extension is a bundle of strategies, context items, and commands.'));
+      'Add your own extensions to ~/.juggler/extensions.'));
     right.appendChild(this._renderReloadButton());
     header.appendChild(right);
     return header;
@@ -1207,7 +1207,12 @@ class PluginCatalog extends JugglerElement {
     const perms = this._permissionsSection(card.manifest?.permissions);
     if (perms) content.appendChild(perms);
     if (card.extId && Array.isArray(card.manifest?.settings) && card.manifest.settings.length > 0) {
-      content.appendChild(new ExtensionSettingsEditor(card.manifest).render());
+      const owners = new Set(card.manifest.settings.map((setting) => setting.capability).filter(Boolean));
+      const classes = card.caps
+        .filter((cap) => owners.has(`${cap.itemType}:${cap.id}`))
+        .map((cap) => this._classFor(cap));
+      content.appendChild(new ExtensionSettingsEditor(card.manifest, {},
+        { view: this._settingsViewFor(classes) }).render());
     }
     if (card.caps.length > 0) content.appendChild(this._renderBundledCaps(card));
     container.appendChild(content);
@@ -1350,8 +1355,17 @@ class PluginCatalog extends JugglerElement {
     }
     const file = this._renderSourceFileSection(cap.path);
     if (file) content.appendChild(file);
-
+    // Settings the extension declared for this capability (`capability:
+    // "<itemType>:<id>"`) are shown here as well as on the extension's page —
+    // one stored value, two places to reach it.
     const ItemClass = this._classFor(cap);
+    const capKey = `${cap.itemType}:${cap.id}`;
+    if (card.extId && cap.id
+      && (card.manifest?.settings || []).some((setting) => setting.capability === capKey)) {
+      content.appendChild(new ExtensionSettingsEditor(card.manifest, {},
+        { capability: capKey, view: this._settingsViewFor([ItemClass]) }).render());
+    }
+
     if (ItemClass) {
       const perms = this._renderPermissions(ItemClass);
       if (perms) content.appendChild(perms);
@@ -1401,6 +1415,20 @@ class PluginCatalog extends JugglerElement {
     }
     section.appendChild(list);
     return section;
+  }
+
+  /**
+   * The settings-editor `view` hook for a set of capability classes: each class
+   * that defines a static `settingsView(values)` describes how its own text
+   * settings should display (see `SettingView` in `extensions-settings.js`).
+   * @param {any[]} classes - Loaded capability classes (undefined entries ignored)
+   * @returns {((values: Record<string, unknown>) => Record<string, any>)|undefined} The hook, or undefined when no class offers one
+   * @private
+   */
+  _settingsViewFor(classes) {
+    const views = classes.filter((C) => typeof C?.settingsView === 'function');
+    if (views.length === 0) return undefined;
+    return (values) => Object.assign({}, ...views.map((C) => C.settingsView(values) || {}));
   }
 
   /**

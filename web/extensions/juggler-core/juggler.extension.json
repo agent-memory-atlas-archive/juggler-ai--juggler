@@ -12,6 +12,24 @@
     "shell.exec",
     "web.fetch"
   ],
+  "settings": [
+    {
+      "key": "reviewLevel",
+      "type": "enum",
+      "label": "Auto-approve review level",
+      "help": "How strict the Auto-approve reviewer is. balanced: approves only what your messages or standing permissions cover. relaxed: also trusts routine in-project work the agent chose itself. custom: applies the policy below.",
+      "options": ["balanced", "relaxed", "custom"],
+      "default": "balanced",
+      "capability": "strategy:auto-approve"
+    },
+    {
+      "key": "customPolicy",
+      "type": "text",
+      "label": "Auto-approve custom policy",
+      "help": "Shows the selected level's policy; choose custom to edit it. The reviewer always sees only your messages and the agent's tool calls, and always answers allow or deny.",
+      "capability": "strategy:auto-approve"
+    }
+  ],
   "provides": {
     "contextItems": ["context-items/*-context-item.js"],
     "strategies": ["strategies/*-strategy-type.js"],

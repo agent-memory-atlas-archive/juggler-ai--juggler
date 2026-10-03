@@ -852,6 +852,26 @@ plugin-catalog {
   min-width: 0;
 }
 
+/* A multi-line value needs the row's full width, so its control drops under the label. */
+.extension-setting-field.extension-setting-wide {
+  grid-template-columns: 1fr;
+  gap: 0.5rem;
+}
+
+.extension-setting-textarea {
+  min-height: 7rem;
+  resize: vertical;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+/* A preview of a value not in effect (a preset's built-in text): readable, visibly not editable. */
+.extension-setting-textarea:read-only {
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+}
+
 .extension-setting-checkbox {
   width: 1.125rem;
   height: 1.125rem;

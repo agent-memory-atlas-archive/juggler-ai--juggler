@@ -1201,13 +1201,26 @@ no settings UI.
 | Field | Notes |
 |-------|-------|
 | `key` | Required. Letters, digits, `_`, `-`; must start with a letter. Unique within the extension. |
-| `type` | Required. One of `string`, `secret`, `boolean`, `number`, `url`, `enum`. |
+| `type` | Required. One of `string`, `text` (multi-line string), `secret`, `boolean`, `number`, `url`, `enum`. |
 | `label` | Required. Shown beside the control. |
 | `help` | Optional one-liner under the control. |
 | `default` | Optional, validated against `type`. |
 | `required` | Optional. |
 | `options` | Required for `enum`, rejected for every other type. |
 | `scope` | Optional; only `global` is supported today (the field exists so project scope can arrive without changing the manifest shape). |
+| `capability` | Optional `"<itemType>:<id>"` of one of your capabilities, e.g. `"strategy:my-strategy"`. The setting is then also shown on that capability's page. Only where it is displayed changes: it is stored and resolved with the extension's other settings. |
+
+A capability that owns `text` settings can also define a static
+`settingsView(values)`. The form calls it with the current values whenever one
+changes, and it returns, per setting key, `{preview, seed, note}`:
+- `preview` shows that text read-only in place of the value. The stored value is
+  kept aside, and it is the stored value that gets saved.
+- `seed` starts a blank editable field. A field that was just showing a preview
+  starts from that preview instead.
+- `note` is a line shown under the field.
+
+The built-in Auto-approve strategy uses it to show each preset's policy and to
+start a custom one from it.
 
 Two rules the validator enforces that are easy to trip over: **only `enum` may
 carry `options`**, and **a `secret` may not declare a `default`** — a shipped

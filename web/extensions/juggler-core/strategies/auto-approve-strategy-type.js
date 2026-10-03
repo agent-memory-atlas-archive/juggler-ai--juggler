@@ -3,11 +3,14 @@
 //   ▄▄█▀ ▀███▀ ▀███▀ ▀███▀ ██▄▄▄ ██▄▄▄ ██ ██   Apache-2.0 - see LICENSE
 // SPDX-License-Identifier: Apache-2.0
 
-import { generateText } from 'juggler/ops';
+import { generateText, extensionConfigResolve } from 'juggler/ops';
 import DefaultStrategyType from './default-strategy-type.js';
 import { TOOL_STATES } from 'juggler/model';
 import {
-  POLICY_PROMPT,
+  POLICY_BODIES,
+  DEFAULT_REVIEW_LEVEL,
+  resolvePolicy,
+  buildPolicyPrompt,
   buildReviewerPrompt,
   parseReview,
   reviewFailureNote,
@@ -61,9 +64,16 @@ import { WRITE_FILE_ITEM_TYPE, isFileEditingAllowed } from '../../../js/services
  * leaves that message in place of the spinner, so the card says why the call is
  * still sitting there instead of falling silent.
  *
+ * The reviewer's policy is user-configurable through the `@juggler/core`
+ * extension settings `reviewLevel` (`balanced`, `relaxed`, or `custom`) and
+ * `customPolicy`, shown on this strategy's page in Settings → Extensions. Only
+ * the policy body changes; the framing that keeps the verdict parseable and the
+ * transcript untrusted is fixed (see `auto-approve-reviewer.js`). Neither setting
+ * reaches the two hard-coded exclusions below — file edits and calls marked
+ * non-auto-approvable never go to the reviewer at any level.
+ *
  * Future (deliberately out of scope for v1): hard-deny with rationale fed back
- * to the model, a per-turn circuit breaker, and a per-strategy reviewer-model
- * setting UI.
+ * to the model, a per-turn circuit breaker, and a reviewer-model setting.
  * @augments {DefaultStrategyType}
  */
 export default class AutoApproveStrategyType extends DefaultStrategyType {
@@ -101,7 +111,7 @@ export default class AutoApproveStrategyType extends DefaultStrategyType {
         "don't stop for every little command..."
       ],
       approach: 'Auto-approve runs the same loop as Default, so the permission system still decides everything first: read tools, allowlisted commands, and in-project edits are approved automatically, and only the calls that would otherwise stop to ask you are handed off for review.\n\n'
-        + 'Each parked call is checked by a cheap, fast model — the one set as your cheap model in settings — against a fixed safety policy. To keep that judgement trustworthy the reviewer sees only your own messages and the agent\'s raw tool calls; it never sees the agent\'s explanations or any tool output, so it cannot be argued into an approval or fed instructions hidden in a tool result.\n\n'
+        + 'Each parked call is checked by a cheap, fast model — the one set as your cheap model in settings — against a safety policy. You choose how strict that policy is in the Settings section of this page: Balanced (the default) approves only what your own words or standing permissions cover, Relaxed also trusts ordinary in-project work the agent chose itself, and Custom applies a policy you write. Every level still sends destructive, exfiltrating, security-weakening and trust-boundary-crossing actions to you, unless your custom policy says otherwise; file edits and calls that always need a human are never reviewed at all. To keep that judgement trustworthy the reviewer sees only your own messages and the agent\'s raw tool calls; it never sees the agent\'s explanations or any tool output, so it cannot be argued into an approval or fed instructions hidden in a tool result.\n\n'
         + 'Alongside that it is given the facts of your setup as ground truth: the project root, your home directory, and the permissions you have already granted — whether file editing is on, which folders are allowed, which commands are allowlisted. Those come from your settings rather than the conversation, so the reviewer can tell routine work you have already sanctioned from something the agent decided on its own.\n\n'
         + 'The reviewer answers a simple allow or deny. A confident allow silently approves the call and the run continues. Anything else — a deny, an uncertain answer, a timeout, or an errored reviewer — leaves the call parked for you to decide, exactly as under Default, and the card tells you which it was.\n\n'
           + 'Reviews run on a small shared pool, so when a turn parks several calls at once they queue: a call refused a slot waits a moment and tries again for a few seconds before giving up and leaving itself parked. The approval buttons stay live throughout, so you can always decide instantly rather than wait.\n\n'
@@ -120,6 +130,37 @@ export default class AutoApproveStrategyType extends DefaultStrategyType {
       }
     }
   };
+
+  /**
+   * How the settings form shows the `customPolicy` box for the values the user
+   * currently has selected, so the policy text is never hidden from them.
+   *
+   * Under a preset level the box shows that level's built-in policy read-only —
+   * exactly the body the reviewer is given — while the user's own custom text
+   * is kept aside. Choosing `custom` opens the box, starting from the preset
+   * that was just showing when there is no custom text yet. Called by the
+   * settings editor in the viewer; pure, and never consulted by a review.
+   * @param {Record<string, unknown>} values - Current form values
+   * @returns {Record<string, {preview?: string, seed?: string, note?: string}>} Display hints keyed by setting
+   */
+  static settingsView(values) {
+    if (values?.reviewLevel === 'custom') {
+      return {
+        customPolicy: {
+          seed: POLICY_BODIES[DEFAULT_REVIEW_LEVEL],
+          note: 'Your policy replaces the built-in rules. The reviewer is always also told what it can see, how to read your permissions, and how to answer — you only describe what to allow. Blank falls back to balanced.'
+        }
+      };
+    }
+    // A blank selection means "use default", which resolves like any doubt.
+    const { level, body } = resolvePolicy({ reviewLevel: values?.reviewLevel });
+    return {
+      customPolicy: {
+        preview: body,
+        note: `The ${level} policy, read-only. Choose custom to write your own; it starts from this text.`
+      }
+    };
+  }
 
   /**
    * Review a freshly-parked tool call out-of-band and silently approve it iff
@@ -173,6 +214,9 @@ export default class AutoApproveStrategyType extends DefaultStrategyType {
       { context: this._reviewContext() }
     );
     const model = /** @type {any} */ (this.state)?.reviewerModel ?? 'cheap';
+    // The policy is read per review, so a change in Settings applies to the next
+    // parked call without restarting the conversation.
+    const system = buildPolicyPrompt(resolvePolicy(await this._loadPolicySettings()));
 
     // Re-attempts are counted per cause. Being refused a slot and being answered
     // too slowly wait for different things and are worth different numbers of
@@ -186,7 +230,7 @@ export default class AutoApproveStrategyType extends DefaultStrategyType {
         // Budget: the verdict word plus a ~12-word reason. The verdict comes
         // first by prompt design, so even a truncated answer parses correctly.
         const { text } = await this._complete(
-          { system: POLICY_PROMPT, prompt, model, maxTokens: 48, timeoutMs: REVIEW_TIMEOUT_MS },
+          { system, prompt, model, maxTokens: 48, timeoutMs: REVIEW_TIMEOUT_MS },
           this._abortController?.signal
         );
         const { verdict, reason } = parseReview(text);
@@ -283,6 +327,30 @@ export default class AutoApproveStrategyType extends DefaultStrategyType {
           .map((/** @type {any} */ r) => r.value)
         : []
     };
+  }
+
+  /**
+   * The user's review-policy settings (`reviewLevel`, `customPolicy`) from the
+   * `@juggler/core` extension config.
+   *
+   * Never throws: a config that cannot be read resolves to `{}`, which
+   * `resolvePolicy` turns into the default level. Failing the review instead
+   * would silently disable the whole strategy over a settings hiccup, and the
+   * default level is the policy a user who never opened Settings already gets.
+   * Also the seam tests stub, so they never read the real user's settings.
+   * @returns {Promise<Record<string, unknown>>} Resolved settings, or `{}`
+   */
+  async _loadPolicySettings() {
+    try {
+      const config = await extensionConfigResolve({ extId: '@juggler/core' }, this._abortController?.signal);
+      return config && typeof config === 'object' ? /** @type {Record<string, unknown>} */ (config) : {};
+    } catch (err) {
+      // A cancelled turn is reported by the completion that follows, not here.
+      if (/** @type {any} */ (err)?.name !== 'AbortError') {
+        console.warn('[auto-approve] could not read review policy settings, using the default:', err);
+      }
+      return {};
+    }
   }
 
   /**

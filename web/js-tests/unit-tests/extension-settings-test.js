@@ -118,6 +118,151 @@ export async function runTests(_ctx) {
     }
   });
 
+  await run('a text setting is a textarea that loads and saves multi-line values', async () => {
+    /** @type {any} */
+    let request = null;
+    const manifest = {
+      id: '@test/settings', name: 'Settings', version: '1.0.0',
+      settings: [{ key: 'policy', type: 'text', label: 'Policy' }],
+    };
+    const editor = new ExtensionSettingsEditor(/** @type {any} */ (manifest), {
+      get: async () => ({ policy: 'one\ntwo' }),
+      set: async (params) => { request = params; return params.values; },
+    });
+    const root = editor.render();
+    document.body.appendChild(root);
+    try {
+      await new Promise(resolve => setTimeout(resolve, 0));
+      const textarea = /** @type {HTMLTextAreaElement|null} */ (root.querySelector('textarea'));
+      assert(textarea?.value === 'one\ntwo', 'multi-line value not loaded into a textarea');
+      assert(!textarea.disabled, 'textarea left disabled after loading');
+      textarea.value = 'three\nfour';
+      /** @type {HTMLButtonElement} */ (root.querySelector('.extension-settings-save')).click();
+      await new Promise(resolve => setTimeout(resolve, 0));
+      assert(request?.values.policy === 'three\nfour', 'multi-line value not saved intact');
+    } finally {
+      root.remove();
+    }
+  });
+
+  await run('a capability-scoped editor shows and saves only that capability\'s settings', async () => {
+    /** @type {any} */
+    let request = null;
+    const manifest = {
+      id: '@test/settings', name: 'Settings', version: '1.0.0',
+      settings: [
+        { key: 'level', type: 'enum', label: 'Level', options: ['a', 'b'], capability: 'strategy:mine' },
+        { key: 'other', type: 'string', label: 'Other' },
+        { key: 'elsewhere', type: 'string', label: 'Elsewhere', capability: 'strategy:theirs' },
+      ],
+    };
+    const editor = new ExtensionSettingsEditor(/** @type {any} */ (manifest), {
+      get: async () => ({ level: 'a', other: 'x', elsewhere: 'y' }),
+      set: async (params) => { request = params; return params.values; },
+    }, { capability: 'strategy:mine' });
+    const root = editor.render();
+    document.body.appendChild(root);
+    try {
+      await new Promise(resolve => setTimeout(resolve, 0));
+      const keys = [...root.querySelectorAll('.extension-setting-field')]
+        .map((el) => /** @type {HTMLElement} */ (el).dataset.settingKey);
+      assert(keys.length === 1 && keys[0] === 'level', `expected only 'level', got ${JSON.stringify(keys)}`);
+      /** @type {HTMLSelectElement} */ (root.querySelector('select')).value = 'b';
+      /** @type {HTMLButtonElement} */ (root.querySelector('.extension-settings-save')).click();
+      await new Promise(resolve => setTimeout(resolve, 0));
+      // A partial update: the extension's other settings are left as stored.
+      assert(JSON.stringify(request?.values) === '{"level":"b"}',
+        `expected only the shown setting saved, got ${JSON.stringify(request?.values)}`);
+    } finally {
+      root.remove();
+    }
+  });
+
+  await run('a view previews a preset read-only, holds the real value, and seeds on unlock', async () => {
+    /** @type {any} */
+    let request = null;
+    const manifest = {
+      id: '@test/settings', name: 'Settings', version: '1.0.0',
+      settings: [
+        { key: 'level', type: 'enum', label: 'Level', options: ['strict', 'loose', 'custom'] },
+        { key: 'policy', type: 'text', label: 'Policy' },
+      ],
+    };
+    const PRESETS = /** @type {Record<string, string>} */ ({ strict: 'STRICT RULES', loose: 'LOOSE RULES' });
+    const editor = new ExtensionSettingsEditor(/** @type {any} */ (manifest), {
+      get: async () => ({ level: 'strict', policy: 'my own words' }),
+      set: async (params) => { request = params; return { level: 'strict', policy: 'my own words', ...params.values }; },
+    }, {
+      view: (values) => (values.level === 'custom'
+        ? { policy: { seed: 'SEED', note: 'yours' } }
+        : { policy: { preview: PRESETS[String(values.level)] || PRESETS.strict, note: 'preset' } }),
+    });
+    const root = editor.render();
+    document.body.appendChild(root);
+    try {
+      await new Promise(resolve => setTimeout(resolve, 0));
+      const select = /** @type {HTMLSelectElement} */ (root.querySelector('select'));
+      const textarea = /** @type {HTMLTextAreaElement} */ (root.querySelector('textarea'));
+      const note = /** @type {HTMLElement} */ (root.querySelector('.extension-setting-view-note'));
+      const choose = (/** @type {string} */ level) => {
+        select.value = level;
+        select.dispatchEvent(new Event('change'));
+      };
+
+      assert(textarea.value === 'STRICT RULES' && textarea.readOnly, 'a preset should be previewed read-only');
+      assert(!note.hidden && note.textContent === 'preset', 'the view note should show');
+
+      choose('loose');
+      assert(textarea.value === 'LOOSE RULES' && textarea.readOnly, 'the preview should follow the level');
+
+      // The preview is display only: saving keeps the stored custom text.
+      /** @type {HTMLButtonElement} */ (root.querySelector('.extension-settings-save')).click();
+      await new Promise(resolve => setTimeout(resolve, 0));
+      assert(request?.values.policy === 'my own words',
+        `a preview must never be saved, got ${JSON.stringify(request?.values.policy)}`);
+      assert(textarea.value === 'LOOSE RULES' && textarea.readOnly, 'the preview should survive the save');
+
+      choose('custom');
+      assert(textarea.value === 'my own words' && !textarea.readOnly,
+        'unlocking should restore the held custom text');
+      assert(note.textContent === 'yours', 'the note should follow the view');
+
+      // With no custom text, unlocking starts from the preset just shown.
+      textarea.value = '';
+      choose('loose');
+      choose('custom');
+      assert(textarea.value === 'LOOSE RULES' && !textarea.readOnly,
+        `a blank field should be seeded from the last preview, got ${JSON.stringify(textarea.value)}`);
+
+      // ...but clearing it on purpose is not undone behind the user's back.
+      textarea.value = '';
+      textarea.dispatchEvent(new Event('change'));
+      assert(textarea.value === '', 'a field cleared by the user must stay clear');
+    } finally {
+      root.remove();
+    }
+  });
+
+  await run('a view that throws leaves a plain editable field', async () => {
+    const manifest = {
+      id: '@test/settings', name: 'Settings', version: '1.0.0',
+      settings: [{ key: 'policy', type: 'text', label: 'Policy' }],
+    };
+    const editor = new ExtensionSettingsEditor(/** @type {any} */ (manifest), {
+      get: async () => ({ policy: 'kept' }),
+      set: async () => ({}),
+    }, { view: () => { throw new Error('boom'); } });
+    const root = editor.render();
+    document.body.appendChild(root);
+    try {
+      await new Promise(resolve => setTimeout(resolve, 0));
+      const textarea = /** @type {HTMLTextAreaElement} */ (root.querySelector('textarea'));
+      assert(textarea.value === 'kept' && !textarea.readOnly, 'a failing view must not disturb the field');
+    } finally {
+      root.remove();
+    }
+  });
+
   await run('secret save and clear use isolated partial updates', async () => {
     /** @type {any[]} */
     const requests = [];
