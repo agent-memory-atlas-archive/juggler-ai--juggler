@@ -572,10 +572,12 @@ const truncationNoticeLead = "The model hit its output limit before it finished,
 // strategy loop calls this at most once per turn, so there is no repetition to
 // suppress within a turn either.
 //
-// The budget quoted is the output reserve admission charged for this model —
-// the same number that went on the wire as max_tokens — so the note explains
+// The budget quoted is the output reserve admission charged for this model,
+// which includes the user's Max output tokens override, so the note explains
 // the limit the user can actually act on rather than a provider-side default
-// nobody here can see.
+// nobody here can see. It is also the max_tokens sent, except where a
+// provider's catalogue knows a lower ceiling for the model and the request is
+// clamped to that.
 func (r *run) insertTruncationNotice(response *LLMResponse) {
 	reserve := r.resolveContextWindow().ReserveTokens
 
@@ -596,9 +598,10 @@ func (r *run) insertTruncationNotice(response *LLMResponse) {
 	case response.OutputTokens > 0:
 		fmt.Fprintf(&detail, "This turn produced %d output tokens. ", response.OutputTokens)
 	}
-	detail.WriteString("Thinking counts against that budget, and Juggler derives the budget from the model's " +
-		"context window — so if the window shown in Settings is smaller than the one your server really serves, " +
-		"that is what shrank this reply.")
+	detail.WriteString("Thinking counts against that budget. To allow longer replies, raise this model's " +
+		"Max output tokens under its provider's \"Models and token limits\" in Settings. Unless you set it there, " +
+		"the budget comes from the model's own limit or is derived from its context window, so a window smaller " +
+		"than the one your server really serves shrinks replies too.")
 
 	source := ""
 	if mc := r.resolveModelConfig(); mc != nil {

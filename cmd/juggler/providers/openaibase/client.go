@@ -668,8 +668,7 @@ func transformMessagesToResponsesInput(messages []provider.Message) responses.Re
 
 // fallbackMaxOutputTokens caps generation when the client wasn't told the
 // model's real limit (Config.MaxOutputTokens == 0). A conservative
-// unset-default; real per-model caps come through the descriptor's
-// ContextWindowFn.
+// unset-default; real per-model caps arrive in the capability snapshot.
 //
 // This is reached only when the model's CONTEXT WINDOW is also unknown: once a
 // window resolves, the capability snapshot always carries an output limit —

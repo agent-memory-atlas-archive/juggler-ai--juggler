@@ -216,6 +216,61 @@ func TestListModelsProbesRealServingWindows(t *testing.T) {
 	}
 }
 
+// TestMaxOutputOverrideReachesTheWire pins the user's Max output tokens
+// override as the number sent as max_tokens. The capability snapshot carries
+// the override; nothing between it and the request may clamp it back to
+// Ollama's default generation cap, or admission charges one budget while the
+// daemon stops the reply at another.
+func TestMaxOutputOverrideReachesTheWire(t *testing.T) {
+	isolateConfig(t)
+
+	sent := make(chan float64, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		maxTokens, _ := body["max_tokens"].(float64)
+		sent <- maxTokens
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprint(w,
+			`data: {"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}`+"\n\n"+
+				"data: [DONE]\n\n")
+	}))
+	defer server.Close()
+	t.Setenv("OLLAMA_HOST", server.URL)
+
+	const override = 16384
+	Register()
+	prov, err := provider.InitializeProvider("ollama", provider.Config{
+		Model: "qwen:latest",
+		ModelCapabilities: provider.ModelCapabilities{
+			ContextWindowTokens: 65536,
+			MaxOutputTokens:     override,
+		},
+	})
+	if err != nil {
+		t.Fatalf("initialize ollama provider: %v", err)
+	}
+	conv, err := prov.OpenConversation(context.Background(), "max-output-override")
+	if err != nil {
+		t.Fatalf("open conversation: %v", err)
+	}
+	defer func() { _ = conv.Close() }()
+
+	req := provider.MessageRequest{Messages: []provider.Message{{Type: "user", Content: "hi"}}}
+	if _, err := conv.Submit(context.Background(), req, func(provider.StreamChunk) (*provider.ToolResult, error) {
+		return nil, nil
+	}); err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+	if got := <-sent; got != override {
+		t.Fatalf("max_tokens on the wire = %v, want the user's override %d", got, override)
+	}
+}
+
 func TestListModelsPropagatesTagsFailure(t *testing.T) {
 	isolateConfig(t)
 

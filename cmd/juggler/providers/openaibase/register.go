@@ -262,29 +262,25 @@ func Register(d Descriptor) {
 // is the whole of it. A provider-wide default is not knowledge about a model:
 // clamping to it would discard the larger cap the endpoint published for that
 // exact id, which is the number closest to what the server will accept. So
-// data-driven caps vouch for an explicit override and nothing else, while a
-// descriptor supplying its own ContextWindowFn (ollama, llama.cpp — where the
-// function IS the live probe) stays authoritative throughout.
+// data-driven caps vouch for an explicit override and nothing else.
+//
+// A descriptor supplying its own ContextWindowFn (the local servers: ollama,
+// llama.cpp, LM Studio, LocalAI) gets no lookup at all. Its function is a
+// fallback guess at the serving window, not a ceiling the server enforces —
+// none of them reject a large max_tokens — and the snapshot already holds the
+// best number available: the live listing's, or the user's Max output tokens
+// override, which a clamp here would silently undo on the wire while admission
+// and the truncation notice went on quoting it.
 //
 // Nil means nothing is authoritative and the snapshot stands unclamped.
 func catalogMaxOutputLookup(d Descriptor, capsSynthesised bool) func(model string) (int, bool) {
-	switch {
-	case capsSynthesised:
-		maxOutputCaps := d.MaxOutputCaps
-		return func(model string) (int, bool) {
-			value, known := maxOutputCaps.LookupKnown(model)
-			return value, known && value > 0
-		}
-	case d.ContextWindowFn != nil:
-		fn := d.ContextWindowFn
-		return func(model string) (int, bool) {
-			if _, maxOut := fn(model); maxOut > 0 {
-				return maxOut, true
-			}
-			return 0, false
-		}
-	default:
+	if !capsSynthesised {
 		return nil
+	}
+	maxOutputCaps := d.MaxOutputCaps
+	return func(model string) (int, bool) {
+		value, known := maxOutputCaps.LookupKnown(model)
+		return value, known && value > 0
 	}
 }
 
