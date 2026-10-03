@@ -9,16 +9,16 @@
  * tile; selecting it opens the run's rows in the next column. This is purely a
  * display choice — nothing about it is written to the conversation document.
  *
- * It belongs to the person (the `user` realm, services/prefs.js), beside the
- * bell and the tips they have seen: how you like a transcript drawn is a fact
- * about you, and it should hold in every project and every window. What belongs
- * to a WINDOW instead is anything about how that window is arranged — which
- * info cards it has hidden, how wide its columns are — and those are kept in
- * the project's session, per window role.
+ * It belongs to the client that toggled it, like the zoom and theme buttons it
+ * sits beside in the header: the `window` realm (services/prefs.js), so a
+ * desktop window keeps its own choice in the project's session under its window
+ * role, and a remote browser keeps its own on its device without writing back.
+ * Flipping it in one window never redraws another window, another project, or
+ * the desktop a phone dialled into.
  * @module utils/tool-grouping-pref
  */
 
-import { cachedUserPref, setUserPref, notifyPrefChanged, reconcilePref } from '../services/prefs.js';
+import { cachedWindowPref, setWindowPref, notifyPrefChanged, reconcilePref } from '../services/prefs.js';
 
 const PREF_KEY = 'juggler-tool-grouping';
 
@@ -31,7 +31,7 @@ export const TOOL_GROUPING_EVENT = 'juggler:tool-grouping-changed';
  * @returns {boolean} True when grouping is enabled.
  */
 export function isToolGroupingEnabled() {
-  return cachedUserPref(PREF_KEY, false) === true;
+  return cachedWindowPref(PREF_KEY, false) === true;
 }
 
 /**
@@ -40,7 +40,7 @@ export function isToolGroupingEnabled() {
  * @returns {void}
  */
 export function setToolGroupingEnabled(enabled) {
-  void setUserPref(PREF_KEY, !!enabled);
+  void setWindowPref(PREF_KEY, !!enabled);
   notifyPrefChanged(TOOL_GROUPING_EVENT);
 }
 
@@ -54,8 +54,8 @@ export function toggleToolGrouping() {
   return next;
 }
 
-// Ask for this person's choice at boot; a transcript already drawn re-renders on
+// Ask for this window's choice at boot; a transcript already drawn re-renders on
 // the event when the answer differs from what was cached.
 if (typeof document !== 'undefined') {
-  void reconcilePref('user', PREF_KEY, TOOL_GROUPING_EVENT);
+  void reconcilePref('window', PREF_KEY, TOOL_GROUPING_EVENT);
 }

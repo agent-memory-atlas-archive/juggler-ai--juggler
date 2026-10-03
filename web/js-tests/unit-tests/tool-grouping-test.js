@@ -37,7 +37,7 @@ import {
   groupMemberIndices,
 } from '../../js/utils/item-grouping.js';
 import contextItemRegistry from '../../js/registries/context-item-registry.js';
-import { setUserPref } from '../../js/services/prefs.js';
+import { setUserPref, setWindowPref } from '../../js/services/prefs.js';
 import { ColumnSelectionState } from '../../js/utils/column-selection.js';
 import { positionElements, buildElementMap } from '../../js/components/conversation-area-rendering.js';
 import {
@@ -550,13 +550,30 @@ export async function runTests() {
       assert(isToolGroupingEnabled() === false, 'the preference reads back what was written');
       assert(toggleToolGrouping() === true && isToolGroupingEnabled() === true, 'toggle flips it on');
       assert(toggleToolGrouping() === false && isToolGroupingEnabled() === false, 'toggle flips it back');
-      void setUserPref('juggler-tool-grouping', null);
+      void setWindowPref('juggler-tool-grouping', null);
       assert(isToolGroupingEnabled() === false, 'unset means off — the flat transcript is the default');
     } finally {
       setToolGroupingEnabled(original);
     }
     passed++;
   } catch (e) { failed++; errors.push(`preference: ${msg(e)}`); }
+
+  // --- 10b: the preference is this window's, not the person's ---
+  // A choice made in another window, project or remote client arrives as a
+  // settings.json change; it must not flip the transcript drawn here.
+  try {
+    const original = isToolGroupingEnabled();
+    try {
+      setToolGroupingEnabled(false);
+      await setUserPref('juggler-tool-grouping', true);
+      assert(isToolGroupingEnabled() === false,
+        'a user-wide value does not override this window\'s choice');
+    } finally {
+      await setUserPref('juggler-tool-grouping', null);
+      setToolGroupingEnabled(original);
+    }
+    passed++;
+  } catch (e) { failed++; errors.push(`preference realm: ${msg(e)}`); }
 
   // --- 11: the group column's footer is a status strip, not a thread footer ---
   try {

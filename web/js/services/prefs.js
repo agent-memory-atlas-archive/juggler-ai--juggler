@@ -79,8 +79,8 @@ const WRITE_DELAY_MS = 300;
  * The mirror key follows what the realm is shared by, so the cache is as warm as
  * it can be: a window's is scoped to this project AND this window, a project's
  * to this project, and a user's not at all — the last of which also means the
- * preferences that were already stored under a bare key (tips, the bell, tool
- * grouping) find their own values there on the first frame after an upgrade.
+ * preferences that were already stored under a bare key (tips, the bell) find
+ * their own values there on the first frame after an upgrade.
  * @type {Record<ServerRealm, {url: () => string, key: (name: string) => string}>}
  */
 const REALMS = {
