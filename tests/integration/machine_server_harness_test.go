@@ -24,6 +24,7 @@ import (
 
 	"juggler/cmd/juggler/machineserver"
 	"juggler/cmd/juggler/server"
+	"juggler/internal/ingress"
 )
 
 // machineServerStartTimeout bounds how long `juggler serve` may take to print
@@ -84,55 +85,17 @@ func configDirUnder(home string) string {
 // and enforce the per-instance API token.
 func startMachineServer(t *testing.T, serveArgs ...string) (*machineServer, func()) {
 	t.Helper()
-	if testing.Short() {
-		t.Skip("spawns the juggler binary; skipped in -short mode")
-	}
-	root, err := server.FindProjectRoot(".")
-	if err != nil {
-		t.Fatalf("find project root: %v", err)
-	}
-	binary := serverBinary(root)
-	if _, err := os.Stat(binary); err != nil {
-		t.Fatalf("server binary not built at %s: %v", binary, err)
-	}
+	iso := newIsolatedRun(t)
 
-	base := t.TempDir()
-	home := filepath.Join(base, "home")
-	logs := filepath.Join(base, "logs")
-	skills := filepath.Join(base, "skills")
-	for _, d := range []string{home, logs, skills} {
-		if err := os.MkdirAll(d, 0o755); err != nil {
-			t.Fatalf("mkdir %s: %v", d, err)
-		}
-	}
-
-	cmd := exec.Command(binary, append([]string{"serve", "--port", "0"}, serveArgs...)...)
-	env := os.Environ()
-	for k, v := range map[string]string{
-		"HOME":        home,
-		"USERPROFILE": home,
-		// Empty values are ignored by the resolvers, so these fall back to
-		// paths under HOME instead of an ambient override.
-		"JUGGLER_CONFIG_DIR": "",
-		"XDG_CONFIG_HOME":    "",
-		"XDG_CACHE_HOME":     "",
-		"XDG_STATE_HOME":     "",
-		"XDG_DATA_HOME":      "",
-		"JUGGLER_SERVER_BIN": "",
-		"JUGGLER_LOG_DIR":    logs,
-		// An empty skills dir, so a user's skills never reach a child.
-		"JUGGLER_SKILLS_USER_DIR": skills,
-	} {
-		env = envWithOverride(env, k, v)
-	}
-	cmd.Env = env
+	cmd := exec.Command(iso.binary, append([]string{"serve", "--port", "0"}, serveArgs...)...)
+	cmd.Env = iso.env
 	setProcGroupAttr(cmd)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatalf("stdout pipe: %v", err)
 	}
-	stderrPath := filepath.Join(base, "serve-stderr.log")
+	stderrPath := filepath.Join(iso.base, "serve-stderr.log")
 	stderrFile, err := os.Create(stderrPath)
 	if err != nil {
 		t.Fatalf("stderr file: %v", err)
@@ -140,12 +103,12 @@ func startMachineServer(t *testing.T, serveArgs ...string) (*machineServer, func
 	cmd.Stderr = stderrFile
 	if err := cmd.Start(); err != nil {
 		_ = stderrFile.Close()
-		t.Fatalf("start %s serve: %v", binary, err)
+		t.Fatalf("start %s serve: %v", iso.binary, err)
 	}
 	_ = stderrFile.Close()
 
 	ms := &machineServer{
-		t: t, Home: home, ConfigDir: configDirUnder(home), Logs: logs, cmd: cmd,
+		t: t, Home: iso.home, ConfigDir: configDirUnder(iso.home), Logs: iso.logs, cmd: cmd,
 		exited: make(chan struct{}), stderr: stderrPath,
 		children: map[int]string{},
 	}
@@ -184,6 +147,126 @@ func startMachineServer(t *testing.T, serveArgs ...string) (*machineServer, func
 		t.Fatalf("machine server did not print its address within %s:\n%s", machineServerStartTimeout, ms.stderrText())
 	}
 	return ms, stop
+}
+
+// isolatedRun is what the harness runs a juggler process under: the suite's
+// server binary and an environment rooted at a fresh temporary HOME.
+type isolatedRun struct {
+	binary string
+	env    []string
+	base   string // the temporary directory everything below lives in
+	home   string // HOME (and USERPROFILE)
+	logs   string // JUGGLER_LOG_DIR
+}
+
+// newIsolatedRun prepares an isolatedRun, skipping the test in -short mode
+// since every caller spawns the binary. Its environment is the test's own with
+// HOME moved, the config/cache/state/data overrides blanked, a log dir of its
+// own and an empty skills dir, so nothing it does meets the developer's files,
+// another test's, or a real machine server's.
+func newIsolatedRun(t *testing.T) isolatedRun {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("spawns the juggler binary; skipped in -short mode")
+	}
+	root, err := server.FindProjectRoot(".")
+	if err != nil {
+		t.Fatalf("find project root: %v", err)
+	}
+	binary := serverBinary(root)
+	if _, err := os.Stat(binary); err != nil {
+		t.Fatalf("server binary not built at %s: %v", binary, err)
+	}
+
+	base := t.TempDir()
+	home := filepath.Join(base, "home")
+	logs := filepath.Join(base, "logs")
+	skills := filepath.Join(base, "skills")
+	for _, d := range []string{home, logs, skills} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", d, err)
+		}
+	}
+
+	env := os.Environ()
+	for k, v := range map[string]string{
+		"HOME":        home,
+		"USERPROFILE": home,
+		// Empty values are ignored by the resolvers, so these fall back to
+		// paths under HOME instead of an ambient override.
+		"JUGGLER_CONFIG_DIR": "",
+		"XDG_CONFIG_HOME":    "",
+		"XDG_CACHE_HOME":     "",
+		"XDG_STATE_HOME":     "",
+		"XDG_DATA_HOME":      "",
+		"JUGGLER_SERVER_BIN": "",
+		"JUGGLER_LOG_DIR":    logs,
+		// An empty skills dir, so a user's skills never reach a child.
+		"JUGGLER_SKILLS_USER_DIR": skills,
+	} {
+		env = envWithOverride(env, k, v)
+	}
+	return isolatedRun{binary: binary, env: env, base: base, home: home, logs: logs}
+}
+
+// startSessionChild runs one session child for project directly, spawned as
+// the machine server spawns it (--session-child, an ephemeral loopback port,
+// the ingress secret in its environment) but with a secret the test chose, so
+// the test can stand in for the supervisor. It returns the child's address
+// once printed; the child is killed, with its process group, when the test
+// ends.
+func startSessionChild(t *testing.T, project, ingressSecret string) string {
+	t.Helper()
+	iso := newIsolatedRun(t)
+	cmd := exec.Command(iso.binary, "--session-child", "--port", "0", "--project", project) //nolint:gosec // the suite's own binary
+	cmd.Env = envWithOverride(iso.env, ingress.SecretEnv, ingressSecret)
+	setProcGroupAttr(cmd)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatalf("stdout pipe: %v", err)
+	}
+	stderrPath := filepath.Join(iso.base, "child-stderr.log")
+	stderrFile, err := os.Create(stderrPath)
+	if err != nil {
+		t.Fatalf("stderr file: %v", err)
+	}
+	cmd.Stderr = stderrFile
+	if err := cmd.Start(); err != nil {
+		_ = stderrFile.Close()
+		t.Fatalf("start %s --session-child: %v", iso.binary, err)
+	}
+	_ = stderrFile.Close()
+
+	addrCh := make(chan string, 1)
+	exited := make(chan struct{})
+	go func() {
+		sc := bufio.NewScanner(stdout)
+		for sc.Scan() {
+			if after, ok := strings.CutPrefix(sc.Text(), "JUGGLER_ADDR="); ok {
+				select {
+				case addrCh <- strings.TrimSpace(after):
+				default:
+				}
+			}
+		}
+		_ = cmd.Wait()
+		close(exited)
+	}()
+	t.Cleanup(func() {
+		signalGroup(cmd, syscall.SIGKILL)
+		<-exited
+	})
+
+	select {
+	case addr := <-addrCh:
+		return addr
+	case <-exited:
+		b, _ := os.ReadFile(stderrPath)
+		t.Fatalf("session child exited before printing its address:\n%s", b)
+	case <-time.After(sessionOpenTimeout):
+		t.Fatalf("session child did not print its address within %s", sessionOpenTimeout)
+	}
+	return ""
 }
 
 // stop shuts the machine server down and checks it took its children with it.

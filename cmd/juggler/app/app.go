@@ -58,6 +58,11 @@ type App struct {
 	// the saved toggles never affect those launches.
 	connectivity core.ConnectivitySettings
 
+	// ingressSecret is the secret a machine server spawned this session child
+	// with (internal/ingress), handed to the server as Config.IngressSecret.
+	// Empty for every launch but a session child.
+	ingressSecret string
+
 	serverErrChan chan error
 	cleanups      []func()
 

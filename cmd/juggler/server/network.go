@@ -6,12 +6,14 @@ package server
 
 import (
 	"context"
+	"crypto/subtle"
 	"fmt"
 	"net"
 	"net/http"
 	"time"
 
 	"juggler/cmd/juggler/core"
+	"juggler/internal/ingress"
 )
 
 // PrintSessionInfo prints a prominent box with the server URL and optional
@@ -49,7 +51,8 @@ func isLoopbackAddr(remoteAddr string) bool {
 // isLocalDirect reports whether a request came from this machine over a plain
 // loopback connection. Remote-ingress requests are excluded explicitly: remote
 // transports reach the server over loopback too (an http-over-DataChannel
-// dispatch, or a tunnel forwarder hop), so the address alone would admit them.
+// dispatch, a tunnel forwarder hop, or a machine server's proxy), so the address
+// alone would admit them.
 func isLocalDirect(r *http.Request) bool {
 	return isLoopbackAddr(r.RemoteAddr) && !isRemoteIngress(r)
 }
@@ -97,6 +100,32 @@ func (s *Server) lanGateMiddleware(next http.Handler) http.Handler {
 				writeLocalhostOnlyPage(w)
 				return
 			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// supervisorIngressKind is the MarkRemoteIngress kind for a request the
+// machine server forwarded from a caller off loopback.
+const supervisorIngressKind = "machine-server"
+
+// supervisorIngressMiddleware is a session child's half of the caller-identity
+// handshake with its machine server (internal/ingress). The supervisor reaches
+// the child over loopback for every caller, so it vouches for a caller off
+// loopback with the secret it spawned the child with, and this tags that
+// request as remote ingress: from then on the engine role refuses it and
+// localViewerOnly treats it as remote, exactly as for a tunnel or data-channel
+// guest. Anything else — another value, a server spawned with no secret, a
+// connection that is not loopback, so cannot be the supervisor's — leaves the
+// request untagged. The header is removed either way, so nothing downstream
+// can read the secret back.
+func (s *Server) supervisorIngressMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got := r.Header.Get(ingress.Header)
+		r.Header.Del(ingress.Header)
+		if s.ingressSecret != "" && got != "" && isLoopbackAddr(r.RemoteAddr) &&
+			subtle.ConstantTimeCompare([]byte(got), []byte(s.ingressSecret)) == 1 {
+			r = MarkRemoteIngress(r, supervisorIngressKind)
 		}
 		next.ServeHTTP(w, r)
 	})
@@ -297,6 +326,9 @@ func sanitiseViewerID(id string) string {
 func remoteTransportLabel(kind string) string {
 	if kind == dataChannelIngressKind {
 		return "Peer-to-peer"
+	}
+	if kind == supervisorIngressKind {
+		return "Via machine server"
 	}
 	if spec, ok := findTunnelMode(TunnelMode(kind)); ok {
 		return spec.Title

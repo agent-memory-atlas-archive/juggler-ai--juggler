@@ -104,6 +104,21 @@ func (r *registry) get(id string) (Session, bool) {
 	return s, ok
 }
 
+// route returns the public record for id together with its live child's
+// ingress secret ("" with no live child) — what the proxy needs to forward a
+// request. The secret stays out of Session so it can never be served.
+func (r *registry) route(id string) (s Session, secret string, ok bool) {
+	r.do(func(m map[string]*sessionEntry) {
+		if e, found := m[id]; found {
+			s, ok = e.Session, true
+			if e.child != nil {
+				secret = e.child.ingressSecret
+			}
+		}
+	})
+	return s, secret, ok
+}
+
 // reserve returns the live session for project when one exists (any state but
 // error — an errored entry is replaced), else inserts a starting entry with a
 // fresh ID. created reports whether the caller now owns the spawn.

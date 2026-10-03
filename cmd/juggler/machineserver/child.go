@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"juggler/cmd/juggler/childcontain"
+	"juggler/internal/ingress"
 	"juggler/internal/jlog"
 	"juggler/internal/logpaths"
 )
@@ -35,6 +36,10 @@ type child struct {
 	contained *childcontain.Child
 	addr      string
 	exited    chan struct{} // closed by the monitor goroutine when the process exits
+	// ingressSecret is this child's alone, handed to it in its environment
+	// (ingress.SecretEnv). The proxy sends it to vouch that a request came from
+	// a caller off loopback (see handleSessionProxy).
+	ingressSecret string
 }
 
 // newChildCommand builds the exec.Cmd for a session child. A package variable
@@ -58,6 +63,16 @@ var newChildCommand = func(bin, project string, extra []string) *exec.Cmd {
 // running after return; the caller owns stopping it via stop().
 func spawnChild(bin, project string, extra []string) (*child, error) {
 	cmd := newChildCommand(bin, project, extra)
+
+	// A secret of this child's own, by which the proxy vouches for a caller off
+	// loopback. Appended after the inherited environment, where exec gives the
+	// last duplicate precedence, so a secret the supervisor itself inherited
+	// never stands in for it.
+	secret := ingress.NewSecret()
+	if cmd.Env == nil {
+		cmd.Env = os.Environ()
+	}
+	cmd.Env = append(cmd.Env, ingress.SecretEnv+"="+secret)
 
 	// The child's stderr carries only genuine panics / pre-logging output;
 	// capture it to the project's crash sink (single writer per project). The
@@ -83,7 +98,7 @@ func spawnChild(bin, project string, extra []string) (*child, error) {
 		jlog.Error("[machineserver] child containment incomplete for %s: %v", project, err)
 	}
 
-	c := &child{cmd: cmd, contained: contained, exited: make(chan struct{})}
+	c := &child{cmd: cmd, contained: contained, exited: make(chan struct{}), ingressSecret: secret}
 
 	// Monitor: reap the process and release containment resources exactly once,
 	// whatever caused the exit. Everyone else observes c.exited.

@@ -272,6 +272,7 @@ func (a *App) initServer() error {
 		ExtraRoutes:    a.config.ExtraRoutes,
 		ExitWithParent: a.flags.exitWithParent,
 		LoopbackOnly:   a.flags.sessionChild,
+		IngressSecret:  a.ingressSecret,
 	})
 	if err != nil {
 		jlog.Error("Failed to create server: %v", err)

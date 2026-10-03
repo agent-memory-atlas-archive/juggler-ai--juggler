@@ -235,6 +235,7 @@ type Server struct {
 	extraRoutes    func(r *mux.Router) // Optional Config.ExtraRoutes hook, invoked at the end of setupRoutes
 	exitWithParent bool                // Config.ExitWithParent: server self-terminates when its parent (the viewer) dies; reported on /api/health/instance
 	loopbackOnly   bool                // Config.LoopbackOnly: bind 127.0.0.1 instead of every interface
+	ingressSecret  string              // Config.IngressSecret: the supervisor's proof that a caller is off loopback ("" when there is no supervisor)
 
 	// conversationCache holds the per-conversation Provider.Conversation
 	// handles: one handle per (convID, providerName, model), opened lazily
@@ -329,6 +330,13 @@ type Config struct {
 	// through its supervisor's proxy, so nothing off this machine should be
 	// able to connect to it at all — not merely be refused by the LAN gate.
 	LoopbackOnly bool
+
+	// IngressSecret is the secret a machine-server session child was spawned
+	// with (internal/ingress). A request carrying it in ingress.Header is one
+	// the supervisor forwarded from a caller off loopback, and is tagged as
+	// remote ingress (see supervisorIngressMiddleware). Empty for any other
+	// server, which then ignores the header.
+	IngressSecret string
 }
 
 // New creates a new server
@@ -442,6 +450,7 @@ func New(cfg Config) (*Server, error) {
 	s.extraRoutes = cfg.ExtraRoutes
 	s.exitWithParent = cfg.ExitWithParent
 	s.loopbackOnly = cfg.LoopbackOnly
+	s.ingressSecret = cfg.IngressSecret
 	s.staticVersion = staticVersion
 	s.apiToken = mintAPIToken()
 	s.bootID = generateClientID()
@@ -484,6 +493,9 @@ func New(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("failed to load index template: %w", err)
 	}
 
+	// First, so the LAN gate, the API auth and every handler after them see a
+	// caller the supervisor vouched for as remote ingress.
+	s.router.Use(s.supervisorIngressMiddleware)
 	s.router.Use(s.lanGateMiddleware)
 	s.router.Use(s.apiAuthMiddleware)
 

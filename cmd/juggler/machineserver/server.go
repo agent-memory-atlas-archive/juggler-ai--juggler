@@ -22,6 +22,7 @@ import (
 	"github.com/gorilla/mux"
 
 	"juggler/cmd/juggler/core"
+	"juggler/internal/hostcheck"
 	"juggler/internal/jlog"
 )
 
@@ -53,8 +54,8 @@ func (s *Server) childExtraArgs(sessionID string) []string {
 
 // routes builds the machine server's handler: the control API under
 // /api/server, plus the /s/<id>/ session proxy. Everything is wrapped in the
-// origin guard so a drive-by page on another origin can't drive the control
-// API or ride the proxy.
+// host guard, then the origin guard, so neither a DNS-rebinding page nor a
+// drive-by page on another origin can drive the control API or ride the proxy.
 func (s *Server) routes() http.Handler {
 	r := mux.NewRouter()
 	api := r.PathPrefix("/api/server").Subrouter()
@@ -65,7 +66,26 @@ func (s *Server) routes() http.Handler {
 	api.HandleFunc("/shutdown", s.handleShutdown).Methods("POST")
 	r.HandleFunc("/s/{id}", s.redirectSession)
 	r.PathPrefix("/s/{id}/").HandlerFunc(s.handleSessionProxy)
-	return originGuard(r)
+	return hostGuard(originGuard(r))
+}
+
+// hostGuard is the machine server's DNS-rebinding defence: every request must
+// name this machine in its Host (hostcheck.NamesThisMachine), whoever sends it
+// and whatever it asks for. A rebinding page passes originGuard — its Origin
+// and Host are both the attacker's domain — so without this it could drive the
+// control API from loopback, and load a session's page (which carries that
+// child's API token) and open its WebSocket. Behind the proxy the child cannot
+// make up for it: a caller off loopback reaches it tagged as remote ingress,
+// which skips its own Host check and its viewer-socket token. So the check is
+// made here, once, before anything is forwarded.
+func hostGuard(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !hostcheck.NamesThisMachine(r.Host) {
+			http.Error(w, "Forbidden: host not allowed", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // originGuard rejects browser requests whose Origin is a different host. A

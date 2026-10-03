@@ -7,13 +7,12 @@ package server
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"net"
 	"net/http"
-	"net/netip"
 	"slices"
 	"strings"
 
 	"juggler/internal/apipaths"
+	"juggler/internal/hostcheck"
 )
 
 // mintAPIToken returns a cryptographically-random per-instance token used to
@@ -91,38 +90,16 @@ func apiAuthExempt(method, path string) bool {
 }
 
 // hostAllowed is the DNS-rebinding defense (§S.2): a gated /api request's Host
-// header must name this machine — "localhost", a name under the reserved
-// .localhost TLD, or an IP address (loopback or a LAN address the server is
-// reachable on). A DNS name such as attacker.com (which rebinding transiently
-// points at 127.0.0.1) is rejected, since the browser sends the site's hostname
-// as Host. Remote grants — an established DataChannel or a tunnel the user
-// opened — legitimately carry arbitrary Host names, so they are admitted on
-// their remote-ingress tag and rely on the token (which their page also
-// carries) as the authenticator instead.
+// header must name this machine (hostcheck.NamesThisMachine). A DNS name such
+// as attacker.com (which rebinding transiently points at 127.0.0.1) is
+// rejected, since the browser sends the site's hostname as Host. Remote grants
+// — an established DataChannel, a tunnel the user opened, or a caller a machine
+// server vouched for — legitimately carry arbitrary Host names, so they are
+// admitted on their remote-ingress tag and rely on the token (which their page
+// also carries) as the authenticator instead. A machine server applies the
+// same rule to everything it forwards, so its callers are held to it there.
 func hostAllowed(r *http.Request) bool {
-	if isRemoteIngress(r) {
-		return true
-	}
-	host := r.Host
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		host = h
-	}
-	// RFC 6761 reserves .localhost and requires it to resolve to loopback, so a
-	// per-instance hostname like myproject.localhost names this machine as surely
-	// as "localhost" does and an attacker cannot point a domain they control at
-	// such a label. Admitting the suffix (and nothing broader) keeps the
-	// rebinding defense intact: serveIndex hands the API token to any host that
-	// can load the page, so a general DNS name must still be refused.
-	// Hostnames are case-insensitive, so fold before matching (but parse the
-	// address form below unfolded: an IPv6 zone such as %en0 is not).
-	if name := strings.ToLower(host); name == "localhost" || strings.HasSuffix(name, ".localhost") {
-		return true
-	}
-	// netip.ParseAddr (unlike net.ParseIP) accepts a zoned IPv6 literal such as
-	// fe80::1%en0 — the form a same-subnet client sends over a link-local
-	// address. It still rejects DNS names, so the rebinding defense holds.
-	_, err := netip.ParseAddr(host)
-	return err == nil
+	return isRemoteIngress(r) || hostcheck.NamesThisMachine(r.Host)
 }
 
 // isAssetGetRequest reports whether r is a GET for content the browser loads

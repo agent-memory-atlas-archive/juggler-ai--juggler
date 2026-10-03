@@ -9,7 +9,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+
+	"juggler/internal/ingress"
 )
 
 // get performs a GET and returns (statusCode, body).
@@ -84,6 +87,83 @@ func TestSessionProxyForwardsPrefix(t *testing.T) {
 	}
 }
 
+// asCaller serves h as if every request came from addr. A test server listens
+// on loopback, so this is the only way a test can put a caller off loopback in
+// front of the proxy.
+func asCaller(addr string, h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.RemoteAddr = addr
+		h.ServeHTTP(w, r)
+	})
+}
+
+// TestSessionProxyIdentifiesRemoteCallers checks the proxy's half of caller
+// identity: a caller off loopback is forwarded with the child's ingress secret,
+// a loopback caller with none, and a client's own copy of the header never
+// reaches the child either way.
+func TestSessionProxyIdentifiesRemoteCallers(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, strings.Join(r.Header.Values(ingress.Header), ","))
+	}))
+	defer backend.Close()
+
+	s := &Server{reg: newRegistry()}
+	sess, _ := s.reg.reserve("/p")
+	s.reg.setRunning(sess.ID, &child{addr: strings.TrimPrefix(backend.URL, "http://"), ingressSecret: "child-secret"}, 1)
+
+	for _, c := range []struct {
+		caller, want string
+	}{
+		{"127.0.0.1:5000", ""},
+		{"[::1]:5000", ""},
+		{"203.0.113.7:54321", "child-secret"},
+		{"192.168.1.20:54321", "child-secret"},
+	} {
+		front := httptest.NewServer(asCaller(c.caller, s.routes()))
+		req, err := http.NewRequest("GET", front.URL+"/s/"+sess.ID+"/", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set(ingress.Header, "forged")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		front.Close()
+		if resp.StatusCode != http.StatusOK || string(body) != c.want {
+			t.Errorf("caller %s: child saw %s %q (status %d), want %q", c.caller, ingress.Header, body, resp.StatusCode, c.want)
+		}
+	}
+}
+
+// A remote caller forwarded without the tag would look local to the child, so
+// a child with no secret to send is not proxied to at all for one.
+func TestSessionProxyRefusesRemoteCallerItCannotIdentify(t *testing.T) {
+	var reached atomic.Int64
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		reached.Add(1)
+	}))
+	defer backend.Close()
+
+	s := &Server{reg: newRegistry()}
+	sess, _ := s.reg.reserve("/p")
+	s.reg.setRunning(sess.ID, &child{addr: strings.TrimPrefix(backend.URL, "http://")}, 1)
+
+	remote := httptest.NewServer(asCaller("203.0.113.7:54321", s.routes()))
+	defer remote.Close()
+	if code, _ := get(t, remote.URL+"/s/"+sess.ID+"/"); code != http.StatusBadGateway || reached.Load() != 0 {
+		t.Fatalf("remote caller, child without a secret: status %d after %d proxied requests, want 502 after none", code, reached.Load())
+	}
+
+	local := httptest.NewServer(s.routes())
+	defer local.Close()
+	if code, _ := get(t, local.URL+"/s/"+sess.ID+"/"); code != http.StatusOK || reached.Load() != 1 {
+		t.Fatalf("loopback caller: status %d after %d proxied requests, want 200 after one", code, reached.Load())
+	}
+}
+
 func TestSessionProxyRejectsUnknownAndNotRunning(t *testing.T) {
 	s := &Server{reg: newRegistry()}
 	starting, _ := s.reg.reserve("/p")
@@ -96,6 +176,72 @@ func TestSessionProxyRejectsUnknownAndNotRunning(t *testing.T) {
 	}
 	if code, _ := get(t, front.URL+"/s/"+starting.ID+"/anything"); code != http.StatusServiceUnavailable {
 		t.Fatalf("starting session: code=%d, want 503", code)
+	}
+}
+
+// TestHostGuardRejectsRebindingHosts is the machine server's DNS-rebinding
+// defence. A page whose own domain an attacker has pointed at this machine
+// sends that domain as Host, and passes the Origin guard because its Origin
+// names the same domain. So every request — the control API, the proxy, a
+// WebSocket upgrade, from loopback or off it — must name this machine in its
+// Host, or it is refused before it reaches anything.
+func TestHostGuardRejectsRebindingHosts(t *testing.T) {
+	var reached atomic.Int64
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		reached.Add(1)
+	}))
+	defer backend.Close()
+
+	s := &Server{reg: newRegistry()}
+	sess, _ := s.reg.reserve("/p")
+	s.reg.setRunning(sess.ID, &child{addr: strings.TrimPrefix(backend.URL, "http://"), ingressSecret: "child-secret"}, 1)
+
+	paths := []string{"/api/server/status", "/api/server/sessions", "/s/" + sess.ID + "/", "/s/" + sess.ID + "/api/ws"}
+	for _, caller := range []string{"127.0.0.1:5000", "192.168.1.20:54321"} {
+		front := httptest.NewServer(asCaller(caller, s.routes()))
+		for _, host := range []string{"attacker.com", "attacker.com:8080", "localhost.attacker.com", "notlocalhost:8080"} {
+			for _, p := range paths {
+				before := reached.Load()
+				req, err := http.NewRequest("GET", front.URL+p, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				req.Host = host
+				// The rebinding page is same-origin with itself.
+				req.Header.Set("Origin", "http://"+host)
+				resp, err := http.DefaultClient.Do(req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				_ = resp.Body.Close()
+				if resp.StatusCode != http.StatusForbidden || reached.Load() != before {
+					t.Errorf("caller %s, Host %q, GET %s: status %d, reached child %v; want 403, not reached",
+						caller, host, p, resp.StatusCode, reached.Load() != before)
+				}
+			}
+		}
+		front.Close()
+	}
+
+	// Every name that can only mean this machine still gets through.
+	front := httptest.NewServer(s.routes())
+	defer front.Close()
+	for _, host := range []string{"127.0.0.1:8317", "localhost:8317", "LocalHost", "myproject.localhost:8317", "192.168.1.5:8317", "[::1]:8317"} {
+		for _, p := range []string{"/api/server/status", "/s/" + sess.ID + "/"} {
+			req, err := http.NewRequest("GET", front.URL+p, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Host = host
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				t.Errorf("Host %q, GET %s: status %d, want 200", host, p, resp.StatusCode)
+			}
+		}
 	}
 }
 

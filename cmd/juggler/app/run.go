@@ -50,6 +50,7 @@ import (
 	"juggler/cmd/juggler/providers/zai"
 	"juggler/cmd/juggler/server"
 	"juggler/internal/enginehost"
+	"juggler/internal/ingress"
 	"juggler/internal/webviewenv"
 	"juggler/web"
 )
@@ -175,6 +176,13 @@ func Run(cfg Config) int {
 	// supervisor owns child lifetime outright (and survives restart by re-exec,
 	// keeping its PID).
 	app := &App{flags: flags, config: cfg}
+	// Every launch takes the ingress secret out of its environment, so no
+	// process it spawns inherits it; only a session child has a supervisor to
+	// keep it for. Taken here rather than earlier because the Xvfb relaunch
+	// above must pass it on.
+	if secret := ingress.TakeSecret(); flags.sessionChild {
+		app.ingressSecret = secret
+	}
 	// A run that never reports has not finished, whatever else brought the
 	// process down — a Ctrl-C, an engine that never started, a server error. So
 	// failure is where a run starts, and only its own report lowers it.

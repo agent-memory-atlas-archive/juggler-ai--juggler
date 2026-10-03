@@ -21,6 +21,7 @@ import (
 	"juggler/cmd/juggler/machineserver"
 	"juggler/cmd/juggler/server"
 	"juggler/internal/apipaths"
+	"juggler/internal/ingress"
 )
 
 // TestMachineServerSessionLifecycle drives one session through the control
@@ -562,6 +563,145 @@ func TestMachineServerChildCrashIsError(t *testing.T) {
 	}
 	if list := ms.mustListSessions(); len(list) != 1 || list[0].ID != fresh.ID {
 		t.Fatalf("sessions after reopen = %+v, want only %s", list, fresh.ID)
+	}
+}
+
+// TestSessionChildTreatsItsSupervisorsIngressAsRemote runs a session child the
+// way the machine server spawns one, with an ingress secret the test knows,
+// and stands in for the supervisor. A request carrying that secret is a caller
+// the supervisor saw off loopback, so it may not change this machine's window
+// preferences or take the engine slot, though it arrives over loopback. A
+// request carrying any other value is a local caller, as one carrying none is.
+//
+// The machine server binds loopback only, so no caller can reach it from off
+// loopback yet. Its half — sending this header, with this child's secret, for
+// exactly those callers — is covered against real processes by
+// TestSpawnedChildGetsItsOwnIngressSecret (machineserver/child_test.go).
+func TestSessionChildTreatsItsSupervisorsIngressAsRemote(t *testing.T) {
+	const secret = "0123456789abcdef-test-ingress-secret"
+	addr := startSessionChild(t, newProjectDir(t), secret)
+	base := "http://" + addr
+
+	resp, err := http.Get(base + "/") //nolint:gosec // the test's own loopback child
+	if err != nil {
+		t.Fatalf("GET index: %v", err)
+	}
+	page, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	m := apiTokenPattern.FindSubmatch(page)
+	if m == nil {
+		t.Fatalf("index.html carries no API token (status %d)", resp.StatusCode)
+	}
+	token := string(m[1])
+
+	putZoom := func(ingressHeader string) (int, string) {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodPut, base+"/api/session/ui-zoom", strings.NewReader(`{"uiZoom":110}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Juggler-Token", token)
+		if ingressHeader != "" {
+			req.Header.Set(ingress.Header, ingressHeader)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("PUT ui-zoom: %v", err)
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(body)
+	}
+	for _, c := range []struct {
+		name, header string
+		want         int
+	}{
+		{"no ingress header", "", http.StatusOK},
+		{"a forged ingress header", "not-the-secret", http.StatusOK},
+		{"the supervisor's ingress header", secret, http.StatusForbidden},
+	} {
+		if code, body := putZoom(c.header); code != c.want {
+			t.Errorf("PUT ui-zoom with %s: status %d (%s), want %d", c.name, code, strings.TrimSpace(body), c.want)
+		}
+	}
+
+	// The engine slot: refused by closing the socket before any frame, where
+	// an admitted engine is greeted with the session frame first.
+	header := http.Header{"Origin": []string{base}, ingress.Header: []string{secret}}
+	conn, resp, err := websocket.DefaultDialer.Dial("ws://"+addr+apipaths.WebSocket+"?role=engine", header)
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	if err != nil {
+		t.Fatalf("engine WebSocket dial: %v", err)
+	}
+	defer conn.Close()
+	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	if _, msg, err := conn.ReadMessage(); err == nil {
+		t.Fatalf("a caller the supervisor vouched for as remote took the engine slot; first frame %s", msg)
+	}
+}
+
+// TestMachineServerRefusesRebindingHost plays a DNS-rebinding page against a
+// real machine server: its own domain pointed at the server's address, so it
+// sends that domain as Host and as its Origin. The control API, a session's
+// page (which carries the child's API token) and the session's WebSocket must
+// all refuse it, while the same requests naming the server by its address work.
+func TestMachineServerRefusesRebindingHost(t *testing.T) {
+	ms, stop := startMachineServer(t)
+	defer stop()
+	sess := ms.openSession(newProjectDir(t), http.StatusCreated)
+	prefix := "/s/" + sess.ID
+
+	get := func(path, host string) (int, string) {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodGet, ms.url(path), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Host = host
+		req.Header.Set("Origin", "http://"+host)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(body)
+	}
+
+	const rebound = "attacker.example:8080"
+	for _, p := range []string{"/api/server/sessions", prefix + "/"} {
+		code, body := get(p, rebound)
+		if code != http.StatusForbidden {
+			t.Errorf("GET %s with Host %s: status %d, want 403", p, rebound, code)
+		}
+		if apiTokenPattern.MatchString(body) {
+			t.Errorf("GET %s with Host %s handed out the session's API token", p, rebound)
+		}
+		if code, _ := get(p, ms.Addr); code != http.StatusOK {
+			t.Errorf("GET %s with Host %s: status %d, want 200", p, ms.Addr, code)
+		}
+	}
+
+	dialer := websocket.Dialer{
+		NetDial: func(network, _ string) (net.Conn, error) { return net.Dial(network, ms.Addr) },
+	}
+	header := http.Header{"Origin": []string{"http://" + rebound}}
+	conn, resp, err := dialer.Dial("ws://"+rebound+prefix+apipaths.WebSocket+"?role=viewer", header)
+	if conn != nil {
+		_ = conn.Close()
+	}
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	if err == nil || resp == nil || resp.StatusCode != http.StatusForbidden {
+		status := 0
+		if resp != nil {
+			status = resp.StatusCode
+		}
+		t.Errorf("WebSocket upgrade with Host %s: err %v, status %d; want refused with 403", rebound, err, status)
 	}
 }
 
