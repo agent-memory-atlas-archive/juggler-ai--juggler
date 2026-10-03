@@ -693,13 +693,18 @@ export async function runTests() {
       // words, not to the handle column beside them: standing in the gutter it
       // lined the words up one step in from every other row and read as a
       // caption under the list rather than the last row of it. Measured from
-      // each row's own left edge, so a tab lying in a box is still comparable.
+      // each row's own left edge, so a tab lying in a box is still comparable,
+      // and in a strip wide enough for the words: in a narrower one the inset
+      // is the first thing to give way.
       const tab = /** @type {HTMLElement} */ (bar.querySelector('.conversation-tab'));
       const tabName = /** @type {HTMLElement} */ (tab.querySelector('.conversation-tab-name'));
       const indent = (/** @type {Element} */ row, /** @type {Element} */ text) =>
         text.getBoundingClientRect().left - row.getBoundingClientRect().left;
+      const width = bar.style.width;
+      bar.style.width = '24rem';
       const named = indent(tab, tabName);
       const makes = indent(button, mark);
+      bar.style.width = width;
       assert(Math.abs(named - makes) < 0.5,
         `the mark starts where a tab name starts, got ${makes}px against ${named}px`);
 
@@ -722,6 +727,38 @@ export async function runTests() {
       button.click();
       assert(asked === 1,
         `pressing it asks what kind to make, got ${asked} call(s)`);
+    });
+
+    await check('a narrow strip wraps the outline\'s words instead of clipping them', () => {
+      const button = /** @type {HTMLElement} */ (bar.querySelector('.conversation-box-new-button'));
+      const label = /** @type {HTMLElement} */ (button.querySelector('.conversation-box-new-label'));
+      // The strip at the narrowest the panel can be dragged to.
+      const width = bar.style.width;
+      bar.style.width = '8rem';
+      try {
+        const lineHeight = parseFloat(getComputedStyle(label).lineHeight)
+          || parseFloat(getComputedStyle(label).fontSize) * 1.2;
+        assert(label.scrollWidth <= label.clientWidth + 0.5,
+          `every word is shown, none cut off at the edge, got ${label.scrollWidth}px of text in ${label.clientWidth}px`);
+        assert(label.getBoundingClientRect().height > lineHeight * 1.5,
+          `the words run onto a second line, got a label ${label.getBoundingClientRect().height}px tall `
+          + `for ${lineHeight}px lines`);
+        const outline = button.getBoundingClientRect();
+        const words = label.getBoundingClientRect();
+        assert(words.top >= outline.top && words.bottom <= outline.bottom,
+          'and the outline grows to hold them');
+
+        // The inset that lines the mark up with the tab names is the first
+        // thing to go: space spent on alignment, while the words are being
+        // broken for want of it, is space wasted.
+        const mark = /** @type {SVGElement} */ (button.querySelector('svg'));
+        const remPx = parseFloat(getComputedStyle(document.documentElement).fontSize);
+        const inset = mark.getBoundingClientRect().left - outline.left;
+        assert(inset <= remPx,
+          `the mark moves in to the button's own edge, got ${inset}px of inset`);
+      } finally {
+        bar.style.width = width;
+      }
     });
 
     await check('the outline survives a render, and stays last', () => {

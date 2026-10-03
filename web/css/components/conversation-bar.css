@@ -342,8 +342,8 @@ conversation-bar .conversation-box:not(:has(.conversation-tab)) .conversation-bo
 /* The way to make a workspace, drawn as the outline of one. Same width, same
    corner and the same border colour as a real box, with the fill left out and
    the edge dashed: it is the shape of the thing, stated as not yet being one.
-   Height comes from the single line inside it, so it costs one box header's
-   worth of the strip and not an empty rectangle's. The gap that sets it apart
+   Height comes from the words inside it — one line, so one box header's worth
+   of the strip and not an empty rectangle's, until a narrow strip wraps them. The gap that sets it apart
    from the boxes above belongs to the outline, not to the button inside it: one
    wrapper carrying the whole space keeps the button's own box flush with the
    shape it is drawn as. */
@@ -358,16 +358,11 @@ conversation-bar .conversation-box-new-button {
     position: relative;
     display: flex;
     flex: 1;
-    align-items: center;
+    align-items: flex-start;
     gap: 0.2rem;
     min-width: 0;
-
-    /* The mark and the words are one phrase, and the phrase starts where a tab's
-       name starts: the tab's own inset, then the status column and the space
-       after it. Left of that line the strip is margin, and a mark parked out
-       there left the words one step further in than every row above them —
-       which read as a caption under the list rather than as the last row of it. */
-    padding: 0.4rem 0.4rem 0.4rem calc(0.4rem + var(--tab-status-column) + var(--tab-status-gap));
+    text-align: left;
+    padding: 0.4rem;
     font-size: 0.8125rem;
     color: var(--text-tertiary);
     background: none;
@@ -393,18 +388,36 @@ conversation-bar .conversation-box-new-button::before {
     mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect width='100%25' height='100%25' rx='12' ry='12' fill='none' stroke='black' stroke-width='2' stroke-dasharray='2 6'/%3E%3C/svg%3E") center/100% 100% no-repeat;
 }
 
-/* Sized to the words it leads, and never squeezed by them. */
+/* The mark and the words are one phrase, and the phrase starts where a tab's
+   name starts: the tab's own inset, then the status column and the space after
+   it. Left of that line the strip is margin, and a mark parked out there left
+   the words one step further in than every row above them — which read as a
+   caption under the list rather than as the last row of it. The inset is a
+   spacer rather than padding so that it is the first thing a narrow strip
+   takes back: its shrink outweighs the words' many times over, so it is gone
+   before they have to wrap. The gap after it is already a share of the column. */
+conversation-bar .conversation-box-new-button::after {
+    content: '';
+    order: -1;
+    flex: 0 1000 calc(var(--tab-status-column) + var(--tab-status-gap) - 0.2rem);
+    min-width: 0;
+}
+
+/* Sized to the words it leads, and never squeezed by them. One line of the
+   words tall, with the mark drawn centred in it, so it stays beside the start
+   of the phrase when the words wrap. */
 conversation-bar .conversation-box-new-button svg {
     flex-shrink: 0;
     width: 1rem;
-    height: 1rem;
+    height: 1lh;
 }
 
+/* A button's words are what it does, so a narrow strip wraps them rather than
+   cutting them off: between words while they fit, and inside one only when the
+   strip is narrower than that word alone. */
 conversation-bar .conversation-box-new-label {
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: break-word;
 }
 
 /* On hover it fills in: the outline becoming a box is the same answer the real
