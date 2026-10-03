@@ -83,6 +83,35 @@ func TestCheapModelNudgeFiresOnce(t *testing.T) {
 	}
 }
 
+// TestCheapModelNudgeWaitsForDiscovery: a lookup that stops waiting before the
+// first provider refresh lands — its request cancelled, typically a client that
+// aborted during startup — resolves against an empty list. That is "not known
+// yet", not "none configured", so it must neither announce nor spend the run's
+// single notice: once discovery completes, a genuine gap is still reported.
+func TestCheapModelNudgeWaitsForDiscovery(t *testing.T) {
+	registerCheapTestProvider("nohint", "")
+	s, viewer := newCheapNoticeServer(t, unresolvableProviders())
+	s.providersReady = make(chan struct{}) // reopen the startup window
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	primary := core.ModelRef{Provider: "nohint", Model: "big"}
+	if _, ok := s.cheapModelForTask(ctx, primary); ok {
+		t.Fatal("expected no cheap model before discovery")
+	}
+	if got := countNotices(t, viewer); got != 0 {
+		t.Fatalf("notices = %d, want 0 before the first provider refresh completed", got)
+	}
+
+	close(s.providersReady) // markProvidersReady's Once was spent by the constructor
+	if _, ok := s.cheapModelForTask(context.Background(), primary); ok {
+		t.Fatal("expected no cheap model to resolve")
+	}
+	if got := countNotices(t, viewer); got != 1 {
+		t.Fatalf("notices = %d, want 1 once discovery confirmed the gap", got)
+	}
+}
+
 // TestCheapModelNudgeRespectsOff: having answered the question, the user is not
 // asked it again. Without this the off switch would be worse than useless — it
 // would stop the tasks running AND keep nagging about their not running.

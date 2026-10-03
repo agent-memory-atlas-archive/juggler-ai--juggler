@@ -34,12 +34,19 @@ const noCheapModelNotice = "No cheap model is set, so background tasks like nami
 // message about something the user has to go and change.
 //
 // Nothing is said when the user has turned the cheap model off. They know.
+//
+// Nor is anything said when the first provider refresh has not landed yet.
+// resolveCheapModel waits for it, but gives up when the caller's context ends
+// or the readiness timeout elapses, and then resolves against an empty list: a
+// client that aborts a request during startup would otherwise announce a
+// missing model that discovery is about to find, and spend the run's single
+// notice on it.
 func (s *Server) cheapModelForTask(ctx context.Context, primary core.ModelRef) (core.ModelRef, bool) {
 	ref, ok := s.resolveCheapModel(ctx, primary)
 	if ok {
 		return ref, true
 	}
-	if s.cheapModelDisabled() {
+	if s.cheapModelDisabled() || !s.providersReadyNow() {
 		return core.ModelRef{}, false
 	}
 	s.cheapModelNoticeOnce.Do(func() {
