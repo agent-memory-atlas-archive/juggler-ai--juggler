@@ -17,8 +17,8 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-// Closing a desktop window or quitting the app stops the server(s) those windows
-// view, abandoning any turn in flight. (A browser tab is different — disconnecting
+// Closing a desktop window or quitting the app stops the server(s) the app
+// spawned for those windows, abandoning any turn in flight. (A browser tab is different — disconnecting
 // leaves the server running — so this guard lives only in the desktop app.) Before
 // a close/quit tears a server down we ask it whether it is busy and, if so,
 // confirm the discard with the user.
@@ -64,8 +64,13 @@ func serverBusy(serverURL string) int {
 
 // closeAllowed reports whether closing e may skip the busy-work prompt: the app
 // is quitting (teardown shouldn't re-prompt per window), the window is already
-// gone, the guard has already cleared it (forceClose), or the window is a
-// detached board with another window still behind it.
+// gone, the guard has already cleared it (forceClose), the window views a server
+// this app did not spawn, or the window is a detached board with another window
+// still behind it.
+//
+// A server the app did not spawn — a headless instance, a terminal server, a URL
+// — is never stopped by a close (handleWindowClosed stops only what is in
+// st.servers), so the turn it is running carries on whatever the user answers.
 //
 // A board is exempt because closing it usually discards nothing: it views a
 // window's server rather than one of its own, so the turn the guard would report
@@ -84,8 +89,12 @@ func (a *appState) closeAllowed(e *winEntry) bool {
 	var allow bool
 	a.reg(func(st *regState) {
 		w := st.windows[e.id]
-		allow = st.quitting || w == nil || w.forceClose ||
-			(isBoardRole(w.role) && serverViewedElsewhere(st, w))
+		if st.quitting || w == nil || w.forceClose {
+			allow = true
+			return
+		}
+		_, owned := st.servers[w.serverURL]
+		allow = !owned || (isBoardRole(w.role) && serverViewedElsewhere(st, w))
 	})
 	return allow
 }
@@ -117,23 +126,12 @@ func (a *appState) shouldQuit() bool {
 }
 
 // confirmThenQuit runs off the main thread after a quit was vetoed. It tallies
-// in-flight turns across every distinct server the open windows view and, if any
+// in-flight turns across every server the quit will stop and, if any
 // exist, confirms the discard; on approval it authorises the quit and re-issues
 // it.
 func (a *appState) confirmThenQuit() {
-	var urls []string
-	a.reg(func(st *regState) {
-		seen := map[string]bool{}
-		for _, w := range st.windows {
-			if !seen[w.serverURL] {
-				seen[w.serverURL] = true
-				urls = append(urls, w.serverURL)
-			}
-		}
-	})
-
 	total := 0
-	for _, u := range urls {
+	for _, u := range a.ownedServerURLs() {
 		total += serverBusy(u)
 	}
 	if total > 0 {
@@ -145,6 +143,19 @@ func (a *appState) confirmThenQuit() {
 	a.reg(func(st *regState) { st.quitting = true })
 	a.notifyAllWindowsCloseRequested()
 	application.InvokeAsync(func() { a.app.Quit() })
+}
+
+// ownedServerURLs lists the servers whose work a quit stops: the ones this app
+// spawned. A window onto any other server (a headless instance, a terminal
+// server, a URL) leaves it running when the app goes, turn and all.
+func (a *appState) ownedServerURLs() []string {
+	var urls []string
+	a.reg(func(st *regState) {
+		for u := range st.servers {
+			urls = append(urls, u)
+		}
+	})
+	return urls
 }
 
 // busyMessage builds the confirmation body for n in-flight conversations and the

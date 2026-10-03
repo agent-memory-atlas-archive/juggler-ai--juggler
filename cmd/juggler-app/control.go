@@ -398,8 +398,8 @@ func (a *appState) handleUpdaterControl(w http.ResponseWriter, r *http.Request, 
 }
 
 // handleUpdaterRestart relaunches into the staged update. It first re-checks
-// in-flight turns across every distinct server the open windows view (the exact
-// tally confirmThenQuit does) and, unless force=1, returns 409 with the busy
+// in-flight turns across every server the restart will stop (the exact tally
+// confirmThenQuit does) and, unless force=1, returns 409 with the busy
 // count so the page can confirm the discard and re-POST with force=1.
 //
 // CRITICAL sequencing: it authorises the quit (st.quitting + notify pages)
@@ -411,18 +411,8 @@ func (a *appState) handleUpdaterControl(w http.ResponseWriter, r *http.Request, 
 // the app keeps running and the page can surface the reason.
 func (a *appState) handleUpdaterRestart(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("force") != "1" {
-		var urls []string
-		a.reg(func(st *regState) {
-			seen := map[string]bool{}
-			for _, win := range st.windows {
-				if !seen[win.serverURL] {
-					seen[win.serverURL] = true
-					urls = append(urls, win.serverURL)
-				}
-			}
-		})
 		total := 0
-		for _, u := range urls {
+		for _, u := range a.ownedServerURLs() {
 			total += serverBusy(u)
 		}
 		if total > 0 {

@@ -5,6 +5,7 @@
 package main
 
 import (
+	"os/exec"
 	"sync"
 	"testing"
 )
@@ -43,6 +44,39 @@ func registerWindowOn(a *appState, id, serverURL string) *winEntry {
 	return e
 }
 
+// ownServer records serverURL as one this app spawned, and so one a close or a
+// quit stops.
+func ownServer(a *appState, serverURL string) {
+	a.reg(func(st *regState) { st.servers[serverURL] = &exec.Cmd{} })
+}
+
+// A window onto a server the app did not start — a headless instance, a terminal
+// server, a URL — stops nothing when it closes: the teardown only ever stops a
+// server it spawned. Asking would warn about a turn that carries on regardless.
+func TestAWindowOnAServerTheAppDidNotStartClosesWithoutTheBusyGuard(t *testing.T) {
+	a := newTestAppState(t)
+	window := registerWindowOn(a, "w1", "http://localhost:1234")
+
+	if !a.closeAllowed(window) {
+		t.Fatal("closing a window onto someone else's server discards nothing, so must not ask")
+	}
+}
+
+// Quitting and restarting to update stop only the servers this app spawned, so
+// those are the only ones whose work they may warn about.
+func TestOnlyTheAppsOwnServersAreTalliedAtQuit(t *testing.T) {
+	a := newTestAppState(t)
+	registerWindowOn(a, "w1", "http://localhost:1234")
+	registerWindowOn(a, "w2", "http://localhost:5678")
+	registerWindowOn(a, "w3", "http://localhost:5678")
+	ownServer(a, "http://localhost:5678")
+
+	urls := a.ownedServerURLs()
+	if len(urls) != 1 || urls[0] != "http://localhost:5678" {
+		t.Fatalf("only the spawned server, once, got %v", urls)
+	}
+}
+
 // A board views a window's server rather than one of its own, so while that
 // window is open the turn the guard would report survives this close untouched.
 // Asking about it is a warning about work the user is not losing.
@@ -61,6 +95,7 @@ func TestABoardClosesWithoutTheBusyGuard(t *testing.T) {
 // case the guard exists for.
 func TestTheLastBoardOnAServerIsGuarded(t *testing.T) {
 	a := newTestAppState(t)
+	ownServer(a, "http://localhost:1234")
 	board := registerBoard(a, "w2", "http://localhost:1234")
 
 	if a.closeAllowed(board) {
@@ -72,6 +107,7 @@ func TestTheLastBoardOnAServerIsGuarded(t *testing.T) {
 // anything: a window onto a different project keeps a different turn alive.
 func TestABoardIsGuardedWhenTheOtherWindowIsElsewhere(t *testing.T) {
 	a := newTestAppState(t)
+	ownServer(a, "http://localhost:1234")
 	registerWindowOn(a, "w1", "http://localhost:9999")
 	board := registerBoard(a, "w2", "http://localhost:1234")
 
@@ -96,6 +132,7 @@ func TestABoardIsHeldUpByAnotherBoard(t *testing.T) {
 // to answer for what it is about to stop.
 func TestAWindowStillMeetsTheBusyGuard(t *testing.T) {
 	a := newTestAppState(t)
+	ownServer(a, "http://localhost:1234")
 	window := registerWindowOn(a, "w1", "http://localhost:1234")
 	registerBoard(a, "w2", "http://localhost:1234")
 

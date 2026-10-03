@@ -5,6 +5,7 @@
 package main
 
 import (
+	"os/exec"
 	"testing"
 	"time"
 )
@@ -16,7 +17,7 @@ import (
 func newTestAppState(t *testing.T) *appState {
 	t.Helper()
 	a := &appState{regOps: make(chan func(*regState), 32)}
-	st := &regState{windows: map[string]*winEntry{}}
+	st := &regState{windows: map[string]*winEntry{}, servers: map[string]*exec.Cmd{}}
 	go func() {
 		for op := range a.regOps {
 			op(st)
