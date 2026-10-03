@@ -22,6 +22,7 @@
  */
 
 import FilePin from '../pins/file-pin.js';
+import { fetchLiveFile, renderLiveFileBody } from '../lib/live-file.js';
 import { writeFileOp } from '../../../js/services/ops-api.js';
 import pinboardItemRegistry from '../../../js/registries/pinboard-item-registry.js';
 import { addFilePath } from 'juggler/ui';
@@ -382,6 +383,23 @@ export async function runTests(ctx) {
     }
   });
 
+  await test('a read that fails says why, rather than that the file is missing', async () => {
+    // The read op answers a missing file with `exists: false` and throws for
+    // everything else — a refused path, an unreadable file. Those are not "not
+    // found", and saying so sends the user looking for a file that is there.
+    const reason = 'path "/elsewhere/x.png" is outside the working directory';
+    const refuse = async () => { throw new Error(reason); };
+    const result = await fetchLiveFile('/elsewhere/x.png', {
+      ops: /** @type {any} */ ({ stat: refuse, readFile: refuse, getTree: refuse }),
+    });
+    const body = document.createElement('div');
+    renderLiveFileBody(body, result);
+    const text = body.textContent || '';
+    assert(!text.includes('File not found'), `a refused read is not a missing file, got "${text}"`);
+    assert(text.includes(reason) && text.includes('/elsewhere/x.png'),
+      `it names the path and the reason, got "${text}"`);
+  });
+
   await test('a file deleted or renamed under a pin turns into the missing state', async () => {
     const path = await writeFixture('doomed.txt', 'here for now');
     const mounted = mount({ path });
@@ -546,6 +564,22 @@ export async function runTests(ctx) {
       const text = await settled(mounted.body);
       assert(!text.includes('File not found'),
         `a pin outside the project root still reads, got "${text}"`);
+    } finally {
+      mounted.teardown();
+    }
+  });
+
+  await test('a pin the agent made reads outside the project too', async () => {
+    // A pin shows the file to the person looking at the board and to nothing
+    // else — no byte of it reaches the model — so who asked for it changes
+    // nothing about what it may show.
+    const outside = ctx.fixtureDir.replace(/[\\/][^\\/]+$/, '');
+    assert(outside && outside !== ctx.fixtureDir, 'the fixture must have a parent to point at');
+    const mounted = mount({ path: outside, isDirectory: true, agentRequested: true });
+    try {
+      const text = await settled(mounted.body);
+      assert(!text.includes('File not found') && !text.includes("Couldn't read"),
+        `an agent-made pin outside the project root still reads, got "${text}"`);
     } finally {
       mounted.teardown();
     }

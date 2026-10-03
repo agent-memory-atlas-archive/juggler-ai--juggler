@@ -204,7 +204,6 @@ class FilePin extends PinboardItemType {
     const render = async () => {
       const mine = ++generation;
       const path = absoluteFilePinPath(context.pin.config, context.active);
-      const userInitiated = context.pin.config?.agentRequested !== true;
       // Say which file the body below belongs to, so selecting part of it can be
       // pasted into the prompt as a reference rather than as loose text. A pin
       // may point anywhere, so a file outside the project says so and is named
@@ -222,14 +221,12 @@ class FilePin extends PinboardItemType {
       const result = await fetchLiveFile(path, {
         signal: context.signal,
         whole: true,
-        userInitiated,
       });
       if (mine !== generation || context.signal.aborted) return;
 
       renderLiveFileBody(body, result, {
         absolutePath: path,
         conversationId: context.active?.conversation?.id,
-        userInitiated,
         codeRefPath: relative || path,
         codeRefAbsolute: !relative,
       });

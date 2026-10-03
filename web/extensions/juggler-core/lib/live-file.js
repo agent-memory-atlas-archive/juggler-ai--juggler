@@ -31,6 +31,9 @@ injectFileContentStyles();
  * @property {string} path - Resolved (possibly absolute) path
  * @property {boolean} isDirectory - True if the path is a directory listing
  * @property {boolean} exists - False if the file/dir could not be read
+ * @property {string} [error] - Why it could not be read, when the reason was
+ *   anything other than nothing being there: a refused path, an unreadable file.
+ *   Absent for a plain missing path.
  * @property {string} content - File body or rendered tree listing
  * @property {string} [language] - Detected language identifier for syntax highlight
  * @property {number} [size] - File size in bytes (files only)
@@ -53,8 +56,7 @@ injectFileContentStyles();
  * the read/tree ops, and it is what lets the path resolve WITHOUT the
  * working-directory containment check — for a relative `../…` as much as for an
  * absolute one. Without it a path outside the project root fails as "path is
- * outside working directory", which the panel would render as a misleading
- * "File not found".
+ * outside the working directory".
  *
  * Only the read op takes a signal; `stat` and `getTree` do not, so a caller that
  * can be torn down mid-read must check its own signal before using what comes
@@ -118,7 +120,7 @@ export async function fetchLiveFile(path, options = {}) {
       };
     } catch (err) {
       console.error(`[LiveFile] Couldn't list directory ${path}:`, err);
-      return { path, isDirectory: true, exists: false, content: '' };
+      return { path, isDirectory: true, exists: false, content: '', error: errorText(err) };
     }
   }
 
@@ -148,8 +150,18 @@ export async function fetchLiveFile(path, options = {}) {
     };
   } catch (err) {
     console.error(`[LiveFile] Couldn't load ${path}:`, err);
-    return { path, isDirectory: false, exists: false, content: '' };
+    return { path, isDirectory: false, exists: false, content: '', error: errorText(err) };
   }
+}
+
+/**
+ * The words a failed read gave, for showing beside the path.
+ * @param {unknown} err - What the op threw.
+ * @returns {string} Its message, never empty.
+ */
+function errorText(err) {
+  const message = err instanceof Error ? err.message : String(err ?? '');
+  return message.trim() || 'unknown error';
 }
 
 /**
@@ -204,8 +216,11 @@ export function renderLiveFileBody(container, result, options = {}) {
   container.replaceChildren();
 
   if (!result.exists) {
-    container.appendChild(createElement('div', 'file-content-not-found',
-      `File not found: ${absolutePath}`));
+    // Only a read that found nothing there is "not found". Anything else names
+    // its reason, or the user goes looking for a file that is plainly on disk.
+    container.appendChild(createElement('div', 'file-content-not-found', result.error
+      ? `Couldn't read ${absolutePath}: ${result.error}`
+      : `File not found: ${absolutePath}`));
     return;
   }
 
