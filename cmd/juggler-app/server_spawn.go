@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"juggler/cmd/juggler/core"
+	"juggler/internal/binpath"
 	"juggler/internal/logpaths"
 )
 
@@ -106,8 +107,7 @@ func serverBinPath() (string, error) {
 		name = "juggler.exe"
 	}
 	if exe, err := os.Executable(); err == nil {
-		cand := filepath.Join(filepath.Dir(exe), name)
-		if st, statErr := os.Stat(cand); statErr == nil && !st.IsDir() {
+		if cand, ok := binpath.Sibling(exe, name); ok {
 			return cand, nil
 		}
 	}
