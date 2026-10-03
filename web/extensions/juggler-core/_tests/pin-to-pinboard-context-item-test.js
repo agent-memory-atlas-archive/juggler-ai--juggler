@@ -41,6 +41,32 @@ export async function runTests(_ctx) {
     messageThread: {},
   }));
 
+  await test('a card drawn before any tool list was built still names its pin', async () => {
+    // A fresh copy of the module is a page that has just loaded: nothing has
+    // built a tool list in it yet, so the catalog the label is read from is
+    // empty while the transcript is drawn.
+    const { default: Fresh } = await import(
+      `../context-items/pin-to-pinboard-context-item.js?fresh=${Date.now()}`);
+    const fresh = new Fresh(/** @type {any} */ ({
+      id: 'PIN_fresh',
+      session: {},
+      conversation: { id: 'conversation-one' },
+      messageThread: {},
+    }));
+    const path = '/tmp/brewshot/panel-1280-light.png';
+    const ui = fresh.getStatusUI(/** @type {any} */ ({
+      success: true,
+      result: { pin: 'agent_file', type: 'file', parameters: { path } },
+    }));
+    const link = /** @type {HTMLElement} */ (ui.summary);
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline && link.textContent !== path) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    assert(link.textContent === path,
+      `the card should name the file, not its pin type, got "${link.textContent}"`);
+  });
+
   // The tool reads the installed pin types before every tool list is built, and
   // its whole job is to name them, so nothing below means anything until it has.
   await PinToPinboardContextItem.prepareToolDefinitions();

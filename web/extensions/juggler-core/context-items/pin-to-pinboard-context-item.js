@@ -295,7 +295,10 @@ class PinToPinboardContextItem extends ContextItem {
       const result = /** @type {{type?: string, parameters?: Record<string, any>}} */ (actionStatus.result || {});
       const label = (result.type ? pinLabel(result.type, result.parameters) : '') || 'item';
       const ref = pinRefOf(result);
-      return { typeName, summary: ref ? this.createPinLink(label, ref) : label, status: 'success' };
+      if (!ref) return { typeName, summary: label, status: 'success' };
+      const link = this.createPinLink(label, ref);
+      if (!catalog.has(ref.type)) relabelOnceCatalogIsRead(link, ref.type, result.parameters);
+      return { typeName, summary: link, status: 'success' };
     }
     const terminal = this.resolveTerminalStatus(actionStatus, 'Could not pin that');
     return { typeName, summary: terminal.summary, status: terminal.status };
@@ -358,6 +361,32 @@ class PinToPinboardContextItem extends ContextItem {
     const show = createShowPinControl(pinRefOf(data));
     return { skipResultSection: true, controls: show ? [show] : [] };
   }
+}
+
+/**
+ * The catalog read a card asked for, shared by every card that finds the catalog
+ * unable to name its pin. Made once per realm: a type with no descriptor stays
+ * unnamed after it, and asking again for each card would not change that.
+ * @type {Promise<void>|null}
+ */
+let cardCatalogRead = null;
+
+/**
+ * Put a pin's own name on a card that was drawn before the catalog could supply
+ * it. The catalog is otherwise read only when a tool list is built, which a page
+ * that has just loaded has not done yet, so every card in the transcript would
+ * read as its bare type until something redrew it. The card is a live element,
+ * so it is corrected in place rather than waiting for a redraw nothing asks for.
+ * @param {HTMLElement} link - The card's label.
+ * @param {string} type - The pin type.
+ * @param {Record<string, any>} [parameters] - Normalized parameters.
+ * @returns {void}
+ */
+function relabelOnceCatalogIsRead(link, type, parameters) {
+  cardCatalogRead ??= PinToPinboardContextItem.prepareToolDefinitions();
+  void cardCatalogRead.then(() => {
+    if (catalog.has(type)) link.textContent = pinLabel(type, parameters);
+  });
 }
 
 export default PinToPinboardContextItem;
