@@ -11,6 +11,7 @@ of changes; this project follows semantic versioning.
 - Ollama models now honour a raised Max output tokens instead of stopping at 4096
 - Auto-approve's reviewer can be set to balanced, relaxed, or your own custom policy
 - Extension settings gain a multi-line text type and can appear on a capability's page
+- Usage meters only redden past pace, and less so early in the window
 
 ## [0.7.4] - 2026-10-02
 

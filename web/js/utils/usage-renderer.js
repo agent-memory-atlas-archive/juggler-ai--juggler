@@ -48,16 +48,13 @@ export function isUsageStale(usage) {
 }
 
 /**
- * Smallest elapsed fraction the pace calculation will divide by, as a
- * percentage. Inside the opening stretch of a window a single large turn is many
- * times the average rate, and a meter that opened red every window would say
- * nothing; flooring the divisor means the first quarter warns only when the
- * burst is large enough to exhaust the quota on its own.
+ * Share of the average rate the rest of the window can afford, at or below which
+ * a meter warns: the user has to ease off by a tenth to last until the reset.
  */
-const PACE_FLOOR_PCT = 25;
+const AFFORD_WARN = 0.9;
 
-/** Fraction of the exhausting rate at which a meter starts to warn. */
-const PACE_WARN = 0.8;
+/** Share of the average rate at or below which a meter is red: ease off by a quarter. */
+const AFFORD_HIGH = 0.75;
 
 /**
  * How far through its window a stat is.
@@ -76,19 +73,23 @@ function elapsedPercent(stat) {
 
 /**
  * Warning level for a meter. What matters is not how much of the quota is gone
- * but whether it is going faster than the clock: usage level with the elapsed
- * fraction — the tick — is on course to run the quota out exactly at the reset,
- * so that is the red line, and {@link PACE_WARN} of the way there is the
- * warning. A stat with no window has no pace to judge, and falls back to
- * absolute thresholds.
+ * but whether it will last: a fill at or behind the elapsed fraction — the tick —
+ * lasts until the reset at the average rate, so it never warns. Past the tick,
+ * the overshoot is weighed against the time left to absorb it, as the share of
+ * the average rate the remaining quota can sustain over the remaining window.
+ * Ten points over with most of the window ahead asks for a small easing-off;
+ * the same ten points near the reset asks for a large one. A stat with no window
+ * has no pace to judge, and falls back to absolute thresholds.
  * @param {number} pct - Percentage of the quota used, 0-100.
  * @param {number|null} timePct - Percentage of the window elapsed, or null.
  * @returns {string} A modifier class for `.usage-stat-fill`, or '' for none.
  */
 function usageLevel(pct, timePct) {
   if (timePct === null) return pct > 80 ? 'usage-high' : (pct > 60 ? 'usage-medium' : '');
-  const pace = pct / Math.max(timePct, PACE_FLOOR_PCT);
-  return pace >= 1 ? 'usage-high' : (pace >= PACE_WARN ? 'usage-medium' : '');
+  if (pct >= 100) return 'usage-high';
+  if (pct <= timePct) return '';
+  const affordable = (100 - pct) / (100 - timePct);
+  return affordable <= AFFORD_HIGH ? 'usage-high' : (affordable <= AFFORD_WARN ? 'usage-medium' : '');
 }
 
 /**

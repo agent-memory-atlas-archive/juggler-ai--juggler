@@ -5,15 +5,14 @@
 /**
  * usage-renderer meter-colour tests.
  *
- * A meter warns about PACE, not about how much of the quota is gone: the colour
- * is driven by usage measured against the elapsed fraction of the window — the
- * same figure the tick marker sits at — so a bar level with the tick is on
- * course to exhaust the quota exactly at the reset. That divisor is floored, so
- * the opening stretch of a window (where one large turn is many times the
- * average rate) does not read as a runaway. A stat with no window has nothing to
- * pace against and keeps absolute thresholds. These cases pin all three rules,
- * including ones where pace and absolute usage disagree; `Date.now` is stubbed
- * so boundary ratios land exactly rather than drifting by the test's runtime.
+ * A meter warns about PACE, not about how much of the quota is gone. A bar at or
+ * behind the tick (the elapsed fraction of the window) is on course to last, so
+ * it never warns. Past the tick, the overshoot is weighed against the time left
+ * to absorb it: the colour follows the share of the average rate the rest of the
+ * window can still afford, so ten points over reads mildly a third of the way in
+ * and urgently near the end. A stat with no window has nothing to pace against
+ * and keeps absolute thresholds. `Date.now` is stubbed so boundary ratios land
+ * exactly rather than drifting by the test's runtime.
  * @module unit-tests/usage-renderer-test
  */
 
@@ -73,25 +72,32 @@ const CASES = [
   { used: 70, elapsed: null, want: 'usage-medium', why: 'no window, over 60%' },
   { used: 90, elapsed: null, want: 'usage-high', why: 'no window, over 80%' },
 
-  // Level with the tick is the red line: that rate exhausts the quota at reset.
+  // At or behind the tick never warns: the quota lasts at the average rate.
   { used: 30, elapsed: 50, want: '', why: 'well behind the tick' },
-  { used: 40, elapsed: 50, want: 'usage-medium', why: 'eight tenths of the way to the tick' },
-  { used: 50, elapsed: 50, want: 'usage-high', why: 'level with the tick' },
-  { used: 65, elapsed: 50, want: 'usage-high', why: 'past the tick' },
+  { used: 50, elapsed: 50, want: '', why: 'level with the tick' },
+  { used: 85, elapsed: 90, want: '', why: 'over 80% but still short of the tick' },
 
-  // Where pace and absolute usage disagree, pace wins — both ways.
-  { used: 70, elapsed: 90, want: '', why: 'over 60% but comfortably behind the tick' },
-  { used: 85, elapsed: 90, want: 'usage-medium', why: 'over 80% but still short of the tick' },
-  { used: 30, elapsed: 30, want: 'usage-high', why: 'under 60% but level with the tick' },
+  // Past the tick, the overshoot is weighed against the time left to absorb it.
+  { used: 55, elapsed: 50, want: 'usage-medium', why: 'nine tenths of the rate left for half the window' },
+  { used: 60, elapsed: 50, want: 'usage-medium', why: 'eight tenths of the rate left' },
+  { used: 65, elapsed: 50, want: 'usage-high', why: 'seven tenths of the rate left' },
 
-  // The floored divisor: a burst in the opening stretch is not a runaway.
-  { used: 15, elapsed: 5, want: '', why: 'three times the instantaneous rate, damped by the floor' },
-  { used: 20, elapsed: 10, want: 'usage-medium', why: 'a fifth of the quota inside the floor' },
-  { used: 25, elapsed: 1, want: 'usage-high', why: 'a quarter of the quota gone almost immediately' },
+  // Early in the window the same overshoot matters less: there is time to absorb it.
+  { used: 30, elapsed: 30, want: '', why: 'level with the tick a third of the way in' },
+  { used: 40, elapsed: 30, want: 'usage-medium', why: 'ten points over with most of the window left' },
+  { used: 25, elapsed: 10, want: 'usage-medium', why: 'fifteen points over a tenth of the way in' },
+  { used: 33, elapsed: 10, want: 'usage-high', why: 'a third of the quota gone a tenth of the way in' },
+  { used: 30, elapsed: 1, want: 'usage-high', why: 'a big burst almost immediately' },
+
+  // Late in the window a small overshoot matters more: there is little time left.
+  { used: 83, elapsed: 80, want: 'usage-medium', why: 'three points over with a fifth of the window left' },
+  { used: 93, elapsed: 90, want: 'usage-high', why: 'three points over with a tenth of the window left' },
 
   // Ends of the range.
   { used: 0, elapsed: 50, want: '', why: 'nothing used' },
-  { used: 100, elapsed: 100, want: 'usage-high', why: 'exhausted as the window closes' }
+  { used: 100, elapsed: 50, want: 'usage-high', why: 'exhausted mid-window' },
+  { used: 100, elapsed: 100, want: 'usage-high', why: 'exhausted as the window closes' },
+  { used: 99, elapsed: 100, want: '', why: 'quota left as the window closes' }
 ];
 
 /**
