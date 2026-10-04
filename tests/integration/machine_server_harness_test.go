@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"juggler/cmd/juggler/core"
 	"juggler/cmd/juggler/machineserver"
 	"juggler/internal/ingress"
 	"juggler/internal/srcroot"
@@ -357,6 +358,22 @@ func (ms *machineServer) readServerInfo() machineserver.ServerInfo {
 		ms.t.Fatalf("parse server.json %q: %v", b, err)
 	}
 	return info
+}
+
+// setDefaultModel stores ref as the explicit default model under the machine
+// server's temporary HOME, so every conversation a session child creates from
+// then on is seeded with it. Without one a child derives the default from the
+// providers it finds installed, which a machine with none — a hosted CI runner —
+// answers with no model at all, and a turn is then refused before it starts.
+func (ms *machineServer) setDefaultModel(ref core.ModelRef) {
+	ms.t.Helper()
+	b, err := json.Marshal(ref)
+	if err != nil {
+		ms.t.Fatalf("marshal default model: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(ms.ConfigDir, "default-model.json"), b, 0o600); err != nil {
+		ms.t.Fatalf("write default-model.json: %v", err)
+	}
 }
 
 // url returns the machine server's URL for path.

@@ -18,6 +18,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"juggler/cmd/juggler/core"
 	"juggler/cmd/juggler/machineserver"
 	"juggler/internal/apipaths"
 	"juggler/internal/ingress"
@@ -337,6 +338,9 @@ func TestMachineServerProxiesWebSocket(t *testing.T) {
 func TestMachineServerReportsSessionActivity(t *testing.T) {
 	ms, stop := startMachineServer(t)
 	defer stop()
+	// The mock answers the turn, so the model is never called — but a turn
+	// with no model is refused before it reaches the mock.
+	ms.setDefaultModel(core.ModelRef{Provider: "test", Model: "test-model"})
 
 	sess := ms.openSession(newProjectDir(t), http.StatusCreated)
 	if sess.Busy || sess.LastActive != nil {
@@ -448,8 +452,10 @@ func holdTurn(t *testing.T, ms *machineServer, sess machineserver.Session) (rele
 
 	// The reader answers the turn's requests for tools and rendered context —
 	// the engine's job, done here so the turn needs no engine to reach the
-	// mock — and reports the frames the steps below wait for.
+	// mock — and reports the frames the steps below wait for. A turn the child
+	// refuses (no model, say) never pauses, so its reason ends the wait at once.
 	ready, acked, paused := make(chan struct{}, 1), make(chan struct{}, 1), make(chan struct{}, 1)
+	refused := make(chan string, 1)
 	signal := func(ch chan struct{}) {
 		select {
 		case ch <- struct{}{}:
@@ -473,6 +479,7 @@ func holdTurn(t *testing.T, ms *machineServer, sess machineserver.Session) (rele
 			var msg struct {
 				Type      string `json:"type"`
 				Status    string `json:"status"`
+				Message   string `json:"message"`
 				RequestID string `json:"requestId"`
 			}
 			if json.Unmarshal(env.Payload, &msg) != nil {
@@ -484,8 +491,14 @@ func holdTurn(t *testing.T, ms *machineServer, sess machineserver.Session) (rele
 			case "ack":
 				signal(acked)
 			case "status":
-				if msg.Status == "mock-paused" {
+				switch msg.Status {
+				case "mock-paused":
 					signal(paused)
+				case "validation-error", "error":
+					select {
+					case refused <- msg.Status + ": " + msg.Message:
+					default:
+					}
 				}
 			case "request-tools":
 				send("tools-result", map[string]any{"type": "tools-result", "requestId": msg.RequestID, "tools": []any{}})
@@ -498,6 +511,8 @@ func holdTurn(t *testing.T, ms *machineServer, sess machineserver.Session) (rele
 		t.Helper()
 		select {
 		case <-ch:
+		case why := <-refused:
+			t.Fatalf("held turn: the child refused it while waiting for %s (%s)", what, why)
 		case <-time.After(30 * time.Second):
 			t.Fatalf("held turn: no %s from the child", what)
 		}
