@@ -1370,26 +1370,6 @@ func (w *ConversationWorker) handleRetryToolApproval(payload json.RawMessage) {
 	})
 }
 
-// handleMoveContextItemMessageToEnd moves a context item placeholder message to the end of items
-func (w *ConversationWorker) handleMoveContextItemMessageToEnd(payload json.RawMessage) {
-	var msg struct {
-		ItemID string `json:"itemId"`
-	}
-	if !w.decodePayload("move-context-item-message-to-end", payload, &msg) {
-		return
-	}
-
-	items := w.doc.GetItems()
-	for i, item := range items {
-		if item.ItemID == msg.ItemID && item.Type != ItemTypeToolAction {
-			// Remove from current position and add to end
-			w.doc.DeleteMessages([]int{i})
-			w.tracker.AppendMessage(item)
-			break
-		}
-	}
-}
-
 // handleUpdateAndRepositionToolActions updates tool actions with new hash and repositions changed ones
 func (w *ConversationWorker) handleUpdateAndRepositionToolActions(payload json.RawMessage) {
 	var msg struct {
@@ -1503,10 +1483,14 @@ func (w *ConversationWorker) handleBackgroundTaskSnapshot(payload json.RawMessag
 	w.doc.UpdateToolActionDisplayDataRecursive(snapshot.ToolUseID, "backgroundTask", displayData)
 }
 
-// handleRepositionContextItemPlaceholder clears itemId and sets placeholder content for a context item
+// handleRepositionContextItemPlaceholder detaches the tool action that produced
+// a context item from it (clearing its itemId) and writes the viewer's
+// placeholder text over its content. The worker owns items[], so the write
+// happens here; the wording is the viewer's.
 func (w *ConversationWorker) handleRepositionContextItemPlaceholder(payload json.RawMessage) {
 	var msg struct {
-		ItemID string `json:"itemId"`
+		ItemID  string `json:"itemId"`
+		Content string `json:"content"`
 	}
 	if !w.decodePayload("reposition-context-item-placeholder", payload, &msg) {
 		return
@@ -1514,6 +1498,6 @@ func (w *ConversationWorker) handleRepositionContextItemPlaceholder(payload json
 
 	w.doc.UpdateToolActionByItemIDRecursive(msg.ItemID, map[string]any{
 		"itemId":  "",
-		"content": "(context item was repositioned)",
+		"content": msg.Content,
 	})
 }

@@ -16,7 +16,7 @@
  * - Single source of truth for API contracts
  */
 
-import { extractHttpErrorDetail } from './http.js';
+import { extractHttpErrorDetail, withApiToken } from './http.js';
 import { apiUrl } from '../utils/api-url.js';
 
 // ============================================================================
@@ -108,6 +108,18 @@ let _opCallTimeoutMs = OP_CALL_TIMEOUT_MS;
  */
 export function __setOpCallTimeoutForTest(ms) {
   _opCallTimeoutMs = ms ?? OP_CALL_TIMEOUT_MS;
+}
+
+/**
+ * Refuse a call missing a required parameter before it reaches the wire, so the
+ * caller gets a TypeError naming the parameter rather than a backend error.
+ * @param {object} params - The operation's parameters
+ * @param {string} name - The parameter that must be present and non-empty
+ */
+function requireParam(params, name) {
+  if (!(/** @type {Record<string, unknown>} */ (params))[name]) {
+    throw new TypeError(`${name} is required`);
+  }
 }
 
 // ============================================================================
@@ -442,11 +454,7 @@ async function callOp(toolId, operation, params, signal, allowedPaths, workspace
     requestBody.workspaceId = workspaceId;
   }
 
-  const headers = /** @type {Record<string, string>} */ ({ 'Content-Type': 'application/json' });
-  const token = /** @type {{__jugglerToken?: string}} */ (globalThis).__jugglerToken;
-  if (token) {
-    headers['X-Juggler-Token'] = token;
-  }
+  const headers = withApiToken({ 'Content-Type': 'application/json' });
 
   // The deadline is delivered as an abort, so it must be told apart from the
   // caller's own cancellation: an expiry is an ordinary failure the tool reports,
@@ -515,9 +523,7 @@ async function callOp(toolId, operation, params, signal, allowedPaths, workspace
  * @returns {Promise<ReadFileLoadResult>} File content and metadata
  */
 export async function readFileLoad(params, signal, allowedPaths, workspaceId) {
-  if (!params.path) {
-    throw new TypeError('path is required');
-  }
+  requireParam(params, 'path');
   return callOp('read-file', 'loadFile', params, signal, allowedPaths, workspaceId);
 }
 
@@ -551,11 +557,7 @@ export async function uploadAssetBase64(convId, base64, mime, signal) {
   for (let i = 0; i < bin.length; i++) {
     bytes[i] = bin.charCodeAt(i);
   }
-  const headers = /** @type {Record<string, string>} */ ({ 'Content-Type': mime || 'application/octet-stream' });
-  const token = /** @type {{__jugglerToken?: string}} */ (globalThis).__jugglerToken;
-  if (token) {
-    headers['X-Juggler-Token'] = token;
-  }
+  const headers = withApiToken({ 'Content-Type': mime || 'application/octet-stream' });
   const response = await fetch(
     apiUrl(`/session/conversations/${encodeURIComponent(convId)}/assets`),
     { method: 'POST', headers, body: bytes, signal }
@@ -579,9 +581,7 @@ export async function uploadAssetBase64(convId, base64, mime, signal) {
  * @returns {Promise<ReadFileWriteResult>} Write operation result with path and metadata
  */
 export async function writeFileOp(params, signal, allowedPaths, workspaceId) {
-  if (!params.path) {
-    throw new TypeError('path is required');
-  }
+  requireParam(params, 'path');
   if (params.content === undefined || params.content === null) {
     throw new TypeError('content is required');
   }
@@ -600,9 +600,7 @@ export async function writeFileOp(params, signal, allowedPaths, workspaceId) {
  * @returns {Promise<ReadFileEditResult>} Edit operation result with file metadata
  */
 export async function readFileEdit(params, signal, allowedPaths, workspaceId) {
-  if (!params.path) {
-    throw new TypeError('path is required');
-  }
+  requireParam(params, 'path');
   // Accept old_str or any alias (backend normalizes)
   if (!params.old_str && !params.oldContent && !params.old && !params.pattern && !params.search) {
     throw new TypeError('old_str (or alias: oldContent, old, pattern, search) is required');
@@ -623,9 +621,7 @@ export async function readFileEdit(params, signal, allowedPaths, workspaceId) {
  * @returns {Promise<ReadFileEditLinesResult>} Line edit operation result with file metadata
  */
 export async function readFileEditLines(params, signal, allowedPaths, workspaceId) {
-  if (!params.path) {
-    throw new TypeError('path is required');
-  }
+  requireParam(params, 'path');
   if (params.edits !== undefined) {
     // Batch mode: validate the edits array, skip the single-edit fields.
     if (!Array.isArray(params.edits) || params.edits.length === 0) {
@@ -654,9 +650,7 @@ export async function readFileEditLines(params, signal, allowedPaths, workspaceI
  * @returns {Promise<{path: string, exists: boolean, contentHash?: string, fileModifiedAt?: number}>} File hash and metadata for change detection
  */
 export async function readFileGetHash(params, allowedPaths, workspaceId) {
-  if (!params.path) {
-    throw new TypeError('path is required');
-  }
+  requireParam(params, 'path');
   return callOp('read-file', 'getFileHash', params, undefined, allowedPaths, workspaceId);
 }
 
@@ -668,9 +662,7 @@ export async function readFileGetHash(params, allowedPaths, workspaceId) {
  * @returns {Promise<{path: string, exists: boolean, isFile?: boolean, isDirectory?: boolean, size?: number, modified?: number}>} File/directory metadata
  */
 export async function statOp(params, allowedPaths, workspaceId) {
-  if (!params.path) {
-    throw new TypeError('path is required');
-  }
+  requireParam(params, 'path');
   return callOp('read-file', 'stat', params, undefined, allowedPaths, workspaceId);
 }
 
@@ -682,9 +674,7 @@ export async function statOp(params, allowedPaths, workspaceId) {
  * @returns {Promise<{path: string}>} Created directory path
  */
 export async function mkdirOp(params, allowedPaths, workspaceId) {
-  if (!params.path) {
-    throw new TypeError('path is required');
-  }
+  requireParam(params, 'path');
   return callOp('read-file', 'mkdir', params, undefined, allowedPaths, workspaceId);
 }
 
@@ -723,9 +713,7 @@ export async function treeGetTree(params, allowedPaths, workspaceId) {
  * @returns {Promise<TreeExpandDirResult>} Directory contents with file and folder items
  */
 export async function treeExpandDirectory(params, allowedPaths, workspaceId) {
-  if (!params.path) {
-    throw new TypeError('path is required');
-  }
+  requireParam(params, 'path');
   return callOp('tree', 'expandDirectory', params, undefined, allowedPaths, workspaceId);
 }
 
@@ -756,9 +744,7 @@ export async function treeExpandDirectory(params, allowedPaths, workspaceId) {
  * @returns {Promise<TreeGlobResult>} Matching files sorted by modification time
  */
 export async function treeGlob(params, signal, allowedPaths, workspaceId) {
-  if (!params.pattern) {
-    throw new TypeError('pattern is required');
-  }
+  requireParam(params, 'pattern');
   return callOp('tree', 'glob', params, signal, allowedPaths, workspaceId);
 }
 
@@ -798,9 +784,7 @@ export async function treeGlob(params, signal, allowedPaths, workspaceId) {
  * @returns {Promise<TreeCopyResult>} What was copied
  */
 export async function treeCopy(params, signal, allowedPaths, workspaceId) {
-  if (!params.to) {
-    throw new TypeError('to is required');
-  }
+  requireParam(params, 'to');
   return callOp('tree', 'copy', params, signal, allowedPaths, workspaceId);
 }
 
@@ -853,9 +837,7 @@ export async function treeCompare(params, signal, allowedPaths, workspaceId) {
  * @returns {Promise<GrepSearchResult>} Search results with matching files and lines
  */
 export async function grepSearch(params, signal, allowedPaths, workspaceId) {
-  if (!params.pattern) {
-    throw new TypeError('pattern is required');
-  }
+  requireParam(params, 'pattern');
   // Validate maxResults if provided
   if (params.maxResults !== undefined) {
     if (typeof params.maxResults !== 'number' || params.maxResults < 1 || params.maxResults > 1000) {
@@ -873,9 +855,7 @@ export async function grepSearch(params, signal, allowedPaths, workspaceId) {
  * @returns {Promise<GrepFindSymbolResult>} Symbol definitions found across files
  */
 export async function grepFindSymbol(params, signal, workspaceId) {
-  if (!params.symbol) {
-    throw new TypeError('symbol is required');
-  }
+  requireParam(params, 'symbol');
   return callOp('grep', 'findSymbol', params, signal, undefined, workspaceId);
 }
 
@@ -972,9 +952,7 @@ export async function shellExecute(params, workspaceId, signal) {
  * @returns {Promise<ShellStartBackgroundResult>} Background task info
  */
 export async function shellStartBackground(params, workspaceId) {
-  if (!params.command) {
-    throw new TypeError('command is required');
-  }
+  requireParam(params, 'command');
   return callOp('shell', 'startBackground', params, undefined, undefined, workspaceId);
 }
 
@@ -1005,9 +983,7 @@ export async function shellStartBackground(params, workspaceId) {
  * @returns {Promise<ShellGetOutputResult>} Task output result
  */
 export async function shellGetOutput(params) {
-  if (!params.task_id) {
-    throw new TypeError('task_id is required');
-  }
+  requireParam(params, 'task_id');
   return callOp('shell', 'getOutput', params);
 }
 
@@ -1021,9 +997,7 @@ export async function shellGetOutput(params) {
  * @returns {Promise<ShellGetOutputResult & {outputIsNew?: boolean}>} Delta output result
  */
 export async function shellGetOutputDelta(params) {
-  if (!params.task_id) {
-    throw new TypeError('task_id is required');
-  }
+  requireParam(params, 'task_id');
   return callOp('shell', 'getOutputDelta', params);
 }
 
@@ -1050,9 +1024,7 @@ export async function shellGetOutputDelta(params) {
  * @returns {Promise<ShellKillResult>} Kill result
  */
 export async function shellKill(params) {
-  if (!params.shell_id) {
-    throw new TypeError('shell_id is required');
-  }
+  requireParam(params, 'shell_id');
   return callOp('shell', 'kill', params);
 }
 
@@ -1083,9 +1055,7 @@ export async function shellKill(params) {
  * @returns {Promise<{tasks: ShellTaskLiveness[]}>} One answer per requested ID
  */
 export async function shellTaskStatus(params) {
-  if (!params.conv_id) {
-    throw new TypeError('conv_id is required');
-  }
+  requireParam(params, 'conv_id');
   return callOp('shell', 'taskStatus', params);
 }
 
@@ -1122,9 +1092,7 @@ export async function shellTaskStatus(params) {
  * @returns {Promise<HTTPRequestResult>} HTTP response
  */
 export async function httpRequest(params, signal) {
-  if (!params.url) {
-    throw new TypeError('url is required');
-  }
+  requireParam(params, 'url');
   return callOp('http', 'request', params, signal);
 }
 
@@ -1162,9 +1130,7 @@ export async function httpRequest(params, signal) {
  * @returns {Promise<WebFetchResult>} Fetched content
  */
 export async function webFetch(params, signal) {
-  if (!params.url) {
-    throw new TypeError('url is required');
-  }
+  requireParam(params, 'url');
   // prompt is optional: without it the op returns the raw page content.
   return callOp('webfetch', 'fetch', params, signal);
 }
@@ -1199,9 +1165,7 @@ export async function webFetch(params, signal) {
  * @returns {Promise<WebSearchProxyResponse>} Raw response from backend proxy
  */
 export async function webSearch(params, signal) {
-  if (!params.url) {
-    throw new TypeError('url is required');
-  }
+  requireParam(params, 'url');
   return callOp('websearch', 'search', params, signal);
 }
 
@@ -1260,11 +1224,7 @@ export async function generateText(params, signal) {
     throw new TypeError('prompt is required');
   }
 
-  const headers = /** @type {Record<string, string>} */ ({ 'Content-Type': 'application/json' });
-  const token = /** @type {{__jugglerToken?: string}} */ (globalThis).__jugglerToken;
-  if (token) {
-    headers['X-Juggler-Token'] = token;
-  }
+  const headers = withApiToken({ 'Content-Type': 'application/json' });
 
   const body = {
     prompt: params.prompt,
@@ -1283,21 +1243,7 @@ export async function generateText(params, signal) {
   });
 
   if (!response.ok) {
-    let errorDetail = response.statusText;
-    try {
-      const errorBody = await response.text();
-      if (errorBody) {
-        try {
-          const errorJson = JSON.parse(errorBody);
-          errorDetail = errorJson.error || errorBody;
-        } catch {
-          errorDetail = errorBody;
-        }
-      }
-    } catch {
-      // Fall back to statusText if the body can't be read.
-    }
-    throw new OpsError(errorDetail, response.status);
+    throw new OpsError(await extractHttpErrorDetail(response), response.status);
   }
 
   return response.json();
@@ -1321,9 +1267,7 @@ export async function generateText(params, signal) {
  * @returns {Promise<OSLaunchResult>} Launch result.
  */
 export async function osOpenPath(params) {
-  if (!params.path) {
-    throw new TypeError('path is required');
-  }
+  requireParam(params, 'path');
   return callOp('os', 'open', params);
 }
 
@@ -1333,9 +1277,7 @@ export async function osOpenPath(params) {
  * @returns {Promise<OSLaunchResult>} Launch result.
  */
 export async function osRevealPath(params) {
-  if (!params.path) {
-    throw new TypeError('path is required');
-  }
+  requireParam(params, 'path');
   return callOp('os', 'reveal', params);
 }
 
@@ -1448,9 +1390,7 @@ export async function mcpServerControl(params, signal) {
  * @returns {Promise<{log: string}>} Recent stderr
  */
 export async function mcpGetLog(params, signal) {
-  if (!params.server) {
-    throw new TypeError('server is required');
-  }
+  requireParam(params, 'server');
   return callOp('mcp', 'getLog', params, signal);
 }
 

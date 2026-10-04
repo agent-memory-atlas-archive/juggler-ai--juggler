@@ -389,11 +389,17 @@ export function findNeighborItemId(items, deletedIndex, messageThread) {
 // ── Internal helpers ──────────────────────────────────────────────────
 
 /**
+ * Text a reused context item's original tool-action shows once the item has
+ * moved on to its new position.
+ */
+const REPOSITIONED_PLACEHOLDER = '(context item was repositioned)';
+
+/**
  * @param {Conversation} conv
  * @param {string} itemId
  */
 function repositionPlaceholder(conv, itemId) {
-  workerManager.repositionContextItemPlaceholder(conv.id, itemId);
+  workerManager.repositionContextItemPlaceholder(conv.id, itemId, REPOSITIONED_PLACEHOLDER);
 }
 
 /**

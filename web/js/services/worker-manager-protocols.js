@@ -1020,15 +1020,18 @@ export function updateToolActionForRetry(wm, conversationId, toolUseId, approval
 /**
  * Update tool-actions to clear itemId and set placeholder content. Used
  * when repositioning context items — old tool-action becomes placeholder.
- * Worker owns items[], so mutation must happen there.
+ * Worker owns items[], so mutation must happen there; the wording is ours,
+ * and the worker writes whatever `content` it is sent.
  * @param {any} wm
  * @param {string} conversationId
  * @param {string} itemId
+ * @param {string} content - Text the detached tool-action shows in place of the item
  */
-export function repositionContextItemPlaceholder(wm, conversationId, itemId) {
+export function repositionContextItemPlaceholder(wm, conversationId, itemId, content) {
   wm.sendToWorker(conversationId, {
     type: 'reposition-context-item-placeholder',
-    itemId
+    itemId,
+    content
   });
 }
 

@@ -18,8 +18,8 @@
 //   - threads: inject-thread-message, delivery-ended, create-thread,
 //     resummarize-compaction-thread
 //   - tool retry: retry-tool-approval, retry-tool-action, update-tool-action-for-retry
-//   - context-item items: move-context-item-message-to-end,
-//     update-and-reposition-tool-actions, reposition-context-item-placeholder
+//   - context-item items: update-and-reposition-tool-actions,
+//     reposition-context-item-placeholder
 //   - sync/undo: yjs-sync, undo, redo, clear-history, stop-undo-capturing,
 //     begin-undo-coalesce, end-undo-coalesce, request-full-state, resync-request,
 //     resync-to-origin, clear-undo-stacks, get-transaction

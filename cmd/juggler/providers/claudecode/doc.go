@@ -261,7 +261,9 @@
 //     one persistent CLI session.
 //   - autonomous_turn.go: between-Submit drain that surfaces turns the CLI
 //     emits with no Submit in flight.
-//   - parser.go: stdout JSON-line parser, stream-event state machine.
+//   - parser.go: stdout JSON-line parser and turn read loop.
+//   - stream_events.go: stream-event state machine, one function per
+//     Anthropic event type (handleStreamEvent dispatches).
 //   - protocol.go: wire-format types (CLI envelopes + control protocol).
 //   - control_protocol.go: stdio control dispatcher + outbound writer.
 //   - mcp_inproc.go: in-process MCP responses (initialize / tools/list /

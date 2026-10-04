@@ -702,6 +702,9 @@ update-button {
     align-items: center;
 }
 
+/* The pill is a header-actions control, so it is pinned to pixels like the rest
+   of them (layout/app-header.css): the +/- zoom scales the root font-size, and a
+   rem-sized pill would grow and shrink beside neighbours that do not. */
 /* stylelint-disable rem-over-px/rem-over-px, unit-disallowed-list */
 update-button .update-btn {
     display: inline-flex;

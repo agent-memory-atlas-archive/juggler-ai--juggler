@@ -71,7 +71,7 @@ class TodoPin extends PinboardItemType {
     return mountTaskListPin(container, pinContext, {
       itemType: 'todo',
       itemsOf: (data) => data?.todos || [],
-      render: (data) => createTodoBlock(data?.todos || []),
+      render: (_data, todos) => createTodoBlock(todos),
       empty: 'If the conversation contains a TODO list, this shows its current state',
     });
   }

@@ -101,6 +101,22 @@ export async function extractHttpErrorDetail(response) {
 }
 
 /**
+ * Add this instance's API token to a set of request headers, for a caller that
+ * builds its own `fetch` rather than going through {@link fetchJson}. Every realm
+ * that talks to /api also installs a fetch shim that adds it (index.html,
+ * engine-worker-runtime.js, engine-host-node.mjs); naming it here as well keeps
+ * the request authorised in a realm that one day lacks the shim. No token (test
+ * mode, where the gate is off) leaves the headers as they are.
+ * @param {Record<string, string>} headers - Headers to extend; mutated and returned
+ * @returns {Record<string, string>} The same object
+ */
+export function withApiToken(headers) {
+  const token = /** @type {{__jugglerToken?: string}} */ (globalThis).__jugglerToken;
+  if (token) headers['X-Juggler-Token'] = token;
+  return headers;
+}
+
+/**
  * Fetch a URL and return its JSON body under one shared failure policy.
  *
  * `body` is JSON-encoded (with the matching Content-Type) unless it is already

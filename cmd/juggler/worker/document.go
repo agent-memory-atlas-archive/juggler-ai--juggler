@@ -1111,6 +1111,34 @@ func (cd *ConversationDocument) SetThreadField(threadItemID, key string, value a
 	}, cd.txOrigin())
 }
 
+// setThreadFlag sets (on) or deletes (off) a boolean key on one thread's own
+// Y.Map. Like SetThreadField it resolves and writes under one ycrdtMu hold: a
+// pointer resolved under an earlier hold can be tombstoned by an ApplySyncUpdate
+// applied before the write lands, and the write then disappears into a detached
+// map. No-op when the thread is missing or the flag already reads as wanted, so
+// repeated calls don't churn undo history.
+//
+// transact is cd.transactTracked for a flag that is an edit (undoable) or
+// cd.transactInternal for derived state an undo must not peel off.
+func (cd *ConversationDocument) setThreadFlag(threadItemID, key string, on bool, transact func(func(*ycrdt.Transaction))) {
+	ycrdtMu.Lock()
+	defer ycrdtMu.Unlock()
+	m := findThreadYMap(cd.getItems(), threadItemID)
+	if m == nil {
+		return
+	}
+	if current, _ := m.Get(key).(bool); current == on {
+		return
+	}
+	transact(func(_ *ycrdt.Transaction) {
+		if on {
+			m.Set(key, true)
+		} else {
+			m.Delete(key)
+		}
+	})
+}
+
 // GetMetadata returns a metadata value.
 func (cd *ConversationDocument) GetMetadata(key string) any {
 	ycrdtMu.Lock()

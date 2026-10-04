@@ -887,9 +887,10 @@ export class WorkerManager {
    * Worker owns items[], so mutation must happen there.
    * @param {string} conversationId - Conversation ID
    * @param {string} itemId - Context item ID to find and update
+   * @param {string} content - Text the detached tool-action shows in place of the item
    */
-  repositionContextItemPlaceholder(conversationId, itemId) {
-    protocols.repositionContextItemPlaceholder(this, conversationId, itemId);
+  repositionContextItemPlaceholder(conversationId, itemId, content) {
+    protocols.repositionContextItemPlaceholder(this, conversationId, itemId, content);
   }
 
   /**
@@ -1294,11 +1295,6 @@ export class WorkerManager {
         if (data.ackId) {
           this._handleAck(data.ackId, data.result);
         }
-        break;
-
-      case 'undo-state':
-        // Undo state syncs via Yjs metadata (doc.metadata.undoState), which UI
-        // components observe directly — nothing to handle here.
         break;
 
       case 'save-error':

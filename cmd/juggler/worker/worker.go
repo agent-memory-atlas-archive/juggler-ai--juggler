@@ -1267,9 +1267,6 @@ func (r *run) dispatchMessage(msg workerMessage) {
 	case "retry-tool-approval":
 		r.handleRetryToolApproval(msg.Payload)
 
-	case "move-context-item-message-to-end":
-		r.handleMoveContextItemMessageToEnd(msg.Payload)
-
 	case "update-and-reposition-tool-actions":
 		r.handleUpdateAndRepositionToolActions(msg.Payload)
 
@@ -2031,31 +2028,11 @@ func (w *ConversationWorker) clearThreadNeedsStrategyRun(threadItemID string) {
 	w.writeThreadNeedsStrategyRun(threadItemID, false)
 }
 
-// writeThreadNeedsStrategyRun resolves the thread's Y.Map and writes the
-// trigger under ONE ycrdtMu hold — the rule SetThreadField states and
-// clearThreadResult re-resolves for: a pointer resolved under an earlier hold
-// can be tombstoned by an ApplySyncUpdate applied before the write lands, and
-// the write then disappears into a detached map. No-op when the flag already
-// reads as wanted, so repeated ticks don't churn undo history. The write is
-// tracked (undoable) because arming a run is a document edit, not display
-// state.
+// writeThreadNeedsStrategyRun writes the trigger through setThreadFlag, which
+// owns the one-hold resolve-and-write rule. The write is tracked (undoable)
+// because arming a run is a document edit, not display state.
 func (w *ConversationWorker) writeThreadNeedsStrategyRun(threadItemID string, needed bool) {
-	ycrdtMu.Lock()
-	defer ycrdtMu.Unlock()
-	threadYMap := findThreadYMap(w.doc.getItems(), threadItemID)
-	if threadYMap == nil {
-		return
-	}
-	if current, _ := threadYMap.Get("needsStrategyRun").(bool); current == needed {
-		return
-	}
-	w.doc.transactTracked(func(_ *ycrdt.Transaction) {
-		if needed {
-			threadYMap.Set("needsStrategyRun", true)
-		} else {
-			threadYMap.Delete("needsStrategyRun")
-		}
-	})
+	w.doc.setThreadFlag(threadItemID, "needsStrategyRun", needed, w.doc.transactTracked)
 }
 
 // setCompactionUnsummarized records that a folded-compaction thread's
@@ -2080,30 +2057,11 @@ func (w *ConversationWorker) clearCompactionUnsummarized(threadItemID string) {
 	w.writeCompactionUnsummarized(threadItemID, false)
 }
 
-// writeCompactionUnsummarized resolves the thread's Y.Map and writes the marker
-// under ONE ycrdtMu hold, for the reason writeThreadNeedsStrategyRun documents:
-// a pointer resolved under an earlier hold can be tombstoned before the write
-// lands. No-op when the flag already reads as wanted.
-//
-// Written untracked: this is derived state about a run's outcome, not an edit
-// the user made, so it must not be what an undo peels off.
+// writeCompactionUnsummarized writes the marker through setThreadFlag. Written
+// untracked: this is derived state about a run's outcome, not an edit the user
+// made, so it must not be what an undo peels off.
 func (w *ConversationWorker) writeCompactionUnsummarized(threadItemID string, unsummarized bool) {
-	ycrdtMu.Lock()
-	defer ycrdtMu.Unlock()
-	threadYMap := findThreadYMap(w.doc.getItems(), threadItemID)
-	if threadYMap == nil {
-		return
-	}
-	if current, _ := threadYMap.Get("compactionUnsummarized").(bool); current == unsummarized {
-		return
-	}
-	w.doc.transactInternal(func(_ *ycrdt.Transaction) {
-		if unsummarized {
-			threadYMap.Set("compactionUnsummarized", true)
-		} else {
-			threadYMap.Delete("compactionUnsummarized")
-		}
-	})
+	w.doc.setThreadFlag(threadItemID, "compactionUnsummarized", unsummarized, w.doc.transactInternal)
 }
 
 // hasIncompleteThreads returns true if any thread item in the current target

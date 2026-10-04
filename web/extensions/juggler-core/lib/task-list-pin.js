@@ -53,7 +53,9 @@ function sourceLine(source) {
  * @typedef {object} TaskListPinSpec
  * @property {string} itemType - The context-item type to look for, e.g. 'plan'
  * @property {(data: Record<string, any>) => Array<Record<string, any>>} itemsOf - The list inside that item's data
- * @property {(data: Record<string, any>) => HTMLElement} render - The list as an element
+ * @property {(data: Record<string, any>, items: Array<Record<string, any>>) => HTMLElement} render - The list as an
+ *   element, given the item's whole data (a plan's title and status live there
+ *   too) and the list `itemsOf` already took out of it
  * @property {string} empty - What to say when no thread in the chain has one
  */
 
@@ -107,7 +109,7 @@ export function mountTaskListPin(container, pinContext, spec) {
     /** @type {HTMLElement[]} */
     const parts = [];
     if (line) parts.push(createElement('div', 'task-list-pin__source', line));
-    parts.push(spec.render(/** @type {Record<string, any>} */ (found).data));
+    parts.push(spec.render(/** @type {Record<string, any>} */ (found).data, items));
     body.replaceChildren(...parts);
   };
 
