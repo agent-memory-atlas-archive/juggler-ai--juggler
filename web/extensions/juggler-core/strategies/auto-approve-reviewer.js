@@ -22,7 +22,7 @@
  * @module extensions/juggler-core/strategies/auto-approve-reviewer
  */
 
-import { isUserMessage, isToolActionMessage } from 'juggler/model';
+import { isUserMessage, isToolActionMessage, itemField } from 'juggler/model';
 import { extractUserMessage } from '../../../sdk/lib/error-utils.js';
 
 /*
@@ -181,18 +181,6 @@ export const POLICY_PROMPT = buildPolicyPrompt(resolvePolicy(null));
 const DEFAULT_OPTS = { maxEntries: 40, maxEntryChars: 2000, maxTotalChars: 80000 };
 
 /**
- * Read a field from a message item that may be a Y.Map (has `.get`) or a plain
- * object. Mirrors the `_getType` accessor pattern used across the model code.
- * @param {any} item - Y.Map-like or plain object
- * @param {string} name - Field name
- * @returns {any} The field value
- */
-function field(item, name) {
-  if (!item) return undefined;
-  return typeof item.get === 'function' ? item.get(name) : item[name];
-}
-
-/**
  * Coerce a value that may be a Y.Map/Y.Array (with `.toJSON`) into a plain JS
  * value for serialisation.
  * @param {any} value - Possibly-Yjs value
@@ -321,10 +309,10 @@ export function buildReviewerPrompt(items, action, opts = {}) {
   const entries = [];
   for (const item of list) {
     if (isUserMessage(item)) {
-      entries.push(`USER: ${field(item, 'content') ?? ''}`);
+      entries.push(`USER: ${itemField(item, 'content') ?? ''}`);
     } else if (isToolActionMessage(item)) {
-      const name = field(item, 'toolName') ?? '';
-      entries.push(`TOOL_CALL ${name}: ${compactJson(field(item, 'toolInput'))}`);
+      const name = itemField(item, 'toolName') ?? '';
+      entries.push(`TOOL_CALL ${name}: ${compactJson(itemField(item, 'toolInput'))}`);
     }
     // Everything else is deliberately stripped (assistant prose, tool results,
     // thinking, reminders): the reviewer only ever sees user words + tool calls.

@@ -266,134 +266,176 @@ func (c *Client) readUntilPauseOrComplete(ctx context.Context, callback provider
 	idleTimeout := utils.EffectiveStreamIdleTimeout()
 	idle := time.NewTimer(idleTimeout)
 	defer idle.Stop()
-	resetIdle := func() {
-		if !idle.Stop() {
-			select {
-			case <-idle.C:
-			default:
-			}
-		}
-		idle.Reset(idleTimeout)
-	}
 
-	// Retry-ladder cap: armed by the first api_retry notice of a stretch and
-	// dropped by the next line carrying real progress. Starts stopped, so a
-	// turn that never sees a retry notice is never subject to it.
-	ladder := time.NewTimer(retryLadderCap)
-	if !ladder.Stop() {
-		<-ladder.C
-	}
-	defer ladder.Stop()
-	ladderArmed := false
-	armLadder := func() {
-		if ladderArmed {
-			return
-		}
-		ladder.Reset(retryLadderCap)
-		ladderArmed = true
-	}
-	disarmLadder := func() {
-		if !ladderArmed {
-			return
-		}
-		if !ladder.Stop() {
-			select {
-			case <-ladder.C:
-			default:
-			}
-		}
-		ladderArmed = false
-	}
+	ladder := newRetryLadder()
+	defer ladder.timer.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return result, toolUseCount, ctx.Err()
 
-		case <-ladder.C:
-			ladderArmed = false
-			return result, toolUseCount, &transientCLIError{
-				msg: fmt.Sprintf("claude CLI "+utils.StallMarker+": %s of provider retries with no progress (upstream persistently overloaded)",
-					retryLadderCap),
-				ladderExhausted: true,
-			}
+		case <-ladder.timer.C:
+			ladder.armed = false
+			return result, toolUseCount, ladderExhaustedError()
 
 		case <-idle.C:
-			stderr := ""
-			if c.activeSession != nil {
-				stderr = strings.TrimSpace(c.activeSession.drainStderr())
-			}
-			if stderr != "" {
-				return result, toolUseCount, &transientCLIError{
-					msg: fmt.Sprintf(stallNoOutputMsg+": %s", idleTimeout, stderr)}
-			}
-			return result, toolUseCount, &transientCLIError{
-				msg: fmt.Sprintf(stallNoOutputMsg, idleTimeout)}
+			return result, toolUseCount, c.idleStallError(idleTimeout)
 
 		case line, ok := <-content:
-			resetIdle()
+			resetTimer(idle, idleTimeout)
 			if !ok {
-				// Reader closed content (CLI exited / reader stopped). Surface scan errors.
-				select {
-				case err := <-scanErr:
-					return result, toolUseCount, fmt.Errorf("scanner error: %w", err)
-				default:
-				}
-				// CLI exited without emitting a terminal stop reason. This is
-				// not a clean end-of-turn — it happens when the CLI dies for
-				// an external reason (usage-limit / quota exhaustion, auth
-				// failure, crash). Surface as an error so the worker shows it
-				// in the UI instead of silently completing the turn.
-				if result.StopReason == "" {
-					stderr := ""
-					if c.activeSession != nil {
-						stderr = strings.TrimSpace(c.activeSession.drainStderr())
-					}
-					if stderr != "" {
-						return result, toolUseCount, &transientCLIError{
-							msg:           fmt.Sprintf("claude CLI exited unexpectedly: %s", stderr),
-							processExited: true,
-						}
-					}
-					return result, toolUseCount, &transientCLIError{
-						msg:           "claude CLI exited unexpectedly without completing the turn (possible usage-limit / quota exhaustion — check `claude` directly)",
-						processExited: true,
-					}
-				}
-				return result, toolUseCount, nil
+				return result, toolUseCount, c.streamClosedError(result, scanErr)
 			}
 			if line == "" {
 				continue
 			}
-
-			noticesBefore := result.retryNotices
-			pause, count, err := c.processStreamLineWithEarlyReturn(line, result, callback)
+			count, done, err := c.consumeLine(line, result, callback, ladder)
 			if err != nil {
 				return result, toolUseCount, err
 			}
 			toolUseCount += count
-
-			// A retry notice re-armed the idle window above without the turn
-			// having moved. Put it on the ladder clock instead; any line that
-			// carries real progress takes it back off.
-			if result.retryNotices > noticesBefore {
-				armLadder()
-			} else {
-				disarmLadder()
-			}
-
-			if pause {
-				result.StopReason = provider.StopReasonToolUse
-				return result, toolUseCount, nil
-			}
-
-			// End-of-turn detected from the stream (persistent CLI keeps running).
-			switch result.StopReason {
-			case provider.StopReasonEndTurn, provider.StopReasonEmptyResponse:
+			if done {
 				return result, toolUseCount, nil
 			}
 		}
 	}
+}
+
+// consumeLine feeds one stdout line to the parser and reports whether the turn
+// is over: the model paused on tool_use (the CLI is parked inside MCP awaiting
+// our results), or the stream itself announced end_turn / empty_response while
+// a persistent CLI keeps running. It also moves the retry-ladder clock.
+func (c *Client) consumeLine(line string, result *turnResult, callback provider.StructuredStreamCallback, ladder *retryLadder) (toolUses int, done bool, err error) {
+	noticesBefore := result.retryNotices
+	pause, count, err := c.processStreamLineWithEarlyReturn(line, result, callback)
+	if err != nil {
+		return 0, false, err
+	}
+
+	// A retry notice re-armed the idle window without the turn having moved.
+	// Put it on the ladder clock instead; any line that carries real progress
+	// takes it back off.
+	if result.retryNotices > noticesBefore {
+		ladder.arm()
+	} else {
+		ladder.disarm()
+	}
+
+	if pause {
+		result.StopReason = provider.StopReasonToolUse
+		return count, true, nil
+	}
+	switch result.StopReason {
+	case provider.StopReasonEndTurn, provider.StopReasonEmptyResponse:
+		return count, true, nil
+	}
+	return count, false, nil
+}
+
+// retryLadder is the retryLadderCap clock. The first api_retry notice of a
+// stretch arms it and the next line carrying real progress disarms it. It
+// starts stopped, so a turn that never sees a retry notice is never subject to
+// it.
+type retryLadder struct {
+	timer *time.Timer
+	armed bool
+}
+
+func newRetryLadder() *retryLadder {
+	t := time.NewTimer(retryLadderCap)
+	stopTimer(t)
+	return &retryLadder{timer: t}
+}
+
+// arm starts the cap unless a stretch of retries already has it running.
+func (l *retryLadder) arm() {
+	if l.armed {
+		return
+	}
+	l.timer.Reset(retryLadderCap)
+	l.armed = true
+}
+
+// disarm stops the cap, so the next stretch of retries gets a fresh one.
+func (l *retryLadder) disarm() {
+	if !l.armed {
+		return
+	}
+	stopTimer(l.timer)
+	l.armed = false
+}
+
+// stopTimer stops t and drains a tick it has already delivered, so a later
+// Reset starts a clean window.
+func stopTimer(t *time.Timer) {
+	if !t.Stop() {
+		select {
+		case <-t.C:
+		default:
+		}
+	}
+}
+
+// resetTimer restarts t for d, discarding any tick it delivered meanwhile.
+func resetTimer(t *time.Timer, d time.Duration) {
+	stopTimer(t)
+	t.Reset(d)
+}
+
+// ladderExhaustedError is the retryLadderCap failure: the CLI stayed alive and
+// kept retrying, so the upstream is overloaded rather than the process dead.
+func ladderExhaustedError() error {
+	return &transientCLIError{
+		msg: fmt.Sprintf("claude CLI "+utils.StallMarker+": %s of provider retries with no progress (upstream persistently overloaded)",
+			retryLadderCap),
+		ladderExhausted: true,
+	}
+}
+
+// idleStallError is the idle-watchdog failure, carrying the CLI's own last
+// words when it wrote any to stderr.
+func (c *Client) idleStallError(idleTimeout time.Duration) error {
+	if stderr := c.drainedStderr(); stderr != "" {
+		return &transientCLIError{msg: fmt.Sprintf(stallNoOutputMsg+": %s", idleTimeout, stderr)}
+	}
+	return &transientCLIError{msg: fmt.Sprintf(stallNoOutputMsg, idleTimeout)}
+}
+
+// streamClosedError decides what it means that the reader closed the content
+// channel (the CLI exited, or the reader stopped). A scan error is surfaced as
+// itself. A turn that already has its stop reason ended cleanly. One that has
+// none did not: the CLI died for an external reason (usage-limit / quota
+// exhaustion, auth failure, crash), and that is reported as an error so the
+// worker shows it rather than silently completing the turn.
+func (c *Client) streamClosedError(result *turnResult, scanErr <-chan error) error {
+	select {
+	case err := <-scanErr:
+		return fmt.Errorf("scanner error: %w", err)
+	default:
+	}
+	if result.StopReason != "" {
+		return nil
+	}
+	if stderr := c.drainedStderr(); stderr != "" {
+		return &transientCLIError{
+			msg:           fmt.Sprintf("claude CLI exited unexpectedly: %s", stderr),
+			processExited: true,
+		}
+	}
+	return &transientCLIError{
+		msg:           "claude CLI exited unexpectedly without completing the turn (possible usage-limit / quota exhaustion — check `claude` directly)",
+		processExited: true,
+	}
+}
+
+// drainedStderr is what the CLI has written to stderr since it was last
+// drained, trimmed; empty when there is no session.
+func (c *Client) drainedStderr() string {
+	if c.activeSession == nil {
+		return ""
+	}
+	return strings.TrimSpace(c.activeSession.drainStderr())
 }
 
 // processStreamLineWithEarlyReturn processes a line but returns early on tool_use.
@@ -413,173 +455,13 @@ func (c *Client) processStreamLineWithEarlyReturn(line string, result *turnResul
 
 	switch msg.Type {
 	case "system":
-		if msg.Subtype == "api_retry" {
-			// CLI is retrying due to rate limit (HTTP 529) — surface to UI
-			var retry struct {
-				Attempt      int     `json:"attempt"`
-				MaxRetries   int     `json:"max_retries"`
-				RetryDelayMs float64 `json:"retry_delay_ms"`
-				ErrorStatus  int     `json:"error_status"`
-				Error        string  `json:"error"`
-			}
-			result.retryNotices++
-			if json.Unmarshal([]byte(line), &retry) == nil {
-				delaySec := int(retry.RetryDelayMs/1000 + 0.5)
-				statusMsg := fmt.Sprintf("Rate limited (HTTP %d) — retrying (%d/%d, waiting %ds)",
-					retry.ErrorStatus, retry.Attempt, retry.MaxRetries, delaySec)
-				_, _ = callback(provider.StreamChunk{
-					Type:    provider.ContentBlockTypeStatus,
-					Content: statusMsg,
-				})
-			}
-		} else if msg.Subtype == "result" && len(msg.Result) > 0 {
-			var resultContent ResultContent
-			if err := json.Unmarshal(msg.Result, &resultContent); err == nil {
-				jlog.Debug("claudecode usage[system/result]: input=%d cacheRead=%d cacheWrite=%d output=%d total=%d (usageFromStream=%v)",
-					resultContent.InputTokens, resultContent.CacheReadInputTokens,
-					resultContent.CacheCreationInputTokens, resultContent.OutputTokens,
-					resultContent.InputTokens+resultContent.CacheReadInputTokens+resultContent.CacheCreationInputTokens,
-					result.usageFromStream)
-				// Only trust the result-envelope usage when no stream_event
-				// has reported per-call numbers; see the comment on
-				// turnResult.usageFromStream.
-				if !result.usageFromStream {
-					result.InputTokens = resultContent.InputTokens
-					result.OutputTokens = resultContent.OutputTokens
-					result.CacheReadTokens = resultContent.CacheReadInputTokens
-					result.CacheWriteTokens = resultContent.CacheCreationInputTokens
-				}
-				// The result envelope repeats the API's own stop_reason, in the
-				// vocabulary provider.StopReason is modelled on; a value with
-				// no constant there carries through as itself.
-				result.StopReason = provider.StopReason(resultContent.StopReason)
-			}
-		} else if msg.Subtype == "init" {
-			// The CLI has booted and loaded the session — the slow spawn/resume
-			// work is over and we now wait on the model. Replace the spinner's
-			// "Starting"/"Reconnecting" description with the per-turn activity
-			// (a plain "Waiting for response", or "Processing conversation history"
-			// on a cold start with prior history).
-			waiting := c.turnWaitingDescription
-			if waiting == "" {
-				waiting = activityWaiting
-			}
-			emitActivity(callback, waiting)
-		}
-
+		c.onSystemLine(&msg, line, result, callback)
 	case "result":
-		if msg.Usage != nil {
-			jlog.Debug("claudecode usage[result]: input=%d cacheRead=%d cacheWrite=%d output=%d total=%d (usageFromStream=%v)",
-				msg.Usage.InputTokens, msg.Usage.CacheReadInputTokens,
-				msg.Usage.CacheCreationInputTokens, msg.Usage.OutputTokens,
-				msg.Usage.InputTokens+msg.Usage.CacheReadInputTokens+msg.Usage.CacheCreationInputTokens,
-				result.usageFromStream)
-			if !result.usageFromStream {
-				// Only trust the result-envelope usage when no stream_event has
-				// reported per-call numbers; see turnResult.usageFromStream.
-				result.InputTokens = msg.Usage.InputTokens
-				result.OutputTokens = msg.Usage.OutputTokens
-				result.CacheReadTokens = msg.Usage.CacheReadInputTokens
-				result.CacheWriteTokens = msg.Usage.CacheCreationInputTokens
-			}
-		}
-		// Self-update model spec cache from the CLI's modelUsage report so
-		// ListModelsWithInfo serves the model's true context window / max output
-		// without us tracking Anthropic's release notes. Key by the canonical
-		// alias (matching ListModelsWithInfo's base IDs and the CLI --model arg),
-		// not the raw configured string, or the warm value lands under a key the
-		// list never reads.
-		//
-		// modelUsage is keyed by FULL model id and a single turn routinely bills
-		// MORE than the requested model — the CLI runs a background model (e.g.
-		// haiku) for quota/summary work and reports its usage alongside. Learning
-		// from every entry stamps the wrong (smaller) window onto the requested
-		// alias, nondeterministically thanks to Go's randomized map iteration;
-		// that is exactly what stuck fable at 200k. selectModelUsage attributes
-		// the report to the model this turn actually ran as. A per-turn flip then
-		// self-heals on the next turn (true window != cached => update + persist +
-		// rebroadcast), so a stuck cache recovers on its own.
-		alias := c.modelAlias()
-		if mu, ok := selectModelUsage(msg.ModelUsage, alias); ok {
-			updateCachedModelInfo(alias, mu.ContextWindow, mu.MaxOutputTokens)
-		}
-		switch msg.Subtype {
-		case "success":
-			// "success" means the CLI ran without crashing — NOT that the
-			// underlying API call succeeded. The CLI signals API failures
-			// via top-level is_error / api_error_status while keeping
-			// subtype="success", and stuffs the error text into Result.
-			// Without surfacing this, the worker would see an empty
-			// end_turn and treat it as a normal (silent) completion.
-			if msg.IsError {
-				var errStr string
-				_ = json.Unmarshal(msg.Result, &errStr)
-				if errStr == "" {
-					errStr = fmt.Sprintf("claude CLI API call failed (HTTP %d)", msg.APIErrorStatus)
-				}
-				// An authentication failure is the one thing here the user can
-				// fix, and the CLI's own wording is addressed to someone sitting
-				// at its command line. Type it so the worker can lead with what
-				// to do while still showing this text underneath.
-				if authErr := classifyClaudeAuthFailure(msg.APIErrorStatus, errStr); authErr != nil {
-					markClaudeLoginExpired()
-					return false, 0, authErr
-				}
-				return false, 0, fmt.Errorf("%s", errStr)
-			}
-			// A clean result proves the CLI is signed in and served a turn.
-			// Unlock the passive /usage poll, and clear any earlier expiry so a
-			// user who has just signed back in isn't still told they haven't.
-			markClaudeLoginConfirmed()
-			var resultStr string
-			if json.Unmarshal(msg.Result, &resultStr) == nil && resultStr == "" {
-				result.StopReason = provider.StopReasonEmptyResponse
-			} else {
-				result.StopReason = provider.StopReasonEndTurn
-			}
-		case "error":
-			// CLI exhausted retries or hit a fatal error — return as a proper error
-			var errStr string
-			if json.Unmarshal(msg.Result, &errStr) == nil && errStr != "" {
-				// Same reasoning as the "success" arm above: a CLI that has no
-				// usable credential answers here with bare text and no status,
-				// so the text is the only signal there is.
-				if authErr := classifyClaudeAuthFailure(msg.APIErrorStatus, errStr); authErr != nil {
-					markClaudeLoginExpired()
-					return false, 0, authErr
-				}
-				return false, 0, fmt.Errorf("%s", errStr)
-			}
-			return false, 0, fmt.Errorf("claude CLI returned an error")
-		}
-
+		return false, 0, c.onResultLine(&msg, result)
 	case "stream_event":
 		return c.handleStreamEvent(msg.Event, result, callback)
-
-	case "control_request":
-		// CLI asking us to do something (typically: invoke an MCP tool
-		// via mcp_message). Dispatch through the stdio control protocol;
-		// tools/call responses are emitted later when the worker hands
-		// us the result via the next StreamMessage call.
-		if c.activeSession != nil && c.activeSession.live != nil && c.activeSession.live.control != nil {
-			if err := c.activeSession.live.control.handleControlRequest(&msg); err != nil {
-				return false, 0, fmt.Errorf("control_request: %w", err)
-			}
-		}
-
-	case "control_response":
-		// CLI replying to an outbound control_request we sent (today
-		// only initialize). Match by request_id and unblock the parked
-		// sender.
-		if c.activeSession != nil && c.activeSession.live != nil && c.activeSession.live.control != nil {
-			c.activeSession.live.control.handleControlResponse(&msg)
-		}
-
-	case "control_cancel_request":
-		// CLI cancelling a pending outbound control_request. We don't
-		// emit cancellable outbound requests today; logged for forensics
-		// if it ever fires.
-		jlog.Debug("CLI sent control_cancel_request for id=%s — no-op", msg.RequestID)
+	case "control_request", "control_response", "control_cancel_request":
+		return false, 0, c.onControlLine(&msg)
 	}
 	// Note: the CLI also emits a final `assistant` envelope after the
 	// stream_event sequence with the fully-assembled message. It is ignored
@@ -588,4 +470,202 @@ func (c *Client) processStreamLineWithEarlyReturn(line string, result *turnResul
 	// message_delta — re-feeding it would only re-emit content to the UI.
 
 	return false, 0, nil
+}
+
+// onSystemLine handles a `system` envelope: a retry notice, the turn's result
+// summary, or the CLI's init.
+func (c *Client) onSystemLine(msg *StreamMessage, line string, result *turnResult, callback provider.StructuredStreamCallback) {
+	switch msg.Subtype {
+	case "api_retry":
+		onRetryNotice(line, result, callback)
+	case "result":
+		if len(msg.Result) > 0 {
+			onSystemResult(msg.Result, result)
+		}
+	case "init":
+		// The CLI has booted and loaded the session — the slow spawn/resume
+		// work is over and we now wait on the model. Replace the spinner's
+		// "Starting"/"Reconnecting" description with the per-turn activity
+		// (a plain "Waiting for response", or "Processing conversation history"
+		// on a cold start with prior history).
+		waiting := c.turnWaitingDescription
+		if waiting == "" {
+			waiting = activityWaiting
+		}
+		emitActivity(callback, waiting)
+	}
+}
+
+// onRetryNotice counts a system/api_retry line (the CLI retrying an overloaded
+// upstream, HTTP 529) and surfaces it to the UI as a status.
+func onRetryNotice(line string, result *turnResult, callback provider.StructuredStreamCallback) {
+	var retry struct {
+		Attempt      int     `json:"attempt"`
+		MaxRetries   int     `json:"max_retries"`
+		RetryDelayMs float64 `json:"retry_delay_ms"`
+		ErrorStatus  int     `json:"error_status"`
+		Error        string  `json:"error"`
+	}
+	result.retryNotices++
+	if json.Unmarshal([]byte(line), &retry) != nil {
+		return
+	}
+	delaySec := int(retry.RetryDelayMs/1000 + 0.5)
+	statusMsg := fmt.Sprintf("Rate limited (HTTP %d) — retrying (%d/%d, waiting %ds)",
+		retry.ErrorStatus, retry.Attempt, retry.MaxRetries, delaySec)
+	_, _ = callback(provider.StreamChunk{
+		Type:    provider.ContentBlockTypeStatus,
+		Content: statusMsg,
+	})
+}
+
+// onSystemResult reads a system/result envelope's usage and stop reason.
+func onSystemResult(raw json.RawMessage, result *turnResult) {
+	var rc ResultContent
+	if json.Unmarshal(raw, &rc) != nil {
+		return
+	}
+	adoptEnvelopeUsage(result, "system/result",
+		rc.InputTokens, rc.CacheReadInputTokens, rc.CacheCreationInputTokens, rc.OutputTokens)
+	// The result envelope repeats the API's own stop_reason, in the
+	// vocabulary provider.StopReason is modelled on; a value with
+	// no constant there carries through as itself.
+	result.StopReason = provider.StopReason(rc.StopReason)
+}
+
+// adoptEnvelopeUsage logs the usage a `result` or `system/result` envelope
+// reports and adopts it only when no stream_event has reported per-call
+// numbers. Those envelopes can carry usage cumulative across every API call the
+// persistent CLI has served; see turnResult.usageFromStream.
+func adoptEnvelopeUsage(result *turnResult, source string, input, cacheRead, cacheWrite, output int) {
+	jlog.Debug("claudecode usage[%s]: input=%d cacheRead=%d cacheWrite=%d output=%d total=%d (usageFromStream=%v)",
+		source, input, cacheRead, cacheWrite, output, input+cacheRead+cacheWrite, result.usageFromStream)
+	if result.usageFromStream {
+		return
+	}
+	result.InputTokens = input
+	result.OutputTokens = output
+	result.CacheReadTokens = cacheRead
+	result.CacheWriteTokens = cacheWrite
+}
+
+// onResultLine handles the `result` envelope that ends a turn: its usage, the
+// model-info it teaches us, and whether the turn succeeded.
+func (c *Client) onResultLine(msg *StreamMessage, result *turnResult) error {
+	if u := msg.Usage; u != nil {
+		adoptEnvelopeUsage(result, "result",
+			u.InputTokens, u.CacheReadInputTokens, u.CacheCreationInputTokens, u.OutputTokens)
+	}
+	c.learnModelUsage(msg)
+	switch msg.Subtype {
+	case "success":
+		return onResultSuccess(msg, result)
+	case "error":
+		// CLI exhausted retries or hit a fatal error — return as a proper error.
+		// A CLI that has no usable credential answers here with bare text and no
+		// status, so the text is the only signal there is.
+		var errStr string
+		if json.Unmarshal(msg.Result, &errStr) == nil && errStr != "" {
+			return cliAPIError(msg.APIErrorStatus, errStr)
+		}
+		return errors.New("claude CLI returned an error")
+	}
+	return nil
+}
+
+// learnModelUsage updates the model spec cache from the CLI's modelUsage report
+// so ListModelsWithInfo serves the model's true context window / max output
+// without us tracking Anthropic's release notes. Key by the canonical alias
+// (matching ListModelsWithInfo's base IDs and the CLI --model arg), not the raw
+// configured string, or the warm value lands under a key the list never reads.
+//
+// modelUsage is keyed by FULL model id and a single turn routinely bills MORE
+// than the requested model — the CLI runs a background model (e.g. haiku) for
+// quota/summary work and reports its usage alongside. Learning from every entry
+// stamps the wrong (smaller) window onto the requested alias,
+// nondeterministically thanks to Go's randomized map iteration; that is exactly
+// what stuck fable at 200k. selectModelUsage attributes the report to the model
+// this turn actually ran as. A per-turn flip then self-heals on the next turn
+// (true window != cached => update + persist + rebroadcast), so a stuck cache
+// recovers on its own.
+func (c *Client) learnModelUsage(msg *StreamMessage) {
+	alias := c.modelAlias()
+	if mu, ok := selectModelUsage(msg.ModelUsage, alias); ok {
+		updateCachedModelInfo(alias, mu.ContextWindow, mu.MaxOutputTokens)
+	}
+}
+
+// onResultSuccess handles result/success, which means the CLI ran without
+// crashing — NOT that the underlying API call succeeded. The CLI signals API
+// failures via top-level is_error / api_error_status while keeping
+// subtype="success", and stuffs the error text into Result. Without surfacing
+// this, the worker would see an empty end_turn and treat it as a normal
+// (silent) completion.
+func onResultSuccess(msg *StreamMessage, result *turnResult) error {
+	if msg.IsError {
+		var errStr string
+		_ = json.Unmarshal(msg.Result, &errStr)
+		if errStr == "" {
+			errStr = fmt.Sprintf("claude CLI API call failed (HTTP %d)", msg.APIErrorStatus)
+		}
+		return cliAPIError(msg.APIErrorStatus, errStr)
+	}
+	// A clean result proves the CLI is signed in and served a turn.
+	// Unlock the passive /usage poll, and clear any earlier expiry so a
+	// user who has just signed back in isn't still told they haven't.
+	markClaudeLoginConfirmed()
+	var resultStr string
+	if json.Unmarshal(msg.Result, &resultStr) == nil && resultStr == "" {
+		result.StopReason = provider.StopReasonEmptyResponse
+	} else {
+		result.StopReason = provider.StopReasonEndTurn
+	}
+	return nil
+}
+
+// cliAPIError is the error for a turn the CLI reported as failed. An
+// authentication failure is the one thing here the user can fix, and the CLI's
+// own wording is addressed to someone sitting at its command line, so it is
+// typed (and the login marked expired) for the worker to lead with what to do
+// while still showing this text underneath. Anything else is the text itself.
+func cliAPIError(status int, text string) error {
+	if authErr := classifyClaudeAuthFailure(status, text); authErr != nil {
+		markClaudeLoginExpired()
+		return authErr
+	}
+	return errors.New(text)
+}
+
+// onControlLine routes the CLI's control traffic to the stdio control
+// protocol, when the session has one.
+func (c *Client) onControlLine(msg *StreamMessage) error {
+	var control *controlProtocol
+	if c.activeSession != nil && c.activeSession.live != nil {
+		control = c.activeSession.live.control
+	}
+	switch msg.Type {
+	case "control_request":
+		// CLI asking us to do something (typically: invoke an MCP tool
+		// via mcp_message). Dispatch through the stdio control protocol;
+		// tools/call responses are emitted later when the worker hands
+		// us the result via the next StreamMessage call.
+		if control != nil {
+			if err := control.handleControlRequest(msg); err != nil {
+				return fmt.Errorf("control_request: %w", err)
+			}
+		}
+	case "control_response":
+		// CLI replying to an outbound control_request we sent (today
+		// only initialize). Match by request_id and unblock the parked
+		// sender.
+		if control != nil {
+			control.handleControlResponse(msg)
+		}
+	case "control_cancel_request":
+		// CLI cancelling a pending outbound control_request. We don't
+		// emit cancellable outbound requests today; logged for forensics
+		// if it ever fires.
+		jlog.Debug("CLI sent control_cancel_request for id=%s — no-op", msg.RequestID)
+	}
+	return nil
 }

@@ -27,6 +27,7 @@ export {
   isNoticeMessage,
   isThreadMessage,
   isConversationalItemType,
+  itemField,
   createUserMessage,
   createAssistantMessage,
   createToolActionMessage,

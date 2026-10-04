@@ -299,13 +299,31 @@ export const ACTION_STATES = Object.freeze({
 // Guards work with both Y.Map items (from Yjs) and plain objects (from factory functions).
 
 /**
+ * Read one field off an item that may be a Y.Map or a plain object.
+ *
+ * A conversation item is a Y.Map when it is read from the live document and a
+ * plain object when it was built by a factory below, decoded from a snapshot,
+ * or handed over by a test. Every reader that accepts both reads its fields
+ * through this. It reads the one field and never materialises the rest: a tool
+ * action's input and result can hold whole files, so `toJSON()` on the way to a
+ * single field would copy them. Nested values come back as stored (a Y type
+ * stays one), and anything that is not an object yields undefined.
+ * @param {any} item - A Y.Map, a plain object, or nothing.
+ * @param {string} key - The field to read.
+ * @returns {any} The field's value, or undefined.
+ */
+export function itemField(item, key) {
+  if (!item || typeof item !== 'object') return undefined;
+  return typeof item.get === 'function' ? item.get(key) : item[key];
+}
+
+/**
  * Read the 'type' field from a Y.Map or plain object.
  * @param {any} msg - Y.Map or plain object
  * @returns {string|undefined} The type value
  */
 function _getType(msg) {
-  if (!msg) return undefined;
-  return typeof msg.get === 'function' ? msg.get('type') : msg.type;
+  return itemField(msg, 'type');
 }
 
 /**

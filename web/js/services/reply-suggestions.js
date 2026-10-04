@@ -31,7 +31,7 @@
  * @module services/reply-suggestions
  */
 
-import { isUserMessage, isAssistantMessage, isToolActionMessage } from '../../sdk/lib/message.js';
+import { isUserMessage, isAssistantMessage, isToolActionMessage, itemField } from '../../sdk/lib/message.js';
 import { generateText } from './ops-api.js';
 
 /**
@@ -107,24 +107,12 @@ export const MAX_SUGGESTIONS = 3;
 const SUGGESTION_TIMEOUT_MS = 10000;
 
 /**
- * Read a field from a message item that may be a Y.Map (has `.get`) or a plain
- * object.
- * @param {any} item - Y.Map-like or plain object.
- * @param {string} name - Field name.
- * @returns {any} The field value.
- */
-function field(item, name) {
-  if (!item) return undefined;
-  return typeof item.get === 'function' ? item.get(name) : item[name];
-}
-
-/**
  * The text of a message item, as a trimmed string.
  * @param {any} item - Message item.
  * @returns {string} The content, or `''`.
  */
 function textOf(item) {
-  const value = field(item, 'content');
+  const value = itemField(item, 'content');
   return typeof value === 'string' ? value.trim() : '';
 }
 
@@ -189,7 +177,7 @@ export function buildSuggestionsPrompt(items) {
   const tools = [];
   for (const item of earlier) {
     if (!isToolActionMessage(item)) continue;
-    const name = String(field(item, 'toolName') ?? '').trim();
+    const name = String(itemField(item, 'toolName') ?? '').trim();
     // Consecutive repeats collapse: "read, read, read" says nothing "read"
     // does not, and the budget is better spent on the reply itself.
     if (name && name !== tools[tools.length - 1]) tools.push(name);

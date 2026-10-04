@@ -417,6 +417,32 @@ export default class MessageThread {
   }
 
   /**
+   * The rows a column renders for this thread, and a key that changes whenever
+   * they do: the item ids in order, then the queued ones. A column re-renders
+   * only when the key differs from the one it last rendered. Content changes
+   * inside an item do not move the key, because the item's own observers
+   * repaint its row.
+   * @returns {{items: Array<any>, key: string}} The items (a fresh array) and their key.
+   */
+  renderSnapshot() {
+    const items = this.items;
+    const ids = (/** @type {Array<any>} */ list) => list.map((item) => item.get('itemId') ?? '').join(',');
+    return { items, key: `${ids(items)}|pending:${ids(this.pendingItems)}` };
+  }
+
+  /**
+   * The thread's goal: the header its column shows. A thread's `goal` moves
+   * with its latest call, so this is the session as it stands; a single call's
+   * own label is `itemGoal` (`thread-alias.js`). Empty for the root.
+   * @returns {string} The goal, or ''.
+   */
+  get goal() {
+    if (!this.threadItemId) return '';
+    const goal = this.container.get('goal');
+    return typeof goal === 'string' ? goal : '';
+  }
+
+  /**
    * Find item by itemId
    * @plugin-api
    * @param {string} id

@@ -32,6 +32,7 @@ import { openMenuAt } from '../services/context-menu-service.js';
 import { reviewDraftBoundsError } from '../utils/review-draft.js';
 import { formatReviewMessage } from '../utils/review-message.js';
 import { extractErrorMessage } from '../../sdk/lib/error-utils.js';
+import { itemField } from '../../sdk/lib/message.js';
 import { formatDisplayPath } from '../../sdk/lib/context-item-utils.js';
 import { createFileActions } from '../utils/properties-panel-helpers.js';
 import { insertAtCaret } from './composer-paste-tokens.js';
@@ -218,10 +219,10 @@ function writingRowId(thread, type) {
   if (!Array.isArray(items)) return null;
   for (let i = items.length - 1; i >= 0; i--) {
     const item = items[i];
-    if (yget(item, 'type') !== 'tool-action') continue;
-    if (yget(item, 'toolName') !== type) continue;
-    if (yget(yget(item, 'result'), 'resultType') === 'context') continue;
-    return yget(item, 'itemId') || null;
+    if (itemField(item, 'type') !== 'tool-action') continue;
+    if (itemField(item, 'toolName') !== type) continue;
+    if (itemField(itemField(item, 'result'), 'resultType') === 'context') continue;
+    return itemField(item, 'itemId') || null;
   }
   return null;
 }
@@ -240,19 +241,6 @@ function cloneData(data) {
   } catch {
     return {};
   }
-}
-
-/**
- * Read one field off a value that may be a Y.Map or a plain object, without
- * materialising the whole thing. A tool action's input and result hold entire
- * files, so `toJSON()` on the way to a filename would copy the file.
- * @param {any} value - A Y.Map, a plain object, or nothing.
- * @param {string} key - The field to read.
- * @returns {any} The field, or undefined.
- */
-function yget(value, key) {
-  if (!value) return undefined;
-  return typeof value.get === 'function' ? value.get(key) : value[key];
 }
 
 /**
@@ -1705,7 +1693,7 @@ class PinboardContent extends JugglerElement {
    * claims `running` forever. {@link _pollTasks} joins this to the server, which
    * is the only thing that knows.
    *
-   * Reads fields one at a time with {@link yget} and never calls `toJSON`: a
+   * Reads fields one at a time with {@link itemField} and never calls `toJSON`: a
    * background `bash` action's result holds the command's accumulated output.
    * @returns {PinTask[]} Candidates, newest first.
    * @private
@@ -1727,8 +1715,8 @@ class PinboardContent extends JugglerElement {
 
         const result = ymap.get('result');
         if (!result) continue;
-        const payload = yget(yget(result, 'fullResult'), 'result');
-        const taskId = yget(payload, 'task_id');
+        const payload = itemField(itemField(result, 'fullResult'), 'result');
+        const taskId = itemField(payload, 'task_id');
         if (typeof taskId !== 'string' || !taskId) continue;
 
         const input = ymap.get('toolInput');
@@ -1737,8 +1725,8 @@ class PinboardContent extends JugglerElement {
           itemId: ymap.get('itemId'),
           threadId: thread.threadItemId || null,
           toolName: String(ymap.get('toolName') || ''),
-          command: String(yget(input, 'command') || ''),
-          label: String(yget(input, 'description') || ''),
+          command: String(itemField(input, 'command') || ''),
+          label: String(itemField(input, 'description') || ''),
           at: itemTime(ymap),
           _order: order,
         });

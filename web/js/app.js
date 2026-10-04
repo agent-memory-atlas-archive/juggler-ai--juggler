@@ -44,6 +44,7 @@ import { isPinboardView } from './utils/view-mode.js';
 import './services/tooltip-manager.js'; // styled hover/focus tooltips (self-installs on import)
 import { MAX_CONVERSATIONS, CONVERSATION_LIMIT_MESSAGE } from './model/session.js';
 import { normalizeAttachments } from './utils/attachments.js';
+import { itemField } from '../sdk/lib/message.js';
 import { showAlert, showNotice } from './components/modal-dialog.js';
 import { setFaultSink, reportFault } from './utils/fault-report.js';
 import { apiUrl, serverPath } from './utils/api-url.js';
@@ -960,13 +961,9 @@ class JugglerApp {
     const composer = tabElement.getComposer();
     if (!composer) return;
 
-    // Pull the message's fields whether it's a Y.Map item or a plain record.
-    const read = (/** @type {string} */ key) =>
-      (message && typeof message.get === 'function') ? message.get(key) : /** @type {any} */ (message)?.[key];
-
     /** @type {any} */ (composer).restoreMessage({
-      content: read('content') || '',
-      attachments: normalizeAttachments(read('attachments'))
+      content: itemField(message, 'content') || '',
+      attachments: normalizeAttachments(itemField(message, 'attachments'))
     });
   }
 

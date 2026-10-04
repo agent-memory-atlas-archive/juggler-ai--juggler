@@ -83,6 +83,7 @@ import { runTests as runExecuteActionTests } from '../unit-tests/execute-action-
 import { runTests as runFileSystemApiTests } from '../unit-tests/filesystem-api-test.js';
 import { runTests as runGlobActionTests } from '../unit-tests/glob-action-test.js';
 import { runTests as runItemAccessorTests } from '../unit-tests/item-accessor-test.js';
+import { runTests as runItemFieldTests } from '../unit-tests/item-field-test.js';
 import { runTests as runMessageTypeGuardTests } from '../unit-tests/message-type-guard-test.js';
 import { runTests as runModelFilterTests } from '../unit-tests/model-filter-test.js';
 import { runTests as runMonitorToolsTests } from '../unit-tests/monitor-tools-test.js';
@@ -495,6 +496,7 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:filesystem-api', run: runFileSystemApiTests },
   { name: 'unit:glob-action', run: runGlobActionTests },
   { name: 'unit:item-accessor', run: runItemAccessorTests },
+  { name: 'unit:item-field', run: runItemFieldTests },
   { name: 'unit:message-type-guard', run: runMessageTypeGuardTests },
   { name: 'unit:model-filter', run: runModelFilterTests },
   { name: 'unit:monitor-tools', run: runMonitorToolsTests },

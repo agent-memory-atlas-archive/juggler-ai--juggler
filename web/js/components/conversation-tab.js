@@ -13,7 +13,7 @@ import { findFirstPendingApprovalId } from '../model/thread-navigation.js';
 import { ColumnSelectionState } from '../utils/column-selection.js';
 import { rootFontSizePx, columnScrollDelta } from '../utils/column-resize.js';
 import { isToolGroupingEnabled, TOOL_GROUPING_EVENT } from '../utils/tool-grouping-pref.js';
-import { buildDisplayItems, isGroupId, groupMemberIndices } from '../utils/item-grouping.js';
+import { buildDisplayItems, isGroupId, groupMemberIndices, groupRenderKey } from '../utils/item-grouping.js';
 import { isItemSelectable } from '../services/context-item-utilities.js';
 import { recordTape } from '../utils/event-tape.js';
 import { SHEET_QUERY } from '../utils/popup-surface.js';
@@ -1916,49 +1916,30 @@ class ConversationTab extends JugglerElement {
       /** @type {any} */ (col).setThreadContext?.(null);
       /** @type {any} */ (col).hideThreadHeader?.();
       const groupItems = entry.groupItems || [];
-      const groupItemKey = entry.groupId + '|' +
-        groupItems.map((/** @type {any} */ it) => {
-          // Members' states are part of the key: a row going pending→completed
-          // changes what this column must show, and unlike the parent column
-          // there's no Yjs observer bound to a group.
-          return `${it?.get?.('itemId') ?? ''}:${it?.get?.('state') ?? ''}`;
-        }).join(',');
+      const groupItemKey = groupRenderKey(entry.groupId, groupItems);
       if (/** @type {any} */ (col)._renderedItemKey !== groupItemKey) {
         /** @type {any} */ (col)._renderedItemKey = groupItemKey;
         /** @type {any} */ (col).renderFromItems([...groupItems]);
       }
-    } else if (i === 0) {
-      // Root column
-      /** @type {any} */ (col).setThreadContext?.(null);
-      /** @type {any} */ (col).hideThreadHeader?.();
-      const rootItems = conversation.rootItems;
-      const rootPendingKey = (conversation.rootMessageThread.pendingItems || [])
-        .map((/** @type {any} */ it) => it.get?.('itemId') ?? '').join(',');
-      const rootItemKey = rootItems.map((/** @type {any} */ it) => it.get?.('itemId') ?? '').join(',') +
-        '|pending:' + rootPendingKey;
-      if (/** @type {any} */ (col)._renderedItemKey !== rootItemKey) {
-        /** @type {any} */ (col)._renderedItemKey = rootItemKey;
-        /** @type {any} */ (col).renderFromItems(rootItems);
-      }
     } else {
-      // Thread column
-      /** @type {any} */ (col).setThreadContext?.(entry.threadYMap || null);
+      if (i === 0) {
+        // Root column
+        /** @type {any} */ (col).setThreadContext?.(null);
+        /** @type {any} */ (col).hideThreadHeader?.();
+      } else {
+        // Thread column
+        /** @type {any} */ (col).setThreadContext?.(entry.threadYMap || null);
+      }
 
-      const threadItems = entry.container.get('items');
-      const items = threadItems && threadItems.toArray ? threadItems.toArray() : [];
-      const threadPending = entry.container.get('pendingItems');
-      const threadPendingArr = threadPending && threadPending.toArray ? threadPending.toArray() : [];
-      const threadPendingKey = threadPendingArr.map((/** @type {any} */ it) => it?.get?.('itemId') ?? '').join(',');
-      const threadItemKey = items.map((/** @type {any} */ it) => it?.get?.('itemId') ?? '').join(',') +
-        '|pending:' + threadPendingKey;
-      if (/** @type {any} */ (col)._renderedItemKey !== threadItemKey) {
-        /** @type {any} */ (col)._renderedItemKey = threadItemKey;
-        /** @type {any} */ (col).renderFromItems([...items]);
+      const { items, key } = messageThread.renderSnapshot();
+      if (/** @type {any} */ (col)._renderedItemKey !== key) {
+        /** @type {any} */ (col)._renderedItemKey = key;
+        /** @type {any} */ (col).renderFromItems(items);
       }
 
       // Show thread header with parent message thread for delete operations
-      if (entry.threadYMap) {
-        const goal = entry.threadYMap.get('goal') || '';
+      if (i > 0 && entry.threadYMap) {
+        const goal = messageThread.goal;
         const parentMessageThread = (i === 1)
           ? conversation.rootMessageThread
           : newColumns[i - 1] && /** @type {any} */ (newColumns[i - 1]).getMessageThread?.();

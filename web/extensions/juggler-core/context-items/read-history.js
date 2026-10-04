@@ -38,6 +38,7 @@
  */
 
 import { toolInputPath, absolutePathKey } from './path-approval.js';
+import { itemField } from '../../../sdk/lib/message.js';
 
 /**
  * Canonical comparison key for the freshness guard. macOS (default APFS/HFS+)
@@ -229,20 +230,6 @@ const QUERY_CODE_TOOLS = new Set(['query_code', 'explore_code']);
 const SEEN_TOOLS = new Set(['read', 'write', 'edit', 'batch_read', ...QUERY_CODE_TOOLS]);
 
 /**
- * Read a property from either a Y.Map or a plain object. Transcript values are
- * Y types when read from the live doc and plain objects in tests; accessing
- * fields lazily this way avoids materialising whole results (which can embed
- * full file contents) via toJSON.
- * @param {any} obj - Y.Map, plain object, or undefined
- * @param {string} key - Property name
- * @returns {any} The value, or undefined
- */
-function yget(obj, key) {
-  if (!obj) return undefined;
-  return typeof obj.get === 'function' ? obj.get(key) : obj[key];
-}
-
-/**
  * View a Y.Array or plain array as a plain array.
  * @param {any} value - Y.Array, array, or undefined
  * @returns {any[]} Plain array view (empty when not array-like)
@@ -262,8 +249,8 @@ function ylist(value) {
  * @returns {any} The ops payload, or undefined
  */
 function opsPayload(result) {
-  const full = yget(result, 'fullResult');
-  return yget(full, 'result') ?? full;
+  const full = itemField(result, 'fullResult');
+  return itemField(full, 'result') ?? full;
 }
 
 /**
@@ -332,14 +319,14 @@ function seenState(conversation, session, path) {
       if (!p || pathMatchKey(session, p) !== target) continue;
 
       const result = ymap.get('result');
-      if (!result || yget(result, 'isError') === true) continue;
-      if (yget(yget(result, 'fullResult'), 'success') === false) continue;
+      if (!result || itemField(result, 'isError') === true) continue;
+      if (itemField(itemField(result, 'fullResult'), 'success') === false) continue;
       const payload = opsPayload(result);
       // A read that found no file proved nothing about its contents.
-      if (yget(payload, 'exists') === false) continue;
+      if (itemField(payload, 'exists') === false) continue;
 
       state.seen = true;
-      const hash = yget(payload, 'contentHash');
+      const hash = itemField(payload, 'contentHash');
       if (typeof hash === 'string' && hash) state.hashes.add(hash);
       else state.unverified = true;
     }
@@ -370,8 +357,8 @@ function collectBatchRead(state, session, target, toolInput, ymap) {
   if (inputFiles.length > 0 && !inInput) return;
 
   const result = ymap.get('result');
-  if (!result || yget(result, 'isError') === true) return;
-  const entries = ylist(yget(opsPayload(result), 'results'));
+  if (!result || itemField(result, 'isError') === true) return;
+  const entries = ylist(itemField(opsPayload(result), 'results'));
 
   if (entries.length === 0) {
     // Per-file entries stripped from storage: trust the input list.
@@ -383,13 +370,13 @@ function collectBatchRead(state, session, target, toolInput, ymap) {
   }
 
   for (const entry of entries) {
-    if (yget(entry, 'success') !== true) continue;
-    const file = yget(entry, 'file');
+    if (itemField(entry, 'success') !== true) continue;
+    const file = itemField(entry, 'file');
     if (!file || pathMatchKey(session, String(file)) !== target) continue;
-    const fileResult = yget(entry, 'result');
-    if (yget(fileResult, 'exists') === false) continue;
+    const fileResult = itemField(entry, 'result');
+    if (itemField(fileResult, 'exists') === false) continue;
     state.seen = true;
-    const hash = yget(fileResult, 'contentHash');
+    const hash = itemField(fileResult, 'contentHash');
     if (typeof hash === 'string' && hash) state.hashes.add(hash);
     else state.unverified = true;
   }
@@ -423,8 +410,8 @@ function yentries(obj) {
  */
 function collectQueryCode(state, session, target, ymap) {
   const result = ymap.get('result');
-  if (!result || yget(result, 'isError') === true) return;
-  for (const [file, hash] of yentries(yget(opsPayload(result), 'filesRead'))) {
+  if (!result || itemField(result, 'isError') === true) return;
+  for (const [file, hash] of yentries(itemField(opsPayload(result), 'filesRead'))) {
     if (pathMatchKey(session, file) !== target) continue;
     state.seen = true;
     if (typeof hash === 'string' && hash) state.hashes.add(hash);

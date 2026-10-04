@@ -34,6 +34,7 @@
  */
 
 import { threadRunSettled } from './run-records.js';
+import { itemField } from '../../sdk/lib/message.js';
 
 /**
  * Read a Y.Array, plain array, or nullish as a plain array.
@@ -231,7 +232,7 @@ export function promoteThreadView(canonicalYMap, siblingArray) {
  * @returns {string} The goal, or '' when the call named none.
  */
 function goalOfToolInput(input) {
-  const goal = typeof input?.get === 'function' ? input.get('goal') : input?.goal;
+  const goal = itemField(input, 'goal');
   return typeof goal === 'string' ? goal : '';
 }
 
@@ -264,9 +265,7 @@ export function threadRunRecords(threadYMap) {
     if (item.get('type') === 'thread') {
       if (item.get('boundedCompaction') === true) {
         for (const folded of asArray(item.get('foldedRuns'))) {
-          add((/** @type {string} */ key) => (
-            typeof folded?.get === 'function' ? folded.get(key) : folded?.[key]
-          ));
+          add((/** @type {string} */ key) => itemField(folded, key));
         }
       }
       continue;

@@ -5,7 +5,7 @@
 
 import { generateText, extensionConfigResolve } from 'juggler/ops';
 import DefaultStrategyType from './default-strategy-type.js';
-import { TOOL_STATES } from 'juggler/model';
+import { TOOL_STATES, itemField } from 'juggler/model';
 import {
   POLICY_BODIES,
   DEFAULT_REVIEW_LEVEL,
@@ -393,7 +393,7 @@ export default class AutoApproveStrategyType extends DefaultStrategyType {
   _stillParked(toolUseId) {
     const action = /** @type {any} */ (this.messageThread)?.getToolAction?.(toolUseId);
     if (!action) return true;
-    const state = typeof action.get === 'function' ? action.get('state') : action.state;
+    const state = itemField(action, 'state');
     return state === undefined || state === TOOL_STATES.PENDING;
   }
 }

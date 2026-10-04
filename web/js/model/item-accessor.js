@@ -30,7 +30,9 @@ export function plain(value) {
 
 /**
  * Read one key off a thread item (or any Y.Map) as plain JS — `plain(item.get(key))`,
- * without spelling the `get` twice.
+ * without spelling the `get` twice. This materialises the value; to read a field
+ * as stored, from a Y.Map or a plain object alike, use `itemField`
+ * (`sdk/lib/message.js`).
  * @param {any} item - Y.Map to read from
  * @param {string} key - Key to read
  * @returns {*} The plain-JS value at `key`

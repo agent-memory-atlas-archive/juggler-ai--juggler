@@ -282,6 +282,20 @@ export function findGroup(items, groupId) {
 }
 
 /**
+ * A key that changes whenever a group column must re-render: the group's id,
+ * then each member's id and state. States are part of it because no Yjs
+ * observer is bound to a group, so a row going pending → completed is only
+ * noticed through this key.
+ * @param {string} groupId - Display id of the group.
+ * @param {any[]} members - The group's rows, in order.
+ * @returns {string} The render key.
+ */
+export function groupRenderKey(groupId, members) {
+  const rows = members.map((member) => `${member?.get?.('itemId') ?? ''}:${member?.get?.('state') ?? ''}`);
+  return `${groupId}|${rows.join(',')}`;
+}
+
+/**
  * Where a group's rows sit in the list it was folded from — the positions a
  * caller must remove to delete the whole run.
  *
