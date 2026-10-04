@@ -11,12 +11,16 @@
 package machineserver
 
 import (
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -35,11 +39,20 @@ type Server struct {
 	startedAt   time.Time
 	httpSrv     *http.Server
 	shutdownReq chan struct{} // control-API shutdown signal (buffered, len 1)
+	// token is the control API's credential, minted per process and published
+	// only in server.json (see tokenGuard). Empty refuses every caller.
+	token string
+	// lan is LAN access: off at startup, and while off every caller off
+	// loopback is refused (see lanGate).
+	lan atomic.Bool
 	// testChildren (serve --test) spawns every child as a test server whose
 	// test window loads its session through this server's proxy. Test
 	// binaries only: a production-tagged child panics on --test.
 	testChildren bool
 }
+
+// TokenHeader carries the control-API token on a request to /api/server/*.
+const TokenHeader = "X-Juggler-Token"
 
 // childExtraArgs returns the flags a session child gets beyond the fixed
 // ones. Under --test, each child runs the test harness in a window pointed at
@@ -54,11 +67,15 @@ func (s *Server) childExtraArgs(sessionID string) []string {
 
 // routes builds the machine server's handler: the control API under
 // /api/server, plus the /s/<id>/ session proxy. Everything is wrapped in the
-// host guard, then the origin guard, so neither a DNS-rebinding page nor a
-// drive-by page on another origin can drive the control API or ride the proxy.
+// LAN gate, then the host guard, then the origin guard, so no caller off
+// loopback gets in while LAN access is off, and neither a DNS-rebinding page
+// nor a drive-by page on another origin can drive the control API or ride the
+// proxy. The control API alone also takes the token (tokenGuard); a session's
+// routes are guarded by its child, with the child's own token.
 func (s *Server) routes() http.Handler {
 	r := mux.NewRouter()
 	api := r.PathPrefix("/api/server").Subrouter()
+	api.Use(s.tokenGuard)
 	api.HandleFunc("/status", s.handleStatus).Methods("GET")
 	api.HandleFunc("/sessions", s.handleListSessions).Methods("GET")
 	api.HandleFunc("/sessions", s.handleOpenSession).Methods("POST")
@@ -66,7 +83,53 @@ func (s *Server) routes() http.Handler {
 	api.HandleFunc("/shutdown", s.handleShutdown).Methods("POST")
 	r.HandleFunc("/s/{id}", s.redirectSession)
 	r.PathPrefix("/s/{id}/").HandlerFunc(s.handleSessionProxy)
-	return hostGuard(originGuard(r))
+	return s.lanGate(hostGuard(originGuard(r)))
+}
+
+// mintToken returns a fresh random control-API token.
+func mintToken() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		// A guessable token would hand the control API to anything that can
+		// reach the port, so refuse to start rather than serve with one.
+		panic("machineserver.mintToken: crypto/rand failed: " + err.Error())
+	}
+	return hex.EncodeToString(b)
+}
+
+// tokenGuard holds the control API to the same discipline as a session
+// child's /api: the request must carry the token, in TokenHeader, or it is
+// refused with 401 before the route runs. The token is published only in
+// server.json, which only the user the server runs as can read, so it is what
+// tells this user's own clients apart from anything else that can reach the
+// port — another account on this machine, or a page that got past the Host
+// and Origin guards. A custom header also forces a CORS preflight on any
+// cross-origin fetch, which the origin guard then refuses. A server with no
+// token refuses everyone; an empty header never matches.
+func (s *Server) tokenGuard(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got := r.Header.Get(TokenHeader)
+		if s.token == "" || subtle.ConstantTimeCompare([]byte(got), []byte(s.token)) != 1 {
+			http.Error(w, "Unauthorized: missing or invalid server token", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// lanGate refuses every caller off loopback while LAN access is off, whatever
+// it asks for, before anything is forwarded. It is the machine server's half
+// of exposure: behind the proxy a child's own LAN gate cannot hold, since every
+// caller reaches the child from here over loopback, and one the proxy vouches
+// for as remote is admitted by the child's gate on that tag.
+func (s *Server) lanGate(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.lan.Load() && callerIsRemote(r) {
+			http.Error(w, "Forbidden: this Juggler server accepts connections from this machine only", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // hostGuard is the machine server's DNS-rebinding defence: every request must

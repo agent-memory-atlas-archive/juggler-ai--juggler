@@ -48,6 +48,7 @@ type machineServer struct {
 	Home      string // the temporary HOME it and its children run under
 	ConfigDir string // where it keeps server.lock and server.json, under Home
 	Logs      string // JUGGLER_LOG_DIR for it and its children
+	Token     string // the control-API token, read from server.json as a client would
 	cmd       *exec.Cmd
 	exited    chan struct{} // closed once the process has been reaped
 	stderr    string        // path of the captured stderr
@@ -140,6 +141,9 @@ func startMachineServer(t *testing.T, serveArgs ...string) (*machineServer, func
 
 	select {
 	case ms.Addr = <-addrCh:
+		// server.json is written, token and all, before the server listens,
+		// so it is complete by the time the address is printed.
+		ms.Token = ms.readServerInfo().Token
 	case <-ms.exited:
 		t.Fatalf("machine server exited before printing its address:\n%s", ms.stderrText())
 	case <-time.After(machineServerStartTimeout):
@@ -218,14 +222,34 @@ func newIsolatedRun(t *testing.T) isolatedRun {
 func startSessionChild(t *testing.T, project, ingressSecret string) string {
 	t.Helper()
 	iso := newIsolatedRun(t)
-	cmd := exec.Command(iso.binary, "--session-child", "--port", "0", "--project", project) //nolint:gosec // the suite's own binary
-	cmd.Env = envWithOverride(iso.env, ingress.SecretEnv, ingressSecret)
+	return startServerProcess(t, iso, envWithOverride(iso.env, ingress.SecretEnv, ingressSecret),
+		"--session-child", "--port", "0", "--project", project)
+}
+
+// startStandaloneServer runs a per-project server for project the way a
+// terminal launch does (no --session-child, no --test, so the API token and
+// every production gate are in force), on an ephemeral port with no window.
+// It returns the server's address once printed; the server is killed, with its
+// process group, when the test ends.
+func startStandaloneServer(t *testing.T, project string) string {
+	t.Helper()
+	iso := newIsolatedRun(t)
+	return startServerProcess(t, iso, iso.env, "--port", "0", "--window=false", "--project", project)
+}
+
+// startServerProcess runs the suite's binary with args under env, returns the
+// address from its JUGGLER_ADDR= line, and kills its process group when the
+// test ends.
+func startServerProcess(t *testing.T, iso isolatedRun, env []string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command(iso.binary, args...) //nolint:gosec // the suite's own binary
+	cmd.Env = env
 	setProcGroupAttr(cmd)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatalf("stdout pipe: %v", err)
 	}
-	stderrPath := filepath.Join(iso.base, "child-stderr.log")
+	stderrPath := filepath.Join(iso.base, "server-stderr.log")
 	stderrFile, err := os.Create(stderrPath)
 	if err != nil {
 		t.Fatalf("stderr file: %v", err)
@@ -233,7 +257,7 @@ func startSessionChild(t *testing.T, project, ingressSecret string) string {
 	cmd.Stderr = stderrFile
 	if err := cmd.Start(); err != nil {
 		_ = stderrFile.Close()
-		t.Fatalf("start %s --session-child: %v", iso.binary, err)
+		t.Fatalf("start %s %s: %v", iso.binary, strings.Join(args, " "), err)
 	}
 	_ = stderrFile.Close()
 
@@ -262,9 +286,9 @@ func startSessionChild(t *testing.T, project, ingressSecret string) string {
 		return addr
 	case <-exited:
 		b, _ := os.ReadFile(stderrPath)
-		t.Fatalf("session child exited before printing its address:\n%s", b)
+		t.Fatalf("%s exited before printing its address:\n%s", strings.Join(args, " "), b)
 	case <-time.After(sessionOpenTimeout):
-		t.Fatalf("session child did not print its address within %s", sessionOpenTimeout)
+		t.Fatalf("%s did not print its address within %s", strings.Join(args, " "), sessionOpenTimeout)
 	}
 	return ""
 }
@@ -320,6 +344,21 @@ func (ms *machineServer) stderrText() string {
 	return string(b)
 }
 
+// readServerInfo reads the server.json the machine server keeps under its
+// temporary HOME.
+func (ms *machineServer) readServerInfo() machineserver.ServerInfo {
+	ms.t.Helper()
+	b, err := os.ReadFile(filepath.Join(ms.ConfigDir, "server.json"))
+	if err != nil {
+		ms.t.Fatalf("read server.json: %v", err)
+	}
+	var info machineserver.ServerInfo
+	if err := json.Unmarshal(b, &info); err != nil {
+		ms.t.Fatalf("parse server.json %q: %v", b, err)
+	}
+	return info
+}
+
 // url returns the machine server's URL for path.
 func (ms *machineServer) url(path string) string {
 	return "http://" + ms.Addr + path
@@ -341,6 +380,11 @@ func (ms *machineServer) do(method, path string, body any) (*http.Response, erro
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
+	}
+	// Only the control API takes the machine server's token; a session's own
+	// routes take its child's, which a test sets itself.
+	if strings.HasPrefix(path, "/api/server/") {
+		req.Header.Set(machineserver.TokenHeader, ms.Token)
 	}
 	client := &http.Client{
 		Timeout: sessionOpenTimeout,

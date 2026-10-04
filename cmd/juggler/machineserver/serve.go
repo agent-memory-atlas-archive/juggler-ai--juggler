@@ -49,8 +49,9 @@ func RunCommand(args []string) int {
 	})
 	defer jlog.Close()
 
+	token := mintToken()
 	lock := NewMachineLock(userpaths.ConfigDir())
-	acquired, existing, err := lock.TryAcquire(core.Version)
+	acquired, existing, err := lock.TryAcquire(core.Version, token)
 	if err != nil {
 		jlog.Error("serve: %v", err)
 		return 1
@@ -82,6 +83,7 @@ func RunCommand(args []string) int {
 		childBin:     bin,
 		startedAt:    time.Now(),
 		shutdownReq:  make(chan struct{}, 1),
+		token:        token,
 		testChildren: *testChildren,
 	}
 

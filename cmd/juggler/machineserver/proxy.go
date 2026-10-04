@@ -25,7 +25,8 @@ import (
 // child cannot tell its callers apart by address. The proxy tells it instead:
 // a caller off loopback is forwarded with the child's ingress secret
 // (internal/ingress), which the child turns into its remote-ingress tag — so
-// such a caller cannot take the engine slot or pass for a local viewer.
+// such a caller cannot take the engine slot or pass for a local viewer — and
+// with how it arrived and from where, for the child's clients list.
 func (s *Server) handleSessionProxy(w http.ResponseWriter, r *http.Request) {
 	id := mux.Vars(r)["id"]
 	sess, secret, ok := s.reg.route(id)
@@ -67,10 +68,16 @@ func (s *Server) handleSessionProxy(w http.ResponseWriter, r *http.Request) {
 			// Set, never appended: a client's own value must not reach it.
 			pr.Out.Header.Set("X-Forwarded-Prefix", prefix)
 			// Only this proxy speaks for the caller: a client's own ingress
-			// header is dropped whoever sent it.
+			// headers are dropped whoever sent them.
 			pr.Out.Header.Del(ingress.Header)
+			pr.Out.Header.Del(ingress.KindHeader)
+			pr.Out.Header.Del(ingress.AddrHeader)
 			if remote {
 				pr.Out.Header.Set(ingress.Header, secret)
+				// Every caller off loopback arrives on this server's own
+				// listener, so over the network directly.
+				pr.Out.Header.Set(ingress.KindHeader, ingress.KindLAN)
+				pr.Out.Header.Set(ingress.AddrHeader, pr.In.RemoteAddr)
 			}
 		},
 		// Flush streamed responses immediately — the UI relies on

@@ -59,6 +59,63 @@ func TestSupervisorIngressHeader(t *testing.T) {
 	}
 }
 
+// TestSupervisorIngressNamesTheTransport checks the child believes what its
+// supervisor says about a remote caller — how it arrived and from where — only
+// alongside the secret, so the clients list shows a LAN viewer by its address
+// while the request stays remote ingress. Anything it cannot read falls back
+// to "Via machine server", and the headers never reach a handler.
+func TestSupervisorIngressNamesTheTransport(t *testing.T) {
+	cases := []struct {
+		name, secret, kind, addr string
+		wantOrigin, wantDetail   string
+		wantRemote               bool
+	}{
+		{"a LAN caller", "right", ingress.KindLAN, "192.168.1.20:54321", "lan", "192.168.1.20", true},
+		{"an IPv6 LAN caller", "right", ingress.KindLAN, "[fe80::1]:54321", "lan", "fe80::1", true},
+		{"no transport named", "right", "", "", "remote", "Via machine server", true},
+		{"a transport it does not know", "right", "carrier-pigeon", "192.168.1.20:54321", "remote", "Via machine server", true},
+		{"a LAN caller with no usable address", "right", ingress.KindLAN, "nonsense", "remote", "Via machine server", true},
+		{"a LAN claim without the secret", "wrong", ingress.KindLAN, "192.168.1.20:54321", "local", "", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var got ClientInfo
+			var remote bool
+			var leaked []string
+			s := &Server{router: mux.NewRouter(), ingressSecret: "right"}
+			s.router.Use(s.supervisorIngressMiddleware)
+			s.router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+				got = clientInfoFromRequest(r)
+				remote = isRemoteIngress(r)
+				for _, h := range []string{ingress.Header, ingress.KindHeader, ingress.AddrHeader} {
+					if v := r.Header.Get(h); v != "" {
+						leaked = append(leaked, h+"="+v)
+					}
+				}
+			})
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.RemoteAddr = "127.0.0.1:5000"
+			req.Header.Set(ingress.Header, c.secret)
+			if c.kind != "" {
+				req.Header.Set(ingress.KindHeader, c.kind)
+			}
+			if c.addr != "" {
+				req.Header.Set(ingress.AddrHeader, c.addr)
+			}
+			s.router.ServeHTTP(httptest.NewRecorder(), req)
+			if got.Origin != c.wantOrigin || got.Detail != c.wantDetail {
+				t.Errorf("client info = %+v, want origin %q detail %q", got, c.wantOrigin, c.wantDetail)
+			}
+			if remote != c.wantRemote {
+				t.Errorf("remote ingress = %v, want %v", remote, c.wantRemote)
+			}
+			if len(leaked) != 0 {
+				t.Errorf("handler saw %v, want every ingress header stripped", leaked)
+			}
+		})
+	}
+}
+
 // TestSupervisorIngressIsRemote pins what the tag means downstream: a request
 // the supervisor vouched for is neither local-direct nor allowed the engine
 // role, though it arrives over loopback.

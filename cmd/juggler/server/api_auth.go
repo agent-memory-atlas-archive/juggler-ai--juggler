@@ -89,8 +89,9 @@ func apiAuthExempt(method, path string) bool {
 	return ok && (methods == nil || slices.Contains(methods, method))
 }
 
-// hostAllowed is the DNS-rebinding defense (§S.2): a gated /api request's Host
-// header must name this machine (hostcheck.NamesThisMachine). A DNS name such
+// hostAllowed is the DNS-rebinding defense (§S.2): the Host header of a gated
+// /api request, a token-bearing page or the viewer WebSocket upgrade (see
+// hostGatedPaths) must name this machine (hostcheck.NamesThisMachine). A DNS name such
 // as attacker.com (which rebinding transiently points at 127.0.0.1) is
 // rejected, since the browser sends the site's hostname as Host. Remote grants
 // — an established DataChannel, a tunnel the user opened, or a caller a machine
@@ -100,6 +101,36 @@ func apiAuthExempt(method, path string) bool {
 // same rule to everything it forwards, so its callers are held to it there.
 func hostAllowed(r *http.Request) bool {
 	return isRemoteIngress(r) || hostcheck.NamesThisMachine(r.Host)
+}
+
+// hostGatedPaths are the routes outside apiAuthMiddleware's Host check that a
+// DNS-rebinding page could still turn against this server: the pages that embed
+// the API token (index and engine), the test pages that host the app, and the
+// viewer WebSocket, whose upgrade the /api gate exempts and which admits anyone
+// holding the token. A page on attacker.com rebound to 127.0.0.1 is same-origin
+// with this server as far as the browser is concerned, so without this it could
+// read the token from index.html and open a viewer socket with it.
+var hostGatedPaths = map[string]bool{
+	"/":                true,
+	"/index.html":      true,
+	"/engine":          true,
+	"/headless-test":   true,
+	"/test-pool":       true,
+	apipaths.WebSocket: true,
+}
+
+// pageHostMiddleware applies hostAllowed to hostGatedPaths, answering 403 before
+// the page or the upgrade is served. It runs in test mode too: the harness
+// reaches the server by address, so the rule costs it nothing. Static assets
+// carry nothing secret and are left ungated.
+func (s *Server) pageHostMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if hostGatedPaths[r.URL.Path] && !hostAllowed(r) {
+			http.Error(w, "Forbidden: host not allowed", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // isAssetGetRequest reports whether r is a GET for content the browser loads

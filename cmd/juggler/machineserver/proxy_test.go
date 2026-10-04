@@ -108,6 +108,7 @@ func TestSessionProxyIdentifiesRemoteCallers(t *testing.T) {
 	defer backend.Close()
 
 	s := &Server{reg: newRegistry()}
+	s.lan.Store(true)
 	sess, _ := s.reg.reserve("/p")
 	s.reg.setRunning(sess.ID, &child{addr: strings.TrimPrefix(backend.URL, "http://"), ingressSecret: "child-secret"}, 1)
 
@@ -148,6 +149,7 @@ func TestSessionProxyRefusesRemoteCallerItCannotIdentify(t *testing.T) {
 	defer backend.Close()
 
 	s := &Server{reg: newRegistry()}
+	s.lan.Store(true)
 	sess, _ := s.reg.reserve("/p")
 	s.reg.setRunning(sess.ID, &child{addr: strings.TrimPrefix(backend.URL, "http://")}, 1)
 
@@ -192,7 +194,10 @@ func TestHostGuardRejectsRebindingHosts(t *testing.T) {
 	}))
 	defer backend.Close()
 
-	s := &Server{reg: newRegistry()}
+	// LAN access on, so what refuses the off-loopback caller is the Host guard
+	// and not the LAN gate in front of it.
+	s := &Server{reg: newRegistry(), token: testToken}
+	s.lan.Store(true)
 	sess, _ := s.reg.reserve("/p")
 	s.reg.setRunning(sess.ID, &child{addr: strings.TrimPrefix(backend.URL, "http://"), ingressSecret: "child-secret"}, 1)
 
@@ -207,8 +212,10 @@ func TestHostGuardRejectsRebindingHosts(t *testing.T) {
 					t.Fatal(err)
 				}
 				req.Host = host
-				// The rebinding page is same-origin with itself.
+				// The rebinding page is same-origin with itself, and is given
+				// the token so only the Host can be what refuses it.
 				req.Header.Set("Origin", "http://"+host)
+				req.Header.Set(TokenHeader, testToken)
 				resp, err := http.DefaultClient.Do(req)
 				if err != nil {
 					t.Fatal(err)
@@ -233,6 +240,7 @@ func TestHostGuardRejectsRebindingHosts(t *testing.T) {
 				t.Fatal(err)
 			}
 			req.Host = host
+			req.Header.Set(TokenHeader, testToken)
 			resp, err := http.DefaultClient.Do(req)
 			if err != nil {
 				t.Fatal(err)
@@ -246,7 +254,7 @@ func TestHostGuardRejectsRebindingHosts(t *testing.T) {
 }
 
 func TestOriginGuardRejectsCrossOrigin(t *testing.T) {
-	s := &Server{reg: newRegistry()}
+	s := &Server{reg: newRegistry(), token: testToken}
 	front := httptest.NewServer(s.routes())
 	defer front.Close()
 
@@ -254,6 +262,7 @@ func TestOriginGuardRejectsCrossOrigin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	req.Header.Set(TokenHeader, testToken)
 	req.Header.Set("Origin", "http://evil.example")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -269,6 +278,7 @@ func TestOriginGuardRejectsCrossOrigin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	req2.Header.Set(TokenHeader, testToken)
 	req2.Header.Set("Origin", front.URL)
 	resp2, err := http.DefaultClient.Do(req2)
 	if err != nil {

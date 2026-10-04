@@ -435,7 +435,7 @@ func TestAPIAuthIgnoresNonAPIPaths(t *testing.T) {
 	s, reached := newAuthTestServer(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Host = "example.com" // static assets are not Host-gated
+	req.Host = "example.com" // the pages' Host rule is pageHostMiddleware's, not this gate's
 	rec := httptest.NewRecorder()
 	s.router.ServeHTTP(rec, req)
 
@@ -515,5 +515,59 @@ func TestHostAllowedRemoteIngressBypass(t *testing.T) {
 	}
 	if !hostAllowed(withRemoteIngress(base)) {
 		t.Fatal("remote-ingress request should pass hostAllowed regardless of Host")
+	}
+}
+
+// TestPageHostMiddlewareRefusesRebindingHosts covers the routes a rebinding
+// page could still use once the /api gate refuses it: the pages that embed the
+// API token, the test pages that host the app, and the viewer WebSocket, whose
+// upgrade the /api gate exempts. Each refuses a DNS name as Host, in test mode
+// too, and admits this machine's names and a remote-ingress caller. Static
+// assets carry no token and stay ungated.
+func TestPageHostMiddlewareRefusesRebindingHosts(t *testing.T) {
+	gated := []string{"/", "/index.html", "/engine", "/headless-test", "/test-pool", apipaths.WebSocket}
+	for _, testMode := range []bool{false, true} {
+		var reached bool
+		s := &Server{router: mux.NewRouter(), apiToken: testAPIToken, testMode: testMode}
+		s.router.Use(s.pageHostMiddleware)
+		hit := func(w http.ResponseWriter, _ *http.Request) {
+			reached = true
+			w.WriteHeader(http.StatusOK)
+		}
+		for _, p := range gated {
+			s.router.HandleFunc(p, hit).Methods("GET")
+		}
+		s.router.HandleFunc("/v1/js/app.js", hit).Methods("GET")
+
+		serve := func(path, host string, remote bool) (int, bool) {
+			reached = false
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req.Host = host
+			if remote {
+				req = withRemoteIngress(req)
+			}
+			rec := httptest.NewRecorder()
+			s.router.ServeHTTP(rec, req)
+			return rec.Code, reached
+		}
+
+		for _, p := range gated {
+			for _, host := range []string{"attacker.com:8317", "localhost.attacker.com:8317", "notlocalhost:8317"} {
+				if code, ran := serve(p, host, false); code != http.StatusForbidden || ran {
+					t.Errorf("testMode=%v GET %s Host %s: got %d reached=%v, want 403 unreached", testMode, p, host, code, ran)
+				}
+			}
+			for _, host := range []string{"127.0.0.1:8317", "localhost:8317", "myproject.localhost:8317", "192.168.1.5:8317", "[::1]:8317"} {
+				if code, ran := serve(p, host, false); code != http.StatusOK || !ran {
+					t.Errorf("testMode=%v GET %s Host %s: got %d reached=%v, want 200 reached", testMode, p, host, code, ran)
+				}
+			}
+			if code, ran := serve(p, "abc123.trycloudflare.com", true); code != http.StatusOK || !ran {
+				t.Errorf("testMode=%v GET %s from remote ingress: got %d reached=%v, want 200 reached", testMode, p, code, ran)
+			}
+		}
+		if code, ran := serve("/v1/js/app.js", "attacker.com:8317", false); code != http.StatusOK || !ran {
+			t.Errorf("testMode=%v static asset under a DNS-name Host: got %d reached=%v, want 200 reached", testMode, code, ran)
+		}
 	}
 }

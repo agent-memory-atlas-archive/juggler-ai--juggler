@@ -497,6 +497,7 @@ func New(cfg Config) (*Server, error) {
 	// caller the supervisor vouched for as remote ingress.
 	s.router.Use(s.supervisorIngressMiddleware)
 	s.router.Use(s.lanGateMiddleware)
+	s.router.Use(s.pageHostMiddleware)
 	s.router.Use(s.apiAuthMiddleware)
 
 	s.setupSessionRoutes(sessionAPI)

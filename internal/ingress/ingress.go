@@ -26,6 +26,18 @@ import (
 // a caller off loopback.
 const Header = "X-Juggler-Ingress"
 
+// KindHeader names, alongside Header, the transport a remote caller reached
+// the supervisor by (KindLAN). The child believes it only with the secret.
+const KindHeader = "X-Juggler-Ingress-Kind"
+
+// AddrHeader carries, alongside Header, the remote caller's address as the
+// supervisor saw it ("ip:port"). The child believes it only with the secret.
+const AddrHeader = "X-Juggler-Ingress-Addr"
+
+// KindLAN is the KindHeader value for a caller that reached the supervisor
+// directly over the network, on its own listening socket.
+const KindLAN = "lan"
+
 // SecretEnv is the environment variable a session child finds its secret in.
 const SecretEnv = "JUGGLER_INGRESS_SECRET"
 

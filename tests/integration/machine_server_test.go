@@ -662,6 +662,8 @@ func TestMachineServerRefusesRebindingHost(t *testing.T) {
 		}
 		req.Host = host
 		req.Header.Set("Origin", "http://"+host)
+		// The token too, so only the Host can be what refuses the rebound page.
+		req.Header.Set(machineserver.TokenHeader, ms.Token)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("GET %s: %v", path, err)
@@ -702,6 +704,53 @@ func TestMachineServerRefusesRebindingHost(t *testing.T) {
 			status = resp.StatusCode
 		}
 		t.Errorf("WebSocket upgrade with Host %s: err %v, status %d; want refused with 403", rebound, err, status)
+	}
+}
+
+// TestMachineServerControlAPIRequiresToken checks a real machine server's
+// control API against a caller on loopback: without the token from server.json,
+// or with another, it lists nothing and shuts nothing down; with it, both work.
+func TestMachineServerControlAPIRequiresToken(t *testing.T) {
+	ms, stop := startMachineServer(t)
+	defer stop()
+	if ms.Token == "" {
+		t.Fatal("server.json carries no control-API token")
+	}
+
+	call := func(method, path, token string) int {
+		t.Helper()
+		req, err := http.NewRequest(method, ms.url(path), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if token != "" {
+			req.Header.Set(machineserver.TokenHeader, token)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("%s %s: %v", method, path, err)
+		}
+		_ = resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	for _, token := range []string{"", "not-the-token"} {
+		for _, c := range []struct{ method, path string }{
+			{http.MethodGet, "/api/server/sessions"},
+			{http.MethodPost, "/api/server/shutdown"},
+		} {
+			if code := call(c.method, c.path, token); code != http.StatusUnauthorized {
+				t.Errorf("%s %s with token %q: status %d, want 401", c.method, c.path, token, code)
+			}
+		}
+	}
+	if code := call(http.MethodGet, "/api/server/sessions", ms.Token); code != http.StatusOK {
+		t.Errorf("GET /api/server/sessions with the token: status %d, want 200", code)
+	}
+	select {
+	case <-ms.exited:
+		t.Fatal("an unauthorised shutdown request stopped the machine server")
+	default:
 	}
 }
 

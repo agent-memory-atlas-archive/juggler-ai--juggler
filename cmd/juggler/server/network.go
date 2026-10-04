@@ -119,16 +119,49 @@ const supervisorIngressKind = "machine-server"
 // connection that is not loopback, so cannot be the supervisor's — leaves the
 // request untagged. The header is removed either way, so nothing downstream
 // can read the secret back.
+//
+// Alongside the secret, the supervisor says how the caller reached it
+// (ingress.KindHeader) and from where (ingress.AddrHeader). Those are believed
+// only with the secret, and only for display: a LAN caller is listed by its
+// address (see clientInfoFromRequest), while the request stays remote ingress.
 func (s *Server) supervisorIngressMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got := r.Header.Get(ingress.Header)
+		kind := r.Header.Get(ingress.KindHeader)
+		addr := r.Header.Get(ingress.AddrHeader)
 		r.Header.Del(ingress.Header)
+		r.Header.Del(ingress.KindHeader)
+		r.Header.Del(ingress.AddrHeader)
 		if s.ingressSecret != "" && got != "" && isLoopbackAddr(r.RemoteAddr) &&
 			subtle.ConstantTimeCompare([]byte(got), []byte(s.ingressSecret)) == 1 {
 			r = MarkRemoteIngress(r, supervisorIngressKind)
+			if ip := supervisedLANCallerIP(kind, addr); ip != "" {
+				r = r.WithContext(context.WithValue(r.Context(), supervisedLANCallerKey{}, ip))
+			}
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// supervisedLANCallerKey carries, on a request the supervisor vouched for, the
+// IP of the LAN caller it forwarded. Read by clientInfoFromRequest.
+type supervisedLANCallerKey struct{}
+
+// supervisedLANCallerIP returns the caller's IP when the supervisor says the
+// caller came over the LAN from an address that parses, else "".
+func supervisedLANCallerIP(kind, addr string) string {
+	if kind != ingress.KindLAN {
+		return ""
+	}
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return ""
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return ""
+	}
+	return ip.String()
 }
 
 // writeLocalhostOnlyPage renders the 403 page shown when a non-loopback client
@@ -280,6 +313,11 @@ func isRemoteIngress(r *http.Request) bool {
 // connect time. Presentational only.
 func clientInfoFromRequest(r *http.Request) ClientInfo {
 	info := ClientInfo{UserAgent: r.UserAgent(), ConnectedAt: time.Now().UnixMilli()}
+	if ip, ok := r.Context().Value(supervisedLANCallerKey{}).(string); ok {
+		info.Origin = "lan"
+		info.Detail = ip
+		return info
+	}
 	if kind := RemoteIngressKind(r); kind != "" {
 		info.Origin = "remote"
 		info.Detail = remoteTransportLabel(kind)

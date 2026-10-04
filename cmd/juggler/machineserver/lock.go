@@ -13,6 +13,7 @@ import (
 
 	"github.com/gofrs/flock"
 
+	"juggler/internal/atomicio"
 	"juggler/internal/jlog"
 )
 
@@ -25,6 +26,9 @@ type ServerInfo struct {
 	Addr      string    `json:"addr"`
 	Version   string    `json:"version"`
 	StartedAt time.Time `json:"startedAt"`
+	// Token is the control-API token (the Server's tokenGuard). This file is
+	// how a client on this machine, running as this user, comes to hold it.
+	Token string `json:"token"`
 }
 
 // MachineLock enforces one machine server per machine via a flock under the
@@ -50,7 +54,7 @@ func NewMachineLock(configDir string) *MachineLock {
 // ServerInfo (with an empty Addr until UpdateAddr) and returns acquired=true.
 // When the lock is held elsewhere it returns the holder's info, when readable,
 // so the caller can report where the running server lives.
-func (l *MachineLock) TryAcquire(version string) (acquired bool, existing *ServerInfo, err error) {
+func (l *MachineLock) TryAcquire(version, token string) (acquired bool, existing *ServerInfo, err error) {
 	if err := os.MkdirAll(filepath.Dir(l.lockPath), 0700); err != nil {
 		return false, nil, fmt.Errorf("failed to create config directory: %w", err)
 	}
@@ -66,6 +70,7 @@ func (l *MachineLock) TryAcquire(version string) (acquired bool, existing *Serve
 		PID:       os.Getpid(),
 		Version:   version,
 		StartedAt: time.Now(),
+		Token:     token,
 	}
 	if err := l.writeInfo(); err != nil {
 		if unlockErr := l.flock.Unlock(); unlockErr != nil {
@@ -99,18 +104,38 @@ func (l *MachineLock) Release() error {
 	return l.flock.Unlock()
 }
 
+// writeInfo replaces server.json with a file only its owner can read, since it
+// carries the control-API token. It writes a fresh file (os.CreateTemp makes it
+// 0600) and renames it over the old one, so a server.json left behind with
+// wider permissions never has the token written into it, and a reader never
+// sees half a file.
 func (l *MachineLock) writeInfo() error {
 	data, err := json.MarshalIndent(l.info, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(l.infoPath, data, 0600)
+	tmp, err := os.CreateTemp(filepath.Dir(l.infoPath), ".server-*.json")
+	if err != nil {
+		return err
+	}
+	_, werr := tmp.Write(data)
+	cerr := tmp.Close()
+	if werr == nil {
+		werr = cerr
+	}
+	if werr == nil {
+		werr = atomicio.RobustRename(tmp.Name(), l.infoPath)
+	}
+	if werr != nil {
+		_ = os.Remove(tmp.Name())
+	}
+	return werr
 }
 
 // readInfo returns the on-disk ServerInfo, or nil when it is missing or
 // unparsable — callers treat nil as "holder unknown".
 func (l *MachineLock) readInfo() *ServerInfo {
-	data, err := os.ReadFile(l.infoPath)
+	data, err := atomicio.RobustReadFile(l.infoPath)
 	if err != nil {
 		return nil
 	}

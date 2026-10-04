@@ -109,6 +109,7 @@ func TestSpawnedChildGetsItsOwnIngressSecret(t *testing.T) {
 	}
 
 	s := &Server{reg: newRegistry()}
+	s.lan.Store(true)
 	sess, _ := s.reg.reserve("/p")
 	s.reg.setRunning(sess.ID, children[0], children[0].cmd.Process.Pid)
 	front := httptest.NewServer(asCaller("203.0.113.7:54321", s.routes()))
