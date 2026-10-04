@@ -32,6 +32,8 @@ import {
   DEFAULT_FILE_EDITING_META_KEY,
   WRITE_FILE_ITEM_TYPE,
 } from '../../js/services/file-editing-permission.js';
+import { registerSettingsOpener } from '../../js/services/settings-launcher.js';
+import UIEventManager from '../../js/services/ui-event-manager.js';
 
 /**
  * @typedef {object} TestResult
@@ -287,6 +289,49 @@ export async function runTests(_ctx) {
     assert(showShortcuts.mod && showShortcuts.key === '/', 'show-shortcuts is Mod+/');
     assert(eventMatchesBinding(showShortcuts, evt({ ...modProp, key: '/' })),
       'Mod+/ should match show-shortcuts');
+  });
+
+  await run('open-settings matches Mod+, and fires from a text field', () => {
+    const openSettingsBinding = keyShortcutManager.getBinding('open-settings');
+    assert(!!openSettingsBinding && openSettingsBinding.mod && openSettingsBinding.key === ',',
+      'open-settings is Mod+,');
+    assert(eventMatchesBinding(openSettingsBinding, evt({ ...modProp, key: ',' })),
+      'Mod+, should match open-settings');
+    const def = keyShortcutManager.all().find((d) => d.id === 'open-settings');
+    assert(!!def && def.allowInInput === true, 'the composer holds focus almost always');
+  });
+
+  // ⌘, is every macOS browser's own Settings key; Ctrl+, is claimed by no browser
+  // on Windows or Linux. So the page's handler stands down for ⌘, in a browser tab
+  // on macOS (this suite runs in one — there is no native host here) and opens
+  // Settings everywhere else.
+  await run('open-settings leaves ⌘, to a macOS browser and opens Settings elsewhere', () => {
+    // The header setup registers zoom and show-shortcuts alongside this one, so
+    // the whole handler map is put back afterwards, whatever the page had.
+    const pageHandlers = new Map(keyShortcutManager._handlers);
+    const manager = /** @type {any} */ (
+      new UIEventManager({ onSendMessage: () => {}, onContextItemAction: async () => {} })
+    );
+    /** @type {Array<string|undefined>} */
+    const opened = [];
+    const restore = registerSettingsOpener((tab) => { opened.push(tab); });
+    let acted;
+    try {
+      manager._setupZoomButtons();
+      const handler = keyShortcutManager._handlers.get('open-settings');
+      assert(typeof handler === 'function', 'the header setup registers an open-settings handler');
+      acted = handler(evt({ ...modProp, key: ',' }));
+    } finally {
+      restore();
+      manager.destroy();
+      keyShortcutManager._handlers.clear();
+      for (const [id, h] of pageHandlers) keyShortcutManager._handlers.set(id, h);
+    }
+    if (mac) {
+      assert(!acted && opened.length === 0, 'a macOS browser tab keeps ⌘, for its own Settings');
+    } else {
+      assert(acted === true && opened.length === 1, 'Ctrl+, opens Settings in a browser tab');
+    }
   });
 
   await run('alt bindings match the macOS Option glyph via the code fallback', () => {

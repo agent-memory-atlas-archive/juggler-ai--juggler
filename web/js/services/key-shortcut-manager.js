@@ -496,6 +496,20 @@ const SHORTCUT_DEFS = [
     allowInInput: true,
   },
   {
+    id: 'open-settings',
+    label: 'Open Settings',
+    description: 'Open the Settings panel. On macOS, desktop app only — in a browser '
+      + 'tab \u2318, is left to the browser\u2019s own settings.',
+    category: 'View',
+    // ⌘, / Ctrl+, is the platform Settings key: macOS's standard, and the one
+    // cross-platform apps use on Windows and Linux, where no OS key exists. Every
+    // macOS browser claims ⌘, for its own settings, so the handler stands down in
+    // a browser tab there; no browser claims Ctrl+, elsewhere. Fires from the
+    // composer: the command modifier means it never lands as typed text.
+    defaultBinding: { mod: true, key: ',' },
+    allowInInput: true,
+  },
+  {
     id: 'strategy-switch',
     label: 'Switch strategy',
     description: 'Cycle the active strategy; hold to open the strategy menu.',

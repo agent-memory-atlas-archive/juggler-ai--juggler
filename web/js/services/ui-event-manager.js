@@ -43,7 +43,8 @@ import { isToolGroupingEnabled, toggleToolGrouping, TOOL_GROUPING_EVENT } from '
 import { zoomIn, zoomOut } from '../utils/zoom-manager.js';
 import { setupHeaderOverflowMenu } from '../utils/header-overflow-menu.js';
 import { isAutoNameEnabled } from './auto-name-setting.js';
-import keyShortcutManager from './key-shortcut-manager.js';
+import keyShortcutManager, { isMac } from './key-shortcut-manager.js';
+import { hasNativeHost } from '../../sdk/lib/window-control.js';
 
 /**
  * UIEventManager
@@ -77,6 +78,9 @@ class UIEventManager {
 
     /** @type {(() => void)|null} @private */
     this._unregisterShowShortcuts = null;
+
+    /** @type {(() => void)|null} @private */
+    this._unregisterOpenSettings = null;
 
     /** @type {(() => void)|null} @private */
     this._unregisterToolGrouping = null;
@@ -214,6 +218,13 @@ class UIEventManager {
     this._unregisterZoomOut = keyShortcutManager.register('zoom-out', () => { zoomOut(); return true; });
     this._unregisterShowShortcuts = keyShortcutManager.register('show-shortcuts', () => {
       openSettings('shortcuts');
+      return true;
+    });
+    // ⌘, in a macOS browser tab belongs to the browser's own settings, so return
+    // false and let it through; the desktop app and Ctrl+, elsewhere open ours.
+    this._unregisterOpenSettings = keyShortcutManager.register('open-settings', () => {
+      if (isMac() && !hasNativeHost()) return false;
+      openSettings();
       return true;
     });
   }
@@ -770,6 +781,7 @@ class UIEventManager {
     this._unregisterZoomIn?.();
     this._unregisterZoomOut?.();
     this._unregisterShowShortcuts?.();
+    this._unregisterOpenSettings?.();
     this._unregisterToolGrouping?.();
     this._overflowMenu?.dispose();
     this._overflowMenu = null;
