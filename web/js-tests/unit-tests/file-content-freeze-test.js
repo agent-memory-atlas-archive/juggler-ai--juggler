@@ -281,15 +281,23 @@ export async function runTests(_ctx) {
       'a mention of a file whose snapshot still matches must reuse that snapshot');
   });
 
-  await test('a mention of a file changed since its snapshot adds a new one', async () => {
-    // A later mention is the file as it stands at THAT send — folding it into
-    // the earlier snapshot would hand the model the old bytes a second time.
-    const { item: earlier, setBody } = makeItem('v1\n');
+  await test('a mention of a file changed since its snapshot replaces that snapshot', async () => {
+    // A later mention is the file as it stands at THAT send. A second item
+    // beside the stale one would carry both copies on every turn from then on,
+    // to tell the model something it should no longer believe.
+    const { item: earlier, setBody, announced } = makeItem('v1\n');
     await earlier.onToolCall('file-content', { path: 'plan.md', frozen: true });
     await earlier.createContextText(REQUEST);
     setBody('v2\n');
-    assert(await FileContentContextItem.mergeOrReplace({ path: 'plan.md', frozen: true }, [earlier]) === null,
-      'a mention of a changed file must not reuse the stale snapshot');
+    const merged = await FileContentContextItem.mergeOrReplace({ path: 'plan.md', frozen: true }, [earlier]);
+    assert(merged?.action === 'reuse' && merged.item === earlier,
+      'a mention of a changed file must reuse the existing snapshot, not add a second');
+    // The orchestrator then re-runs the tool call on the reused item.
+    await earlier.onToolCall('file-content', { path: 'plan.md', frozen: true });
+    const sent = await earlier.createContextText(REQUEST);
+    assert(sent.includes('v2') && !sent.includes('v1'), 'the reused item now serves the file as it stands');
+    assert(earlier.data.content === sent, 'and stores what it serves');
+    assert(announced() === 2, `the new snapshot is announced, got ${announced()} announcements`);
   });
 
   await test('a mention reuses a mention that has not snapshotted yet', async () => {

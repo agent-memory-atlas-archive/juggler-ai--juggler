@@ -1085,8 +1085,8 @@ cached prefix and is paid for **once**.
 
 An **`@`-mention** is the user's counterpart of a read: a one-shot "here is this
 file", frozen at the send that carried it. The composer creates one frozen item
-per mentioned path, and a later mention of the same file adds a fresh snapshot
-rather than reusing the old one. A mentioned file is usually mentioned so the
+per mentioned path. A later mention of the same file reuses that item, retaking
+its snapshot if the file has changed, so the model is never sent two copies. A mentioned file is usually mentioned so the
 agent can work on it, so it must not re-render when the agent does — see
 [Frozen items](#seeded-agents-files-and-mentions-freeze) below.
 

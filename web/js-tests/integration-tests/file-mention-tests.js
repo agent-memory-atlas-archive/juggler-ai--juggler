@@ -242,6 +242,50 @@ export const atMentionIsFrozenAtSend = {
   ]
 };
 
+// Mentioning the file again after it has changed is the user handing the model
+// the file as it stands NOW. The existing snapshot is retaken in place: a second
+// item beside it would carry the stale copy on every turn from then on.
+const TD_remention = testDirFor('at-mention-of-changed-file-replaces-snapshot');
+/** @type {import('../utilities/integration-test-runner.js').IntegrationTestDefinition} */
+export const atMentionOfChangedFileReplacesSnapshot = {
+  name: 'at-mention-of-changed-file-replaces-snapshot',
+  description: 'Re-mentioning a file that changed since its snapshot retakes that snapshot instead of adding a second',
+  fixture: 'unit-test-fixture',
+
+  setupFiles: {
+    [`${TD_remention}/plan.md`]: 'AS-MENTIONED-MARKER\n'
+  },
+
+  llmResponses: [
+    toolUseResponse(
+      'call_1',
+      'write',
+      { file_path: `${TD_remention}/plan.md`, content: 'REWRITTEN-MARKER\n' },
+      'Rewriting it.'
+    ),
+    textResponse('Rewritten.'),
+    textResponse('Looked again.')
+  ],
+
+  operations: [
+    { type: 'send-message', message: `Rewrite @${TD_remention}/plan.md please` },
+    { type: 'send-message', message: `Now look at @${TD_remention}/plan.md again` }
+  ],
+
+  customAssertions(conversation) {
+    const fileItems = /** @type {any[]} */ (conversation.rootMessageThread.contextItems.filter(
+      item => item.type === 'file-content'
+    ));
+    if (fileItems.length !== 1) {
+      throw new Error(`Expected exactly 1 file-content item but found ${fileItems.length}`);
+    }
+    const content = String(fileItems[0].data.content ?? '');
+    if (!content.includes('REWRITTEN-MARKER') || content.includes('AS-MENTIONED-MARKER')) {
+      throw new Error(`Expected the snapshot to be retaken from the rewritten file, got: ${content.slice(0, 200)}`);
+    }
+  }
+};
+
 // Trailing sentence punctuation after an unquoted path should be stripped so
 // the path resolves correctly. A bare "@" with no path after it should be
 // ignored entirely (no spurious empty-path file-content item).
@@ -352,6 +396,7 @@ export const tests = [
   sendMessageCreatesFileItemsForAllMentions,
   sendMessageHandlesPunctuationAndBareAt,
   atMentionIsFrozenAtSend,
+  atMentionOfChangedFileReplacesSnapshot,
   pinResolvesLiveAndPersistsNoBytes,
   sendMessageTreatsDirectoryMentionWithoutTrailingSlashAsFolder
 ];

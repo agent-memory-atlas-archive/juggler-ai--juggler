@@ -163,7 +163,9 @@ export async function executeContextItem(mt, conv, itemTypeId, params, options =
  * existing item handles the call, as in {@link executeContextItem}, and nothing
  * is queued. The reused item is left where it is — it cannot be repositioned
  * under a running turn — and a `merge` is treated as no match, since it would
- * edit a committed item mid-turn.
+ * edit a committed item mid-turn. A reused file snapshot that has gone stale is
+ * retaken by its own tool call, as the panel's Update does, so the running turn
+ * sees the file as it stood when the message was queued.
  * @param {MessageThread} mt
  * @param {Conversation} conv
  * @param {string} itemTypeId

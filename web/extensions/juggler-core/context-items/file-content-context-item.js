@@ -103,10 +103,10 @@ const MAX_FROZEN_SNAPSHOT_CHARS = 256_000;
  *    made while a turn runs waits in the pending queue. What belongs in context
  *    is what was true when the model was handed it. `contextParams.forRequest`
  *    is what distinguishes a dispatch render from a properties-panel one.
- *  - A mention reuses an existing item for the same file only when that item
- *    hands the model the same bytes (see {@link mergeOrReplace}): a later mention
- *    of a file that has changed is the file as it stands at THAT send, which the
- *    earlier snapshot is not, so it gets a snapshot of its own.
+ *  - A mention reuses an existing item for the same file (see
+ *    {@link mergeOrReplace}). A later mention of a file that has changed is the
+ *    file as it stands at THAT send, which the earlier snapshot is not, so the
+ *    reused item retakes its snapshot rather than a second copy being added.
  *  - What is NOT this class is a `read` TOOL CALL — ReadFileContextItem, an
  *    immutable record of bytes the model saw at one turn, living in the
  *    append-only history.
@@ -206,11 +206,14 @@ class FileContentContextItem extends ContextItem {
    * where reuse would change what the model is handed:
    *  - A pin never adopts a mention: that would hand a snapshot back to someone
    *    who asked for the file kept current.
-   *  - A mention (`frozen`) reuses an item only when it gives the model the same
-   *    bytes this send would: a live pin (current at every send), a frozen item
-   *    that has not taken its snapshot yet (it takes it at this send), or a
-   *    snapshot that still matches the file. A file changed since its snapshot
-   *    gets a new one — the later mention is the file as it stands at THAT send.
+   *  - A mention (`frozen`) always reuses an item for the same file, preferring
+   *    one that already gives the model the bytes this send would: a live pin
+   *    (current at every send), a frozen item that has not taken its snapshot
+   *    yet (it takes it at this send), or a snapshot that still matches the
+   *    file. Failing those, it reuses the latest stale snapshot, which
+   *    {@link onToolCall} retakes: the later mention is the file as it stands at
+   *    THAT send, and keeping the stale copy beside it would send both every
+   *    turn. The retake busts the prompt cache once, from the item's position.
    * Seeding dedups by path: adding the agents files again must not add them twice.
    * @static
    * @param {Record<string, any>} newParams - Parameters for the new item request
@@ -245,7 +248,10 @@ class FileContentContextItem extends ContextItem {
       const current = FileContentContextItem._boundSnapshot(await item._renderLive());
       if (current === item.data.content) return { action: 'reuse', item: f };
     }
-    return null;
+    // Every snapshot of this file is stale: the latest one is reused and
+    // refrozen by onToolCall, rather than kept alongside a second copy.
+    const latest = samePath.at(-1);
+    return latest ? { action: 'reuse', item: latest } : null;
   }
 
   /**
@@ -319,10 +325,15 @@ class FileContentContextItem extends ContextItem {
     }
     // An item that already has a path is being reused (see mergeOrReplace):
     // its kind was fixed when it was created, and a mention or seed reusing a
-    // live pin must leave it live.
+    // live pin must leave it live. A mention reusing a snapshot hands the model
+    // the file as it stands at this send, so the snapshot is retaken — a no-op
+    // when the file is unchanged or the item has not latched one yet.
     const reused = !!this.data.path;
     this.data.path = params.path;
-    if (reused) return;
+    if (reused) {
+      if (params.frozen === true) await this.refreezeSnapshot();
+      return;
+    }
     if (params.frozen) this.data.frozen = true;
     if (params.seeded) this.data.seeded = true;
   }

@@ -13,6 +13,7 @@ of changes; this project follows semantic versioning.
 - Extension settings gain a multi-line text type and can appear on a capability's page
 - Usage meters only redden past pace, and less so early in the window
 - Run through a symlink, juggler still finds the desktop app, so w opens a window
+- Re-mentioning a changed file updates its snapshot instead of adding a second copy
 
 ## [0.7.4] - 2026-10-02
 
