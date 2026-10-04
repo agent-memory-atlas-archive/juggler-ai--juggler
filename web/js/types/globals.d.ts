@@ -86,32 +86,19 @@ interface Window {
  * Custom element type extensions
  */
 interface HTMLElementTagNameMap {
-	'conversation-area': HTMLElement & {
-		conversation: unknown;
-		scrollToBottom(force?: boolean): void;
-		scrollItemIntoView(itemId: string, opts?: { smooth?: boolean; automatic?: boolean }): void;
-		applySelectedClass(selectedId: string | null): void;
-		getMessageThread(): unknown;
-		renderFromItems(items: unknown[], insertedMessageIds?: string[]): void;
-		composer?: HTMLElement;
-	};
+	// These elements are their real classes, so createElement,
+	// querySelector and closest hand back a type the checker holds to the
+	// class's own public surface, `@private` included.
+	'conversation-area': import('../components/conversation-area.js').default;
+	'properties-panel': import('../components/properties-panel.js').default;
+	'composer-box': import('../components/composer.js').default;
+	'action-confirmation': import('../components/action-confirmation.js').default;
 	'model-selector': HTMLElement & {
 		refresh(): void;
 		setSession(session: unknown): void;
 	};
 	'plugin-catalog': HTMLElement & {
 		show(scope: 'global' | 'local'): void;
-	};
-	'composer-box': HTMLElement & {
-		setSession(session: unknown): void;
-		focus(): void;
-		isEmpty(): boolean;
-	};
-	'properties-panel': HTMLElement & {
-		setConversation(conversation: unknown): void;
-		selectItem(itemId: string | null): void;
-		clearSelection(): void;
-		getSelectedItemId(): string | null;
 	};
 }
 

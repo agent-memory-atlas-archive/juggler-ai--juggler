@@ -275,7 +275,7 @@ export const propertiesPanelShowsAttachmentsTest = {
     if (!area || typeof area._selectItem !== 'function') {
       throw new Error('No conversation-area available to select the user message in');
     }
-    area._selectItem(itemId, 'user');
+    area.selectItem(itemId);
 
     // The panel render is debounced; poll for the attachment section.
     const expectedSrc = apiService.assetURL(conversation.id, ref.id);

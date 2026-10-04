@@ -120,7 +120,7 @@ export async function runTests() {
     assert(rootCol.getSelectedItemId() === threadA,
       `test setup: clicking the tile should select it, got ` +
       `${rootCol.getSelectedItemId()}`);
-    assert(rootCol._selectionOrigin === 'user',
+    assert(rootCol.selectionOrigin === 'user',
       'test setup: selecting a sub-thread tile must pin the parent column');
 
     const openThreadIds = () => Array.from(tab.querySelectorAll('conversation-area.thread-column'))
@@ -135,7 +135,7 @@ export async function runTests() {
     // The reveal's own focus move lands a few frames later. Nothing the app
     // does for itself may retire a pin the reader set.
     await sleep(FOCUS_REASSERT_WINDOW_MS);
-    assert(rootCol._selectionOrigin === 'user',
+    assert(rootCol.selectionOrigin === 'user',
       'the pin must survive the focus move that opening the sub-thread makes: ' +
       'the keyboard belongs to the new column\'s box, and the parent\'s box ' +
       'taking it instead reads as the reader turning to compose (rule B)');
@@ -175,7 +175,7 @@ export async function runTests() {
       assert(rootCol.getSelectedItemId() === threadA,
         `packet ${n}: an unanswered approval must not take the parent column ` +
         `off the sub-thread tile the reader selected (selection moved to ` +
-        `${rootCol.getSelectedItemId()}, origin ${rootCol._selectionOrigin})`);
+        `${rootCol.getSelectedItemId()}, origin ${rootCol.selectionOrigin})`);
       assert(openThreadIds().includes(threadA),
         `packet ${n}: the sub-thread being read must stay open, got ` +
         `${JSON.stringify(openThreadIds())}`);

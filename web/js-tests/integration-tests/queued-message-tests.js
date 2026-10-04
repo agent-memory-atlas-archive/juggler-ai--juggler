@@ -666,7 +666,7 @@ export const queuedItemPropertiesPanelTest = {
     if (!area || typeof area._selectItem !== 'function') {
       throw new Error('No conversation-area available to select the queued message in');
     }
-    area._selectItem(itemId, 'user');
+    area.selectItem(itemId);
 
     // The properties-panel column should appear and render the message content
     // plus a delete button (panel render is debounced ~150ms).

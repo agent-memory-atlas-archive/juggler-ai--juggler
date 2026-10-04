@@ -146,7 +146,7 @@ export async function runTests() {
     tab.revealAttention(true);
 
     const groupCol = /** @type {any} */ (Array.from(tab.querySelectorAll('conversation-area'))
-      .find((/** @type {any} */ c) => c._isGroupColumn));
+      .find((/** @type {any} */ c) => c.isGroupColumn));
     assert(!!groupCol,
       'with the approval folded into a tool group, jump-to-attention must open the group');
     assert(groupCol.getSelectedItemId() === approvalId,

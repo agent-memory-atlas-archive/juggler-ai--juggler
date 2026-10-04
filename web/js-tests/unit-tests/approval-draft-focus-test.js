@@ -137,7 +137,7 @@ export async function runTests() {
       { options: [{ label: 'Yes', value: 'yes', style: 'primary' }] },
       () => {}
     );
-    column._localSelectedItemId = itemId;
+    column.presetSelectedItemId(itemId);
 
     const button = /** @type {HTMLButtonElement} */ (
       approval.querySelector('.action-confirmation-button')

@@ -240,6 +240,7 @@ import { runTests as runAutoFollowHoldsTheEndTests } from '../unit-tests/auto-fo
 import { runTests as runUserSendFollowTests } from '../unit-tests/user-send-follow-test.js';
 import { runTests as runThreadColumnLandingTests } from '../unit-tests/thread-column-landing-test.js';
 import { runTests as runJumpToAttentionRevealTests } from '../unit-tests/jump-to-attention-reveal-test.js';
+import { runTests as runColumnBuilderTests } from '../unit-tests/column-builder-test.js';
 import { runTests as runEmptyConversationHintTests } from '../unit-tests/empty-conversation-hint-test.js';
 import { runTests as runNoConversationsOnboardingTests } from '../unit-tests/no-conversations-onboarding-test.js';
 import { runTests as runNoProjectOnboardingTests } from '../unit-tests/no-project-onboarding-test.js';
@@ -666,6 +667,7 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:user-send-follow', run: runUserSendFollowTests },
   { name: 'unit:thread-column-landing', run: runThreadColumnLandingTests },
   { name: 'unit:jump-to-attention-reveal', run: runJumpToAttentionRevealTests },
+  { name: 'unit:column-builder', run: runColumnBuilderTests },
   { name: 'unit:empty-conversation-hint', run: runEmptyConversationHintTests },
   { name: 'unit:no-conversations-onboarding', run: runNoConversationsOnboardingTests },
   { name: 'unit:no-project-onboarding', run: runNoProjectOnboardingTests },

@@ -85,7 +85,7 @@ export async function runTests() {
 
     // The user clicks that tile to read the sub-thread's transcript.
     rootCol.selectItem(threadA);
-    assert(rootCol._selectionOrigin === 'user',
+    assert(rootCol.selectionOrigin === 'user',
       'selecting a sub-thread tile must pin the column even though the tile is ' +
       'the last row — it is the last row because the thread is still working');
 
@@ -130,7 +130,7 @@ export async function runTests() {
     doc.transact(() => {
       root.addEvent(createUserMessage('Carry on'));
     }, author);
-    assert(rootCol._selectionOrigin !== 'user',
+    assert(rootCol.selectionOrigin !== 'user',
       'a new user message should clear the pin (rule 3)');
 
     conversation.llmState._handleProcessingStateChange(conversation.id,

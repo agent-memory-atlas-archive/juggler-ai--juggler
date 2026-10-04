@@ -2690,3 +2690,5 @@ class Composer extends HTMLElement {
 }
 
 customElements.define('composer-box', Composer);
+
+export default Composer;

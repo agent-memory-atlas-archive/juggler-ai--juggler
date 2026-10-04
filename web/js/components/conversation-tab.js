@@ -5,27 +5,22 @@
 /**
  * @typedef {import('../model/conversation.js').default} Conversation
  * @typedef {import('../utils/column-selection.js').ColumnChainEntry} ColumnChainEntry
+ * @typedef {import('./conversation-area.js').default} ConversationArea
  */
 
 import { isThreadMessage } from '../../sdk/lib/message.js';
-import { createMessageThread } from '../model/message-thread.js';
 import { findFirstPendingApprovalId } from '../model/thread-navigation.js';
 import { ColumnSelectionState } from '../utils/column-selection.js';
 import { rootFontSizePx, columnScrollDelta } from '../utils/column-resize.js';
 import { isToolGroupingEnabled, TOOL_GROUPING_EVENT } from '../utils/tool-grouping-pref.js';
-import { buildDisplayItems, isGroupId, groupMemberIndices, groupRenderKey } from '../utils/item-grouping.js';
+import { buildDisplayItems, isGroupId, groupMemberIndices } from '../utils/item-grouping.js';
 import { isItemSelectable } from '../services/context-item-utilities.js';
 import { recordTape } from '../utils/event-tape.js';
 import { SHEET_QUERY } from '../utils/popup-surface.js';
 import keyShortcutManager from '../services/key-shortcut-manager.js';
 import JugglerElement from './juggler-element.js';
 import { handleEscapeKey } from '../services/escape-behaviour.js';
-// Columns are created via createElement('conversation-area' | 'properties-panel')
-// in _buildConversationColumn. Import the defining modules so the custom elements
-// are registered before this component ever instantiates one (otherwise an
-// un-upgraded element has no setMessageThread/etc. method).
-import './conversation-area.js';
-import './properties-panel.js';
+import { ColumnBuilder, asArea, asPanel } from './column-builder.js';
 
 /**
  * Fired on `document` when the thread the user is reading changes, carrying
@@ -34,12 +29,6 @@ import './properties-panel.js';
  * conversation gets that the focused thread has moved.
  */
 export const THREAD_FOCUS_CHANGED = 'juggler:thread-focus-changed';
-
-/** Properties-panel content render debounce, once selections are churning. */
-const PROPS_RENDER_DEBOUNCE_MS = 150;
-
-/** Selection stillness after which the next change renders on the leading edge. */
-const PROPS_RENDER_IDLE_MS = 1000;
 
 /**
  * How much of the column it moved past a column-level scroll leaves showing, in
@@ -137,8 +126,8 @@ class ConversationTab extends JugglerElement {
     /** @type {boolean} @private - Whether the document keydown listener is live (see _setupKeyboardNavigation) */
     this._keyboardNavWired = false;
 
-    /** @type {number} @private - Date.now() of the last properties-panel selection change (see _buildPropertiesColumn) */
-    this._propsLastChangeTime = 0;
+    /** @type {ColumnBuilder} @private - Builds the columns, and remembers what it last rendered into each */
+    this._builder = new ColumnBuilder();
   }
 
   connectedCallback() {
@@ -172,14 +161,12 @@ class ConversationTab extends JugglerElement {
     const enabled = isToolGroupingEnabled();
 
     for (let i = 0; i < this._columns.length; i++) {
-      const col = /** @type {any} */ (this._columns[i]);
-      if (col.tagName !== 'CONVERSATION-AREA') continue;
+      const col = asArea(this._columns[i]);
+      if (!col) continue;
 
       const selectedId = this._selection.selections[i];
       if (selectedId) {
-        const items = col._isGroupColumn
-          ? (col._groupItems ?? [])
-          : (col.getMessageThread()?.items ?? []);
+        const items = col.listedItems;
         let nextId = selectedId;
         if (enabled) {
           const { memberToGroup } = buildDisplayItems(items, { enabled: true });
@@ -194,12 +181,12 @@ class ConversationTab extends JugglerElement {
           // shape, so drop them rather than resolve them against the wrong list.
           this._selection.selections.length = i + 1;
         }
-        col._localSelectedItemId = this._selection.selections[i] ?? null;
+        col.presetSelectedItemId(this._selection.selections[i] ?? null);
       }
 
       // The rendered-item key is a function of what was listed, which is exactly
-      // what changed — clear it so the column repaints.
-      col._renderedItemKey = null;
+      // what changed — forget it so the column repaints.
+      this._builder.invalidate(col);
     }
 
     this._rebuildColumns(false);
@@ -219,9 +206,7 @@ class ConversationTab extends JugglerElement {
     this._selection.resetSelections();
 
     // Reset the first column's scroll restore flag
-    if (this._columns[0] && typeof /** @type {any} */ (this._columns[0]).resetScrollRestoreFlag === 'function') {
-      /** @type {any} */ (this._columns[0]).resetScrollRestoreFlag();
-    }
+    asArea(this._columns[0])?.resetScrollRestoreFlag();
 
     // Give conversation reference to this tab
     conversation.setTabElement(this);
@@ -268,10 +253,11 @@ class ConversationTab extends JugglerElement {
           const insertedItemIds = event.data?.insertedItemIds;
           if (insertedItemIds?.length) {
             for (const col of this._columns) {
-              if (col.tagName === 'CONVERSATION-AREA') {
-                const items = /** @type {any} */ (col).getMessageThread()?.items
+              const area = asArea(col);
+              if (area) {
+                const items = area.getMessageThread()?.items
                   ?? this._conversation.rootItems;
-                /** @type {any} */ (col).onItemsInserted(insertedItemIds, items);
+                area.onItemsInserted(insertedItemIds, items);
               }
             }
           }
@@ -343,10 +329,10 @@ class ConversationTab extends JugglerElement {
 
   /**
    * Get the root conversation area element (column 0)
-   * @returns {HTMLElement|null} The root conversation area element
+   * @returns {ConversationArea|null} The root conversation area element
    */
   getConversationArea() {
-    return this._columns[0] || null;
+    return asArea(this._columns[0]);
   }
 
   /**
@@ -354,9 +340,7 @@ class ConversationTab extends JugglerElement {
    */
   updateAllFooters() {
     for (const col of this._columns) {
-      if (col.tagName === 'CONVERSATION-AREA' && 'updateFooter' in col) {
-        (/** @type {any} */ (col)).updateFooter();
-      }
+      asArea(col)?.updateFooter();
     }
   }
 
@@ -370,8 +354,7 @@ class ConversationTab extends JugglerElement {
   syncWithStatus(activeThreadId = null) {
     if (activeThreadId !== null && activeThreadId !== undefined) {
       const alreadyOpen = this._columns.some(
-        col => col.tagName === 'CONVERSATION-AREA' &&
-        /** @type {any} */ (col).getMessageThread?.()?.threadItemId === activeThreadId
+        col => asArea(col)?.getMessageThread()?.threadItemId === activeThreadId
       );
       if (!alreadyOpen) {
         this._syncWithConversation();
@@ -385,8 +368,7 @@ class ConversationTab extends JugglerElement {
    * @returns {import('../model/message-thread.js').MessageThread|null} The input column's MessageThread
    */
   getActiveMessageThread() {
-    const col = this._inputColumn();
-    return col ? /** @type {any} */ (col).getMessageThread?.() || null : null;
+    return asArea(this._inputColumn())?.getMessageThread() || null;
   }
 
   /**
@@ -467,10 +449,7 @@ class ConversationTab extends JugglerElement {
      * @param {Element} col - A column.
      * @returns {boolean} Whether it currently offers somewhere to search.
      */
-    const searchable = (col) => {
-      const get = /** @type {any} */ (col)?.getFindTarget;
-      return typeof get === 'function' && !!get.call(col);
-    };
+    const searchable = (col) => !!(asArea(col) ?? asPanel(col))?.getFindTarget();
     const active = /** @type {HTMLElement} */ (this._columns[this._selection.activeColumnIndex]);
     if (active && searchable(active)) return active;
     return /** @type {HTMLElement|null} */ (this._columns.find(searchable) || null);
@@ -492,9 +471,9 @@ class ConversationTab extends JugglerElement {
    */
   getFocusedThreadItemId() {
     for (let i = Math.min(this._selection.activeColumnIndex, this._columns.length - 1); i >= 0; i--) {
-      const col = /** @type {any} */ (this._columns[i]);
-      if (col?.tagName === 'CONVERSATION-AREA') {
-        return col.getMessageThread?.()?.threadItemId ?? null;
+      const col = asArea(this._columns[i]);
+      if (col) {
+        return col.getMessageThread()?.threadItemId ?? null;
       }
     }
     return null;
@@ -745,8 +724,9 @@ class ConversationTab extends JugglerElement {
       this.render();
     }
 
-    if (this._columns[0] && this._conversation) {
-      /** @type {any} */ (this._columns[0]).conversation = this._conversation;
+    const root = asArea(this._columns[0]);
+    if (root && this._conversation) {
+      root.conversation = this._conversation;
     }
 
     const suppressActivationFocus = !!document.querySelector('conversation-bar.tab-list-focused');
@@ -800,9 +780,9 @@ class ConversationTab extends JugglerElement {
   _maybeAutoSelectNextPendingInAllColumns() {
     let didChange = false;
     for (let i = 0; i < this._columns.length; i++) {
-      const col = /** @type {HTMLElement} */ (this._columns[i]); // bounded by i < this._columns.length
-      if (col.tagName !== 'CONVERSATION-AREA') continue;
-      const nextId = /** @type {any} */ (col).getNextPendingApprovalToSelect?.();
+      const col = asArea(this._columns[i]);
+      if (!col) continue;
+      const nextId = col.getNextPendingApprovalToSelect();
       if (!nextId) continue;
       this._selection.selectItem(i, nextId);
       didChange = true;
@@ -849,9 +829,7 @@ class ConversationTab extends JugglerElement {
       return;
     }
     this.revealThread(null);
-    if (typeof /** @type {any} */ (root).scrollToBottom === 'function') {
-      /** @type {any} */ (root).scrollToBottom(true);
-    }
+    asArea(root)?.scrollToBottom(true);
   }
 
   /**
@@ -875,10 +853,10 @@ class ConversationTab extends JugglerElement {
     const run = () => {
       if (!force && this._composerHoldsDraft()) return;
       for (const col of this._columns) {
-        if (col.tagName !== 'CONVERSATION-AREA') continue;
-        const selected = /** @type {any} */ (col).getSelectedElement?.();
-        const confirmation = selected?.querySelector?.('action-confirmation');
-        if (confirmation && typeof confirmation.engage === 'function') {
+        const selected = asArea(col)?.getSelectedElement();
+        if (!selected) continue;
+        const confirmation = selected.querySelector('action-confirmation');
+        if (confirmation) {
           confirmation.engage();
           return;
         }
@@ -906,10 +884,11 @@ class ConversationTab extends JugglerElement {
     this._deferredInsertedItemIds = null;
     if (!this._conversation) return;
     for (const col of this._columns) {
-      if (col.tagName !== 'CONVERSATION-AREA') continue;
-      const items = /** @type {any} */ (col).getMessageThread()?.items
+      const area = asArea(col);
+      if (!area) continue;
+      const items = area.getMessageThread()?.items
         ?? this._conversation.rootItems;
-      /** @type {any} */ (col).onItemsInserted(insertedItemIds, items);
+      area.onItemsInserted(insertedItemIds, items);
     }
   }
 
@@ -922,11 +901,7 @@ class ConversationTab extends JugglerElement {
     // then paint stale/empty text over what was typed. Flushing here keeps the
     // stored draft exactly current, so a re-activation restore (or reload, or a
     // second viewer) always sees the real text.
-    this.querySelectorAll('composer-box').forEach((box) => {
-      if (typeof (/** @type {any} */ (box).flushDraft) === 'function') {
-        /** @type {any} */ (box).flushDraft();
-      }
-    });
+    this.querySelectorAll('composer-box').forEach((box) => box.flushDraft());
 
     // Relinquish focus while the tab is still rendered. WebKit keeps focus on
     // a textarea whose ancestor becomes display:none, so a hidden tab would
@@ -950,8 +925,7 @@ class ConversationTab extends JugglerElement {
     // are persisted above/in the conversation model, so discard hidden columns
     // and recreate them from Yjs on next activation.
     if (this._columns.length > 0) {
-      const root = /** @type {any} */ (this._columns[0]);
-      root.saveScrollPositionImmediately?.();
+      asArea(this._columns[0])?.saveScrollPositionImmediately();
       this._columnContainer?.replaceChildren();
       this._columns = [];
       this._isParked = true;
@@ -1092,6 +1066,7 @@ class ConversationTab extends JugglerElement {
 
       const activeCol = this._columns[this._selection.activeColumnIndex];
       if (!activeCol) return;
+      const activeArea = asArea(activeCol);
 
       // Rule 15 suppression: flag that we're inside keyboard navigation
       // so _rebuildColumns won't steal focus to a sub-thread composer.
@@ -1110,11 +1085,11 @@ class ConversationTab extends JugglerElement {
             // lists its rows — so the delete-button hunt below would find
             // nothing. Backspace on a group tile means what it looks like:
             // delete the rows the tile stands for.
-            if (activeCol.tagName === 'CONVERSATION-AREA') {
-              const groupId = /** @type {any} */ (activeCol).getSelectedItemId?.();
-              if (isGroupId(groupId)) {
+            if (activeArea) {
+              const groupId = activeArea.getSelectedItemId();
+              if (groupId && isGroupId(groupId)) {
                 e.preventDefault();
-                this._deleteGroup(activeCol, groupId);
+                this._deleteGroup(activeArea, groupId);
                 break;
               }
             }
@@ -1132,7 +1107,7 @@ class ConversationTab extends JugglerElement {
             // the button on screen can still be the previous item's. Acting on
             // it would delete a row the user is not pointing at. Bring the
             // panel up to the selection before reading anything off it.
-            this._flushPropertiesRender(propsPanel);
+            this._builder.flushPropertiesRender(propsPanel);
             const deleteBtn = /** @type {HTMLElement|null} */ (propsPanel?.querySelector('.properties-panel-btn.danger'));
             if (deleteBtn) {
               e.preventDefault();
@@ -1141,23 +1116,23 @@ class ConversationTab extends JugglerElement {
             break;
           }
           case 'ArrowDown':
-            if (activeCol.tagName !== 'CONVERSATION-AREA') break;
+            if (!activeArea) break;
             e.preventDefault();
             this._selection.markManualInteraction();
             if (e.altKey) {
-              /** @type {any} */ (activeCol).selectNextUserMessage();
+              activeArea.selectNextUserMessage();
             } else {
-              /** @type {any} */ (activeCol).selectNextItem();
+              activeArea.selectNextItem();
             }
             break;
           case 'ArrowUp':
-            if (activeCol.tagName !== 'CONVERSATION-AREA') break;
+            if (!activeArea) break;
             e.preventDefault();
             this._selection.markManualInteraction();
             if (e.altKey) {
-              /** @type {any} */ (activeCol).selectPreviousUserMessage();
+              activeArea.selectPreviousUserMessage();
             } else {
-              /** @type {any} */ (activeCol).selectPreviousItem();
+              activeArea.selectPreviousItem();
             }
             break;
           case 'ArrowRight':
@@ -1177,8 +1152,8 @@ class ConversationTab extends JugglerElement {
             }
             break;
           case 'Enter': {
-            if (activeCol.tagName !== 'CONVERSATION-AREA') break;
-            const selectedItem = /** @type {any} */ (activeCol).getSelectedElement?.();
+            if (!activeArea) break;
+            const selectedItem = activeArea.getSelectedElement();
             if (selectedItem) {
               const confirmation = selectedItem.querySelector('action-confirmation');
               if (confirmation) {
@@ -1209,16 +1184,13 @@ class ConversationTab extends JugglerElement {
             // ISN'T in the textarea (the early TEXTAREA/INPUT return above), so
             // it covers Escape from an empty conversation where the box never
             // took focus.
-            const focusedThreadId = (activeCol.tagName === 'CONVERSATION-AREA'
-              && typeof (/** @type {any} */ (activeCol).getMessageThread) === 'function')
-              ? (/** @type {any} */ (activeCol).getMessageThread()?.threadItemId ?? null)
-              : null;
+            const focusedThreadId = activeArea?.getMessageThread()?.threadItemId ?? null;
             handleEscapeKey(e, {
               focusedThreadId,
               getComposer: () => this.getComposer(),
             });
             // Rule 17: escape while navigating the conversation-area → typing mode.
-            if (activeCol.tagName === 'CONVERSATION-AREA') this._focusInput();
+            if (activeArea) this._focusInput();
             break;
           }
         }
@@ -1235,25 +1207,25 @@ class ConversationTab extends JugglerElement {
    * @private
    */
   _navigateRight() {
-    const activeCol = this._columns[this._selection.activeColumnIndex];
-    if (!activeCol || activeCol.tagName !== 'CONVERSATION-AREA') return;
+    const activeCol = asArea(this._columns[this._selection.activeColumnIndex]);
+    if (!activeCol) return;
 
     // Only enter if the selected item opens a column (sub-thread or tool group)
-    if (!/** @type {any} */ (activeCol).isSelectedItemDrillable()) return;
+    if (!activeCol.isSelectedItemDrillable()) return;
 
     // The next column should already exist (created by item-selected event)
     const nextIndex = this._selection.activeColumnIndex + 1;
-    const nextCol = this._columns[nextIndex];
-    if (!nextCol || nextCol.tagName !== 'CONVERSATION-AREA') return;
+    const nextCol = asArea(this._columns[nextIndex]);
+    if (!nextCol) return;
 
     this._selection.navigateRight(nextIndex);
     this._updateActiveColumnVisuals(true);
 
     // Select first item in the new column
     requestAnimationFrame(() => {
-      const ids = /** @type {any} */ (nextCol).getSelectableItemIds();
-      if (ids && ids.length > 0) {
-        /** @type {any} */ (nextCol).selectItem(ids[0]);
+      const ids = nextCol.getSelectableItemIds();
+      if (ids[0] !== undefined) {
+        nextCol.selectItem(ids[0]);
       }
     });
   }
@@ -1447,11 +1419,11 @@ class ConversationTab extends JugglerElement {
    */
   _scrollSelectionsIntoView({ automatic = false } = {}) {
     for (let i = 0; i < this._selection.selections.length; i++) {
-      const col = /** @type {HTMLElement} */ (this._columns[i]); // bounded by i < this._columns.length
+      const col = asArea(this._columns[i]);
       const itemId = this._selection.selections[i];
-      if (col?.tagName !== 'CONVERSATION-AREA' || !itemId) continue;
-      if (automatic && !(/** @type {any} */ (col).isScrolledNearBottom())) continue;
-      /** @type {any} */ (col).scrollItemIntoView(itemId, { automatic });
+      if (!col || !itemId) continue;
+      if (automatic && !col.isScrolledNearBottom()) continue;
+      col.scrollItemIntoView(itemId, { automatic });
     }
   }
 
@@ -1526,8 +1498,9 @@ class ConversationTab extends JugglerElement {
     if (origin === 'auto' && itemId && column) {
       requestAnimationFrame(() => {
         if (this._composerHoldsDraft()) return;
-        const el = column.querySelector(`[message-id="${itemId}"] action-confirmation`);
-        if (el) /** @type {any} */ (el).engage();
+        const el = /** @type {import('./action-confirmation.js').default|null} */ (
+          column.querySelector(`[message-id="${itemId}"] action-confirmation`));
+        if (el) el.engage();
       });
     }
   }
@@ -1621,8 +1594,7 @@ class ConversationTab extends JugglerElement {
 
     // Delete the thread item using the parent message thread stored on the thread column
     const target = /** @type {HTMLElement} */ (e.target);
-    const column = target.closest('conversation-area');
-    const parentThread = column && /** @type {any} */ (column)._parentMessageThread;
+    const parentThread = target.closest('conversation-area')?.parentMessageThread;
     if (parentThread) {
       parentThread.deleteItemById(threadItemId);
     }
@@ -1639,12 +1611,12 @@ class ConversationTab extends JugglerElement {
    * looks like — one update, so one undo step brings the whole run back, rather
    * than N steps that would each restore one row into a tile that no longer
    * matches what the user deleted.
-   * @param {HTMLElement} col - The column the group tile is selected in.
+   * @param {ConversationArea} col - The column the group tile is selected in.
    * @param {string} groupId - Display id of the group.
    * @private
    */
   _deleteGroup(col, groupId) {
-    const messageThread = /** @type {any} */ (col).getMessageThread?.();
+    const messageThread = col.getMessageThread();
     if (!messageThread) return;
     const items = messageThread.items;
     const indices = groupMemberIndices(items, groupId);
@@ -1795,13 +1767,21 @@ class ConversationTab extends JugglerElement {
       /** @type {HTMLElement[]} */
       const newColumns = [];
 
+      const container = this._columnContainer;
       for (const [i, entry] of chain.entries()) {
+        const existing = this._columns[i];
         if (entry.type === 'conversation') {
-          newColumns.push(this._buildConversationColumn(i, entry, conversation, session, newColumns));
+          newColumns.push(this._builder.conversationColumn({
+            container, existing, index: i, entry, conversation, session,
+            previous: newColumns[i - 1],
+            selectedItemId: this._selection.selections[i] || null,
+          }));
         } else if (entry.type === 'properties') {
-          newColumns.push(this._buildPropertiesColumn(i, entry, conversation, chain));
+          newColumns.push(this._builder.propertiesColumn({
+            container, existing, entry, parentEntry: chain[i - 1], conversation,
+          }));
         } else if (entry.type === 'transaction') {
-          newColumns.push(this._buildTransactionColumn(i, entry, conversation));
+          newColumns.push(this._builder.transactionColumn({ container, existing, entry, conversation }));
         }
       }
 
@@ -1864,234 +1844,6 @@ class ConversationTab extends JugglerElement {
   }
 
   /**
-   * Build (or reuse) the conversation-area column for chain entry `i`.
-   * @param {number} i
-   * @param {any} entry
-   * @param {any} conversation
-   * @param {any} session
-   * @param {HTMLElement[]} newColumns
-   * @returns {HTMLElement} The conversation-area column element.
-   * @private
-   */
-  _buildConversationColumn(i, entry, conversation, session, newColumns) {
-    const existingCol = this._columns[i];
-    // Need a conversation-area column
-    let col;
-    if (existingCol && existingCol.tagName === 'CONVERSATION-AREA') {
-      col = existingCol;
-    } else {
-      if (existingCol) existingCol.remove();
-      col = document.createElement('conversation-area');
-      if (i > 0) col.classList.add('thread-column');
-      /** @type {any} */ (this._columnContainer).appendChild(col);
-    }
-
-    // A group column shows a subset of the PARENT column's rows, so it shares
-    // the parent's message thread outright: approvals, deletes, permissions and
-    // context lookups inside it are the same operations they'd be one column to
-    // the left. Only the list of rows differs.
-    const messageThread = entry.groupId
-      ? /** @type {any} */ (newColumns[i - 1])?.getMessageThread?.()
-      : (i === 0)
-        ? conversation.rootMessageThread
-        : createMessageThread(conversation, entry.container, entry.threadItemId);
-
-    // Never re-fold inside a group column — the user opened it to see the rows.
-    // Set before the thread: setMessageThread configures the footer, which shows
-    // no thread-level controls or token meter in a group column.
-    /** @type {any} */ (col)._isGroupColumn = !!entry.groupId;
-    /** @type {any} */ (col)._groupItems = entry.groupId ? (entry.groupItems || []) : null;
-
-    /** @type {any} */ (col).setMessageThread(messageThread);
-    /** @type {any} */ (col).conversation = conversation;
-
-    // Pre-sync selection BEFORE renderFromItems so a stale _localSelectedItemId
-    // (from a thread this column previously displayed) doesn't trigger
-    // clearSelection and a re-entrant _rebuildColumns call.
-    /** @type {any} */ (col)._localSelectedItemId = this._selection.selections[i] || null;
-
-    if (entry.groupId) {
-      // Group column: the folded rows, in order. No thread context (it isn't a
-      // thread) and no header — the rows carry their own identity.
-      /** @type {any} */ (col).setThreadContext?.(null);
-      /** @type {any} */ (col).hideThreadHeader?.();
-      const groupItems = entry.groupItems || [];
-      const groupItemKey = groupRenderKey(entry.groupId, groupItems);
-      if (/** @type {any} */ (col)._renderedItemKey !== groupItemKey) {
-        /** @type {any} */ (col)._renderedItemKey = groupItemKey;
-        /** @type {any} */ (col).renderFromItems([...groupItems]);
-      }
-    } else {
-      if (i === 0) {
-        // Root column
-        /** @type {any} */ (col).setThreadContext?.(null);
-        /** @type {any} */ (col).hideThreadHeader?.();
-      } else {
-        // Thread column
-        /** @type {any} */ (col).setThreadContext?.(entry.threadYMap || null);
-      }
-
-      const { items, key } = messageThread.renderSnapshot();
-      if (/** @type {any} */ (col)._renderedItemKey !== key) {
-        /** @type {any} */ (col)._renderedItemKey = key;
-        /** @type {any} */ (col).renderFromItems(items);
-      }
-
-      // Show thread header with parent message thread for delete operations
-      if (i > 0 && entry.threadYMap) {
-        const goal = messageThread.goal;
-        const parentMessageThread = (i === 1)
-          ? conversation.rootMessageThread
-          : newColumns[i - 1] && /** @type {any} */ (newColumns[i - 1]).getMessageThread?.();
-        /** @type {any} */ (col).showThreadHeader?.(goal, entry.threadYMap, parentMessageThread, entry.viewItemId);
-      }
-    }
-
-    // Restore scroll after render
-    window.requestAnimationFrame(() => {
-      // @ts-ignore
-      col.restoreScrollPosition?.();
-    });
-
-    // Set session/conversation on composer-box
-    const composer = col.querySelector('composer-box');
-    if (composer) {
-      if (session) {
-        // @ts-ignore
-        composer.setSession(session);
-      }
-      // @ts-ignore
-      composer.setConversation(conversation);
-      // @ts-ignore
-      composer.setMessageThread(messageThread);
-    }
-
-    return col;
-  }
-
-  /**
-   * Build (or reuse) the properties-panel column for chain entry `i`.
-   * @param {number} i
-   * @param {any} entry
-   * @param {any} conversation
-   * @param {any[]} chain
-   * @returns {HTMLElement} The properties-panel column element.
-   * @private
-   */
-  _buildPropertiesColumn(i, entry, conversation, chain) {
-    const existingCol = this._columns[i];
-    // Need a properties-panel column
-    let col;
-    if (existingCol && existingCol.tagName === 'PROPERTIES-PANEL') {
-      col = existingCol;
-    } else {
-      if (existingCol) existingCol.remove();
-      col = document.createElement('properties-panel');
-      /** @type {any} */ (this._columnContainer).appendChild(col);
-    }
-
-    // Debounce properties-panel content rendering so rapid arrow-key
-    // navigation doesn't pay for markdown parsing / syntax highlighting
-    // on every item traversed.  The panel DOM element exists immediately
-    // for layout; expensive content waits for the selection to settle.
-    // Skip entirely when the selection + conversation haven't changed.
-    //
-    // The debounce fires on the LEADING edge once the selection has been
-    // still for PROPS_RENDER_IDLE_MS, so an isolated click pays nothing and
-    // only the changes that follow it inside the churn window wait.
-    // Idleness is measured from the last selection change, not from the last
-    // render: under a held arrow key the trailing timer never fires, so a
-    // render clock would read as idle mid-churn and let a full render through
-    // every second — exactly what the debounce exists to prevent.
-    const selectedItemId = entry.selectedItemId;
-    const parentEntry = chain[i - 1];
-    const propInputKey = `${conversation.id}:${selectedItemId}`;
-    if (/** @type {any} */ (col)._renderedInputKey !== propInputKey) {
-      /** @type {any} */ (col)._renderedInputKey = propInputKey;
-      const renderContent = () => {
-        /** @type {any} */ (col)._juggler_pendingRender = null;
-        /** @type {any} */ (col)._juggler_renderTimer = null;
-        /** @type {any} */ (col).setConversation(conversation);
-        const parentMessageThread = parentEntry?.threadItemId
-          ? createMessageThread(conversation, parentEntry.container, parentEntry.threadItemId)
-          : conversation.rootMessageThread;
-        /** @type {any} */ (col).setMessageThread(parentMessageThread);
-        /** @type {any} */ (col).selectItem(selectedItemId);
-        // Render settle: the properties panel paints either with the selection
-        // key change or ~150ms after it. A flake that asserts the panel's
-        // content before this fires shows the assert ts < props-render ts.
-        recordTape('props-render', conversation.id, { selectedItemId });
-      };
-      const now = Date.now();
-      // Rendering needs the shell the panel builds in connectedCallback, so a
-      // column appended to a tab that isn't in the document yet keeps the timer.
-      const wasStill = col.isConnected
-        && now - this._propsLastChangeTime >= PROPS_RENDER_IDLE_MS;
-      this._propsLastChangeTime = now;
-      clearTimeout(/** @type {any} */ (col)._juggler_renderTimer);
-      if (wasStill) {
-        renderContent();
-      } else {
-        /** @type {any} */ (col)._juggler_pendingRender = renderContent;
-        /** @type {any} */ (col)._juggler_renderTimer =
-          setTimeout(renderContent, PROPS_RENDER_DEBOUNCE_MS);
-      }
-    }
-
-    return col;
-  }
-
-  /**
-   * Render a properties panel's deferred content NOW, if it has some waiting.
-   *
-   * The debounce above trades panel freshness for not re-parsing markdown on
-   * every item an arrow key passes over, which is the right trade for content
-   * the user is only reading. It is the wrong trade for anything that ACTS on
-   * what the panel shows: for up to PROPS_RENDER_DEBOUNCE_MS the panel's
-   * buttons still belong to the previously selected item, so a command that
-   * reaches for one gets the wrong item — a delete that silently takes the
-   * row above the highlighted one. Such a command flushes first.
-   * @param {HTMLElement|null} col - A properties-panel column, or null.
-   * @private
-   */
-  _flushPropertiesRender(col) {
-    const pending = /** @type {any} */ (col)?._juggler_pendingRender;
-    if (!pending) return;
-    clearTimeout(/** @type {any} */ (col)._juggler_renderTimer);
-    pending();
-  }
-
-  /**
-   * Build (or reuse) the transaction-mode properties-panel column for chain entry `i`.
-   * @param {number} i
-   * @param {any} entry
-   * @param {any} conversation
-   * @returns {HTMLElement} The transaction-mode properties-panel column element.
-   * @private
-   */
-  _buildTransactionColumn(i, entry, conversation) {
-    const existingCol = this._columns[i];
-    // Need a properties-panel column in transaction mode (renders the
-    // input/output blob for one LLM round-trip — leaf, never nested
-    // further).
-    let col;
-    if (existingCol && existingCol.tagName === 'PROPERTIES-PANEL') {
-      col = existingCol;
-    } else {
-      if (existingCol) existingCol.remove();
-      col = document.createElement('properties-panel');
-      col.classList.add('properties-panel-transaction');
-      /** @type {any} */ (this._columnContainer).appendChild(col);
-    }
-    const txInputKey = `${conversation.id}:${entry.transactionId}`;
-    if (/** @type {any} */ (col)._renderedInputKey !== txInputKey) {
-      /** @type {any} */ (col)._renderedInputKey = txInputKey;
-      /** @type {any} */ (col).setTransaction(conversation.id, entry.transactionId);
-    }
-    return col;
-  }
-
-  /**
    * Set data-hide-input on the columns that shouldn't show an composer-box.
    * @param {any[]} chain
    * @param {HTMLElement[]} newColumns
@@ -2124,7 +1876,7 @@ class ConversationTab extends JugglerElement {
       if (wasHidden) {
         const composer = col.querySelector('composer-box');
         const textarea = composer?.querySelector('textarea');
-        if (textarea) /** @type {any} */ (composer).autoResize(textarea);
+        if (textarea) composer?.autoResize(textarea);
       }
     }
   }
@@ -2136,13 +1888,13 @@ class ConversationTab extends JugglerElement {
    */
   _applySelectionHighlights(newColumns) {
     // Apply selected-item CSS class on each conversation-area column.
-    // _localSelectedItemId was pre-synced before renderFromItems above;
-    // this loop just ensures the visual highlight is applied after render.
+    // The builder preset each selection before rendering the column; this
+    // loop applies the visual highlight now that the render is done.
     for (let i = 0; i < newColumns.length; i++) {
-      const col = /** @type {HTMLElement} */ (newColumns[i]); // bounded by i < newColumns.length
-      if (col.tagName !== 'CONVERSATION-AREA') continue;
+      const col = asArea(newColumns[i]);
+      if (!col) continue;
       const selectedId = this._selection.selections[i] || null;
-      /** @type {any} */ (col).applySelectedClass(selectedId);
+      col.applySelectedClass(selectedId);
     }
   }
 
@@ -2273,9 +2025,10 @@ class ConversationTab extends JugglerElement {
    * @private
    */
   _hasReaderInAnyColumn() {
-    return this._columns.some(col => col.tagName === 'CONVERSATION-AREA' &&
-      (/** @type {any} */ (col)._selectionOrigin === 'user'
-        || !/** @type {any} */ (col).isScrolledNearBottom()));
+    return this._columns.some((col) => {
+      const area = asArea(col);
+      return !!area && (area.selectionOrigin === 'user' || !area.isScrolledNearBottom());
+    });
   }
 
   /**
@@ -2295,14 +2048,12 @@ class ConversationTab extends JugglerElement {
    */
   _ensureThreadColumnSelections() {
     for (const col of this._columns) {
-      if (col.tagName === 'CONVERSATION-AREA' && col.classList.contains('thread-column')) {
-        const threadCol = /** @type {any} */ (col);
-        if (!threadCol._localSelectedItemId && threadCol._selectionOrigin !== 'user') {
+      const threadCol = asArea(col);
+      if (threadCol && threadCol.classList.contains('thread-column')) {
+        if (!threadCol.getSelectedItemId() && threadCol.selectionOrigin !== 'user') {
           // A group column lists only its folded rows; deriving from the whole
           // (shared) thread would nominate items it doesn't show.
-          const items = threadCol._isGroupColumn
-            ? (threadCol._groupItems ?? [])
-            : (threadCol.getMessageThread()?.items ?? []);
+          const items = threadCol.listedItems;
           if (items.length > 0) {
             const itemIds = items.map(/** @type {(i: any) => string|undefined} */ (i) => i?.get?.('itemId')).filter(Boolean);
             threadCol.onItemsInserted(/** @type {string[]} */ (itemIds), items);

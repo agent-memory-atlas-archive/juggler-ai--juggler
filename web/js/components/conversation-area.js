@@ -217,6 +217,8 @@ class ConversationArea extends HTMLElement {
     this._groupItems = null;
     /** @type {Map<string, string>} @private - itemId of a folded tool row → display id of the group standing in for it */
     this._memberToGroup = new Map();
+    /** @type {import('../model/message-thread.js').MessageThread|null} @private - The thread holding this column's thread item, set by showThreadHeader and left in place when the header hides */
+    this._parentMessageThread = null;
     /** @type {(() => void)|null} @private - Unsubscribe from the session feed the workspace banner rides, held alongside the Yjs observers and torn down with them */
     this._unsubscribeSession = null;
   }
@@ -361,6 +363,69 @@ class ConversationArea extends HTMLElement {
    */
   getMessageThread() {
     return this._messageThread;
+  }
+
+  /**
+   * Make this column a group column listing `items`, or (null) an ordinary
+   * column listing its thread. A group column shows a folded run of tool rows
+   * and never re-folds them: the user opened it to see the rows.
+   *
+   * Call it before {@link setMessageThread}, which configures the footer from
+   * it: a group column's footer shows no thread-level controls or token meter.
+   * @param {any[]|null} items - The folded rows, or null for a thread column.
+   */
+  setGroupItems(items) {
+    this._isGroupColumn = items !== null;
+    this._groupItems = items;
+  }
+
+  /** @returns {boolean} True when this column lists a group's rows rather than a thread. */
+  get isGroupColumn() {
+    return this._isGroupColumn;
+  }
+
+  /**
+   * The rows this column lists: a group column's folded rows, otherwise its
+   * thread's items. A group column shares its thread with the column to its
+   * left, so the thread's items are NOT what it shows.
+   * @returns {any[]} The listed rows (empty before a thread is set).
+   */
+  get listedItems() {
+    return this._isGroupColumn
+      ? (this._groupItems ?? [])
+      : (this._messageThread?.items ?? []);
+  }
+
+  /**
+   * Record which item is selected without applying it: no event, no highlight,
+   * no scroll. The owning tab calls this while it rebuilds the columns, before
+   * {@link renderFromItems}, so that the render finds the selection it is about
+   * to show. A stale id left over from a thread this column showed before would
+   * otherwise make the render clear the selection, and that path re-enters the
+   * rebuild. {@link applySelectedClass} applies it once the render is done.
+   * @param {string|null} itemId - The selected item, or null for none.
+   */
+  presetSelectedItemId(itemId) {
+    this._localSelectedItemId = itemId;
+  }
+
+  /**
+   * Who made the current selection: 'user' while the reader holds it (rule 4),
+   * 'auto' for one this column made itself, null for none.
+   * @returns {'user'|'auto'|null} The selection's origin.
+   */
+  get selectionOrigin() {
+    return this._selectionOrigin;
+  }
+
+  /**
+   * The thread holding this column's thread item, which is where that item is
+   * deleted from. Set by {@link showThreadHeader}, so it is only meaningful
+   * while the header shows: hiding the header leaves the last one in place.
+   * @returns {import('../model/message-thread.js').MessageThread|null} The parent thread.
+   */
+  get parentMessageThread() {
+    return this._parentMessageThread;
   }
 
   /**
@@ -1544,10 +1609,11 @@ class ConversationArea extends HTMLElement {
   // in those two module docs. What stays here are the entry points other files
   // call.
   //
-  // The underscore-prefixed delegates below are not private in practice:
-  // conversation-tab reaches into them to apply a selection made during a
-  // column rebuild without re-entering the event path, and the browser tests
-  // drive _selectItem directly.
+  // The companion modules are this class's own implementation, split across
+  // files, and they read its private fields freely. Nothing else does. The
+  // owning tab drives a column through the methods and accessors declared
+  // public here, and the type checker holds it to that (`@private` is enforced
+  // on the column the tab holds).
   // ────────────────────────────────────────────────────────────────
 
   /**
@@ -1580,8 +1646,9 @@ class ConversationArea extends HTMLElement {
   }
 
   /**
+   * Highlight `selectedId` as this column's selected row. The tab calls it
+   * after a rebuild, once {@link presetSelectedItemId}'s selection has rendered.
    * @param {string|null} selectedId
-   * @private
    */
   applySelectedClass(selectedId) {
     selection.applySelectedClass(this, selectedId);
@@ -1591,7 +1658,6 @@ class ConversationArea extends HTMLElement {
    * @param {string} itemId
    * @param {{smooth?: boolean, automatic?: boolean}} [opts] - See
    *   conversation-area-scroll.scrollItemIntoView.
-   * @private
    */
   scrollItemIntoView(itemId, opts = {}) {
     scroll.scrollItemIntoView(this, itemId, opts);
@@ -2056,7 +2122,7 @@ class ConversationArea extends HTMLElement {
     const myThreadId = this._messageThread?.threadItemId || null;
     const myLiveMessage = liveMessageForThread(live, myThreadId);
     // A group column is a SLICE of its parent thread: it shares the parent's
-    // message thread outright (conversation-tab._buildConversationColumn), so
+    // message thread outright (ColumnBuilder.conversationColumn), so
     // every thread-level signal below matches in EVERY group column of a busy
     // thread — including runs that finished long ago. Scope those signals to the
     // rows this column actually shows, so only the run holding the live work
@@ -2266,3 +2332,5 @@ class ConversationArea extends HTMLElement {
 }
 
 customElements.define('conversation-area', ConversationArea);
+
+export default ConversationArea;

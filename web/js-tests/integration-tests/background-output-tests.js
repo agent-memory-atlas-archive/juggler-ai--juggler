@@ -106,7 +106,7 @@ export const backgroundOutputInPanelTest = {
 
     const area = /** @type {any} */ (document.querySelector('conversation-area'));
     if (!area || typeof area._selectItem !== 'function') return; // headless — no UI to drive
-    area._selectItem(action.get('itemId'), 'user');
+    area.selectItem(action.get('itemId'));
 
     // The panel render is debounced and the output section polls on an interval.
     const output = await pollFor(() => {
@@ -179,7 +179,7 @@ export const backgroundStopFromPanelTest = {
 
     const area = /** @type {any} */ (document.querySelector('conversation-area'));
     if (!area || typeof area._selectItem !== 'function') return; // headless — no UI to drive
-    area._selectItem(action.get('itemId'), 'user');
+    area.selectItem(action.get('itemId'));
 
     // The button appears only once a poll has reported the task running, so a
     // task that ended before the panel opened never offers a pointless Stop.

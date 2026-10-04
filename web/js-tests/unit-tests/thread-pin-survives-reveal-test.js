@@ -133,7 +133,7 @@ export async function runTests() {
 
     // The reader clicks the tile to read the sub-thread's transcript.
     rootCol.selectItem(threadA);
-    assert(rootCol._selectionOrigin === 'user',
+    assert(rootCol.selectionOrigin === 'user',
       'test setup: selecting a sub-thread tile must pin the column (rule A ' +
       'exempts a thread tile from re-arming on the tail)');
     assert(Math.abs(list.scrollTop) < 4,
@@ -173,7 +173,7 @@ export async function runTests() {
       `a column with a pinned row must not follow its conversation's end: the ` +
       `tile the reader selected was carried ${tileOverhang()}px above the ` +
       `viewport, where rule C demotes its pin after three seconds ` +
-      `[origin=${rootCol._selectionOrigin} scrollTop=${list.scrollTop}]`);
+      `[origin=${rootCol.selectionOrigin} scrollTop=${list.scrollTop}]`);
 
     assert(rootCol.getSelectedItemId() === threadA,
       `items arriving in the parent must not displace the sub-thread the ` +
@@ -183,7 +183,7 @@ export async function runTests() {
     // the stealing starts, so wait it out and then deliver another item.
     await sleep(DEMOTION_WINDOW_MS);
 
-    assert(rootCol._selectionOrigin === 'user',
+    assert(rootCol.selectionOrigin === 'user',
       'the pin must still be held after rule C\'s offscreen window: nothing ' +
       'but the reader may retire it, and the reader has not touched anything');
 

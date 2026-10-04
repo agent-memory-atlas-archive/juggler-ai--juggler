@@ -55,7 +55,7 @@ function settle() {
 /**
  * Let the properties panel paint. Its content render is debounced by 150ms so
  * that walking items with the arrow keys doesn't re-parse markdown per keypress
- * (conversation-tab `_buildPropertiesColumn`), and the Delete button arrives
+ * (`ColumnBuilder.propertiesColumn`), and the Delete button arrives
  * with that content.
  * @returns {Promise<void>} Resolves once the panel has rendered.
  */
