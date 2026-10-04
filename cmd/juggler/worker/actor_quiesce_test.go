@@ -5,6 +5,7 @@
 package worker
 
 import (
+	"runtime"
 	"testing"
 	"time"
 )
@@ -47,8 +48,22 @@ func (w *ConversationWorker) quiesce(t testing.TB) {
 			return
 		}
 		if !r.serveSchedulerEvent(deadline.C) {
-			t.Fatalf("quiesce: a turn was still live after %v: %d live run(s)", quiesceTimeout, len(r.liveRuns()))
+			t.Fatalf("quiesce: a turn was still live after %v: %d live run(s)\n%s",
+				quiesceTimeout, len(r.liveRuns()), allGoroutineStacks())
 		}
+	}
+}
+
+// allGoroutineStacks returns every goroutine's stack. A turn still live at the
+// deadline is parked somewhere, and its stack is the only record of where.
+func allGoroutineStacks() []byte {
+	buf := make([]byte, 1<<20)
+	for {
+		n := runtime.Stack(buf, true)
+		if n < len(buf) {
+			return buf[:n]
+		}
+		buf = make([]byte, 2*len(buf))
 	}
 }
 

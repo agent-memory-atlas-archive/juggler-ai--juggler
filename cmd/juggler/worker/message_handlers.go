@@ -322,10 +322,19 @@ func (r *run) handleSendMessage(payload json.RawMessage) {
 	// asked to lift.
 	r.dropPoliteStopsCovering(msg.ThreadItemID)
 
+	// The thread this send writes into, passed to every write below. The run this
+	// handler executes on is the ambient one every handler shares, so the
+	// destination is a value here rather than a re-pointing of that run. A thread
+	// that does not exist is reported further down, once the send has passed the
+	// checks ahead of that point.
+	dest, destFound := r.resolveThread(msg.ThreadItemID)
+
 	// Guard: empty message (no text AND no attachments) with no incomplete
-	// tools = nothing to do. An explicit skills-only send is the exception — it
-	// carries no text but must still load the chosen skills (handled below).
-	if input.isEmpty() && !msg.IsContinuation && !r.hasIncompleteTools() && len(skillsToLoad) == 0 {
+	// tools in the target thread = nothing to do. An explicit skills-only send is
+	// the exception — it carries no text but must still load the chosen skills
+	// (handled below).
+	toolsOutstanding := destFound && r.hasIncompleteToolsIn(dest)
+	if input.isEmpty() && !msg.IsContinuation && !toolsOutstanding && len(skillsToLoad) == 0 {
 		return
 	}
 
@@ -355,33 +364,14 @@ func (r *run) handleSendMessage(payload json.RawMessage) {
 	// undo/redo history navigation.
 	r.suppressReconcileAfterHistoryNavUntilMs = 0
 
-	// Set thread context for this request. Validate the target thread BEFORE
-	// mutating r.t.thread, so an early return (missing items array) can't leave
-	// r.t.thread pointing at a half-set thread from this request.
-	//
-	// Scoped to this intake and restored on return, the same discipline
-	// createThread uses for its parent switch: the gate above admits a message for
-	// an idle thread while a run streams on another one, and that run's own
-	// destination must survive an intake arriving mid-stream.
-	//
 	// A thread carrying a result is NOT refused. A result is the thread's current
 	// summary, not a terminal state: a thread is running or it is stopped, and a
 	// stopped thread accepts a message and runs again. This is the same property
 	// a parent LLM relies on to invoke a subthread more than once, so the human
 	// path and the delegation path are one mechanism.
-	prevThread := r.t.thread
-	defer func() { r.t.thread = prevThread }()
-	if msg.ThreadItemID != "" {
-		itemsArray := r.doc.GetThreadItemsArray(msg.ThreadItemID)
-		if itemsArray == nil {
-			r.sendError(fmt.Sprintf("Thread item %s not found", msg.ThreadItemID), "")
-			return
-		}
-		r.t.thread.itemID = msg.ThreadItemID
-		r.t.thread.itemsArray = itemsArray
-	} else {
-		r.t.thread.itemID = ""
-		r.t.thread.itemsArray = nil
+	if !destFound {
+		r.sendError(fmt.Sprintf("Thread item %s not found", msg.ThreadItemID), "")
+		return
 	}
 
 	// Add user message to doc before signaling the reducer.
@@ -411,14 +401,14 @@ func (r *run) handleSendMessage(payload json.RawMessage) {
 		// message instead of stranding them for the next boundary to promote out
 		// of order. Harmless when the queue is empty.
 		r.promotePendingItems(msg.ThreadItemID)
-		r.addUserMessage(input)
+		r.addUserMessageTo(dest, input)
 		// Explicit skill preloads land immediately AFTER the user message, so the
 		// transcript reads user → assistant(skill) → tool_result → reply and the
 		// skill's instructions are in context before the assistant responds. The
 		// reducer rests on these non-terminal tool-actions, drives them to
 		// completion, then dispatches the LLM call (requestLLM below sets the
 		// awaiting_llm activity that authorises that dispatch).
-		r.injectSkillPreloads(skillsToLoad)
+		r.injectSkillPreloadsInto(dest, skillsToLoad)
 		r.batcher.Flush()
 		r.handleItemsChange()
 
@@ -436,7 +426,7 @@ func (r *run) handleSendMessage(payload json.RawMessage) {
 		// activity stays idle and the reducer rests on the completed tool-action
 		// rather than dispatching an empty turn.
 		r.promotePendingItems(msg.ThreadItemID)
-		r.injectSkillPreloads(skillsToLoad)
+		r.injectSkillPreloadsInto(dest, skillsToLoad)
 		r.batcher.Flush()
 		r.handleItemsChange()
 		r.needsReconcile.Store(true)
@@ -448,7 +438,7 @@ func (r *run) handleSendMessage(payload json.RawMessage) {
 	// it as live, then remember the one-shot intent until the reducer claims the
 	// turn. Root continuations have no run records to open.
 	if msg.IsContinuation {
-		r.openThreadContinuationRun(msg.ThreadItemID)
+		r.openThreadContinuationRun(dest)
 		r.markExplicitContinuation(msg.ThreadItemID)
 	}
 
@@ -461,8 +451,8 @@ func (r *run) handleSendMessage(payload json.RawMessage) {
 
 // firstRootUserMessageText returns the text of the conversation's first
 // root-level user message, or "" when there is none yet (or it was image-only).
-// Reads root items directly (not the active-thread target) so it is correct
-// regardless of any thread context left set by a prior message.
+// Reads root items directly rather than the calling run's own thread, so it
+// answers for the conversation whichever run asks.
 //
 // Descends into a compaction summary's folded items, because the conversation's
 // opening message is exactly what compaction folds away first: reading only the

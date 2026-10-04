@@ -120,6 +120,9 @@ func (r *run) popMockResponse(turnID string, sink func(StreamChunk)) (*LLMRespon
 		"stopReason": mock.StopReason,
 		"blocks":     len(mock.Blocks),
 	})
+	if mock.Panic != "" {
+		panic(mock.Panic)
+	}
 
 	response := &LLMResponse{
 		Blocks:                 mock.Blocks,

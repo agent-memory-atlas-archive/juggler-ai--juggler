@@ -450,7 +450,9 @@ func (r *run) tryReconcile() {
 	// Recover gracefully — the next observer tick will retry.
 	defer func() {
 		if panicValue := recover(); panicValue != nil {
-			r.log.Error("[reducer] recovered from panic in tryReconcile: %v\n%s", panicValue, debug.Stack())
+			stack := debug.Stack()
+			r.log.Error("[reducer] recovered from panic in tryReconcile: %v\n%s", panicValue, stack)
+			requireDocLockAfterPanic("a reducer pass", panicValue, stack)
 		}
 	}()
 

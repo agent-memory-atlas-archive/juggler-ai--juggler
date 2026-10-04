@@ -952,7 +952,7 @@ func (w *ConversationWorker) buildMessagesFromItemsWithContexts(items []Conversa
 		// Batch the run of tool-actions belonging to the SAME turn and emit
 		// every tool_use before any tool_result. A turn with parallel tool
 		// calls stores them as consecutive tool-action items sharing one
-		// TransactionID (insertTargetMessage stamps turn.txnID on all items
+		// TransactionID (appendTargetMessage stamps turn.txnID on all items
 		// produced during a round-trip). Interleaving use/result/use/result
 		// makes transformMessages flush a separate assistant message per
 		// tool-result — and DeepSeek's thinking mode only carries

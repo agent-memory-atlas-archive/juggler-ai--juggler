@@ -72,6 +72,24 @@ func (m *watchedMutex) Unlock() {
 	m.mu.Unlock()
 }
 
+// acquirableWithin reports whether the lock can be taken within grace. It takes
+// and releases it at once, holding nothing on return. Polls rather than blocks,
+// because the question is asked after a panic, when the holder may be the very
+// goroutine that is asking, and then a blocking Lock never returns.
+func (m *watchedMutex) acquirableWithin(grace time.Duration) bool {
+	deadline := time.Now().Add(grace)
+	for {
+		if m.mu.TryLock() {
+			m.mu.Unlock()
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 // sample reports the current hold's age and generation. ok is false when the
 // lock is free, or when an acquisition happened mid-read and the pair might be
 // torn — the next tick re-reads a consistent pair, and a genuine stall is

@@ -222,22 +222,13 @@ func (r *run) handleInjectThreadMessage(payload json.RawMessage) {
 		return
 	}
 
-	// Idle: target the thread and add the message, then drive a fresh turn. The
-	// scope is restored on return so an injection admitted while another thread
-	// streams cannot re-point that run (see handleSendMessage).
-	prevThread := r.t.thread
-	defer func() { r.t.thread = prevThread }()
-	r.t.thread.itemID = msg.ThreadItemID
-	if msg.ThreadItemID != "" {
-		itemsArray := r.doc.GetThreadItemsArray(msg.ThreadItemID)
-		if itemsArray == nil {
-			return // thread vanished — drop the event
-		}
-		r.t.thread.itemsArray = itemsArray
-	} else {
-		r.t.thread.itemsArray = nil
+	// Idle: add the message to the thread, then drive a fresh turn. The thread is
+	// passed to the write rather than set on the run (see handleSendMessage).
+	dest, ok := r.resolveThread(msg.ThreadItemID)
+	if !ok {
+		return // thread vanished — drop the event
 	}
-	r.addUserMessage(input)
+	r.addUserMessageTo(dest, input)
 	r.batcher.Flush()
 	r.handleItemsChange()
 

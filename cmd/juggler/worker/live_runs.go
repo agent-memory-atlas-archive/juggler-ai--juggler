@@ -172,16 +172,25 @@ func (w *ConversationWorker) releaseOSActivity() {
 	}
 }
 
-// retireLiveRun drops a finished turn from the registry. Actor goroutine only.
-func (w *ConversationWorker) retireLiveRun(t *turnState) {
+// retireLiveRun drops a finished turn from the registry and returns the thread
+// it was registered for. Actor goroutine only.
+//
+// The registered thread is the turn's identity, and it is fixed when the turn is
+// begun. The turn's own thread context is not fixed: finishStrategyRun clears it
+// as the run settles, so anything filed under the turn's thread after its
+// goroutine has returned must use this answer rather than t.thread.
+func (w *ConversationWorker) retireLiveRun(t *turnState) (threadItemID string) {
 	cur := w.liveRuns()
 	next := make([]liveRunEntry, 0, len(cur))
 	for _, e := range cur {
 		if e.t != t {
 			next = append(next, e)
+		} else {
+			threadItemID = e.threadItemID
 		}
 	}
 	w.liveRunsPtr.Store(&next)
+	return threadItemID
 }
 
 // beginTurn prepares the run a dispatch is about to start on threadItemID: a
@@ -212,6 +221,9 @@ func (r *run) runTurn(tr *run, body func(*run)) {
 	go func() {
 		defer r.retireTurn(tr.t)
 		defer close(tr.t.finished)
+		// Runs first, while the turn is still registered: a panic here is on a
+		// goroutine nothing else recovers, and would end the process.
+		defer r.recoverTurnBackstop(tr)
 		body(tr)
 	}()
 }
@@ -231,8 +243,7 @@ func (w *ConversationWorker) retireTurn(t *turnState) {
 // (see drainReconcile), so this is also the moment it is asked for the pass that
 // settles whatever the turn left behind.
 func (r *run) finishRetiredTurn(t *turnState) {
-	r.retireLiveRun(t)
-	r.turnBoundaries[t.thread.itemID] = boundaryFromTurn(t)
+	r.turnBoundaries[r.retireLiveRun(t)] = boundaryFromTurn(t)
 	if t.completedIdle {
 		r.bumpTurnCounterAtIdle()
 	}

@@ -73,6 +73,9 @@ func (r *run) runStrategyLoop(userText string, isContinuation bool) {
 
 func (r *run) runStrategyLoopWithIntent(userText string, isContinuation, explicitContinuation bool) {
 	defer r.finishStrategyRun()
+	// Deferred second so it runs first: a panicked run is made a failed one
+	// before finishStrategyRun settles it (turn_panic.go).
+	defer r.recoverTurnPanic()
 
 	// Clear any stale streaming state from previous conversation turn
 	r.finalizeStreaming()
@@ -246,7 +249,7 @@ func (r *run) runOneTurn(st *strategyRunState, explicitContinuation bool) turnVe
 	// Whether delegation is actually available is decided at the point of use.
 	r.t.delegatingTools = collectDelegatingTools(tools)
 
-	// txnID identifies this round-trip; insertTargetMessage stamps it onto
+	// txnID identifies this round-trip; appendTargetMessage stamps it onto
 	// every item produced during the call so callers don't plumb it through.
 	txnID := generateTransactionID()
 	r.t.txnID = txnID
@@ -861,9 +864,14 @@ func newUserItem(input UserMessageInput) ConversationItem {
 }
 
 // addUserMessage appends a user message (text + attachments, as one unit) to
-// the current target (root or thread).
+// the run's own thread.
 func (r *run) addUserMessage(input UserMessageInput) {
-	r.appendTargetMessage(newUserItem(input))
+	r.addUserMessageTo(r.t.thread, input)
+}
+
+// addUserMessageTo appends a user message to dest.
+func (r *run) addUserMessageTo(dest threadContext, input UserMessageInput) {
+	r.appendMessageTo(dest, newUserItem(input))
 }
 
 // findUnstampedUserMsgID returns the ItemID of the trailing user message in

@@ -65,15 +65,15 @@ func dedupSkills(names []string) []string {
 	return out
 }
 
-// injectSkillPreloads appends a `skill` tool-action into the current target
-// thread for each name, in order. The caller places it relative to the user
-// message; driveToolActions (triggered by the surrounding handleItemsChange)
-// evaluates, approves, and executes each.
-func (r *run) injectSkillPreloads(names []string) {
+// injectSkillPreloadsInto appends a `skill` tool-action into dest for each name,
+// in order. The caller places it relative to the user message; driveToolActions
+// (triggered by the surrounding handleItemsChange) evaluates, approves, and
+// executes each.
+func (r *run) injectSkillPreloadsInto(dest threadContext, names []string) {
 	for _, name := range names {
 		item := newSkillToolAction(name)
 		r.log.Tool("skill", name)
-		r.appendTargetMessage(item)
+		r.appendMessageTo(dest, item)
 	}
 }
 

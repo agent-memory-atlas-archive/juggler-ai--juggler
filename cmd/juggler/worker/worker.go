@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"runtime/debug"
 	"sync/atomic"
 	"time"
 
@@ -36,8 +37,10 @@ const (
 // the model is still streaming. Empirically a clean balance.
 const SaveDebounceTime = 2 * time.Second
 
-// threadContext holds the execution context for the currently-running thread.
-// Zero value means we are executing in the root conversation scope.
+// threadContext names one items array a write can land in: a thread's nested
+// array, or the root conversation's for the zero value. A turn carries the one it
+// writes to (turnState.thread); a handler that writes somewhere else resolves its
+// own with resolveThread and passes it, rather than re-pointing a turn.
 type threadContext struct {
 	itemID     string
 	itemsArray *ycrdt.YArray
@@ -1135,27 +1138,20 @@ func (r *run) run(ctx context.Context) {
 	}
 }
 
-// recoverWorkerPanic is handleMessage's deferred recover. On panic it marks the
-// active thread (if any) as failed, resets thread context, and sends an error to
-// the UI.
+// recoverWorkerPanic is handleMessage's deferred recover. On panic it logs and
+// reports the error into the root conversation.
+//
+// It settles no thread's run: handleMessage executes on the ambient turn, whose
+// thread is always the root (only beginTurn gives a turn a thread, and it gives
+// it to a fresh one), so there is no sub-thread run here to mark failed.
 func (r *run) recoverWorkerPanic(msgType string) {
 	panicValue := recover()
 	if panicValue == nil {
 		return
 	}
-	r.log.Error("Panic handling message %s: %v", msgType, panicValue)
-
-	// If the panic occurred while in a thread context, settle that thread's open
-	// run as failed so the frontend doesn't get stuck in "active" limbo and
-	// anything parked on the thread stops waiting.
-	if r.t.thread.itemID != "" {
-		r.stampRunOutcome(r.t.thread.itemID, runStatusError, fmt.Sprintf("Thread failed: %v", panicValue))
-	}
-
-	// Reset thread context so the error appears in the root conversation,
-	// not inside the failed thread.
-	r.resetThreadContext()
-
+	stack := debug.Stack()
+	r.log.Error("Panic handling message %s: %v\n%s", msgType, panicValue, stack)
+	requireDocLockAfterPanic("handling message "+msgType, panicValue, stack)
 	r.sendError(fmt.Sprintf("Internal error: %v", panicValue), "")
 }
 
@@ -1641,10 +1637,15 @@ func (r *run) sendError(message, stack string) {
 	r.sendErrorWithData(message, stack, nil)
 }
 
+// sendErrorWithData reports an error into the run's own thread; see sendErrorTo.
 func (r *run) sendErrorWithData(message, stack string, data map[string]any) {
-	summary := extractErrorSummary(message)
+	r.sendErrorTo(r.t.thread, message, stack, data)
+}
 
-	// Add error message to conversation items (visible in UI via Yjs sync)
+// sendErrorTo appends an error item to dest (visible in the UI via Yjs sync)
+// and sends the same error on the wire, with its stack, for logging.
+func (r *run) sendErrorTo(dest threadContext, message, stack string, data map[string]any) {
+	summary := extractErrorSummary(message)
 	msg := ConversationItem{
 		Type:      ItemTypeError,
 		ItemID:    generateItemID(),
@@ -1655,9 +1656,8 @@ func (r *run) sendErrorWithData(message, stack string, data map[string]any) {
 	if data != nil {
 		msg.Data, _ = json.Marshal(data)
 	}
-	r.appendTargetMessage(msg)
+	r.appendMessageTo(dest, msg)
 
-	// Also send as WebSocket message for logging/debugging
 	r.send(ErrorMessage{
 		Type:    "error",
 		Message: message,
@@ -2023,9 +2023,15 @@ func (r *run) hasIncompleteThreads() bool {
 	return false
 }
 
-// hasIncompleteTools returns true if any tool-action in the thread hasn't finished.
+// hasIncompleteTools returns true if any tool-action in the run's own thread
+// hasn't finished.
 func (r *run) hasIncompleteTools() bool {
-	for _, item := range r.getTargetItems() {
+	return r.hasIncompleteToolsIn(r.t.thread)
+}
+
+// hasIncompleteToolsIn returns true if any tool-action in dest hasn't finished.
+func (w *ConversationWorker) hasIncompleteToolsIn(dest threadContext) bool {
+	for _, item := range w.itemsIn(dest) {
 		if item.Type != ItemTypeToolAction {
 			continue
 		}

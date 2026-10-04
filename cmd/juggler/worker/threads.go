@@ -71,9 +71,10 @@ type CreateThreadOptions struct {
 	// agent it seeds, and the cost of overstating it is siblings racing.
 	ReadOnly bool
 
-	// ParentThreadItemID, if non-empty, switches w.turn.thread to that parent
-	// before creating the new thread (used by ExternalDispatch entry points
-	// to scope into a specific parent). Empty means: keep the current scope.
+	// ParentThreadItemID, if non-empty, names the thread the new one is created
+	// in (used by ExternalDispatch entry points to scope into a specific parent).
+	// Empty means the root for an ExternalDispatch, and the calling run's own
+	// thread otherwise.
 	ParentThreadItemID string
 
 	// StrategyID and ModelConfigJSON, when set, override the new thread's
@@ -135,29 +136,18 @@ func (r *run) createThread(opts CreateThreadOptions) (string, error) {
 		}
 	}
 
-	// Optional parent context switch. Restored on return so callers can
-	// dispatch from any current scope. ExternalDispatch with empty parent
-	// also re-roots to root scope for the duration of the call.
-	var prevThread threadContext
-	restoreThread := false
+	// The thread the new one is created in: a named parent; the root, for an
+	// external dispatch that names none; otherwise the calling run's own thread,
+	// which is where a tool-driven creation's tool_use was made.
+	parent := r.t.thread
 	if opts.ParentThreadItemID != "" {
-		prevThread = r.t.thread
-		restoreThread = true
-		r.t.thread.itemID = opts.ParentThreadItemID
-		r.t.thread.itemsArray = r.doc.GetThreadItemsArray(opts.ParentThreadItemID)
-		if r.t.thread.itemsArray == nil {
-			r.t.thread = prevThread
+		named, ok := r.resolveThread(opts.ParentThreadItemID)
+		if !ok {
 			return "", fmt.Errorf("thread item %s not found", opts.ParentThreadItemID)
 		}
+		parent = named
 	} else if opts.ExternalDispatch {
-		prevThread = r.t.thread
-		restoreThread = true
-		r.resetThreadContext()
-	}
-	if restoreThread {
-		defer func() {
-			r.t.thread = prevThread
-		}()
+		parent = threadContext{}
 	}
 
 	if opts.ExternalDispatch {
@@ -199,11 +189,11 @@ func (r *run) createThread(opts CreateThreadOptions) (string, error) {
 	// describe the single invocation they always did.
 	stampsInvocation := !opts.IsContinuation && opts.Prompt != ""
 
-	// Create thread item with nested Y.Array (in the current target array).
-	// Use the tracker (authorID origin) so the insertion is tracked by the
-	// UndoManager and can be undone independently.
-	targetArr := r.getTargetItemsYArray()
-	insertIdx := r.getTargetItemsLength()
+	// Create thread item with nested Y.Array (in the parent's array). Use the
+	// tracker (authorID origin) so the insertion is tracked by the UndoManager and
+	// can be undone independently.
+	targetArr := r.itemsArrayIn(parent)
+	insertIdx := r.itemsLengthIn(parent)
 	nestedItems := r.tracker.InsertThreadIntoArray(targetArr, insertIdx, opts.Goal)
 
 	// Get the thread's itemId and store tool_use coordinates (for LLM-created

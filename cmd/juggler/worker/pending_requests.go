@@ -269,12 +269,11 @@ func (r *run) claimAndDispatchPendingEntry(e pendingEntrySnapshot) {
 	}
 }
 
-// dispatchPendingContinue triggers a continuation turn. Captures items
-// length before so advanceClaimedPendingEntry can detect when the response
-// starts streaming.
+// dispatchPendingContinue triggers a continuation turn. Captures the continued
+// thread's items length before so advanceClaimedPendingEntry can detect when the
+// response starts streaming into it.
 func (r *run) dispatchPendingContinue(e pendingEntrySnapshot) {
-	itemsLen := r.getTargetItemsLength()
-	r.setPendingEntryItemsBefore(e.ownerThreadID, e.id, itemsLen)
+	r.setPendingEntryItemsBefore(e.ownerThreadID, e.id, r.continuedItemsLength(e))
 
 	// Build a synthetic send-message payload and enqueue it on the worker's
 	// own inbound channel. Going through the normal message path keeps the
@@ -291,6 +290,18 @@ func (r *run) dispatchPendingContinue(e pendingEntrySnapshot) {
 		return
 	}
 	r.Send("send-message", payload)
+}
+
+// continuedItemsLength is the length of the items array a continue entry's
+// response lands in: the continued thread's, or the root's when the entry names
+// none. A thread that has gone reads as empty, so its entry never completes on
+// growth that is not its own.
+func (w *ConversationWorker) continuedItemsLength(e pendingEntrySnapshot) int {
+	dest, ok := w.resolveThread(e.continueThreadID)
+	if !ok {
+		return 0
+	}
+	return w.itemsLengthIn(dest)
 }
 
 // advanceClaimedPendingEntry drives a claimed entry toward completion by
@@ -327,8 +338,7 @@ func (r *run) advanceClaimedPendingEntry(e pendingEntrySnapshot) {
 		}
 		r.writePendingEntryCompletedThread(e.ownerThreadID, e.id, e.threadItemID, result)
 	case "continue":
-		curLen := r.getTargetItemsLength()
-		if curLen > e.itemsBefore {
+		if r.continuedItemsLength(e) > e.itemsBefore {
 			r.writePendingEntryCompletedThread(e.ownerThreadID, e.id, "", "")
 		}
 	case "deliverTaskOutput":

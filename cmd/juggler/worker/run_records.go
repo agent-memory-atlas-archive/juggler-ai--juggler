@@ -709,14 +709,14 @@ func openRunMessagesLocked(nested *ycrdt.YArray) []*ycrdt.YMap {
 // stays exactly as it was read.
 //
 // No-op at the root, which has no run records at all.
-func (r *run) openThreadContinuationRun(threadItemID string) {
-	if threadItemID == "" || r.t.thread.itemsArray == nil {
+func (r *run) openThreadContinuationRun(dest threadContext) {
+	if dest.itemsArray == nil {
 		return
 	}
-	if runSettled, hasRuns := runSettlement(r.getTargetItems()); hasRuns && !runSettled {
+	if runSettled, hasRuns := runSettlement(r.itemsIn(dest)); hasRuns && !runSettled {
 		return // a run is already open — this Continue joins it
 	}
-	r.appendTargetMessage(continuationMarker())
+	r.appendMessageTo(dest, continuationMarker())
 }
 
 // lastSettlingItem returns the item that decides how a run ended: the last one
@@ -770,35 +770,6 @@ func resolveRunOutcome(items []ConversationItem, cancelled bool, resultLimit int
 		return runStatusRest, capped, full
 	}
 	return runStatusBarren, runBarrenNote, 0
-}
-
-// stampRunOutcome records an outcome the run itself cannot describe — a panic
-// unwinding the worker — onto the message that started the thread's current
-// run. Reports whether there was an open run to stamp. It writes no summary:
-// the thread's own transcript carries the failure, and passing it off as the
-// thread's result would be a lie the tile then repeats.
-func (w *ConversationWorker) stampRunOutcome(threadItemID, status, result string) bool {
-	if threadItemID == "" {
-		return false
-	}
-	ycrdtMu.Lock()
-	defer ycrdtMu.Unlock()
-	threadYMap := findThreadYMap(w.doc.getItems(), threadItemID)
-	if threadYMap == nil {
-		return false
-	}
-	nested, _ := threadYMap.Get("items").(*ycrdt.YArray)
-	open := openRunMessagesLocked(nested)
-	if len(open) == 0 {
-		return false
-	}
-	w.doc.transactTracked(func(_ *ycrdt.Transaction) {
-		for _, m := range open {
-			m.Set("runStatus", status)
-			m.Set("runResult", result)
-		}
-	})
-	return true
 }
 
 // trailingSessionItemLocked returns the LAST of the parent's items referring to

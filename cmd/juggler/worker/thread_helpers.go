@@ -8,53 +8,96 @@ import (
 	ycrdt "github.com/skyterra/y-crdt"
 )
 
-// resetThreadContext re-roots the worker's active thread scope: subsequent
-// getTarget* / insertTarget* calls address the root conversation, not a
-// sub-thread. Clears both fields together so a stale itemsArray can never
-// outlive a cleared itemID.
+// resetThreadContext re-roots this run's own thread: subsequent getTarget* /
+// appendTargetMessage calls address the root conversation, not a sub-thread.
+// Clears both fields together so a stale itemsArray can never outlive a cleared
+// itemID. Anything filed under the thread a turn was begun for after this runs
+// asks the live-run registry, not t.thread (see retireLiveRun).
 func (r *run) resetThreadContext() {
 	r.t.thread = threadContext{}
 }
 
-// getTargetItems returns items from the thread's nested array when in thread mode,
-// or from the root items array otherwise.
-func (r *run) getTargetItems() []ConversationItem {
-	if r.t.thread.itemsArray != nil {
-		return r.doc.GetItemsFromArray(r.t.thread.itemsArray)
-	}
-	return r.doc.GetItems()
-}
-
-// getTargetItemsLength returns the item count from the thread or root items array.
-func (r *run) getTargetItemsLength() int {
-	if r.t.thread.itemsArray != nil {
-		return r.doc.GetItemsLengthFromArray(r.t.thread.itemsArray)
-	}
-	return r.doc.GetItemsLength()
-}
-
-// appendTargetMessage adds message(s) to the end of the thread or root items
-// array via the OperationTracker (authorID origin) in both cases, so a
-// sub-thread turn's content is captured for undo/redo exactly like a root turn's.
-// Turn boundaries are the single global StopCapturing fired at every turn-idle
-// (worker.go), so a sub-thread run groups per turn the same way root does.
+// The getTarget* / appendTargetMessage / updateTargetItemByID family addresses
+// the run's OWN thread, turnState.thread, which is fixed for a dispatched turn by
+// beginTurn. Each is a one-line spelling of the *In / *To form below with that
+// destination filled in.
 //
-// If a round-trip is in flight (turn.txnID != "") and the caller did not set
-// TransactionID explicitly, the current txn id is stamped onto each item — so
-// every item produced during a round-trip carries it.
+// A handler that writes into some other thread (an intake for an idle thread, a
+// thread created under a named parent) resolves that thread with resolveThread
+// and passes it to the *In / *To form. It never re-points the turn: the turn it
+// runs on is the ambient one, shared by every handler the run loop serves, and a
+// destination parked there has to be saved and restored on every path out of
+// every handler that sets it.
+
+// resolveThread returns the destination for threadItemID: the zero
+// threadContext for the root, the thread's own items array otherwise, and false
+// when no thread has that id.
+func (w *ConversationWorker) resolveThread(threadItemID string) (threadContext, bool) {
+	if threadItemID == "" {
+		return threadContext{}, true
+	}
+	itemsArray := w.doc.GetThreadItemsArray(threadItemID)
+	if itemsArray == nil {
+		return threadContext{}, false
+	}
+	return threadContext{itemID: threadItemID, itemsArray: itemsArray}, true
+}
+
+// itemsIn returns the items of dest: a thread's nested array, or the root's.
+func (w *ConversationWorker) itemsIn(dest threadContext) []ConversationItem {
+	if dest.itemsArray != nil {
+		return w.doc.GetItemsFromArray(dest.itemsArray)
+	}
+	return w.doc.GetItems()
+}
+
+// itemsLengthIn returns the item count of dest.
+func (w *ConversationWorker) itemsLengthIn(dest threadContext) int {
+	if dest.itemsArray != nil {
+		return w.doc.GetItemsLengthFromArray(dest.itemsArray)
+	}
+	return w.doc.GetItemsLength()
+}
+
+// itemsArrayIn returns the raw Y.Array of dest.
+func (w *ConversationWorker) itemsArrayIn(dest threadContext) *ycrdt.YArray {
+	if dest.itemsArray != nil {
+		return dest.itemsArray
+	}
+	return w.doc.getItems()
+}
+
+// appendMessageTo adds message(s) to the end of dest via the OperationTracker
+// (authorID origin) in both cases, so a sub-thread's content is captured for
+// undo/redo exactly like the root's. Turn boundaries are the single global
+// StopCapturing fired at every turn-idle (worker.go), so a sub-thread run groups
+// per turn the same way root does.
+//
+// If a round-trip is in flight on this run (turn.txnID != "") and the caller did
+// not set TransactionID explicitly, the current txn id is stamped onto each
+// item — so every item produced during a round-trip carries it.
 //
 // Appending is the only insert this package does: there is deliberately no
 // insert-at-index spelling, because reading the end position and writing at it
 // are two ycrdtMu holds, and that lock promises only that no two y-crdt calls
 // overlap — never that a sequence of them is atomic. Asking for the end and
 // writing at the end is one question, so it takes one hold.
-func (r *run) appendTargetMessage(msgs ...ConversationItem) {
+func (r *run) appendMessageTo(dest threadContext, msgs ...ConversationItem) {
 	r.stampTxnID(msgs)
-	if r.t.thread.itemsArray != nil {
-		r.tracker.AppendMessageIntoArray(r.t.thread.itemsArray, msgs...)
+	if dest.itemsArray != nil {
+		r.tracker.AppendMessageIntoArray(dest.itemsArray, msgs...)
 	} else {
 		r.tracker.AppendMessage(msgs...)
 	}
+}
+
+// getTargetItems returns the items of the run's own thread.
+func (r *run) getTargetItems() []ConversationItem { return r.itemsIn(r.t.thread) }
+
+// appendTargetMessage appends message(s) to the run's own thread; see
+// appendMessageTo.
+func (r *run) appendTargetMessage(msgs ...ConversationItem) {
+	r.appendMessageTo(r.t.thread, msgs...)
 }
 
 // stampTxnID marks items produced during an in-flight round-trip with its id,
@@ -70,15 +113,10 @@ func (r *run) stampTxnID(msgs []ConversationItem) {
 	}
 }
 
-// getTargetItemsYArray returns the raw Y.Array for the current target (thread or root).
-func (r *run) getTargetItemsYArray() *ycrdt.YArray {
-	if r.t.thread.itemsArray != nil {
-		return r.t.thread.itemsArray
-	}
-	return r.doc.getItems()
-}
+// getTargetItemsYArray returns the raw Y.Array of the run's own thread.
+func (r *run) getTargetItemsYArray() *ycrdt.YArray { return r.itemsArrayIn(r.t.thread) }
 
-// updateTargetItemByID updates an item field in the thread or root items array.
+// updateTargetItemByID updates an item field in the run's own thread.
 func (r *run) updateTargetItemByID(itemID, field string, value any) error {
 	if r.t.thread.itemsArray != nil {
 		return r.doc.UpdateItemByIDInArray(r.t.thread.itemsArray, itemID, field, value)

@@ -10,7 +10,7 @@ import (
 
 // TestSubthreadTurnContentIsUndoable pins that a sub-thread turn's content is
 // captured for undo exactly like a root turn's. The strategy loop appends turn
-// content via insertTargetMessage; in a sub-thread that content used to commit
+// content via appendTargetMessage; in a sub-thread that content used to commit
 // under the untracked origin, so it could never be undone. One undo must remove
 // the whole turn's content while leaving the thread container in place, and redo
 // must restore it.

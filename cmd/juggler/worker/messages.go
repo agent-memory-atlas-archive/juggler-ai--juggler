@@ -871,6 +871,10 @@ type MockResponse struct {
 	// through the same path as a real provider error, so tests can exercise the
 	// strategy loop's error handling deterministically.
 	Error string `json:"error,omitempty"`
+	// Panic, when non-empty, makes this scripted turn panic with that value on
+	// the turn's own goroutine, at the point the provider would be called. Tests
+	// use it to exercise turn panic recovery (turn_panic.go).
+	Panic string `json:"panic,omitempty"`
 }
 
 // ReleaseMockMessage releases a paused mock response. See MockResponse.PauseBeforeReturn.

@@ -14,6 +14,9 @@ of changes; this project follows semantic versioning.
 - Usage meters only redden past pace, and less so early in the window
 - Run through a symlink, juggler still finds the desktop app, so w opens a window
 - Re-mentioning a changed file updates its snapshot instead of adding a second copy
+- A re-invoked sub-agent's elapsed timer starts from zero, not its previous run
+- Strategy SDK's continueConversation into a sub-thread now resolves when that thread answers
+- A crash inside one turn now stops that turn with an error, not the whole app
 
 ## [0.7.4] - 2026-10-02
 

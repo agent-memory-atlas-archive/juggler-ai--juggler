@@ -339,6 +339,10 @@ func TestRetiredTurnBoundariesRemainThreadOwned(t *testing.T) {
 	second.thread.itemID = "thread-b"
 	second.processingStartedAt.Store(202)
 	second.lastProviderNotice = "provider-b"
+	// Registered as beginTurn registers them: the registry entry is what names
+	// the thread a retired turn's boundary belongs to.
+	w.registerLiveRun("thread-a", first)
+	w.registerLiveRun("thread-b", second)
 
 	r.finishRetiredTurn(second)
 	r.finishRetiredTurn(first)
@@ -359,6 +363,48 @@ func TestRetiredTurnBoundariesRemainThreadOwned(t *testing.T) {
 	if got := continuedB.lastProviderNotice; got != "provider-b" {
 		t.Fatalf("thread-b provider notice = %q, want provider-b", got)
 	}
+}
+
+// TestSettledRunFilesItsBoundaryUnderItsOwnThread drives a sub-thread run to
+// settlement through the real dispatch and retire path. finishStrategyRun clears
+// the turn's thread as the run ends, so a boundary keyed by whatever the turn
+// names at retirement is filed under the root: the root's next turn then inherits
+// a sibling's approval edge and notice dedupe, and the thread keeps the boundary
+// of its last parked dispatch, elapsed anchor included, for its next run to start
+// from.
+func TestSettledRunFilesItsBoundaryUnderItsOwnThread(t *testing.T) {
+	w := NewConversationWorker("conv-settled-boundary", "user:test")
+	t.Cleanup(func() { w.doc.Destroy() })
+	w.currentRun().storeState(StateIdle)
+	w.doc.SetMetadata("defaultModelConfig", map[string]any{"provider": "test", "model": "test"})
+
+	child := insertThreadWithOpts(w, threadOpts{goal: "read a", userMessage: "look at a"})
+	w.turn.thread.itemID = child
+	w.turn.thread.itemsArray = w.doc.GetThreadItemsArray(child)
+
+	w.setMockResponses([]MockResponse{
+		{Blocks: []LLMResponseBlock{{Type: "text", Content: "Found it."}}, StopReason: "end_turn"},
+	})
+	feedContextAndTools(t, w)
+	w.driveStrategyLoop(t, "", true)
+
+	if left := w.mock.remaining(); left != 0 {
+		t.Fatalf("the child's turn did not run (%d scripted turns left)", left)
+	}
+	if _, ok := w.turnBoundaries[child]; !ok {
+		t.Errorf("the settled run filed no boundary under its own thread %q", child)
+	}
+	if _, ok := w.turnBoundaries[""]; ok {
+		t.Errorf("a sub-thread run filed its boundary under the root; boundaries: %v", boundaryKeys(w))
+	}
+}
+
+func boundaryKeys(w *ConversationWorker) []string {
+	keys := make([]string, 0, len(w.turnBoundaries))
+	for k := range w.turnBoundaries {
+		keys = append(keys, fmt.Sprintf("%q", k))
+	}
+	return keys
 }
 
 // TestDispatchedTurnRunsOffTheRunLoop pins the arrangement everything else in

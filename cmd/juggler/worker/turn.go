@@ -75,9 +75,12 @@ type turnState struct {
 	// lastProviderNotice deduplicates provider notices for this run.
 	lastProviderNotice string
 
-	// thread is the thread this run writes to — the implicit destination of
-	// getTargetItems, insertTargetMessage and the rest. Zero value means the root
-	// conversation.
+	// thread is the thread this run writes to — the destination getTargetItems,
+	// appendTargetMessage and the rest fill in. Zero value means the root
+	// conversation. Set only by beginTurn, for a dispatched turn, and cleared by
+	// resetThreadContext as the run ends; so the ambient turn's is always the
+	// root. A handler writing into another thread passes that thread instead
+	// (resolveThread, thread_helpers.go).
 	thread threadContext
 
 	// streaming accumulates the current round-trip's text and thinking content.
@@ -96,7 +99,7 @@ type turnState struct {
 	delegatingTools map[string]delegatingTool
 
 	// txnID is the transaction id of the LLM round-trip currently in flight (set
-	// at iteration start, cleared on iteration end). insertTargetMessage stamps
+	// at iteration start, cleared on iteration end). appendMessageTo stamps
 	// this onto every newly inserted item, so any item produced during the
 	// round-trip carries the id without each call site having to plumb it.
 	txnID string

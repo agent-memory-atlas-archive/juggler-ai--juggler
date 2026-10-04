@@ -508,7 +508,7 @@ const cacheMissNoticeSummary = "Claude Code re-read the whole conversation"
 // a durable item rather than a caption on a spinner that the next status frame
 // overwrites.
 //
-// Going through insertTargetMessage stamps the in-flight transaction id, so
+// Going through appendTargetMessage stamps the in-flight transaction id, so
 // undoing the turn takes the notice with it. The item is deliberately absent
 // from itemWireMessages: the model neither needs nor benefits from reading
 // about our caching.

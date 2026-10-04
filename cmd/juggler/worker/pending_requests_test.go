@@ -276,6 +276,35 @@ func TestPendingRequests_AdvanceClaimedCreateThreadCompletes(t *testing.T) {
 	}
 }
 
+// TestPendingRequests_ContinueCompletesOnTheContinuedThread drives the SDK's
+// continueConversation({threadItemId}) aimed at a sub-thread. The entry
+// completes when the continued thread's response starts landing, which is in
+// that thread's own items array, so that is the array whose growth is measured.
+// Measuring the root instead leaves the request claimed for ever, and the
+// strategy awaiting it with it.
+func TestPendingRequests_ContinueCompletesOnTheContinuedThread(t *testing.T) {
+	w := NewConversationWorker("test-conv", "user:test")
+	defer w.doc.Destroy()
+	child := insertThreadReturningID(t, w, "phase one")
+	pushRequestedEntry(t, w, "continue", "r-cont", func(req *ycrdt.YMap) {
+		req.Set("threadItemId", child)
+	})
+
+	w.currentRun().scanPendingRequests()
+	if s := findEntryStatus(w, "r-cont"); s != "claimed" {
+		t.Fatalf("status = %q after dispatch, want 'claimed'", s)
+	}
+
+	// The continued thread's response starts streaming into it.
+	appendToThread(w, child, ConversationItem{
+		Type: ItemTypeAssistant, ItemID: generateItemID(), Content: "Phase one summary.",
+	})
+	w.currentRun().scanPendingRequests()
+	if s := findEntryStatus(w, "r-cont"); s != "completed" {
+		t.Errorf("status = %q after the continued thread grew, want 'completed'", s)
+	}
+}
+
 // TestPendingRequests_CancelClaimedAwaitingLLMCleansUpBeforeSettlement verifies
 // cancellation of a claimed createThread whose active descendant is parked on a
 // running tool. Full worker cleanup must finish before the run and request settle.
