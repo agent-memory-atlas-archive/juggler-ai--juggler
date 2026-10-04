@@ -119,7 +119,7 @@ func TestWorkerDrivesStrategyHooks(t *testing.T) {
 		w.strategyHookReply.inject(w.done, resp)
 	})
 
-	w.currentRun().runStrategyLoop("build a feature", false)
+	w.driveStrategyLoop(t, "build a feature", false)
 
 	hooks := drainHooks(t, hookCh, 2)
 	if len(hooks) != 2 {
@@ -287,7 +287,7 @@ func TestWorkerDispatchesContextTurnHook(t *testing.T) {
 		StopReason: "end_turn",
 	}})
 
-	w.currentRun().runStrategyLoop("build a feature", false)
+	w.driveStrategyLoop(t, "build a feature", false)
 
 	select {
 	case rec := <-ch:
@@ -318,7 +318,7 @@ func TestStrategyActivationDefersWhenEngineSilent(t *testing.T) {
 		// Deliberately never reply → the worker's wait must time out.
 	})
 
-	w.currentRun().runStrategyLoop("build a feature", false)
+	w.driveStrategyLoop(t, "build a feature", false)
 
 	hooks := drainHooks(t, hookCh, 1)
 	if len(hooks) == 0 || hooks[0].hook != "onActivate" {

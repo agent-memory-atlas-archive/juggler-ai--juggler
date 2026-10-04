@@ -691,9 +691,8 @@ func (r *run) abortTurn(threadID string) {
 func (r *run) handleCancel(reason cancelReason) {
 	// The run this cancel applies to. A turn executes on a goroutine of its own,
 	// so the run handling this message is never the one streaming; the live-run
-	// registry is what names it. With nothing live — between turns, or a strategy
-	// loop driven inline by a test — this run is its own target, which is exactly
-	// what it has always been.
+	// registry is what names it. With nothing live — between turns, or a pickup
+	// posted to the loop but not yet started — this run is its own target.
 	target := r
 	threadID := r.getProcessingThreadItemID()
 	if threadID == "" {

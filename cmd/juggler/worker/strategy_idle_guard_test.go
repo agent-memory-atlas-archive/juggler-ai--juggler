@@ -161,14 +161,14 @@ func TestFinishStrategyRunWithholdsIdleWhileSiblingRuns(t *testing.T) {
 	}
 
 	// The user child's dispatch cascade (turn → finish → guard → sibling turn)
-	// runs synchronously inside createThread's ExternalDispatch drain, so hold
-	// the sibling's reply and observe the boundary from the main goroutine while
-	// the cascade is parked mid-sibling. Blocking that reply on this goroutine
-	// would deadlock the test instead.
+	// is served by the actor, so run the actor on a goroutine of its own and
+	// observe the boundary from this one while the cascade is parked mid-sibling.
+	// Only document state is read from here, which is safe beside it.
+	world.userThread("user child")
 	cascade := make(chan struct{})
 	go func() {
 		defer close(cascade)
-		world.userThread("user child")
+		world.w.quiesce(t)
 	}()
 
 	// The user child's turn fires first, inside the createThread cascade; the
@@ -209,9 +209,10 @@ func TestFinishStrategyRunWithholdsIdleWhileSiblingRuns(t *testing.T) {
 func TestFinishStrategyRunRestsAtIdleWithNoOpenRuns(t *testing.T) {
 	world := newIdleGuardWorld(t, func(string) string { return "all done" })
 
-	// ExternalDispatch runs the whole cascade inside createThread; with no
-	// sibling to hold open, it returns once the turn has rested at idle.
+	// ExternalDispatch asks for the reducer pass that starts the run; with no
+	// sibling to hold open, quiescing the actor returns once it has rested.
 	world.userThread("solo child")
+	world.w.quiesce(t)
 
 	if s := world.status(); s != "idle" {
 		t.Fatalf("status = %q after the only run settled, want idle", s)

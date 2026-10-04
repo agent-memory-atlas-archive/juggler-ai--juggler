@@ -305,7 +305,6 @@ func TestRetryToolMarksExplicitContinuation(t *testing.T) {
 func TestAmbientActorIdleCompletesTurnFence(t *testing.T) {
 	w := NewConversationWorker("test-ambient-idle-fence", "user:test")
 	t.Cleanup(func() { w.doc.Destroy() })
-	w.actorStarted.Store(true)
 	w.requestLLM("")
 
 	w.currentRun().sendStatus("idle", "")
@@ -339,7 +338,6 @@ func TestSendStatusIdleClearsAwaiting(t *testing.T) {
 func TestRestPromotingQueueReleasesNamedThread(t *testing.T) {
 	w := NewConversationWorker("test-rest-named-thread", "user:test")
 	t.Cleanup(func() { w.doc.Destroy() })
-	w.actorStarted.Store(true)
 	w.requestLLM("thread-a")
 
 	w.currentRun().restPromotingQueue("thread-a")

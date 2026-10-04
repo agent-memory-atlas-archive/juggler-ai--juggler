@@ -24,7 +24,7 @@ func TestRefusedTurnIsNotRetried(t *testing.T) {
 		{Blocks: []LLMResponseBlock{textBlock("SENTINEL")}, StopReason: "end_turn"},
 	})
 
-	w.currentRun().runStrategyLoop("a request that gets declined", false)
+	w.driveStrategyLoop(t, "a request that gets declined", false)
 
 	if n := w.mock.remaining(); n != 3 {
 		t.Fatalf("leftover mock responses = %d, want 3 (one call, not %d)", n, MaxBarrenTurns)
@@ -53,7 +53,7 @@ func TestRefusedTurnWithTextKeepsTheText(t *testing.T) {
 		{Blocks: []LLMResponseBlock{textBlock("SENTINEL")}, StopReason: "end_turn"},
 	})
 
-	w.currentRun().runStrategyLoop("a request that gets declined", false)
+	w.driveStrategyLoop(t, "a request that gets declined", false)
 
 	if n := w.mock.remaining(); n != 1 {
 		t.Fatalf("leftover mock responses = %d, want 1 (exactly one call)", n)

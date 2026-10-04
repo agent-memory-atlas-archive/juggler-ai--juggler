@@ -130,9 +130,6 @@ func (w *ConversationWorker) canAdmitThread(threadItemID string) bool {
 // Compaction rewrites shared ancestry and therefore cannot use read-only sibling
 // admission: it retains conversation-wide exclusion.
 func (r *run) exclusivelyOwnsConversation() bool {
-	if !r.actorStarted.Load() {
-		return true
-	}
 	runs := r.liveRuns()
 	return len(runs) == 1 && runs[0].t == r.t
 }
@@ -166,6 +163,15 @@ func (w *ConversationWorker) registerLiveRun(threadItemID string, t *turnState) 
 	w.liveRunsPtr.Store(&next)
 }
 
+// releaseOSActivity hands back the App Nap defeat registerLiveRun took for this
+// worker's busy span. Actor goroutine only; a no-op when none is held.
+func (w *ConversationWorker) releaseOSActivity() {
+	if w.activityAsserted {
+		osactivity.End()
+		w.activityAsserted = false
+	}
+}
+
 // retireLiveRun drops a finished turn from the registry. Actor goroutine only.
 func (w *ConversationWorker) retireLiveRun(t *turnState) {
 	cur := w.liveRuns()
@@ -178,44 +184,30 @@ func (w *ConversationWorker) retireLiveRun(t *turnState) {
 	w.liveRunsPtr.Store(&next)
 }
 
-// beginTurn prepares the run a dispatch is about to start on threadItemID.
-//
-// Under a live run loop that is a fresh turnState, seeded with the state a TURN
-// owns across its dispatches and published to the registry before the caller
-// marks it busy — so the conversation is never readable as idle between the two.
-// With no loop behind it — the tests that drive the strategy loop directly — it
-// is the ambient turn itself, which is where those call sites have always run.
+// beginTurn prepares the run a dispatch is about to start on threadItemID: a
+// fresh turnState, seeded with the state a TURN owns across its dispatches and
+// published to the registry before the caller marks it busy — so the
+// conversation is never readable as idle between the two.
 func (r *run) beginTurn(threadItemID string) *run {
-	tr := r
-	if r.actorStarted.Load() {
-		t := newTurnState()
-		r.seedThreadBoundary(threadItemID, t)
-		tr = r.runFor(t)
-	}
+	t := newTurnState()
+	r.seedThreadBoundary(threadItemID, t)
+	tr := r.runFor(t)
 	tr.t.thread.itemID = threadItemID
 	if threadItemID != "" {
 		tr.t.thread.itemsArray = r.doc.GetThreadItemsArray(threadItemID)
-	} else {
-		tr.t.thread.itemsArray = nil
 	}
-	if tr != r {
-		r.registerLiveRun(threadItemID, tr.t)
-	}
+	r.registerLiveRun(threadItemID, tr.t)
 	return tr
 }
 
-// runTurn starts a prepared run's strategy loop: on its own goroutine when there
-// is a run loop to keep pumping the mailbox while it streams, inline otherwise.
+// runTurn starts a prepared run's strategy loop on its own goroutine, so the run
+// loop keeps pumping the mailbox while it streams.
 //
 // The ambient turn's busy state was the conversation's while this dispatch was
 // being decided; the run that owns it now carries it, so it is handed back to
 // idle here — after the registry entry is published, so no reader passing
 // through sees an idle conversation whose turn has already started.
 func (r *run) runTurn(tr *run, body func(*run)) {
-	if tr == r {
-		body(tr)
-		return
-	}
 	r.storeState(StateIdle)
 	go func() {
 		defer r.retireTurn(tr.t)
@@ -245,10 +237,6 @@ func (r *run) finishRetiredTurn(t *turnState) {
 		r.bumpTurnCounterAtIdle()
 	}
 	if !r.hasLiveRun() {
-		if r.activityAsserted {
-			osactivity.End()
-			r.activityAsserted = false
-		}
 		r.finishIdleTransition()
 	} else {
 		// Publish this sibling's terminal frame promptly without closing the shared

@@ -246,7 +246,7 @@ func TestDelegatingToolDeliversChildResultToParent(t *testing.T) {
 		},
 	})
 
-	w.currentRun().runStrategyLoop("Find the answer", false)
+	w.driveStrategyLoop(t, "Find the answer", false)
 
 	messages := w.currentRun().buildMessages(nil)
 	var foundToolUse, foundToolResult bool
@@ -319,7 +319,7 @@ func TestReadOnlySubthreadClaimReachesTheChild(t *testing.T) {
 				InputSchema:          json.RawMessage(`{"type":"object","properties":{"url":{"type":"string"},"prompt":{"type":"string"}},"required":["url"]}`),
 			})
 
-			w.currentRun().runStrategyLoop("Summarise the page", false)
+			w.driveStrategyLoop(t, "Summarise the page", false)
 
 			thread := onlyThread(t, w)
 			if got := w.threadIsReadOnly(thread.ItemID); got != tc.declared {
@@ -343,7 +343,7 @@ func TestDelegatingToolNullSpecRunsToolAction(t *testing.T) {
 		},
 	})
 
-	w.currentRun().runStrategyLoop("Fetch the page", false)
+	w.driveStrategyLoop(t, "Fetch the page", false)
 
 	var foundToolAction, foundThread bool
 	for _, item := range w.doc.GetItems() {
@@ -377,7 +377,7 @@ func TestDelegatingToolEmptyPromptRunsToolAction(t *testing.T) {
 		},
 	})
 
-	w.currentRun().runStrategyLoop("Fetch the page", false)
+	w.driveStrategyLoop(t, "Fetch the page", false)
 
 	var foundToolAction bool
 	for _, item := range w.doc.GetItems() {
@@ -427,7 +427,7 @@ func TestDelegatedChildCannotReDelegate(t *testing.T) {
 		},
 	})
 
-	w.currentRun().runStrategyLoop("start", false)
+	w.driveStrategyLoop(t, "start", false)
 
 	if n := countThreads(w); n != 1 {
 		t.Fatalf("delegated child must not re-delegate: expected exactly 1 thread (the delegated child), got %d", n)
@@ -484,7 +484,7 @@ func TestDelegatedChildSettlesOnTrailingText(t *testing.T) {
 		},
 	})
 
-	w.currentRun().runStrategyLoop("What colour?", false)
+	w.driveStrategyLoop(t, "What colour?", false)
 
 	// A run that came to rest stamps its reply as the thread's summary.
 	var threadResult string
@@ -531,7 +531,7 @@ func TestDelegatedSessionIsAutoNamedAndReported(t *testing.T) {
 		{Blocks: []LLMResponseBlock{{Type: "text", Content: "Thanks."}}, StopReason: "end_turn"},
 	})
 
-	w.currentRun().runStrategyLoop("What colour?", false)
+	w.driveStrategyLoop(t, "What colour?", false)
 
 	var sessionName string
 	for _, item := range w.doc.GetItems() {
@@ -580,7 +580,7 @@ func TestDelegatedSessionResumeIsAppendOnly(t *testing.T) {
 		{Blocks: []LLMResponseBlock{{Type: "text", Content: "Done."}}, StopReason: "end_turn"},
 	})
 
-	w.currentRun().runStrategyLoop("Tell me about the page", false)
+	w.driveStrategyLoop(t, "Tell me about the page", false)
 
 	if n := countThreads(w); n != 1 {
 		t.Fatalf("resuming a session must not spawn a sibling: expected 1 thread, got %d", n)
@@ -633,7 +633,7 @@ func TestDelegatedThreadRunsUnderSpecStrategy(t *testing.T) {
 		{Blocks: []LLMResponseBlock{{Type: "text", Content: "Thanks."}}, StopReason: "end_turn"},
 	})
 
-	w.currentRun().runStrategyLoop("Where is auth?", false)
+	w.driveStrategyLoop(t, "Where is auth?", false)
 
 	var childID string
 	for _, item := range w.doc.GetItems() {
@@ -685,7 +685,7 @@ func TestDelegatedChildErrorReachesParent(t *testing.T) {
 		},
 	})
 
-	w.currentRun().runStrategyLoop("What colour?", false)
+	w.driveStrategyLoop(t, "What colour?", false)
 
 	// Nothing fabricates a summary out of a failure.
 	for _, item := range w.doc.GetItems() {

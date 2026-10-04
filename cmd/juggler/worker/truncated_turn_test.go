@@ -100,7 +100,7 @@ func TestTruncatedThinkingOnlyTurnIsReportedNotRetried(t *testing.T) {
 		{Blocks: []LLMResponseBlock{textBlock("SENTINEL")}, StopReason: "end_turn"},
 	})
 
-	w.currentRun().runStrategyLoop("optimise clipToPolygon", false)
+	w.driveStrategyLoop(t, "optimise clipToPolygon", false)
 
 	if n := w.mock.remaining(); n != 3 {
 		t.Fatalf("leftover mock responses = %d, want 3 (one call, not %d)", n, MaxBarrenTurns)
@@ -148,7 +148,7 @@ func TestTruncatedTurnWithTextKeepsTheTextAndReportsIt(t *testing.T) {
 		{Blocks: []LLMResponseBlock{textBlock("SENTINEL")}, StopReason: "end_turn"},
 	})
 
-	w.currentRun().runStrategyLoop("explain the algorithm", false)
+	w.driveStrategyLoop(t, "explain the algorithm", false)
 
 	if n := w.mock.remaining(); n != 1 {
 		t.Fatalf("leftover mock responses = %d, want 1 (exactly one call)", n)
@@ -175,7 +175,7 @@ func TestBarrenTurnWithoutTruncationStillRetries(t *testing.T) {
 		{Blocks: []LLMResponseBlock{textBlock("SENTINEL")}, StopReason: "end_turn"},
 	})
 
-	w.currentRun().runStrategyLoop("optimise clipToPolygon", false)
+	w.driveStrategyLoop(t, "optimise clipToPolygon", false)
 
 	if n := w.mock.remaining(); n != 1 {
 		t.Fatalf("leftover mock responses = %d, want 1 (exactly %d calls)", n, MaxBarrenTurns)

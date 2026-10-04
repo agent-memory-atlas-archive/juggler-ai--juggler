@@ -90,9 +90,7 @@ func TestQueuedMessageJoinsToolResultContinuation(t *testing.T) {
 
 	// Drive the reducer exactly as the event loop would after the tool completes.
 	w.needsReconcile.Store(true)
-	for i := 0; i < 10 && w.needsReconcile.Load(); i++ {
-		w.currentRun().tryReconcile()
-	}
+	w.quiesce(t)
 
 	// Exactly the one scripted turn must have run.
 	if n := w.mock.remaining(); n != 0 {

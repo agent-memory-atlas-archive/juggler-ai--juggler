@@ -268,9 +268,10 @@ func TestStrategyRunThreadRecoveredByReconcileTick(t *testing.T) {
 		{Blocks: []LLMResponseBlock{{Type: "text", Content: "Recovered summary."}}, StopReason: "end_turn"},
 	})
 
-	// The claim is held when the fold lands, so the observer's pickup fails.
+	// A root turn is live when the fold lands, holding the conversation's one
+	// write-capable slot, so the observer's pickup is refused admission.
+	holder := w.currentRun().beginTurn("")
 	w.claimLLM("")
-	w.currentRun().storeState(StateIdle)
 	threadID := insertThreadWithOpts(w, threadOpts{
 		goal: "Compacted conversation history", needsStrategyRun: true,
 		noAutoSelect: true, boundedCompaction: true, userMessage: "history to summarize",
@@ -278,16 +279,17 @@ func TestStrategyRunThreadRecoveredByReconcileTick(t *testing.T) {
 	if got, _ := w.doc.GetThreadYMap(threadID).Get("result").(string); got != "" {
 		t.Fatalf("fold summarized while the claim was held: %q", got)
 	}
+	if n := len(w.threadDispatch); n != 0 {
+		t.Fatalf("fold was dispatched beside a live write-capable turn (%d queued)", n)
+	}
 	if !w.needsReconcile.Load() {
 		t.Fatal("a fold that lost the claim race left no reconcile armed — nothing will ever revisit it")
 	}
 
-	// The in-flight operation ends, freeing the claim; the reducer ticks.
+	// The in-flight turn ends and is retired, freeing the slot; the reducer ticks.
 	w.releaseLLM("")
-	w.currentRun().storeState(StateIdle)
-	for i := 0; i < maxReconcilePasses && w.needsReconcile.Load(); i++ {
-		w.currentRun().tryReconcile()
-	}
+	w.currentRun().finishRetiredTurn(holder.t)
+	w.quiesce(t)
 
 	if got, _ := w.doc.GetThreadYMap(threadID).Get("result").(string); got != "Recovered summary." {
 		t.Fatalf("thread result = %q, want the fold summarized once the claim freed", got)
@@ -341,6 +343,7 @@ func TestResummarizeCompactionThreadRerunsSummarizer(t *testing.T) {
 		Type: "resummarize-compaction-thread", ThreadItemID: threadID,
 	})
 	w.currentRun().handleResummarizeCompactionThread(payload)
+	w.quiesce(t)
 
 	if got, _ := w.doc.GetThreadYMap(threadID).Get("result").(string); got != "Fresh summary." {
 		t.Fatalf("thread result = %q, want the regenerated summary", got)

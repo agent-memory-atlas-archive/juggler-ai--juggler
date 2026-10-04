@@ -452,7 +452,7 @@ func (r *run) finishStrategyRun() {
 	// creating a child thread, THIS thread is left awaiting_llm — let the reducer
 	// dispatch the child. requestReconcile hands that pass to the run() loop, so
 	// the child's turn starts on a fresh iteration rather than underneath this
-	// one; with no loop behind it (tests) it drains inline.
+	// one.
 	// Asked of the turn's own thread: a sibling parked awaiting dispatch is not
 	// evidence that this run has work outstanding.
 	if r.threadActivity(r.t.thread.itemID) == ActivityAwaitingLLM {
@@ -1095,12 +1095,9 @@ func (r *run) processLLMResponse(response *LLMResponse) (bool, error) {
 		// executor) must run. Command it: driveToolActions pushes the doc state
 		// and dispatches evaluate-tool / execute-tool for each non-terminal
 		// tool-action, rather than relying on the engine to auto-load on an
-		// incidental sync (racy → the "tools stuck" wedge).
-		if r.actorStarted.Load() {
-			r.requestReconcile()
-		} else {
-			r.driveToolActions()
-		}
+		// incidental sync (racy → the "tools stuck" wedge). The reducer pass does
+		// the driving, on the run loop, once this turn has handed it back.
+		r.requestReconcile()
 	}
 
 	return true, nil

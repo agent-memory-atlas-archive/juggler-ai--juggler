@@ -155,6 +155,38 @@ export async function runTests() {
     }
   });
 
+  await check('clicking away while an Enter is still being stored stores the name once', async () => {
+    const session = makeSession('Old name');
+    // The rename is a server round trip: hold it open, the way a slow server
+    // does, so the blur lands while the commit Enter started is still awaited.
+    /** @type {() => void} */
+    let answer = () => {};
+    const stored = new Promise((resolve) => { answer = () => resolve(undefined); });
+    session.renameConversation = async (/** @type {string} */ id, /** @type {string} */ newName) => {
+      session.renamed.push([id, newName]);
+      await stored;
+      session.conversations.get(id).name = newName;
+    };
+    const { bar, teardown } = mountBar(session);
+    try {
+      bar._enterRenameMode('c1');
+      const input = /** @type {HTMLInputElement} */ (field());
+      await typeAnd(input, 'Rendezvous', 'Enter');
+      input.dispatchEvent(new Event('blur'));
+      answer();
+      await stored;
+      await Promise.resolve();
+      await Promise.resolve();
+
+      assert(JSON.stringify(session.renamed) === JSON.stringify([['c1', 'Rendezvous']]),
+        `an Enter followed by a blur before the server answered is one rename, not two, got `
+        + `${JSON.stringify(session.renamed)}`);
+      assert(!field(), 'and the editor has gone');
+    } finally {
+      teardown();
+    }
+  });
+
   await check('Escape leaves the tab showing the name that was there', async () => {
     const session = makeSession('Old name');
     const { bar, teardown } = mountBar(session);

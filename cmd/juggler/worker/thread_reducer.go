@@ -402,8 +402,7 @@ func (r *run) updateApprovalWaitAnchorForThread(threadItemID string) {
 const maxReconcilePasses = 10
 
 // drainReconcile runs tryReconcile until the reducer is quiet, bounded by
-// maxReconcilePasses. The run() loop drains after every event; requestReconcile
-// drains here directly when there is no loop to hand the pass to.
+// maxReconcilePasses. The run() loop drains after every event.
 //
 // A pass may run while turns are live, but admission rejects their own threads
 // and preserves the single write-capable slot. This lets the walk-down discover
@@ -419,27 +418,18 @@ func (r *run) drainReconcile() int {
 	return passes
 }
 
-// requestReconcile asks for a reducer pass without running one here. Under a
-// live run() loop it posts to reconcileRequest, so the pass — and any dispatch
-// it decides on — happens as a fresh iteration of the event loop instead of as
-// recursion on the caller's stack. That is what lets a turn hand the reducer
-// back at its end rather than driving the next turn from inside the one that
-// just finished.
-//
-// Tests drive runStrategyLoop directly with no run() loop behind it (only three
-// files call Start), and nothing would ever consume the post. For those, fall
-// back to draining inline — the behaviour every one of those call sites has
-// always had.
+// requestReconcile asks for a reducer pass without running one here. It posts
+// to reconcileRequest, so the pass — and any dispatch it decides on — happens as
+// a fresh iteration of the event loop instead of as recursion on the caller's
+// stack. That is what lets a turn hand the reducer back at its end rather than
+// driving the next turn from inside the one that just finished. A post to a loop
+// that has since stopped is dropped, which is what shutdown wants.
 func (r *run) requestReconcile() {
 	r.needsReconcile.Store(true)
-	if r.actorStarted.Load() {
-		select {
-		case r.reconcileRequest <- struct{}{}:
-		default: // a pass is already queued, and one pass is all this asks for
-		}
-		return
+	select {
+	case r.reconcileRequest <- struct{}{}:
+	default: // a pass is already queued, and one pass is all this asks for
 	}
-	r.drainReconcile()
 }
 
 // tryReconcile is one pass of the reducer, and one of the two ways a sub-thread
@@ -678,10 +668,9 @@ func (r *run) dispatchCallLLMOnThread(threadItemID string) {
 	// presents to the user as "user message appended but LLM loop never starts;
 	// hitting Continue kicks it off".
 	//
-	// Actor-backed runs use the live registry for thread and capability admission.
-	// Direct tests retain the ambient-state guard because they have no registry.
-	if (!r.actorStarted.Load() && r.anyRunState() != StateIdle) ||
-		(r.actorStarted.Load() && !r.canAdmitThread(threadItemID)) {
+	// The live registry is what admits a thread: one run per thread, one
+	// write-capable run at a time, and the read-only ceiling.
+	if !r.canAdmitThread(threadItemID) {
 		r.needsReconcile.Store(true)
 		return
 	}

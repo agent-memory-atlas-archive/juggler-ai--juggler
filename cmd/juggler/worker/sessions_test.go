@@ -160,7 +160,7 @@ func TestCreateThreadSessionResumesSameThread(t *testing.T) {
 		}
 	}()
 
-	w.currentRun().runStrategyLoop("Investigate auth", false)
+	w.driveStrategyLoop(t, "Investigate auth", false)
 
 	thread := onlyThread(t, w)
 	if thread.SessionName != "hunt" {

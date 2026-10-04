@@ -84,9 +84,12 @@ export function openInlineRename(host, { value, maxLength, commit, onClose, acti
   block.addEventListener('click', (e) => { e.stopPropagation(); });
 
   // `done` blocks any further work once the editor has gone — it covers the
-  // blur that fires when close() removes the focused field, and a commit
-  // arriving twice from a fast Enter-then-blur.
+  // blur that fires when close() removes the focused field. `committing` covers
+  // the window before that: an Enter whose commit is still awaiting the server,
+  // followed by a blur (a click away, or focus taken by anything else), would
+  // otherwise store the same name a second time.
   let done = false;
+  let committing = false;
 
   const showError = (/** @type {string} */ message) => {
     errorEl.textContent = message;
@@ -104,7 +107,7 @@ export function openInlineRename(host, { value, maxLength, commit, onClose, acti
   };
 
   const keep = async () => {
-    if (done) return;
+    if (done || committing) return;
     const name = input.value.trim();
     // Nothing typed, or nothing changed: there is no rename to make and no
     // reason to say so. Closing silently is the answer to both.
@@ -112,8 +115,10 @@ export function openInlineRename(host, { value, maxLength, commit, onClose, acti
       close();
       return;
     }
+    committing = true;
     try {
       const refusal = await commit(name);
+      committing = false;
       if (done) return;
       if (typeof refusal === 'string' && refusal !== '') {
         showError(refusal);

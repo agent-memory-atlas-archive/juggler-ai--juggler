@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"juggler/cmd/juggler/mailbox"
-	"juggler/cmd/juggler/osactivity"
 	"juggler/cmd/juggler/providers/provider"
 	"juggler/internal/jlog"
 
@@ -396,10 +395,11 @@ type ConversationWorker struct {
 	engineDocVector []byte
 
 	// activityAsserted tracks whether this worker is currently holding an
-	// osactivity assertion (App Nap defeat). Set on the first non-idle
-	// sendStatus; cleared on the idle transition. Per-worker bool because
-	// each conversation has its own busy span; the osactivity package
-	// itself refcounts across multiple workers concurrently busy.
+	// osactivity assertion (App Nap defeat). Set when the first turn is
+	// published as live (registerLiveRun); cleared when the last one retires
+	// (releaseOSActivity). Per-worker bool because each conversation has its
+	// own busy span; the osactivity package itself refcounts across multiple
+	// workers concurrently busy.
 	activityAsserted bool
 
 	// turnCounter is incremented on every transition to idle. It is written
@@ -471,14 +471,6 @@ type ConversationWorker struct {
 	// ambient turn and asks the reducer for the pass that settles what is left.
 	// Buffered so a turn never parks on the way out.
 	turnRetired chan *turnState
-
-	// actorStarted reports that run() is live and owns the reducer, so
-	// requestReconcile and dispatchThreadRun hand work to it instead of doing it
-	// on the calling goroutine. Set once by Start and never cleared: a post to a
-	// loop that has since stopped is dropped, which is what shutdown wants, while
-	// running the reducer inline on a turn's goroutine is not. Tests that drive
-	// the strategy loop directly never call Start, and take the inline path.
-	actorStarted atomic.Bool
 
 	// Outbound Yjs update debouncer; coalesces a burst into one broadcast
 	// per SyncThrottleMs. See sync_batcher.go.
@@ -636,7 +628,6 @@ func (w *ConversationWorker) SetSyncThrottle(d time.Duration) {
 
 // Start begins the worker's message processing loop.
 func (r *run) Start(ctx context.Context) {
-	r.actorStarted.Store(true)
 	go r.run(ctx)
 }
 
@@ -1024,10 +1015,10 @@ func (r *run) storeState(s WorkerState) {
 
 // anyRunState reports the state of the busiest run this worker owns: any turn on
 // a goroutine of its own that is not idle, else the ambient turn — which is what
-// a dispatch driven inline runs on, and what carries the busy frame across the
-// moment a pickup hands a thread to the loop. It is the question every
-// conversation-wide gate asks ("is anything in flight in this conversation?"),
-// spelled apart from threadRunState so the two are never confused.
+// carries the busy frame across the moment a pickup hands a thread to the loop.
+// It is the question every conversation-wide gate asks ("is anything in flight
+// in this conversation?"), spelled apart from threadRunState so the two are
+// never confused.
 func (w *ConversationWorker) anyRunState() WorkerState {
 	for _, e := range w.liveRuns() {
 		if state, ok := e.t.state.Load().(WorkerState); ok && state != StateIdle {
@@ -1461,17 +1452,13 @@ func (r *run) sendStatus(status, message string) {
 // every existing sendStatus caller is unchanged on the wire.
 func (r *run) sendStatusWithCode(status, message, code string) {
 	r.updateElapsedAnchor(status)
-	if !r.actorStarted.Load() {
-		r.updateOSActivity(status)
-	}
 	r.writeProcessingState(status, message, code)
 	if status == "idle" {
-		switch {
-		case !r.actorStarted.Load():
-			r.finishIdleTransition()
-		case r.liveRunOwns(r.t):
+		if r.liveRunOwns(r.t) {
+			// A turn goroutine's idle edge is finalized by the actor as it retires
+			// the turn (finishRetiredTurn).
 			r.t.completedIdle = true
-		default:
+		} else {
 			// Reducer/cancel cleanup can publish an idle edge from the ambient actor
 			// without a turn goroutine to retire. Finalize that edge here; waiting for
 			// turnRetired would strand the completed-turn fence forever.
@@ -1527,25 +1514,6 @@ func (r *run) updateElapsedAnchor(status string) {
 	}
 }
 
-// updateOSActivity holds (or releases) the App Nap defeat that keeps this worker
-// scheduled for the whole busy span.
-func (w *ConversationWorker) updateOSActivity(status string) {
-	// App Nap defeat. Held for the entire busy span (LLM call + tool
-	// execution in the engine WebView between LLM calls), released on
-	// the idle transition. The osactivity package refcounts internally so
-	// multiple workers busy simultaneously compose correctly. Bool guards
-	// against double-Begin on repeated non-idle status updates within the
-	// same busy span (e.g. status going calling_llm → processing_tools →
-	// calling_llm — all non-idle, only one assertion).
-	if statusHoldsClaim(status) && !w.activityAsserted {
-		osactivity.Begin()
-		w.activityAsserted = true
-	} else if !statusHoldsClaim(status) && w.activityAsserted {
-		osactivity.End()
-		w.activityAsserted = false
-	}
-}
-
 // writeProcessingState publishes the frame every client renders the spinner
 // from: the doc-native `processingState` blob, rebuilt from scratch on each
 // call, and this run's own entry in the registry underneath it, rebuilt with it.
@@ -1562,9 +1530,6 @@ func (r *run) writeProcessingState(status, message, code string) {
 	holdsClaim := statusHoldsClaim(status)
 	if holdsClaim {
 		stateMap["startedAt"] = r.t.processingStartedAt.Load()
-	} else if status == "idle" && !r.actorStarted.Load() {
-		// Direct, no-actor tests retain the inline conversation-owned fence.
-		r.bumpTurnCounterAtIdle()
 	}
 
 	// Terminal-error statuses release only this thread; live siblings retain their
@@ -1628,7 +1593,12 @@ func (r *run) bumpTurnCounterAtIdle() {
 // browser sees the operation result AND the idle transition in one sync batch.
 // Without that flush the idle metadata sits in the buffer while the browser waits
 // for it, stalling strategy hooks like onWorkerIdle that drive the next phase.
+//
+// Called only once no turn is live, so it also hands back the App Nap defeat the
+// first live turn took — including for a run that was registered and then
+// abandoned before it started.
 func (w *ConversationWorker) finishIdleTransition() {
+	w.releaseOSActivity()
 	// If a compaction was in flight, collapse every undo group the
 	// strategy added during the run into the single stack item that
 	// holds the viewer's compact insert — so the user undoes the
@@ -1823,10 +1793,6 @@ func (r *run) handleItemsChange() {
 // busy and handed the run to the run() loop — so the reducer can re-evaluate
 // from a clean state rather than continuing a walk-down built on stale data.
 func (r *run) checkForNewThreads() bool {
-	if !r.actorStarted.Load() && r.anyRunState() != StateIdle {
-		return false
-	}
-
 	// Read the root's threads straight from the CRDT, once, under one lock. This
 	// runs on every items change and every reducer pass, and only the thread
 	// maps' own flags matter here — converting the root items would copy every
@@ -1875,8 +1841,9 @@ func (r *run) checkForNewThreads() bool {
 			continue
 		}
 
-		// A thread with no items array has nothing to run. startThreadRun
-		// re-resolves the array it actually runs against.
+		// A thread with no items array has nothing to run. beginTurn re-resolves
+		// the array the run actually runs against, and startPreparedThreadRun
+		// abandons a run whose array has gone by the time the loop starts it.
 		if r.doc.GetThreadItemsArray(threadID) == nil {
 			continue
 		}
@@ -1889,12 +1856,7 @@ func (r *run) checkForNewThreads() bool {
 		// Reserve the thread's capability slot before claiming it. Re-tickle on
 		// failure: needsStrategyRun is consumed only after both checks succeed, and
 		// releasing another thread's claim does not fire the items observer.
-		// Direct strategy-loop tests have no live registry, so retain their
-		// conversation-wide claim exclusion at the point of dispatch. Keeping it
-		// here still lets reconcile settle the currently claimed thread.
-		if (!r.actorStarted.Load() && r.isLLMClaimed()) ||
-			(r.actorStarted.Load() && !r.canAdmitThread(threadID)) ||
-			!r.claimLLM(threadID) {
+		if !r.canAdmitThread(threadID) || !r.claimLLM(threadID) {
 			r.needsReconcile.Store(true)
 			return false
 		}
@@ -1918,14 +1880,14 @@ func (r *run) checkForNewThreads() bool {
 		// restarts the thread immediately on the next observer tick.
 		r.clearThreadNeedsStrategyRun(threadID)
 
-		// Publish the busy frame HERE, not in startThreadRun — the pickup, not the
-		// start, is the moment this conversation became busy, and the two are no
-		// longer the same moment. Every dispatch gate reads this state, so leaving
-		// it idle across the hand-off would let the reducer keep evaluating a
-		// conversation whose next run is already decided. It is also what the UI
-		// renders: the claim is doc-native state it does not show, so without this
-		// the conversation reads as idle — no spinner, no status — for the whole
-		// window before the run writes a status of its own.
+		// Publish the busy frame HERE, not in startPreparedThreadRun — the pickup,
+		// not the start, is the moment this conversation became busy, and the run
+		// loop starts the run as a later iteration. Every dispatch gate reads this
+		// state, so leaving it idle across the hand-off would let the reducer keep
+		// evaluating a conversation whose next run is already decided. It is also
+		// what the UI renders: the claim is doc-native state it does not show, so
+		// without this the conversation reads as idle — no spinner, no status — for
+		// the whole window before the run writes a status of its own.
 		//
 		// Turn-scoped anchor (see dispatchCallLLMOnThread): set once at turn start,
 		// preserved across re-dispatches so the elapsed digit spans the whole turn.
@@ -1952,14 +1914,7 @@ func (r *run) checkForNewThreads() bool {
 // The claim and the busy state are what make the gap between post and start
 // safe: every dispatch gate refuses while they hold, so nothing else can start a
 // run in the window, and the buffered slot cannot be contended.
-//
-// With no run() loop behind it — the tests that call checkForNewThreads directly
-// — start it here, which is where it has always run.
 func (r *run) dispatchThreadRun(threadItemID string) {
-	if !r.actorStarted.Load() {
-		r.startThreadRun(threadItemID)
-		return
-	}
 	tr := r.beginTurn(threadItemID)
 	select {
 	case r.threadDispatch <- tr.t:
@@ -1971,26 +1926,14 @@ func (r *run) dispatchThreadRun(threadItemID string) {
 	}
 }
 
-// startThreadRun prepares a claimed thread for direct, no-actor execution.
-func (r *run) startThreadRun(threadItemID string) {
-	tr := r.beginTurn(threadItemID)
-	r.startPreparedThreadRun(tr.t)
-}
-
 // startPreparedThreadRun starts a claimed thread whose admission reservation is
-// already present in the live-run registry.
+// already present in the live-run registry. Run goroutine only: the run loop's
+// threadDispatch case.
 func (r *run) startPreparedThreadRun(t *turnState) {
 	tr := r.runFor(t)
-	if !r.actorStarted.Load() {
-		tr = r
-	}
 	threadItemID := tr.t.thread.itemID
 	if tr.t.thread.itemsArray == nil {
-		if tr == r {
-			r.resetThreadContext()
-		} else {
-			r.retireLiveRun(tr.t)
-		}
+		r.retireLiveRun(tr.t)
 		r.abandonThreadRun(threadItemID)
 		return
 	}

@@ -179,6 +179,7 @@ func TestHandleCompactFoldsSummarizesAndAcks(t *testing.T) {
 
 	waitAck := captureAck(t, w, "client-1", "a1")
 	w.currentRun().handleCompact(json.RawMessage(`{"type":"compact","ackId":"a1"}`))
+	w.quiesce(t)
 
 	ack := waitAck()
 	result, _ := ack["result"].(map[string]any)
@@ -220,6 +221,7 @@ func TestManualCompactNotesAssumedWindow(t *testing.T) {
 
 	waitAck := captureAck(t, w, "client-1", "an1")
 	w.currentRun().handleCompact(json.RawMessage(`{"type":"compact","ackId":"an1"}`))
+	w.quiesce(t)
 	if result, _ := waitAck()["result"].(map[string]any); result["folded"] != true {
 		t.Fatalf("ack result = %v, want {folded:true}", result)
 	}
@@ -255,6 +257,7 @@ func TestHandleCompactBusyDeclines(t *testing.T) {
 
 	waitAck := captureAck(t, w, "client-1", "a2")
 	w.currentRun().handleCompact(json.RawMessage(`{"type":"compact","ackId":"a2"}`))
+	w.quiesce(t)
 
 	ack := waitAck()
 	result, _ := ack["result"].(map[string]any)
@@ -296,6 +299,7 @@ func TestHandleCompactUnderLandedPauseLiftsAndSummarizes(t *testing.T) {
 
 	waitAck := captureAck(t, w, "client-1", "a3")
 	w.currentRun().handleCompact(json.RawMessage(`{"type":"compact","ackId":"a3"}`))
+	w.quiesce(t)
 
 	ack := waitAck()
 	result, _ := ack["result"].(map[string]any)
@@ -526,11 +530,13 @@ func TestHandleCompactConvergesToSingleSummary(t *testing.T) {
 	pushUserTurn("first task")
 	waitAck := captureAck(t, w, "client-1", "c1")
 	w.currentRun().handleCompact(json.RawMessage(`{"type":"compact","ackId":"c1"}`))
+	w.quiesce(t)
 	waitAck()
 
 	pushUserTurn("second task")
 	waitAck = captureAck(t, w, "client-1", "c2")
 	w.currentRun().handleCompact(json.RawMessage(`{"type":"compact","ackId":"c2"}`))
+	w.quiesce(t)
 	waitAck()
 
 	items := w.doc.GetItems()
@@ -578,6 +584,7 @@ func TestHandleCompactLeavesAnEchoedSummaryUnsummarized(t *testing.T) {
 
 	waitAck := captureAck(t, w, "client-1", "e1")
 	w.currentRun().handleCompact(json.RawMessage(`{"type":"compact","ackId":"e1"}`))
+	w.quiesce(t)
 	waitAck()
 
 	items := w.doc.GetItems()
@@ -623,7 +630,7 @@ func TestFoldSummarizerCancellationMarksThreadUnsummarized(t *testing.T) {
 	w.doc.SetMetadata("defaultModelConfig", map[string]any{"provider": "test", "model": "test"})
 	feedCompactionContextAndTools(w)
 	w.llmCallFunc = func(_ context.Context, _ json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
-		w.currentRun().storeState(StateCancelling)
+		cancelLiveRuns(w)
 		return nil, context.Canceled
 	}
 	w.doc.doc.Transact(func(_ *ycrdt.Transaction) {
@@ -635,6 +642,7 @@ func TestFoldSummarizerCancellationMarksThreadUnsummarized(t *testing.T) {
 
 	waitAck := captureAck(t, w, "client-1", "a1")
 	w.currentRun().handleCompact(json.RawMessage(`{"type":"compact","ackId":"a1"}`))
+	w.quiesce(t)
 	waitAck()
 
 	items := w.doc.GetItems()
@@ -659,7 +667,7 @@ func TestResummariseClearsUnsummarizedMarker(t *testing.T) {
 	w.doc.SetMetadata("defaultModelConfig", map[string]any{"provider": "test", "model": "test"})
 	feedCompactionContextAndTools(w)
 	w.llmCallFunc = func(_ context.Context, _ json.RawMessage, _ func(StreamChunk)) (*LLMResponse, error) {
-		w.currentRun().storeState(StateCancelling)
+		cancelLiveRuns(w)
 		return nil, context.Canceled
 	}
 	w.doc.doc.Transact(func(_ *ycrdt.Transaction) {
@@ -670,6 +678,7 @@ func TestResummariseClearsUnsummarizedMarker(t *testing.T) {
 
 	waitAck := captureAck(t, w, "client-1", "a1")
 	w.currentRun().handleCompact(json.RawMessage(`{"type":"compact","ackId":"a1"}`))
+	w.quiesce(t)
 	waitAck()
 
 	items := w.doc.GetItems()
@@ -686,6 +695,7 @@ func TestResummariseClearsUnsummarizedMarker(t *testing.T) {
 	waitAck2 := captureAck(t, w, "client-1", "a2")
 	w.currentRun().handleResummarizeCompactionThread(json.RawMessage(
 		`{"type":"resummarize-compaction-thread","threadItemId":"` + threadID + `","ackId":"a2"}`))
+	w.quiesce(t)
 	waitAck2()
 
 	if result := threadResult(w, threadID); result != "recovered summary" {

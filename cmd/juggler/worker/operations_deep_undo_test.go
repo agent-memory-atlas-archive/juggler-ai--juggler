@@ -62,7 +62,7 @@ func assertRecoveryFoldUndoableAtDepth(t *testing.T, depth int) {
 	_, stub := newRecoveryStub(t, pinned)
 	w.llmCallFunc = stub
 
-	if _, err := w.currentRun().compactToFit(recoveryLimitErr(), pinned); err != nil {
+	if _, err := w.ownedRun(t).compactToFit(recoveryLimitErr(), pinned); err != nil {
 		t.Fatal(err)
 	}
 	if got := w.doc.GetItemsFromArray(arr); len(got) != 4 || !got[0].BoundedCompaction {

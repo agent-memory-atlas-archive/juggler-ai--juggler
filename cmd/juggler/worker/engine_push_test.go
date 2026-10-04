@@ -119,7 +119,7 @@ func TestToolTurnPushesStateToEngine(t *testing.T) {
 
 	// Drives one turn that emits a bash tool_use, creating an async tool-action
 	// and parking (no executor in the test). The push fires inside that turn.
-	w.currentRun().runStrategyLoop("do a tool", false)
+	w.driveStrategyLoop(t, "do a tool", false)
 	close(done)
 
 	// Await mailbox-delivery quiescence: the engine must end up with strictly

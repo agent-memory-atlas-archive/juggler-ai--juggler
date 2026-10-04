@@ -78,9 +78,7 @@ func TestPoliteStop_ReducerRestsBeforeNextTurn(t *testing.T) {
 
 	// Drive the reducer exactly as the event loop would after the tool completes.
 	w.needsReconcile.Store(true)
-	for i := 0; i < 10 && w.needsReconcile.Load(); i++ {
-		w.currentRun().tryReconcile()
-	}
+	w.quiesce(t)
 
 	// The model was NOT re-invoked: the scripted turn is still on the queue.
 	if n := w.mock.remaining(); n != 1 {

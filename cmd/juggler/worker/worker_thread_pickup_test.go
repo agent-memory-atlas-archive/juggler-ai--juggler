@@ -51,6 +51,7 @@ func TestCheckForNewThreads_ProcessesNeedsStrategyRun(t *testing.T) {
 	if threadID == "" {
 		t.Fatal("failed to create thread")
 	}
+	w.quiesce(t)
 
 	// Verify the worker processed it
 	threadYMap := w.doc.GetThreadYMap(threadID)
@@ -125,19 +126,15 @@ func TestCompactionSubthread_DrainsRootQueueOnCompletion(t *testing.T) {
 	w.enqueuePendingMessage("", UserMessageInput{Text: "follow-up while compacting"})
 
 	// Insert the compaction sub-thread. handleItemsChange → checkForNewThreads
-	// runs the whole compaction loop (and its completion defer) synchronously.
+	// posts the pickup; quiescing the actor runs the compaction loop, its
+	// completion defer and whatever root turn that completion asks for.
 	threadID := insertThreadWithOpts(w, threadOpts{
 		goal: "Compacted conversation history", needsStrategyRun: true,
 		noAutoSelect: true, boundedCompaction: true,
 		userMessage: "prior conversation history to summarize",
 	})
 
-	// Drive reconcile as the event loop would, in case the completion path
-	// scheduled a root turn rather than running it entirely inline.
-	for i := 0; i < 20 && (w.needsReconcile.Load() || w.HasPendingItems("")); i++ {
-		w.needsReconcile.Store(true)
-		w.currentRun().tryReconcile()
-	}
+	w.quiesce(t)
 
 	// Compaction closed with its result.
 	threadYMap := w.doc.GetThreadYMap(threadID)
@@ -235,9 +232,18 @@ func TestCheckForNewThreads_IgnoresCompletedThread(t *testing.T) {
 	w.doc.Destroy()
 }
 
+// TestCheckForNewThreads_IgnoresWhenBusy: a write-capable turn already live is
+// what makes the conversation busy for a pickup — the registry's one writer slot
+// is taken — so the thread is neither claimed nor dispatched, and its one-shot
+// trigger stays armed for the reducer pass after that turn retires.
 func TestCheckForNewThreads_IgnoresWhenBusy(t *testing.T) {
 	w := NewConversationWorker("test-conv", "user:test")
-	w.currentRun().storeState(StateProcessing) // Worker is busy
+	defer w.doc.Destroy()
+	busy := w.currentRun().beginTurn("") // a root turn is streaming
+	t.Cleanup(func() {
+		w.retireLiveRun(busy.t)
+		w.releaseOSActivity()
+	})
 
 	threadID := insertThreadWithOpts(w, threadOpts{goal: "Queued thread", needsStrategyRun: true, userMessage: "Summarize"})
 	if threadID == "" {
@@ -246,17 +252,25 @@ func TestCheckForNewThreads_IgnoresWhenBusy(t *testing.T) {
 
 	w.doc.SetMetadata("defaultModelConfig", map[string]any{"provider": "test", "model": "test"})
 
-	// checkForNewThreads should skip when worker is busy
-	w.currentRun().checkForNewThreads()
-
-	// Thread should have no result (not processed)
-	threadYMap := w.doc.GetThreadYMap(threadID)
-	result, _ := threadYMap.Get("result").(string)
-	if result != "" {
-		t.Errorf("thread should have no result when worker is busy, got %q", result)
+	if w.currentRun().checkForNewThreads() {
+		t.Fatal("checkForNewThreads picked a thread up beside a live write-capable turn")
 	}
-
-	w.doc.Destroy()
+	if n := len(w.threadDispatch); n != 0 {
+		t.Fatalf("%d run(s) dispatched while the worker was busy, want 0", n)
+	}
+	if got := w.threadActivity(threadID); got != ActivityNone {
+		t.Errorf("thread claimed while the worker was busy: activity = %q", got)
+	}
+	ymap := w.doc.GetThreadYMap(threadID)
+	ycrdtMu.Lock()
+	armed, _ := ymap.Get("needsStrategyRun").(bool)
+	ycrdtMu.Unlock()
+	if !armed {
+		t.Error("needsStrategyRun was consumed by a pickup that never ran")
+	}
+	if !w.needsReconcile.Load() {
+		t.Error("a refused pickup left no reconcile armed to revisit it")
+	}
 }
 
 func TestCheckForNewThreads_SkipsCompletedThreads(t *testing.T) {
@@ -294,6 +308,7 @@ func TestCheckForNewThreads_SkipsCompletedThreads(t *testing.T) {
 	if threadID == "" {
 		t.Fatal("failed to create thread")
 	}
+	w.quiesce(t)
 
 	threadYMap := w.doc.GetThreadYMap(threadID)
 	result, _ := threadYMap.Get("result").(string)
@@ -333,7 +348,7 @@ func TestCheckForNewThreads_CancelDoesNotRetriggerNeedsStrategyRunThread(t *test
 	calls := 0
 	w.llmCallFunc = func(ctx context.Context, request json.RawMessage, chunkHandler func(StreamChunk)) (*LLMResponse, error) {
 		calls++
-		w.currentRun().storeState(StateCancelling)
+		cancelLiveRuns(w)
 		return nil, ErrCancelled
 	}
 
@@ -341,6 +356,7 @@ func TestCheckForNewThreads_CancelDoesNotRetriggerNeedsStrategyRunThread(t *test
 	if threadID == "" {
 		t.Fatal("failed to create thread")
 	}
+	w.quiesce(t)
 
 	if calls != 1 {
 		t.Fatalf("LLM calls after initial cancellation = %d, want 1", calls)
@@ -363,7 +379,7 @@ func TestCheckForNewThreads_CancelDoesNotRetriggerNeedsStrategyRunThread(t *test
 	// Simulate the observer firing again after the idle/cancel updates. Before
 	// the fix this immediately restarted the same needsStrategyRun thread.
 	w.currentRun().handleItemsChange()
-	w.currentRun().tryReconcile()
+	w.quiesce(t)
 	if calls != 1 {
 		t.Fatalf("LLM calls after observer tick = %d, want 1 (no retrigger)", calls)
 	}
@@ -443,9 +459,7 @@ func TestReconcile_DeletedThreadWithStandingClaimDoesNotRun(t *testing.T) {
 	}
 
 	w.needsReconcile.Store(true)
-	for i := 0; i < 10 && w.needsReconcile.Load(); i++ {
-		w.currentRun().tryReconcile()
-	}
+	w.quiesce(t)
 
 	if calls != 0 {
 		t.Fatalf("LLM called %d time(s) for a deleted thread, want 0", calls)
@@ -489,6 +503,7 @@ func TestRunOneTurn_DeletedThreadDoesNotCallLLM(t *testing.T) {
 	}, w.doc.authorID)
 
 	w.currentRun().dispatchCallLLMOnThread(threadID)
+	w.quiesce(t)
 
 	if calls != 0 {
 		t.Fatalf("LLM called %d time(s) for a deleted thread, want 0", calls)

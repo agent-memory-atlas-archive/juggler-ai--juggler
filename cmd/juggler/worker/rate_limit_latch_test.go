@@ -66,9 +66,7 @@ func TestRateLimitLatch_HoldsEverySiblingThread(t *testing.T) {
 	feedContextAndTools(t, w)
 
 	w.needsReconcile.Store(true)
-	for i := 0; i < 10 && w.needsReconcile.Load(); i++ {
-		w.currentRun().tryReconcile()
-	}
+	w.quiesce(t)
 
 	if left := w.mock.remaining(); left != 2 {
 		t.Fatalf("a standing usage cap let %d of 2 sub-threads call the provider anyway (%d scripted turns left, want 2): "+
@@ -128,6 +126,7 @@ func TestRateLimitLatch_UserSendLiftsItForAParkedParent(t *testing.T) {
 	feedContextAndTools(t, w)
 
 	sendMsg(t, w, SendMessageMessage{Type: "send-message", Text: "try again"})
+	w.quiesce(t)
 
 	if until := w.rateLimitedUntil("test"); !until.IsZero() {
 		t.Fatalf("the cap still stands until %v after the user sent into the parked parent: the send is an explicit "+
@@ -204,7 +203,7 @@ func rateLimitedWorker(t *testing.T, name string) (*ConversationWorker, string) 
 func TestRateLimitReport_LeadsTheProviderTextAndNamesTheReset(t *testing.T) {
 	w, providerText := rateLimitedWorker(t, "test-rate-limit-report")
 
-	w.currentRun().runStrategyLoop("", true)
+	w.driveStrategyLoop(t, "", true)
 
 	items := errorItems(w)
 	if len(items) != 1 {
@@ -239,7 +238,7 @@ func TestRateLimitReport_SecondThreadAddsNoSecondItem(t *testing.T) {
 	// Another thread got there first and reported it.
 	w.latchRateLimit("openaicodex", time.Now().Add(4*time.Hour))
 
-	w.currentRun().runStrategyLoop("", true)
+	w.driveStrategyLoop(t, "", true)
 
 	if items := errorItems(w); len(items) != 0 {
 		t.Fatalf("error items = %d, want 0 — the cap was already reported, so this thread repeats it: %+v", len(items), items)

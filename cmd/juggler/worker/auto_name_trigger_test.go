@@ -223,6 +223,7 @@ func TestAutoNameFiresOnFirstRootSubthreadDispatch(t *testing.T) {
 	if _, err := w.currentRun().dispatchCreateThread("Plan", "Plan the migration", "", false, "", ""); err != nil {
 		t.Fatalf("dispatchCreateThread: %v", err)
 	}
+	w.quiesce(t)
 
 	if len(calls) != 1 {
 		t.Fatalf("expected exactly 1 auto-name call, got %d: %+v", len(calls), calls)
@@ -243,6 +244,7 @@ func TestAutoNameDoesNotRefireAfterSubthreadDispatch(t *testing.T) {
 	if _, err := w.currentRun().dispatchCreateThread("Plan", "Plan the migration", "", false, "", ""); err != nil {
 		t.Fatalf("dispatchCreateThread: %v", err)
 	}
+	w.quiesce(t)
 	sendMsg(t, w, SendMessageMessage{Text: "now do the first step"})
 
 	if len(calls) != 1 {
@@ -263,6 +265,7 @@ func TestAutoNameDoesNotFireOnNestedDispatch(t *testing.T) {
 	if _, err := w.currentRun().dispatchCreateThread("child", "a nested task", parentID, false, "", ""); err != nil {
 		t.Fatalf("dispatchCreateThread: %v", err)
 	}
+	w.quiesce(t)
 
 	if len(calls) != 0 {
 		t.Fatalf("expected no auto-name call for a nested dispatch, got %+v", calls)

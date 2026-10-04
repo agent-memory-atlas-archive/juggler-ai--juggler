@@ -129,7 +129,7 @@ func (world *compactionWorld) runToolTurn(toolUseID, result string) {
 	if err := world.w.doc.UpdateItemByToolUseID(toolUseID, "result", map[string]any{"content": result, "isError": false}); err != nil {
 		world.t.Fatal(err)
 	}
-	world.w.currentRun().runStrategyLoop("", true)
+	world.w.driveStrategyLoop(world.t, "", true)
 }
 
 func (world *compactionWorld) driveToolActions() { world.w.driveToolActions() }
@@ -220,7 +220,7 @@ func TestCompactionFitsAndFiresDuringTheToolChain(t *testing.T) {
 	// turn nine and there are still calls left that a compaction can help.
 	result := repeatToTokens(t, "output ", 2_000)
 
-	world.w.currentRun().runStrategyLoop("work through the list", false)
+	world.w.driveStrategyLoop(world.t, "work through the list", false)
 	for i := 1; i <= toolCall; i++ {
 		world.runToolTurn(fmt.Sprintf("tu-%d", i), result)
 	}
@@ -267,7 +267,7 @@ func TestCompactionDoesNotChangeConversationIdentity(t *testing.T) {
 	world.w.currentRun().storeState(StateIdle)
 
 	sendMsg(t, world.w, SendMessageMessage{Text: "the original task"})
-	world.w.currentRun().runStrategyLoop("", true)
+	world.w.quiesce(t)
 	if len(world.autoNames) != 1 || world.autoNames[0] != "the original task" {
 		t.Fatalf("auto-name calls = %v, want exactly one from the opening message", world.autoNames)
 	}
@@ -278,6 +278,7 @@ func TestCompactionDoesNotChangeConversationIdentity(t *testing.T) {
 	}
 
 	sendMsg(t, world.w, SendMessageMessage{Text: "commit this"})
+	world.w.quiesce(t)
 
 	if len(world.autoNames) != 1 {
 		t.Fatalf("auto-name calls after compaction = %v, want the original one only", world.autoNames)
@@ -300,7 +301,7 @@ func TestCompactionTerminatesOnAnUnfoldableOversizedResult(t *testing.T) {
 		return endTurn("recovered and continued")
 	})
 
-	world.w.currentRun().runStrategyLoop("read the enormous file", false)
+	world.w.driveStrategyLoop(world.t, "read the enormous file", false)
 	world.runToolTurn("tu-huge", strings.Repeat("enormous ", 12_000))
 
 	if errs := world.errorItems(); len(errs) > 0 {

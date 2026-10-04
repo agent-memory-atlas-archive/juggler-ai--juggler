@@ -124,9 +124,7 @@ func TestPoliteStop_RestsOneThreadAndLetsItsSiblingCallTheModel(t *testing.T) {
 
 	// Drive the reducer exactly as the event loop would once the tools complete.
 	w.needsReconcile.Store(true)
-	for i := 0; i < 10 && w.needsReconcile.Load(); i++ {
-		w.currentRun().tryReconcile()
-	}
+	w.quiesce(t)
 
 	if left := w.mock.remaining(); left != 2 {
 		t.Fatalf("Pause let %d of 2 sub-threads call the provider anyway (%d scripted turns left, want 2): "+
@@ -188,11 +186,9 @@ func TestPoliteStop_PausedChildNeitherSettlesNorReDrivesItsParent(t *testing.T) 
 
 	// The child's next turn begins: the top-of-turn boundary consumes the latch
 	// and ends the run.
-	w.currentRun().runStrategyLoop("", true)
+	w.driveStrategyLoop(t, "", true)
 
-	for i := 0; i < 10 && w.needsReconcile.Load(); i++ {
-		w.currentRun().tryReconcile()
-	}
+	w.quiesce(t)
 
 	if left := w.mock.remaining(); left != 1 {
 		t.Fatalf("a Pause caused a fresh provider request on the parent (%d scripted turns left, want 1): "+
@@ -278,6 +274,7 @@ func TestPoliteStop_HumanIntentEntryPointsLiftTheMark(t *testing.T) {
 			})
 
 			tc.drive(t, w)
+			w.quiesce(t)
 
 			if w.hasPoliteStops() {
 				t.Errorf("%s left the pause standing (marks = %v): the work it committed to the "+
@@ -340,9 +337,7 @@ func TestPoliteStop_PickupLeavesCoveredThreadsArmed(t *testing.T) {
 
 	// Lifting the pause is what offers it again.
 	w.handleUnpause("")
-	for i := 0; i < 10 && w.needsReconcile.Load(); i++ {
-		w.currentRun().tryReconcile()
-	}
+	w.quiesce(t)
 
 	if left := w.mock.remaining(); left != 0 {
 		t.Errorf("unpausing did not resume the thread the pause parked (%d scripted turns left, want 0)", left)
@@ -382,7 +377,7 @@ func TestPoliteStop_PausedFoldKeepsItsRightToASummary(t *testing.T) {
 
 	// The user presses Pause while the summarizer is working.
 	w.markPoliteStop("")
-	w.currentRun().runStrategyLoop("", true)
+	w.driveStrategyLoop(t, "", true)
 
 	ymap := w.doc.GetThreadYMap(fold)
 	ycrdtMu.Lock()
@@ -398,6 +393,7 @@ func TestPoliteStop_PausedFoldKeepsItsRightToASummary(t *testing.T) {
 	}
 
 	w.handleUnpause("")
+	w.quiesce(t)
 
 	ycrdtMu.Lock()
 	summary, _ = ymap.Get("result").(string)
@@ -434,9 +430,7 @@ func TestPoliteStop_MachineContinuationLeavesTheMarkStanding(t *testing.T) {
 	})
 	w.currentRun().handleInjectThreadMessage(payload)
 
-	for i := 0; i < 10 && w.needsReconcile.Load(); i++ {
-		w.currentRun().tryReconcile()
-	}
+	w.quiesce(t)
 
 	if !w.politeStopCovers("") {
 		t.Fatal("delivered task output lifted the pause; nobody asked for that turn")
@@ -517,9 +511,7 @@ func TestPoliteStop_StoppingOneThreadLeavesTheConversationPaused(t *testing.T) {
 	// ending — so the parent's batch is complete and the reducer would drive it.
 	w.settleThreadRun(child, true)
 	w.needsReconcile.Store(true)
-	for i := 0; i < 10 && w.needsReconcile.Load(); i++ {
-		w.currentRun().tryReconcile()
-	}
+	w.quiesce(t)
 
 	if left := w.mock.remaining(); left != 1 {
 		t.Fatalf("the parent carried on after a sub-thread was stopped under a pause "+

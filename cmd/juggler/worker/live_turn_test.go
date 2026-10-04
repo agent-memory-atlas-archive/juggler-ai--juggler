@@ -4,11 +4,11 @@
 
 package worker
 
-// A turn dispatched under a live run loop executes on a goroutine of its own,
-// which is what lets the loop keep serving the mailbox while the turn streams.
-// These tests drive that path — the one the rest of the package's turn tests
-// deliberately do not, because they call the strategy loop directly with no loop
-// behind it at all.
+// A dispatched turn executes on a goroutine of its own, which is what lets the
+// loop keep serving the mailbox while the turn streams. These tests Start the
+// real run loop and act on the worker through its mailbox while a turn is live —
+// what the rest of the package's tests, which act as the actor themselves and
+// quiesce it between steps (actor_quiesce_test.go), never do.
 
 import (
 	"context"
@@ -186,7 +186,7 @@ func awaitNoLiveRun(t *testing.T, w *ConversationWorker) {
 func TestLiveRunAdmissionAllowsOneWriterWithReadOnlySiblings(t *testing.T) {
 	w := NewConversationWorker("conv-live-admission", "user:test")
 	t.Cleanup(func() {
-		w.updateOSActivity("idle")
+		w.releaseOSActivity()
 		w.doc.Destroy()
 	})
 	r := w.currentRun()
@@ -245,7 +245,7 @@ func TestLiveRunAdmissionAllowsOneWriterWithReadOnlySiblings(t *testing.T) {
 func TestReadOnlyAdmissionCeiling(t *testing.T) {
 	w := NewConversationWorker("conv-readonly-ceiling", "user:test")
 	t.Cleanup(func() {
-		w.updateOSActivity("idle")
+		w.releaseOSActivity()
 		w.doc.Destroy()
 	})
 	r := w.currentRun()
@@ -329,7 +329,6 @@ func TestToolDriveSkipsLiveThreadAndDrivesIdleSibling(t *testing.T) {
 func TestRetiredTurnBoundariesRemainThreadOwned(t *testing.T) {
 	w := NewConversationWorker("conv-live-boundary", "user:test")
 	t.Cleanup(func() { w.doc.Destroy() })
-	w.actorStarted.Store(true)
 	r := w.currentRun()
 
 	first := newTurnState()

@@ -570,7 +570,7 @@ func TestProviderUnavailableSurfacedAsValidationError(t *testing.T) {
 		}
 	}()
 
-	w.currentRun().runStrategyLoop("Hello", false)
+	w.driveStrategyLoop(t, "Hello", false)
 
 	deadline := time.After(2 * time.Second)
 	for {
@@ -701,7 +701,7 @@ func assertUserFixableFailure(t *testing.T, failErr error, wantCode, wantKind, h
 		}
 	}()
 
-	w.currentRun().runStrategyLoop("Hello", false)
+	w.driveStrategyLoop(t, "Hello", false)
 
 	deadline := time.After(2 * time.Second)
 	for {

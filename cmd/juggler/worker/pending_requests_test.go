@@ -537,9 +537,10 @@ func TestPendingRequests_SubmitToTerminalRoundtrip(t *testing.T) {
 		req.Set("isContinuation", false)
 	})
 
-	// First scan: claim + dispatch. dispatchCreateThread drives the
-	// reducer inline so the thread runs to completion synchronously.
+	// First scan: claim + dispatch. dispatchCreateThread asks the reducer for
+	// the pass that starts the thread; quiescing the actor runs it to completion.
 	w.currentRun().scanPendingRequests()
+	w.quiesce(t)
 	// Second scan: advance the 'claimed' entry once the thread Y.Map's
 	// result is populated.
 	w.currentRun().scanPendingRequests()

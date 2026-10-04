@@ -88,8 +88,8 @@ type CreateThreadOptions struct {
 
 	// ExternalDispatch=true marks the WS/orchestrator entry path: the worker
 	// must be idle, the effective model must be set, the new thread is
-	// marked strategyCreated, and the LLM is dispatched via requestLLM+
-	// tryReconcile after creation. Tool-driven creation (ExternalDispatch=
+	// marked strategyCreated, and the LLM is dispatched via requestLLM plus
+	// a reducer pass after creation. Tool-driven creation (ExternalDispatch=
 	// false) is marked llmCreated and leaves dispatch to the strategy loop's
 	// hasIncompleteThreads check.
 	ExternalDispatch bool
@@ -127,8 +127,9 @@ func (r *run) createThread(opts CreateThreadOptions) (string, error) {
 	}
 
 	if opts.ExternalDispatch {
-		// Conversation-wide: an external dispatch runs its strategy loop inline on
-		// the run() goroutine, so any run in flight anywhere refuses it.
+		// Conversation-wide: an external dispatch starts a run of its own at
+		// root scope or under a named parent, so any run in flight anywhere
+		// refuses it.
 		if state := r.anyRunState(); state != StateIdle {
 			return "", fmt.Errorf("worker not idle (state=%s)", state)
 		}

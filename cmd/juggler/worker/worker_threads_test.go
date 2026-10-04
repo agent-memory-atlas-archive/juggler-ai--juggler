@@ -74,7 +74,7 @@ func TestThreadRunSettlesOnTrailingText(t *testing.T) {
 	}()
 
 	// Run the strategy loop as production does — starts from a user message
-	w.currentRun().runStrategyLoop("Hello", false)
+	w.driveStrategyLoop(t, "Hello", false)
 
 	items := w.doc.GetItems()
 	var threadItem ConversationItem
@@ -158,7 +158,7 @@ func TestCreateThreadInjectsToolUseInParentMessages(t *testing.T) {
 		}
 	}()
 
-	w.currentRun().runStrategyLoop("Hello", false)
+	w.driveStrategyLoop(t, "Hello", false)
 
 	// After the loop, w.turn.thread is reset, so buildMessages walks the root
 	// items — exactly the view the parent LLM would see on continuation.
@@ -261,9 +261,7 @@ func TestReducer_EmptyUserThreadDoesNotAutoRunUnderAwaitingLLM(t *testing.T) {
 
 	// Drive the reducer exactly as the event loop would after the insert.
 	w.needsReconcile.Store(true)
-	for i := 0; i < 10 && w.needsReconcile.Load(); i++ {
-		w.currentRun().tryReconcile()
-	}
+	w.quiesce(t)
 
 	arr := w.doc.GetThreadItemsArray(threadItemID)
 	if arr == nil {
@@ -534,6 +532,7 @@ func TestBrowserCreateThreadUsesRequestedParentThread(t *testing.T) {
 	})
 
 	w.currentRun().handleCreateThread(payload)
+	w.quiesce(t)
 
 	// Root should still contain exactly one thread: the parent.
 	items := w.doc.GetItems()
@@ -643,7 +642,7 @@ func TestThreadErrorReturnsToParent(t *testing.T) {
 		}
 	}()
 
-	w.currentRun().runStrategyLoop("Start", false)
+	w.driveStrategyLoop(t, "Start", false)
 
 	// After thread error:
 	// 1. Thread context should be reset

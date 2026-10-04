@@ -153,9 +153,9 @@ type turnState struct {
 	// late wake costs one re-check of a value that has not changed; buffered by
 	// one and sent to non-blockingly, because "look again" needs no queue.
 	//
-	// A signal, not a closed channel: the ambient turn is re-run by the tests
-	// that drive the strategy loop directly, and a one-shot close would leave
-	// every later run on it cancelled from the first instruction.
+	// A signal, not a closed channel: one run passes through several wait loops
+	// (each LLM call, each backoff), and a wake is only "look again" for whichever
+	// one is current — the state it reads is what decides.
 	wake chan struct{}
 
 	// interject releases a run parked in a retry backoff because a fresh user
@@ -173,16 +173,17 @@ type turnState struct {
 
 	// finished is closed when this run's goroutine has returned. Stop waits on it
 	// so no turn is still writing to the document when the worker tears it down.
-	// Never closed for a run driven inline, which has no goroutine to outlive its
-	// caller and is never in the live-run registry Stop reads.
+	// Never closed for the ambient turn, which has no goroutine of its own and is
+	// never in the live-run registry Stop reads.
 	finished chan struct{}
 }
 
 // currentRun is a handle onto the worker's AMBIENT turn: the one the run loop
-// itself carries, and the one every test that drives the strategy loop directly
-// runs on. While a dispatched turn is streaming on its own goroutine the ambient
-// turn is idle and holds that turn's boundary state between dispatches — see
-// adoptTurnBoundary. Ask liveRun for the turn that is actually running.
+// itself carries. A strategy loop never runs on it — every dispatch starts a turn
+// of its own (beginTurn) — so while a dispatched turn streams on its goroutine
+// the ambient turn carries only the actor's own frames: reducer rests, cancel
+// cleanup, and the busy frame a pickup publishes before the loop starts its run.
+// Ask liveRunForThread for the turn that is actually running.
 func (w *ConversationWorker) currentRun() *run {
 	return &run{ConversationWorker: w, t: w.turn}
 }
