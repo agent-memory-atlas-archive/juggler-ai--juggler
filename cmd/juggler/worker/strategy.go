@@ -38,7 +38,7 @@ const (
 	MaxLLMRetryWindow = 5 * time.Minute
 
 	// LLMTimeout is a coarse wall-clock backstop on one waitForLLMResponse,
-	// NOT the primary stream-liveness guard. Liveness now lives at the provider
+	// NOT the primary stream-liveness guard. Liveness lives at the provider
 	// boundary: every streaming provider arms an idle watchdog
 	// (utils.EffectiveStreamIdleTimeout of silence, the claude CLI included)
 	// that aborts a stalled stream and surfaces a transient error within
@@ -135,7 +135,7 @@ func (r *run) runOneTurn(st *strategyRunState, explicitContinuation bool) turnVe
 	// prior turn are already committed to the doc, so promoting any queued
 	// messages and ending the run leaves a clean, resumable transcript;
 	// finishStrategyRun writes idle. The mark is left standing — only a human
-	// lifts one (D5, §10.4) — which is also what stops this run's clean settlement
+	// lifts one — which is also what stops this run's clean settlement
 	// re-driving its parent through signalParentThread: the parent's own dispatch
 	// asks the same question and rests too. The reducer's dispatchCallLLMOnThread
 	// handles the between-turn (async-tool) case; this handles the case where the
@@ -510,7 +510,7 @@ func (r *run) finishStrategyRun() {
 	r.storeState(StateIdle)
 	// The thread context is cleared before parent/sibling settlement below. Release
 	// this run's own doc claim first; a later root-scoped idle frame must not be
-	// responsible for finding it, especially now that idle preserves siblings.
+	// responsible for finding it, since idle preserves siblings.
 	r.releaseLLM(completedThreadID)
 	r.t.processingStartedAt.Store(0)
 	r.t.approvalWaitStartedAt.Store(0)
@@ -573,8 +573,8 @@ func (r *run) finishStrategyRun() {
 
 		r.sendStatus("idle", "")
 		// Scoped to the run that just ended: its own leftovers are stale, a
-		// sibling's are not — and before this was scoped, a sub-thread coming to
-		// rest stamped "Interrupted" on every live tool in the conversation.
+		// sibling's are not. Unscoped, a sub-thread coming to rest would stamp
+		// "Interrupted" on every live tool in the conversation.
 		r.CancelStaleToolActions(completedThreadID)
 
 		if requeue {

@@ -8,10 +8,9 @@ package utils
 // max-output-tokens cap — from an exact-id override map over a single default.
 //
 // Every OpenAI-compatible provider with a fixed model catalog (openai, zai,
-// deepseek, etc.) used to hand-roll the identical "look up the id, else return
-// the default" branch for both dimensions. Centralising it here means a new
-// reasoning model is one map entry and no provider can silently fall out of
-// step (e.g. raising the default in one place but forgetting the override map).
+// deepseek, etc.) resolves both dimensions through it, so a new reasoning model
+// is one map entry and no provider can silently fall out of step (e.g. raising
+// the default in one place but forgetting the override map).
 type ModelCaps struct {
 	Default   int
 	Overrides map[string]int

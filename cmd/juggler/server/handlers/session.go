@@ -176,8 +176,7 @@ func NewSessionAPI(
 func (api *SessionAPI) manager() *core.SessionManager { return api.managerProvider() }
 
 // windowRole is which of this project's windows a request is about, defaulting
-// to the main window — which is what every request meant before a project could
-// have a second kind of window, and what a caller naming no role still means.
+// to the main window, which is what a caller naming no role means.
 //
 // Geometry and appearance both use it: a detached board keeps its own frame, its
 // own theme and its own zoom, all in the one slot named by this role.
@@ -215,8 +214,7 @@ func (api *SessionAPI) HandleSetWindowState(w http.ResponseWriter, r *http.Reque
 }
 
 // boardID is which of this project's boards a request is about, defaulting to
-// the docked panel — which is what every request meant before a project could
-// have a second board, and what a caller naming none still means.
+// the docked panel, which is what a caller naming none means.
 //
 // A malformed id is refused rather than defaulted. Board ids are minted by the
 // client and travel in a window's URL, so one that arrives misspelt is a bug at

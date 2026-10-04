@@ -5,10 +5,9 @@
  * one way only: `settings-panel.js` registers the opener as it defines the
  * element, and everything that wants to open settings — components, the app
  * shell, the model layer — imports `openSettings` from here without importing
- * the panel. That is also why the call is a no-op until registration: it
- * preserves exactly the behaviour every caller used to hand-roll around the
- * `window.openSettings` global (`typeof … === 'function'` before calling it),
- * with the guard written once.
+ * the panel. That is also why the call is a no-op until registration: it is
+ * the same guard a caller of the `window.openSettings` global needs
+ * (`typeof … === 'function'` before calling it), written once.
  *
  * `window.openSettings` survives as an alias for extensions.
  */

@@ -631,15 +631,14 @@ class TestExecutor {
           } else if (data.error) {
             // Error response
             const errorMsg = typeof data.error === 'string' ? data.error : (data.message || 'Unknown error');
-            this.conversation.handleError(this.conversation.rootMessageThread, errorMsg);
+            this.conversation.handleError(errorMsg);
           } else if ('blocks' in data || 'inputTokens' in data) {
             // Final response - structured blocks with token counts
-            const blocks = data.blocks || [];
-            const inputTokens = data.inputTokens || 0;
-            const outputTokens = data.outputTokens || 0;
-            const cachedTokens = data.cachedTokens || 0;
-            const transactionId = data.transactionId;
-            await this.conversation.handleResponse(this.conversation.rootMessageThread, blocks, inputTokens, outputTokens, cachedTokens, transactionId);
+            this.conversation.handleResponse(this.conversation.rootMessageThread, {
+              inputTokens: data.inputTokens || 0,
+              outputTokens: data.outputTokens || 0,
+              cachedTokens: data.cachedTokens || 0
+            });
           }
         }
       };

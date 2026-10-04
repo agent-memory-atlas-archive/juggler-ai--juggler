@@ -272,8 +272,7 @@ class ConnectionManager {
     if (conversationId) {
       const conversation = this._session.getConversation(conversationId);
       if (conversation) {
-        const messageThread = conversation.resolveMessageThread(data.threadItemId);
-        conversation.handleStreamingError(messageThread, data.message);
+        conversation.handleStreamingError(data.message);
       }
     }
   }

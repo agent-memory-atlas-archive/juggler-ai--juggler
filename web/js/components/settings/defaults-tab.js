@@ -30,6 +30,7 @@ import {
 import { fetchJson } from '../../services/http.js';
 import { showAlert } from '../modal-dialog.js';
 import { apiUrl } from '../../utils/api-url.js';
+import { getAppSession } from '../../utils/app-session.js';
 
 /**
  * Popup id shared by both model rows, so opening one row's picker closes the
@@ -98,17 +99,6 @@ export class DefaultsTab {
   }
 
   /**
-   * Resolve the currently attached UI session (for reading/writing per-project
-   * new-conversation defaults). Null when no session is attached (e.g. settings opened
-   * before a project loads).
-   * @returns {import('../../model/session.js').default|null} The active session, or null.
-   * @private
-   */
-  _getSession() {
-    return /** @type {any} */ (window).jugglerApp?.getSession?.() || null;
-  }
-
-  /**
    * Render the "New conversation defaults" section's per-project fields: the strategy
    * a conversation starts on, and whether it starts with edits allowed instead of
    * asking. Persisted to session metadata, so they survive restarts and are shared
@@ -130,8 +120,8 @@ export class DefaultsTab {
       'without asking first — handy when your project is in version control. Each conversation ' +
       'can still be toggled individually, and edits outside the project and allowed ' +
       'paths always prompt.',
-      isDefaultFileEditingOn(this._getSession()),
-      (on) => setDefaultFileEditingOn(this._getSession(), on),
+      isDefaultFileEditingOn(getAppSession()),
+      (on) => setDefaultFileEditingOn(getAppSession(), on),
     );
     container.appendChild(row);
   }
@@ -331,7 +321,7 @@ export class DefaultsTab {
     select.className = 'settings-select';
     select.id = 'default-strategy-select';
 
-    const configured = getDefaultStrategyId(this._getSession());
+    const configured = getDefaultStrategyId(getAppSession());
     const manifests = strategyRegistry.getAllManifests();
     // A configured pin whose strategy is no longer registered (disabled/removed)
     // — surface it as a selected "unavailable" option so the state stays visible
@@ -364,7 +354,7 @@ export class DefaultsTab {
     }
 
     select.addEventListener('change', () => {
-      setDefaultStrategyId(this._getSession(), select.value);
+      setDefaultStrategyId(getAppSession(), select.value);
     });
 
     controlColumn.appendChild(select);

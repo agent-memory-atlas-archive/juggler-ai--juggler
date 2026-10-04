@@ -13,6 +13,7 @@ import { resetExtensionsCache } from '../services/extensions.js';
 import { resetUserCommandsCache } from '../services/user-commands.js';
 import { resetSkillsCache } from '../services/skills.js';
 import { markRegistriesReady } from './registry-ready.js';
+import { getAppSession } from '../utils/app-session.js';
 
 /**
  * Event dispatched on `document` after the capability registries have been torn
@@ -33,7 +34,7 @@ let reloadRequested = false;
  */
 function getLiveSessions() {
   const sessions = [];
-  const appSession = /** @type {any} */ (globalThis).jugglerApp?.getSession?.();
+  const appSession = getAppSession();
   const engineSession = /** @type {any} */ (globalThis).engineApp?.getSession?.();
   if (appSession) sessions.push(appSession);
   if (engineSession && engineSession !== appSession) sessions.push(engineSession);

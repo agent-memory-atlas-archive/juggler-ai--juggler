@@ -8,6 +8,7 @@ import { readFile, writeFile } from 'juggler/ops';
 import { createElement, extractErrorMessage, injectStylesOnce } from 'juggler/ui';
 import { parseMemory, removeEntry } from '../lib/memory-format.js';
 import { pinEmpty } from '../lib/pin-empty.js';
+import { pathPinController } from '../lib/path-pin.js';
 
 injectStylesOnce('memory-pin-styles', `
 .memory-pin {
@@ -148,9 +149,6 @@ class MemoryPin extends PinboardItemType {
     /** The file as it was last drawn, so an unchanged file redraws nothing. */
     let drawn = /** @type {string|null} */ (null);
 
-    /** The file this pin is reading, so a context change that does not move it is not news. */
-    let target = absoluteMemoryPath(context.pin.config, context.active);
-
     const render = async () => {
       const mine = ++generation;
       const path = memoryPath(context.pin.config);
@@ -239,28 +237,16 @@ class MemoryPin extends PinboardItemType {
     const stopWatching = context.services.contextItems.onChange(refresh);
     void render();
 
-    return {
-      update: (next) => {
-        const nextTarget = absoluteMemoryPath(next.pin.config, next.active);
-        // Another conversation may have written the file since this one was last
-        // looked at, so moving between them is a reason to read it again; moving
-        // between threads of one conversation is not.
-        const conversationChanged = next.active?.conversation?.id !== context.active?.conversation?.id;
-        context = next;
-        if (nextTarget === target && !conversationChanged) return;
-        target = nextTarget;
-        void render();
-      },
+    return pathPinController({
+      getContext: () => context,
+      setContext: (next) => { context = next; },
+      targetOf: (c) => absoluteMemoryPath(c.pin.config, c.active),
+      render,
       teardown: () => {
         clearTimeout(pending);
         stopWatching();
       },
-      // Opening, copying and revealing the file are the host's, offered for any
-      // pin that names a path — so this one is left with the read itself.
-      getActions: () => [
-        { id: 'refresh', label: 'Refresh', icon: 'refresh', primary: true, run: () => render() },
-      ],
-    };
+    });
   }
 }
 

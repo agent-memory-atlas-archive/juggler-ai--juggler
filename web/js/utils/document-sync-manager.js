@@ -25,8 +25,8 @@ import { YJS_SYNC_BATCH_MS, YJS_SYNC_BATCH_MAX_MS } from './constants.js';
  * Fraction of wall-clock time applying batches is allowed to consume, as a
  * divisor: the next batching window is the last batch's cost times this, so
  * cost/window settles at 1/COST_BUDGET_DIVISOR. At 8, a batch that takes 6ms or
- * less to apply leaves the window at its YJS_SYNC_BATCH_MS floor, so everything
- * short of a genuinely expensive render behaves exactly as it did before.
+ * less to apply leaves the window at its YJS_SYNC_BATCH_MS floor, so only a
+ * genuinely expensive render widens it.
  */
 const COST_BUDGET_DIVISOR = 8;
 
@@ -207,10 +207,10 @@ class DocumentSyncManager {
    *
    * Unlike activateSync (idempotent, fires its initial-state push at most once),
    * this can be called any time to repair a worker whose doc is missing state the
-   * client already holds — the outbound-sync gap behind Guard A's model
-   * self-heal. It sends through the same broadcast sink as incremental updates,
-   * so it works even if the incremental `doc.on('update')` handler was never
-   * attached. No-op when no broadcast sink is wired.
+   * client already holds — the outbound-sync gap behind the missing-model
+   * self-heal (Conversation.trySelfHealMissingModel). It sends through the same
+   * broadcast sink as incremental updates, so it works even if the incremental
+   * `doc.on('update')` handler was never attached. No-op when no broadcast sink is wired.
    */
   broadcastFullState() {
     if (this.onSyncBroadcast) {

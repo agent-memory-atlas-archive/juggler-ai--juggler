@@ -201,6 +201,7 @@ import { runTests as runModalScrimTests } from '../unit-tests/modal-scrim-test.j
 import { runTests as runRestoreSelectPanelTests } from '../unit-tests/restore-select-panel-test.js';
 import { runTests as runConversationFocusPolicyTests } from '../unit-tests/conversation-focus-policy-test.js';
 import { runTests as runRenameErrorCodeTests } from '../unit-tests/rename-error-code-test.js';
+import { runTests as runSessionManifestStateTests } from '../unit-tests/session-manifest-state-test.js';
 import { runTests as runCommandMenuOrderTests } from '../unit-tests/command-menu-order-test.js';
 import { runTests as runMobileComposerTests } from '../unit-tests/mobile-composer-test.js';
 import { runTests as runComposerSendLatchTests } from '../unit-tests/composer-send-latch-test.js';
@@ -637,6 +638,7 @@ const UNIT_TEST_SUITES = [
   { name: 'unit:restore-select-panel', run: runRestoreSelectPanelTests },
   { name: 'unit:conversation-focus-policy', run: runConversationFocusPolicyTests },
   { name: 'unit:rename-error-code', run: runRenameErrorCodeTests },
+  { name: 'unit:session-manifest-state', run: runSessionManifestStateTests },
   { name: 'unit:command-menu-order', run: runCommandMenuOrderTests },
   { name: 'unit:unclaimed-conversations', run: runUnclaimedConversationsTests },
   { name: 'unit:thread-column-selection', run: runThreadColumnSelectionTests },

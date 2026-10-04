@@ -285,7 +285,7 @@ export function onOtherPopupOpened(ownPopupId, closeHandler) {
 export function registerOpenPopup({ id, onClose, insideSelectors }) {
   // Single-instance: close any popup already open under this id before this one
   // takes its place. Makes stacking structurally impossible for every caller —
-  // the behaviour no longer depends on each button guarding its own open-state.
+  // the behaviour does not depend on each button guarding its own open-state.
   const releaseId = registerPopupId(id, onClose);
   notifyPopupOpen(id);
   const releaseSubscription = onOtherPopupOpened(id, onClose);

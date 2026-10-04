@@ -138,7 +138,7 @@ const RENAME_ERROR_CODES = new Map(/** @type {const} */ ([
  * @typedef {object} ConversationServices
  * @property {import('../services/llm-state.js').default} llmState - LLM state manager for tracking processing
  * @property {import('../services/action-executor.js').default} actionExecutor - Action executor for cancellation
- * @property {import('../services/websocket.js').default} wsService - WebSocket service for cancellation
+ * @property {import('../services/websocket.js').default} wsService - WebSocket service; the Session subscribes its server-push listeners on it (setServices). Conversation does not read it.
  * NOTE: conversationArea is supplied per-tab via setTabElement(), not through this services object.
  */
 
@@ -710,12 +710,27 @@ class Session {
     const conv = this.conversations.get(id);
     if (!conv) return false;
     /** @type {any} */ (conv)._actionExecutor?.cancelConversationActions?.(id);
+    await this._teardownConversation(conv, 'releaseConversation');
+    return true;
+  }
+
+  /**
+   * The teardown both removal paths share — {@link Session#releaseConversation}
+   * and {@link Session#_dropActiveConversation}: stop any queued load, destroy
+   * the worker, then drop the entry from the map and the MRU list. Each caller
+   * adds only what is its own (an action cancel; a fallback selection).
+   * @param {any} conv - The loaded conversation being removed
+   * @param {string} from - Caller, for the tape
+   * @returns {Promise<void>}
+   * @private
+   */
+  async _teardownConversation(conv, from) {
+    const id = conv.id;
     this._loadQueue?.cancel(id);
     await workerManager.destroyConversationAndWorker(conv);
-    recordTape('session-mut', id, { op: 'delete', from: 'releaseConversation' });
+    recordTape('session-mut', id, { op: 'delete', from });
     this.conversations.delete(id);
     this._mruList = this._mruList.filter(x => x !== id);
-    return true;
   }
 
   /**
@@ -730,11 +745,7 @@ class Session {
   async _dropActiveConversation(id, { clearVisibleIfNoFallback }) {
     const conv = this.conversations.get(id);
     if (!conv) return null;
-    this._loadQueue?.cancel(id);
-    await workerManager.destroyConversationAndWorker(conv);
-    recordTape('session-mut', id, { op: 'delete', from: '_dropActiveConversation' });
-    this.conversations.delete(id);
-    this._mruList = this._mruList.filter(x => x !== id);
+    await this._teardownConversation(conv, '_dropActiveConversation');
     // The one being dropped may be the conversation behind a workspace panel
     // rather than the one on screen, and it needs replacing either way.
     if (this.loadedConversationId === id) {
@@ -1300,6 +1311,41 @@ class Session {
    * @returns {Promise<void>} Resolves once metadata/history are reseeded
    * @private
    */
+  /**
+   * Adopt the session-level state a manifest (`GET /api/session`) carries:
+   * platform, home, message history and metadata. The one reader of those
+   * fields, shared by the first load, the post-project-switch reseed and every
+   * refresh, so all three agree on what an absent field means.
+   *
+   * The manifest is the authority, so absent means EMPTY, not "keep what we
+   * had": the server omits `metadata` when the map is empty (`omitempty` on
+   * core.Session) and sends `messageHistory: null` when there is none, so a
+   * reader that kept its old value on absence would hold stale state after
+   * another viewer cleared it. Platform and home are facts about the machine
+   * and are only overwritten by a value.
+   * @param {SessionData} data - The manifest
+   * @param {{notify: boolean}} opts - notify: announce the metadata to
+   *   subscribers as a remote change (false only for the first load, which has
+   *   no prior state to change from)
+   * @private
+   */
+  _applyManifestState(data, { notify }) {
+    if (data.platform) this.platform = data.platform;
+    if (data.home) this.home = data.home;
+    this.messageHistory = Array.isArray(data.messageHistory)
+      ? data.messageHistory.map(normalizeHistoryEntry)
+      : [];
+    const metadata = data.metadata || {};
+    this.metadata = metadata;
+    if (notify) {
+      this._notify('session:metadata-changed', {
+        keys: Object.keys(metadata),
+        metadata,
+        remote: true
+      });
+    }
+  }
+
   async _reseedProjectScopedState() {
     const requestedFor = this.projectPath;
     /** @type {SessionData|null} */
@@ -1312,19 +1358,7 @@ class Session {
     }
     if (this.projectPath !== requestedFor) return;
 
-    if (data.platform) this.platform = data.platform;
-    if (data.home) this.home = data.home;
-    this.messageHistory = Array.isArray(data.messageHistory)
-      ? data.messageHistory.map(normalizeHistoryEntry)
-      : [];
-
-    const metadata = data.metadata || {};
-    this.metadata = metadata;
-    this._notify('session:metadata-changed', {
-      keys: Object.keys(metadata),
-      metadata,
-      remote: true
-    });
+    this._applyManifestState(data, { notify: true });
 
     // The switch already released the previous project's conversations, so this
     // covers the race window between that and the metadata landing: a worker
@@ -1845,18 +1879,7 @@ class Session {
       this.workspaceKinds = data.workspaceKinds && typeof data.workspaceKinds === 'object'
         ? data.workspaceKinds
         : {};
-      if (data.platform) {
-        this.platform = data.platform;
-      }
-      if (data.home) {
-        this.home = data.home;
-      }
-      if (data.messageHistory) {
-        this.messageHistory = data.messageHistory.map(normalizeHistoryEntry);
-      } else {
-        this.messageHistory = [];
-      }
-      this.metadata = data.metadata || {};
+      this._applyManifestState(data, { notify: false });
 
       // Initialize worker manager with session config (Pass session for conversation access)
       if (!this._workerManagerInitialized) {
@@ -2521,8 +2544,8 @@ class Session {
       //    copy precedes the announcement, no client (or the clone's own
       //    worker) ever observes an empty clone. The server flushes the
       //    source's worker first, so an open conversation is copied current.
-      //    (This replaced a worker→worker copy that raced the clone worker
-      //    writing an empty doc over the copy — blank large-conversation clones.)
+      //    (A worker→worker copy would race the clone's worker writing an
+      //    empty doc over the copy, blanking large-conversation clones.)
       response = await this._apiService.createConversation(requestedName, requestedId, {
         duplicateFrom: conversationId,
         origin: 'duplicate'
@@ -3054,15 +3077,7 @@ class Session {
     this._conversationNames = { ...retainedNames, ...names };
     this.binnedCount = Number(/** @type {any} */(data).binnedCount) || 0;
     this.binSizeBytes = Number(/** @type {any} */(data).binSizeBytes) || 0;
-    if (data.metadata) {
-      this.metadata = data.metadata;
-      this._notify('session:metadata-changed', {
-        keys: Object.keys(data.metadata),
-        metadata: data.metadata,
-        remote: true
-      });
-    }
-    if (data.messageHistory) this.messageHistory = data.messageHistory.map(normalizeHistoryEntry);
+    this._applyManifestState(data, { notify: true });
 
     // The manifest, not the rebuild's own success, says what still exists:
     // judging by `reordered` would destroy a conversation the server still

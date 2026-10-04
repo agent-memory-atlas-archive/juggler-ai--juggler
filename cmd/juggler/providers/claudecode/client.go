@@ -607,11 +607,10 @@ func emitCacheMissWarning(callback provider.StructuredStreamCallback, req provid
 // "⚠ claudecode cache-miss" line, plus the UI status warning when the loss is
 // consequential enough to be worth interrupting for.
 //
-// Mid-dispatch fallbacks used to log at debug level and nothing more, which
-// made a full re-ingest effectively undetectable: the NEXT turn's cache hit
-// ratio reads ~99% (a small truncated context re-reads perfectly), so the only
-// symptom is absolute input tokens collapsing and the token spend climbing.
-// Every cold start goes through here so that can't recur silently.
+// A full re-ingest is otherwise effectively undetectable: the NEXT turn's cache
+// hit ratio reads ~99% (a small truncated context re-reads perfectly), so the
+// only symptom is absolute input tokens collapsing and the token spend
+// climbing. Every cold start goes through here so none passes silently.
 //
 // Order is load-bearing: emitCacheMissWarning reads the session's sentCount to
 // distinguish a real loss from a first turn, and dispatchFreshStart releases

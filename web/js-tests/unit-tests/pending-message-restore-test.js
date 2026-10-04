@@ -8,7 +8,7 @@
  * A send clears the box before the worker has accepted anything, so the only
  * copy of what the user wrote is the pending message the conversation holds.
  * Two things can happen to it: the client re-broadcasts its model config and
- * resends it once (Guard A's self-heal), or it goes back into the box for the
+ * resends it once (the missing-model self-heal), or it goes back into the box for the
  * user to act on. Both must carry the WHOLE message — a message is its text and
  * its image attachments together — because nothing else holds the images by
  * then: the box was cleared, no item was written (the worker bounces a

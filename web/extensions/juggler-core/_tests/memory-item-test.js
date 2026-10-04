@@ -236,6 +236,46 @@ export async function runTests(ctx) {
     assert(second === 'FACT', `transient read failure on an existing file must serve last-known-good, got: ${JSON.stringify(second)}`);
   });
 
+  await test('last-known-good never crosses a project switch for the relative default path', async () => {
+    // The production path is relative, and the engine — with this module's
+    // cache — outlives a project switch while the server re-resolves the path
+    // against the new project. So the same path string names a different file
+    // after a switch, and the previous project's facts must not be served for it.
+    const root = session.projectPath;
+    assert(root && (ctx.fixtureDir === root || ctx.fixtureDir.startsWith(`${root}/`)),
+      `precondition: the fixture (${ctx.fixtureDir}) must be, or sit under, the session's project (${root})`);
+    const fixtureRel = ctx.fixtureDir === root ? '' : `${ctx.fixtureDir.slice(root.length + 1)}/`;
+    const rel = `${fixtureRel}_memory_test/rel${++pathCounter}-${Date.now()}/MEMORY.md`;
+
+    /**
+     * An item whose session reports `projectPath`, reading the relative file.
+     * @param {string} projectPath - The project the item's session believes is open
+     * @returns {MemoryContextItem} The item
+     */
+    const itemIn = (projectPath) => new MemoryContextItem({
+      id: `MEM_test_switch_${++pathCounter}`,
+      session: Object.assign(Object.create(session), { projectPath }),
+      conversation,
+      messageThread: conversation.rootMessageThread
+    });
+    const blip = () => { const ac = new AbortController(); ac.abort(); return ac.signal; };
+
+    const before = itemIn(root);
+    await before._write(rel, 'PREVIOUS PROJECT FACT');
+    before.signal = blip();
+    const same = await before._read(rel);
+    assert(same === 'PREVIOUS PROJECT FACT',
+      `a blip within one project must still serve its last-known-good, got ${JSON.stringify(same)}`);
+
+    // After the switch the server resolves `rel` in the new project, where the
+    // file exists (here, the same file on disk stands in for it) and the read blips.
+    const after = itemIn(`${root}-another-project`);
+    after.signal = blip();
+    const crossed = await after._read(rel);
+    assert(crossed !== 'PREVIOUS PROJECT FACT',
+      'the previous project\'s memory was served as the new project\'s last-known-good — the next remember would write it into the new project');
+  });
+
   await test('unseeded memory block survives a transient read blip via createContextText', async () => {
     // A seeded item never reads during assembly, so this covers the unseeded
     // fallback path — the one place a read blip could still drop the block.

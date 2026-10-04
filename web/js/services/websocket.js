@@ -67,8 +67,8 @@ const WAKE_STALE_MS = 30000;
 const WAKE_ATTEMPT_GRACE_MS = 3000;
 
 /**
- * First retry after a link drops. Most drops are momentary, and the old floor of
- * a full second was a second of nothing on every one of them.
+ * First retry after a link drops. Most drops are momentary, and a floor of a
+ * full second would be a second of nothing on every one of them.
  */
 const RECONNECT_FIRST_DELAY_MS = 300;
 
@@ -1678,8 +1678,8 @@ class WebSocketService {
    * Over studio the service worker tunnels EVERY same-origin request from this
    * page — /api/health included — through the very DataChannel that just died,
    * so the probe can only ever return an instant 504. Gating the reload on it
-   * therefore wedged the session in an endless health-check loop that never
-   * recovered (the reachability signal it waited for was unreachable by
+   * would wedge the session in an endless health-check loop that never
+   * recovers (the reachability signal it waits for is unreachable by
    * construction). There is no out-of-band path to juggler.studio from here to
    * probe instead, and a reload's success depends on the P2P host being
    * reachable — which cannot be known without redoing the handshake anyway.

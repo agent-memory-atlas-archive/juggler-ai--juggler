@@ -312,8 +312,7 @@ func (a *appState) handleWindowControl(w http.ResponseWriter, r *http.Request) {
 // chooser asked for a file takes either: a file pin and a file context item both
 // accept a directory, so Browse must reach everything the typed path does or it
 // is a lesser way of answering the same question. An untitled request gets the
-// project picker's wording, which is what every request meant before there was a
-// second kind.
+// project picker's wording.
 //
 // Where the chooser opens is decided here too, from two candidates. The place
 // this app last picked from wins: a chooser that reopens where you were beats

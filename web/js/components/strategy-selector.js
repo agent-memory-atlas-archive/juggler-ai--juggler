@@ -214,7 +214,7 @@ class StrategySelector extends HTMLElement {
     // inputs + baseline) only when the array actually changes, so the constant
     // streaming-repaint calls through here don't stack observers or re-fetch.
     this._bindItemsObserver(messageThread || null);
-    // The CycleBuffer owns the two guards this used to hand-roll: while a gesture
+    // The CycleBuffer owns the two display guards: while a gesture
     // buffers, it rejects everything (the preview owns the display); after a
     // commit it pins the landing id and rejects the transient sync bounce until
     // the running turn settles. conversation-tab rebuilds a fresh MessageThread

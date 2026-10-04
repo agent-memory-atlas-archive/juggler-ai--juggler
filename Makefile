@@ -70,8 +70,7 @@ MAC_ENTITLEMENTS=assets/macos/juggler.entitlements
 # requests at startup) on that cdhash, re-prompting on the first launch of each
 # new build. Signing with a *stable* identity instead keys the grant on the
 # signing identity, so it persists across rebuilds and the prompt stops nagging.
-# Unset (default) → ad-hoc signing, unchanged behaviour and no cert dependency
-# for other devs/CI. Set it to a self-signed keychain cert's name to opt in:
+# Unset (default) → ad-hoc signing, with no cert dependency for other devs/CI. Set it to a self-signed keychain cert's name to opt in:
 #   make build CODESIGN_IDENTITY="Juggler Dev"
 # (create the cert once via Keychain Access → Certificate Assistant → Create a
 # Certificate → "Code Signing", self-signed; grant the Downloads prompt once.)
@@ -102,7 +101,7 @@ GOCLEAN=$(GOCMD) clean
 GOTEST=$(GOCMD) test
 # RUN='<regex>' narrows the suite to matching test functions (a `go test -run`
 # pattern) and turns on -v so that one test's own output is visible; empty RUN
-# runs the whole suite quietly, as before. Honoured by `make test`, `make
+# runs the whole suite quietly. Honoured by `make test`, `make
 # test-go`, and `make test-full`. Double-quoted so a regex containing |, /, or a
 # space survives the single-quoted `bash -c` wrappers in the test recipes below.
 RUN ?=
@@ -572,8 +571,8 @@ endif
 ## prerequisites for notarizing a Developer ID build: Apple rejects a submission
 ## that lacks the hardened runtime or a secure timestamp. The ad-hoc fallback
 ## deliberately omits them (a secure timestamp needs a real cert, and hardened
-## runtime is meaningless without one), so an identity-less dev build signs
-## exactly as before. Run after mac-app-meta so Info.plist is sealed in.
+## runtime is meaningless without one), so an identity-less dev build gets a
+## plain ad-hoc signature. Run after mac-app-meta so Info.plist is sealed in.
 mac-codesign:
 ifeq ($(UNAME_S),Darwin)
 	@id="$(CODESIGN_IDENTITY)"; \

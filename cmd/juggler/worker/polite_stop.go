@@ -27,8 +27,8 @@ package worker
 //     thread and leaves the mark where it is.
 //
 // A mark is lifted only by an explicit human act: the Pause button toggled back
-// off (handleUnpause), a send or Continue into the covered thread (D6 resume), a
-// hard cancel over it (D7 escalation), and undo/redo, which revokes the whole
+// off (handleUnpause), a send or Continue into the covered thread (a resume), a
+// hard cancel over it (an escalation), and undo/redo, which revokes the whole
 // conversation's intent.
 //
 // Which means every path that starts work has to answer one question, and there
@@ -147,7 +147,7 @@ func (w *ConversationWorker) dropPoliteStopsCovering(threadItemID string) {
 
 // dropPoliteStopsUnder lifts every mark inside this thread's subtree, its own
 // included. Used by the hard cancel: a stop is an escalation over the work it
-// destroys (D7), so no mark is left behind to suppress the turn after it — and a
+// destroys, so no mark is left behind to suppress the turn after it — and a
 // stop at the root, which stops everything, lifts everything.
 //
 // It reaches DOWN only. A pause standing over this thread was put there by

@@ -52,9 +52,8 @@ type threadContext struct {
 // exists to keep that number honest — excluding time parked at an approval
 // prompt, and excluding wall-clock the process spent frozen.
 //
-// R21(c) gave these fields their own methods (updateElapsedAnchor,
-// updateApprovalWaitAnchor, detectFrozenGap); this gives them their own home.
-// Run goroutine only.
+// Its methods are updateElapsedAnchor, updateApprovalWaitAnchor and
+// detectFrozenGap. Run goroutine only.
 type elapsedAnchor struct {
 	// livenessTicker fires ~every livenessInterval while run() executes, giving
 	// detectFrozenGap a heartbeat. There is no OS event for "the wall clock jumped
@@ -165,11 +164,11 @@ type persistence struct {
 	// Persistence
 	//
 	// saveTimer is the debounce timer, touched ONLY on the run() goroutine (see
-	// armSaveDebounce). It used to be re-armed by scheduleSave itself, which the
-	// Yjs sync callback invokes on whichever goroutine did the Transact() — safe
-	// only while that was always run(). A turn goroutine writing the document
-	// makes that genuinely concurrent, so scheduleSave now signals saveRequest
-	// and the run loop owns the timer.
+	// armSaveDebounce). scheduleSave cannot re-arm it directly: the Yjs sync
+	// callback invokes scheduleSave on whichever goroutine did the Transact(),
+	// and a turn goroutine writing the document makes that genuinely concurrent
+	// with run(). So scheduleSave signals saveRequest and the run loop owns the
+	// timer.
 	saveTimer *time.Timer
 	// saveRequest carries "the document changed, re-arm the debounce" from any
 	// goroutine to the run loop. Buffered by one and sent to non-blockingly: a
@@ -1112,14 +1111,7 @@ func (r *run) run(ctx context.Context) {
 			}
 		case ack := <-r.flushReq:
 			event, started = "flush", time.Now()
-			var err error
-			if !r.deleting.Load() {
-				if r.saveTimer != nil {
-					r.saveTimer.Stop()
-				}
-				err = r.saveStateToDisk()
-			}
-			ack <- err
+			ack <- r.flushNow()
 		case <-r.docChangeChan:
 			event, started = "items change", time.Now()
 			r.handleItemsChange()
@@ -1342,13 +1334,12 @@ func (r *run) dispatchMessage(msg workerMessage) {
 // files) and after duplicating a conversation, so those non-user edits aren't
 // undoable. Runtime feature — must stay outside the test-only handler gate.
 func (w *ConversationWorker) handleClearUndoStacks(payload json.RawMessage) {
-	var msg ClearUndoStacksMessage
-	_ = json.Unmarshal(payload, &msg)
+	ackID := w.ackIDOf("clear-undo-stacks", payload)
 
 	w.tracker.ClearHistory()
 	w.reply(map[string]any{
 		"type":  "ack",
-		"ackId": msg.AckID,
+		"ackId": ackID,
 	})
 }
 
@@ -1358,8 +1349,7 @@ func (w *ConversationWorker) handleClearUndoStacks(payload json.RawMessage) {
 // check. Runtime feature — must stay outside the test-only handler gate.
 func (w *ConversationWorker) handleGetTransaction(payload json.RawMessage) {
 	var msg GetTransactionMessage
-	if err := json.Unmarshal(payload, &msg); err != nil {
-		jlog.Error("Failed to parse get-transaction: %v", err)
+	if !w.decodePayload("get-transaction", payload, &msg) {
 		return
 	}
 
@@ -1389,29 +1379,33 @@ func (w *ConversationWorker) handleGetTransaction(payload json.RawMessage) {
 // destroy+reload cycle.
 //
 // This runs on the worker goroutine (dispatched inline from the run loop), so it
-// saves directly — mirroring the loop's own flushReq case — rather than routing
-// through ConversationWorker.FlushPersistence, which would deadlock waiting on
-// the same loop to service flushReq.
+// calls flushNow directly — exactly as the loop's own flushReq case does —
+// rather than routing through ConversationWorker.FlushPersistence, which would
+// deadlock waiting on the same loop to service flushReq.
 func (r *run) handleFlushPersistence(payload json.RawMessage) {
-	var msg struct {
-		AckID string `json:"ackId,omitempty"`
-	}
-	_ = json.Unmarshal(payload, &msg)
-
-	// Match the run loop's flushReq handling: skip while deleting (the folder is
-	// about to be removed), otherwise stop the pending debounce timer and save.
-	if !r.deleting.Load() {
-		if r.saveTimer != nil {
-			r.saveTimer.Stop()
-		}
-		if err := r.saveStateToDisk(); err != nil {
-			r.log.Error("Failed to flush persistence: %v", err)
-		}
+	ackID := r.ackIDOf("flush-persistence", payload)
+	if err := r.flushNow(); err != nil {
+		r.log.Error("Failed to flush persistence: %v", err)
 	}
 	r.send(map[string]any{
 		"type":  "ack",
-		"ackId": msg.AckID,
+		"ackId": ackID,
 	})
+}
+
+// flushNow is the synchronous save behind both flush paths — the run loop's
+// flushReq case (FlushPersistence, from tests and shutdown) and the
+// flush-persistence message (the quit handshake). It stops the pending debounce
+// timer and saves, unless the conversation is being deleted: the folder is about
+// to be removed, and saving would recreate it. Runs on the worker goroutine.
+func (r *run) flushNow() error {
+	if r.deleting.Load() {
+		return nil
+	}
+	if r.saveTimer != nil {
+		r.saveTimer.Stop()
+	}
+	return r.saveStateToDisk()
 }
 
 // =============================================================================
@@ -1601,8 +1595,7 @@ func (r *run) writeProcessingState(status, message, code string) {
 		// The mid-stream progress fields belong to the phase that produced them:
 		// a token count from the last stream means nothing beside "Running
 		// tools", and a provider activity line describes a call that has ended.
-		// Each new frame drops them, which is what rebuilding the frame from
-		// scratch used to do while they lived at the top level.
+		// Each new frame drops them.
 		for _, field := range []string{"description", "phase", "inputTokens", "outputTokens", "cachedTokens"} {
 			delete(entry, field)
 		}

@@ -277,7 +277,7 @@ func (ops *ShellOperations) kill(params map[string]any) (any, error) {
 
 // listBackgroundShells returns one conversation's background shells, within the
 // caller's current project. conv_id is required rather than optional: an omitted
-// filter used to mean "every task in the process", which is a listing of other
+// filter would mean "every task in the process", which is a listing of other
 // conversations' commands and is never what a caller wants.
 func (ops *ShellOperations) listBackgroundShells(params map[string]any) (any, error) {
 	convID, ok := params["conv_id"].(string)

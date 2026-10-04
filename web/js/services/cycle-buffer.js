@@ -6,8 +6,8 @@
  * CycleBuffer — the shared display-defence lifecycle behind every hold-to-cycle
  * selector (strategy, model, thinking). It does NOT touch the doc; it only
  * governs when the doc is allowed to drive the collapsed button, so the two
- * things the selectors used to each hand-roll (and had drifted apart on) live in
- * one place:
+ * guards every selector needs live in one place rather than drifting apart
+ * across hand-rolled copies:
  *
  *   1. **A frozen button during the gesture.** While the user holds the
  *      modifiers and cycles, the target is shown in the HUD (dropdown / popover)

@@ -6,8 +6,8 @@
 /**
  * `juggler/ops` — the privileged host-operations layer.
  *
- * This is the keystone of third-party parity: file, shell, web, grep and tree
- * operations that previously only built-in plugins could reach. These ops run
+ * This is the keystone of third-party parity: the same file, shell, web, grep
+ * and tree operations the built-in plugins use. These ops run
  * with the user's full authority — there is no per-extension sandbox. The
  * manifest `permissions` list is a *declaration* of the host access an
  * extension's code uses, surfaced to the user in the catalog and the

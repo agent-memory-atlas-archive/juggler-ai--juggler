@@ -1610,8 +1610,8 @@ export const threadAliasDeleteRemovesOneTileTest = {
  * A final response's token counts belong to the thread that produced them.
  *
  * `handleResponse` is handed the MessageThread the response is for, and the
- * status write underneath it used to omit that thread — which means
- * LLMState.updateStatus falls back to the conversation's *projected* run, the
+ * status write underneath it must name that thread: a write that omits it makes
+ * LLMState.updateStatus fall back to the conversation's *projected* run, the
  * single thread the conversation nominates as its headline. With one thread
  * running those are the same thread and nothing shows. With several running in
  * parallel they routinely are not, and the counts land on a sibling: one
@@ -1648,9 +1648,8 @@ export const responseUsageLandsOnItsOwnThreadTest = {
       llmState.isConversationProcessing = () => true;
 
       // A response for a thread that is NOT the projected run. Only the thread
-      // id is needed here; handleResponse touches the rest solely on its error
-      // path.
-      await conv.handleResponse({ threadItemId: 'msg_sub_thread' }, [], 1234, 10, 500);
+      // id is needed here: it is all handleResponse reads off the thread.
+      conv.handleResponse({ threadItemId: 'msg_sub_thread' }, { inputTokens: 1234, outputTokens: 10, cachedTokens: 500 });
 
       const own = llmState.getLiveInputUsage(conv.id, 'msg_sub_thread');
       if (!own || own.inputTokens !== 1234) {

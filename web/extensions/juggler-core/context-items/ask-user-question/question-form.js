@@ -350,8 +350,8 @@ export function buildMultiQuestionForm(questions, context) {
   };
 
   // Built before the questions so nothing has to forward-reference the Submit
-  // button through a closure; appended after them, so the DOM order is
-  // unchanged.
+  // button through a closure; appended after them, so the buttons follow the
+  // questions in the DOM.
   const { actions, submitBtn } = buildActionsRow(
     () => resolve(JSON.stringify(selections)),
     () => resolve('cancel')

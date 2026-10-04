@@ -152,7 +152,6 @@ class Conversation {
    * @param {object} services - Required services
    * @param {import('../services/llm-state.js').default} services.llmState
    * @param {import('../services/action-executor.js').default} services.actionExecutor - Action executor for cancellation
-   * @param {import('../services/websocket.js').default} services.wsService - WebSocket service for cancellation
    * @param {object} [options] - Optional configuration
    * @param {boolean} [options.isTransient=false] - If true, conversation won't be persisted to backend
    * @param {string} [options.strategyId] - Strategy ID to use (defaults to 'default')
@@ -220,9 +219,6 @@ class Conversation {
 
     /** @type {import('../services/action-executor.js').default} @private */
     this._actionExecutor = services.actionExecutor;
-
-    /** @type {import('../services/websocket.js').default} @private */
-    this._wsService = services.wsService;
 
     /** @type {HTMLElementTagNameMap['conversation-area']|null} */
     this._conversationArea = null; // Will be set via setTabElement()
@@ -526,12 +522,10 @@ class Conversation {
    * by the time _doLoadExisting calls this, the local doc already has the
    * worker's modelConfig (flushPendingUpdates was just called). Writing it
    * again produces a redundant Yjs update that RACES against concurrent
-   * writers (e.g. the test iframe doing `set-model` at the same moment
-   * another iframe is auto-loading the same conv). The tape showed this:
-   * a sibling iframe's auto-load wrote modelConfig back, overwriting a
-   * concurrent set-model in `duplicate-conversation-basic` and producing
-   * the wrong modelConfig on the duplicate. yjs-sync delivers the
-   * authoritative value; no JS-side write needed.
+   * writers: a viewer auto-loading the conversation would write its stale
+   * modelConfig back over a `set-model` another viewer makes at the same
+   * moment, leaving the wrong modelConfig in the document. yjs-sync
+   * delivers the authoritative value; no JS-side write needed.
    * @param {{modelConfig?: any, currentStrategyId?: string}} metadata
    */
   restoreWorkerMetadata(metadata) {
@@ -2033,9 +2027,10 @@ class Conversation {
   _stopHandlers = new Set();
 
   /**
-   * Guard A one-shot latch: set when a "no-model" validation error triggers a
-   * model-config resync + auto-resend (see services/llm-state.js), cleared on the
-   * next accepted turn. Prevents a resend loop if the self-heal doesn't take.
+   * Missing-model self-heal one-shot latch (see trySelfHealMissingModel): set
+   * when a "no-model" validation error triggers a model-config resync +
+   * auto-resend (see services/llm-state.js), cleared on the next accepted turn.
+   * Prevents a resend loop if the self-heal doesn't take.
    * @type {boolean}
    */
   _modelSelfHealAttempted = false;
@@ -2080,10 +2075,9 @@ class Conversation {
 
   /**
    * Handle an error during processing
-   * @param {import('./message-thread.js').MessageThread} _messageThread
    * @param {string} message - Error message
    */
-  _handleError(_messageThread, message) {
+  _handleError(message) {
     console.error(`[Conversation] Error: ${message}`);
 
     // The Go worker writes the error item via Yjs sync.
@@ -2118,10 +2112,9 @@ class Conversation {
 
   /**
    * Handle streaming error notification from backend
-   * @param {import('./message-thread.js').MessageThread} messageThread
    * @param {string} errorMessage - Detailed error message from LLM provider
    */
-  handleStreamingError(messageThread, errorMessage) {
+  handleStreamingError(errorMessage) {
     if (!this._llmState.isConversationProcessing(this.id)) {
       return;
     }
@@ -2134,19 +2127,13 @@ class Conversation {
   }
 
   /**
-   * Handle final response from backend
-   * @param {import('./message-thread.js').MessageThread} messageThread
-   * @param {import('../services/websocket.js').ContentBlock[]} blocks - Structured response blocks
-   * @param {number} inputTokens - Input tokens used
-   * @param {number} outputTokens - Output tokens generated
-   * @param {number} cachedTokens - Prompt tokens served from cache (OpenAI)
-   * @param {string} [transactionId] - Transaction ID; the Go worker owns turn flow, accepted for call-site parity
-   * @param {string} [stopReason] - LLM stop reason; the Go worker owns turn flow, accepted for call-site parity
+   * Handle final response from backend. Only the usage is read: the Go worker
+   * owns the turn — it writes the response's blocks and decides what follows —
+   * so the viewer's part is recording the counts against the right thread.
+   * @param {import('./message-thread.js').MessageThread} messageThread - The thread the response is for
+   * @param {{inputTokens?: number, outputTokens?: number, cachedTokens?: number}} usage - Token counts (cachedTokens: prompt tokens served from cache)
    */
-  async handleResponse(messageThread, blocks, inputTokens = 0, outputTokens = 0, cachedTokens = 0, transactionId, stopReason) {
-    void blocks;
-    void stopReason;
-    void transactionId;
+  handleResponse(messageThread, { inputTokens = 0, outputTokens = 0, cachedTokens = 0 }) {
     // Check if this conversation is still processing
     if (!this._llmState.isConversationProcessing(this.id)) {
       console.warn('[Conversation] handleResponse called but conversation not processing');
@@ -2170,7 +2157,7 @@ class Conversation {
       // update above is all the viewer needs to do here.
     } catch (error) {
       console.error('[Conversation] Error in handleResponse:', error);
-      this._handleError(messageThread, extractErrorMessage(error));
+      this._handleError(extractErrorMessage(error));
     }
   }
 
@@ -2180,10 +2167,9 @@ class Conversation {
 
   /**
    * Handle error for this conversation
-   * @param {import('./message-thread.js').MessageThread} messageThread
    * @param {string} error - Error message
    */
-  handleError(messageThread, error) {
+  handleError(error) {
     console.error(`[ESSENTIAL] [Conversation] Error in ${this.id}: ${error}`);
 
     if (!this._llmState.isConversationProcessing(this.id)) {
@@ -2196,7 +2182,7 @@ class Conversation {
     if (isCancellation) {
       this._handleCancellation();
     } else {
-      this._handleError(messageThread, error);
+      this._handleError(error);
     }
   }
 
@@ -2850,7 +2836,7 @@ class Conversation {
   }
 
   /**
-   * Guard A — try to self-heal a "no-model" validation error. The worker's doc
+   * The missing-model self-heal: try to recover from a "no-model" validation error. The worker's doc
    * resolved no model, yet this client is displaying a real one: the model write
    * never reached the worker (the outbound-sync gap — see session.js).
    * Re-broadcast our full doc state (which carries defaultModelConfig) so the
@@ -2983,7 +2969,7 @@ class Conversation {
    * for a worker whose doc is missing a write this client already holds (the
    * outbound-sync gap). Two callers, both of which detect the gap by its
    * consequence rather than by watching the transport:
-   *   - Guard A's "no-model" divergence — the worker resolved no model though
+   *   - the "no-model" divergence (trySelfHealMissingModel) — the worker resolved no model though
    *     this client is displaying one. Full state includes `defaultModelConfig`,
    *     so the next send validates.
    *   - a tool command the engine declined because the worker is behind on that
@@ -2995,7 +2981,7 @@ class Conversation {
   }
 
   /**
-   * Resend a message straight to the worker — Guard A's one-shot auto-retry
+   * Resend a message straight to the worker — the missing-model self-heal's one-shot auto-retry
    * after resyncToWorker(). Deliberately bypasses the local sendMessage guards:
    * they already passed for the original send, and this must ride the same FIFO
    * worker channel immediately after the resync so the model config lands before

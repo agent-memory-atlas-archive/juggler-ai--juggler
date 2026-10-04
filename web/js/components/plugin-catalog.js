@@ -22,6 +22,7 @@ import JugglerElement from './juggler-element.js';
 import { renderMarkdown, looksLikeMarkdown } from '../../sdk/lib/markdown.js';
 import { ExtensionSettingsEditor } from './settings/extensions-settings.js';
 import { apiUrl } from '../utils/api-url.js';
+import { getAppSession } from '../utils/app-session.js';
 
 /**
  * @typedef {object} CapCard
@@ -554,15 +555,6 @@ class PluginCatalog extends JugglerElement {
   }
 
   /**
-   * Resolve the currently attached UI session, when this catalog is in the main app.
-   * @private
-   * @returns {import('../model/session.js').default|null} Active app session or null
-   */
-  _getSession() {
-    return /** @type {any} */ (window).jugglerApp?.getSession?.() || null;
-  }
-
-  /**
    * If any conversation has a live turn, ask the operator before cancelling all
    * local active conversations and applying the extension-set change.
    * @private
@@ -581,7 +573,7 @@ class PluginCatalog extends JugglerElement {
     );
     if (!confirmed) return false;
 
-    const session = this._getSession();
+    const session = getAppSession();
     if (session?.cancelAllActiveConversations) {
       await session.cancelAllActiveConversations(health.conversationIds);
     }

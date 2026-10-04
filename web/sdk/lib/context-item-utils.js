@@ -404,8 +404,8 @@ export function createCodeBlock(options) {
   } else {
     // Otherwise, treat as code text with a language class and syntax-highlight
     // through the shared engine. `highlightCode` degrades to escaped plain text
-    // when the grammar isn't bundled, so an unknown/`text` language renders
-    // exactly as before. A line-numbered block highlights per line below, so
+    // when the grammar isn't bundled, so an unknown/`text` language renders as
+    // plain text. A line-numbered block highlights per line below, so
     // skip the throwaway full-block highlight here.
     pre.className = `language-${language}`;
     code.className = `language-${language}`;

@@ -322,8 +322,6 @@ func (m *Manager) run() {
 				// auto-loads a conversation on an incidental yjs-sync; without
 				// this seed its approved tool-actions would never be observed
 				// and so never execute (the "tools stuck forever" wedge).
-				// INTERIM (Phase 0.3) — removed once tool execution is
-				// worker-driven and the engine holds no conversation state.
 				w.SendFromClient(op.clientID, "resync-to-origin", nil)
 			}
 

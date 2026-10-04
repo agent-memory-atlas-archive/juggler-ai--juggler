@@ -224,8 +224,8 @@ class ReadFileContextItem extends ContextItem {
 
     // Extraction runs HERE rather than in getSummary because getSummary is
     // synchronous (action-executor calls it directly) while extract() is async —
-    // and because this is already where the image asset upload happened, so the
-    // timing relative to result persistence is unchanged.
+    // and because the image asset upload happens here too, so both finish at the
+    // same point relative to result persistence.
     if (result && result.exists !== false) {
       const conversationId = this.conversation?.id;
       const source = fileSourceFromReadResult(
@@ -303,8 +303,7 @@ class ReadFileContextItem extends ContextItem {
     }
 
     // Nothing could be extracted (a binary format no viewer claims). The
-    // explanation comes from the viewer layer now, not a string baked into the
-    // backend's read op.
+    // explanation comes from the viewer layer, not from the backend's read op.
     const warning = result?.extracted?.warning || result?.warning;
     if (warning) {
       return this.successSummary(`${formatDisplayPath(path)} (${warning})`, {

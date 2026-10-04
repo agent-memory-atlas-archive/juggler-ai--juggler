@@ -21,11 +21,34 @@ import { parseMemory, appendEntry, removeEntry, removeMatching } from '../lib/me
  * existing file serves this instead of '' (see `_read`), which is what stops a
  * blip from destroying the store: every write is a read-modify-write that
  * reserializes the WHOLE file, so a read that wrongly reported '' would make the
- * next `remember` overwrite every existing fact with a single bullet. Keyed by
- * path because a global memory instance can point at an alternate file.
+ * next `remember` overwrite every existing fact with a single bullet.
+ *
+ * Keyed by the FILE, not the path string (`lastGoodKey`). The default path is
+ * relative, and the server resolves it against whichever project is open at
+ * call time — while this module outlives a project switch, because the engine
+ * is persistent across one and its registry reload gets back the same module
+ * instance. Keyed by the bare path, the last project's facts would be the
+ * "last-known-good" of the next project's file, so one transient read failure
+ * after a switch would hand them to the next `remember`, which would write them
+ * into the new project's memory. One entry per memory file used in this realm's
+ * life.
  * @type {Map<string, string>}
  */
 const lastGoodMemory = new Map();
+
+/**
+ * The `lastGoodMemory` key for a memory path: an absolute path as it stands, a
+ * relative one qualified by the project it resolves in. Null when a relative
+ * path's project is unknown, in which case nothing is cached or served — a file
+ * that cannot be named cannot have a last-known-good.
+ * @param {string} path - The memory path the item was given
+ * @param {string|undefined} projectRoot - The open project, as the session reports it
+ * @returns {string|null} The key, or null to bypass the cache
+ */
+function lastGoodKey(path, projectRoot) {
+  if (path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path)) return path;
+  return projectRoot ? `${projectRoot}\u0000${path}` : null;
+}
 
 /**
  * Project memory — agent-writable, user-visible durable facts.
@@ -214,19 +237,20 @@ class MemoryContextItem extends ContextItem {
    * @private
    */
   async _read(path) {
+    const key = lastGoodKey(path, this.session?.projectPath);
     try {
       const r = await readFile({ path }, this.signal);
       const content = r && typeof r.content === 'string' ? r.content : '';
-      lastGoodMemory.set(path, content);
+      if (key) lastGoodMemory.set(key, content);
       return content;
     } catch {
       // Genuine absence (ENOENT) returns '' — and any stale cache is dropped.
       if (await this._fileAbsent(path)) {
-        lastGoodMemory.delete(path);
+        if (key) lastGoodMemory.delete(key);
         return '';
       }
       // Existing-but-unreadable (or existence unconfirmable): serve last-good.
-      return lastGoodMemory.get(path) ?? '';
+      return (key && lastGoodMemory.get(key)) ?? '';
     }
   }
 
@@ -245,7 +269,8 @@ class MemoryContextItem extends ContextItem {
     // write guard admits it; for the default in-project path this is a no-op.
     await writeFile({ path, content, outOfRootApproved: true });
     // A successful write is the new last-known-good for transient-failure reads.
-    lastGoodMemory.set(path, content);
+    const key = lastGoodKey(path, this.session?.projectPath);
+    if (key) lastGoodMemory.set(key, content);
   }
 
   /**

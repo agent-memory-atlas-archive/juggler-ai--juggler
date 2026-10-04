@@ -133,7 +133,7 @@ const (
 // The gap this fills: the supervisor's escalation ladder only ever advances
 // through evictSilentEngine, which fires for an engine whose socket stayed open
 // while its realm went quiet. An engine that dies loudly and reconnects cleanly
-// never touches it, so a die/reconnect/die loop could previously run forever
+// never touches it, so without this a die/reconnect/die loop would run forever
 // with nothing in the log but the raw transport errors it produced — which is
 // exactly the failure a message too large for the client to accept causes.
 //

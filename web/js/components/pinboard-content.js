@@ -773,9 +773,9 @@ class PinboardContent extends JugglerElement {
     const actions = this._pinActions();
     const path = this._pin ? (describePin(this._pin, this._active).path || '') : '';
     // What the toolbar can be asked to do changes far less often than what the
-    // pin is showing — most of the time, never. Every notification used to
-    // throw away every button and build it again, which is a rebuild of the
-    // whole toolbar for every pin on every transaction of every conversation.
+    // pin is showing — most of the time, never. Throwing away every button and
+    // building it again on each notification would rebuild the whole toolbar
+    // for every pin on every transaction of every conversation.
     // The list itself is always kept, because the buttons dispatch through it.
     const signature = [path, ...actions.map((action) => [
       action.label, action.disabled === true, !!action.primary, action.icon || '',
@@ -1514,8 +1514,8 @@ class PinboardContent extends JugglerElement {
     const onSession = (event) => {
       if (event.type !== 'context-items:changed' && event.type !== 'conversation:changed') return;
       // A pin reads one conversation. Every other conversation in the session
-      // emits these too, and a turn streaming in a tab nobody is looking at
-      // used to re-read this pin's transcript at the sync rate.
+      // emits these too, and without this filter a turn streaming in a tab
+      // nobody is looking at would re-read this pin's transcript at the sync rate.
       const changed = event.data?.conversationId;
       if (changed && changed !== (this._active?.conversation?.id || '')) return;
       fire();

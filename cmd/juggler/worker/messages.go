@@ -807,7 +807,8 @@ type GetYjsStateMessage struct {
 	AckID string `json:"ackId"`
 }
 
-// ClearUndoStacksMessage clears undo/redo stacks for testing
+// ClearUndoStacksMessage wipes undo/redo history after a conversation's
+// non-user seeding (handleClearUndoStacks reads its ack id through ackIDOf).
 type ClearUndoStacksMessage struct {
 	Type  string `json:"type"` // "clear-undo-stacks"
 	AckID string `json:"ackId,omitempty"`

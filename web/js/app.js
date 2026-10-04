@@ -736,25 +736,21 @@ class JugglerApp {
       } else {
         errorMsg = 'Connection error - request failed';
       }
-      const messageThread = conversation.resolveMessageThread(data.threadItemId);
-      conversation.handleError(messageThread, errorMsg);
+      conversation.handleError(errorMsg);
     } else if ('blocks' in data || 'inputTokens' in data) {
       // Final response - structured blocks with token counts. The worker
       // handles LLM calls directly; this path serves the main-thread fallback
       // (e.g. claudecode provider callbacks).
-      const inputTokens = data.inputTokens || 0;
-      const outputTokens = data.outputTokens || 0;
-      const cachedTokens = data.cachedTokens || 0;
-      const transactionId = data.transactionId;
-      const stopReason = data.stopReason || 'end_turn';
-      const blocks = data.blocks || [];
       const messageThread = conversation.resolveMessageThread(data.threadItemId);
-      await conversation.handleResponse(messageThread, blocks, inputTokens, outputTokens, cachedTokens, transactionId, stopReason);
+      conversation.handleResponse(messageThread, {
+        inputTokens: data.inputTokens || 0,
+        outputTokens: data.outputTokens || 0,
+        cachedTokens: data.cachedTokens || 0
+      });
     } else {
       // Unknown message format - log and notify user
       console.error('[Juggler] Unexpected message format from server:', data);
-      const messageThread = conversation.resolveMessageThread(data.threadItemId);
-      conversation.handleError(messageThread, 'Received unexpected message format from server');
+      conversation.handleError('Received unexpected message format from server');
     }
   }
 

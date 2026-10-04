@@ -32,8 +32,7 @@ func (w *ConversationWorker) sendReadyWithDocMetadata() {
 
 func (r *run) handleInit(payload json.RawMessage) {
 	var msg InitMessage
-	if err := json.Unmarshal(payload, &msg); err != nil {
-		r.log.Error("Failed to parse init message: %v", err)
+	if !r.decodePayload("init", payload, &msg) {
 		r.sendError("Failed to parse init message", "")
 		return
 	}
@@ -156,12 +155,6 @@ func (r *run) handleInit(payload json.RawMessage) {
 			r.sendCorruptionRepaired(repairedCount)
 		}
 
-		// A thread with no summary is stopped, not stuck — a thread is running
-		// or stopped, never closed — so it must survive a reload / server
-		// restart exactly as it was, free to run again. There is no repair to
-		// do here. (A non-terminal tool-action left mid-flight is handled by
-		// CancelStaleToolActions below + the requestLLM re-drive.)
-
 		// Cancel tool-actions left running when the app was killed. Conversation-
 		// wide ("") deliberately: nothing is running anywhere yet, so every thread's
 		// leftovers are stale.
@@ -196,7 +189,7 @@ func (r *run) handleInit(payload json.RawMessage) {
 	}
 
 	// Initialize created timestamp in doc metadata for new conversations.
-	// (Name lives on the on-disk folder name now, not the Yjs doc.)
+	// (The name lives on the on-disk folder name, not in the Yjs doc.)
 	if msg.Conversation.Created != "" && r.doc.GetMetadata("created") == nil {
 		r.doc.SetMetadata("created", msg.Conversation.Created)
 	}
@@ -272,7 +265,7 @@ func (r *run) handleInit(payload json.RawMessage) {
 
 func (r *run) handleSendMessage(payload json.RawMessage) {
 	var msg SendMessageMessage
-	if err := json.Unmarshal(payload, &msg); err != nil {
+	if !r.decodePayload("send-message", payload, &msg) {
 		r.sendError("Failed to parse send-message", "")
 		return
 	}
@@ -286,7 +279,7 @@ func (r *run) handleSendMessage(payload json.RawMessage) {
 	// Both halves are asked of the TARGET thread: a message for an idle thread
 	// must not queue behind an unrelated sibling's run. threadRunState answers for
 	// the run writing to that thread and StateIdle for every other thread, so a
-	// run streaming on a sibling is no longer a reason to refuse this one.
+	// run streaming on a sibling is not a reason to refuse this one.
 	// Whether this send asks for anything at all. An empty, skill-less,
 	// non-continuation send is not a send: below the gate it is refused outright,
 	// and above it there is nothing for it to queue.
@@ -323,7 +316,7 @@ func (r *run) handleSendMessage(payload json.RawMessage) {
 
 	// Reaching here the worker is idle: an explicit send or Continue into this
 	// thread is an unambiguous "resume now", so it lifts any pause standing over
-	// it (D6, §10.5) — a mark outlives the rest it caused, and would otherwise
+	// it — a mark outlives the rest it caused, and would otherwise
 	// suppress this user-initiated turn. Only the marks covering THIS thread go: a
 	// pause the user put on some other sub-agent is not something typing here
 	// asked to lift.
@@ -513,8 +506,7 @@ func (w *ConversationWorker) handleRequestAutoName(payload json.RawMessage) {
 	}
 	var msg RequestAutoNameMessage
 	if len(payload) > 0 {
-		if err := json.Unmarshal(payload, &msg); err != nil {
-			w.log.Error("Failed to parse request-auto-name message: %v", err)
+		if !w.decodePayload("request-auto-name", payload, &msg) {
 			return
 		}
 	}
@@ -565,8 +557,7 @@ func (w *ConversationWorker) handleRequestAutoName(payload json.RawMessage) {
 // empty; the output blocks + usage come from the turn itself.
 func (r *run) handleProviderTurn(payload json.RawMessage) {
 	var msg ProviderTurnMessage
-	if err := json.Unmarshal(payload, &msg); err != nil {
-		r.log.Error("Failed to parse provider-turn: %v", err)
+	if !r.decodePayload("provider-turn", payload, &msg) {
 		return
 	}
 
@@ -671,6 +662,32 @@ func (r *run) logCancel(reason cancelReason) {
 		reason, r.loadState(), r.getActivity(), r.t.cancelLLM.Load() != nil)
 }
 
+// abortTurn stops this run's processing turn on threadID: the teardown both
+// cancel paths share (handleCancel for one thread, cancelAndWaitForIdle for
+// every live run before undo/redo). Called on the run being stopped, from the
+// worker goroutine — the turn's own goroutine is not reading this mailbox.
+func (r *run) abortTurn(threadID string) {
+	// acceptCancel both records the decision and releases whichever wait loop
+	// the turn is parked in.
+	r.acceptCancel()
+	if p := r.t.cancelLLM.Swap(nil); p != nil {
+		(*p)()
+	}
+	// Release any parked provider subprocess that the ctx-cancel above
+	// doesn't reach. Critical for claudecode: between the CLI emitting
+	// stop_reason=tool_use and the strategy loop transitioning to
+	// AwaitingLLM, state is still Processing but turn.cancelLLM has
+	// already been nil'd by callLLM's defer. Without this call the
+	// claudecode session is left in memory with pendingToolIDs set and
+	// a live CLI parked inside MCP — the next user message would route
+	// through isContinuation/continueSession and the CLI would resume
+	// the abandoned turn, never seeing the new user input. The release is
+	// warm-preserving: sessionUUID survives so the next turn --resumes warm.
+	if r.cancelLLMSession != nil {
+		r.cancelLLMSession(r.conversationID, threadID)
+	}
+}
+
 func (r *run) handleCancel(reason cancelReason) {
 	// The run this cancel applies to. A turn executes on a goroutine of its own,
 	// so the run handling this message is never the one streaming; the live-run
@@ -700,7 +717,7 @@ func (r *run) handleCancel(reason cancelReason) {
 
 	// A hard cancel supersedes any polite stop (Pause) inside what it stops: the
 	// user escalated from "finish then pause" to "stop now", so those marks go
-	// before the destructive teardown below runs (D6, D7) and the turn after the
+	// before the destructive teardown below runs and the turn after the
 	// cancel is never spuriously suppressed. Scoped like the cancel itself, and
 	// downward only — a pause standing OVER this thread is a request about the
 	// conversation, which stopping one thread inside it does not withdraw.
@@ -713,25 +730,7 @@ func (r *run) handleCancel(reason cancelReason) {
 	r.dispatchCancelStrategyExecution()
 
 	if target.loadState() == StateProcessing {
-		// acceptCancel both records the decision and releases whichever wait loop
-		// the turn is parked in — its own goroutine is not reading this mailbox.
-		target.acceptCancel()
-		if p := target.t.cancelLLM.Swap(nil); p != nil {
-			(*p)()
-		}
-		// Release any parked provider subprocess that the ctx-cancel above
-		// doesn't reach. Critical for claudecode: between the CLI emitting
-		// stop_reason=tool_use and the strategy loop transitioning to
-		// AwaitingLLM, state is still Processing but turn.cancelLLM has
-		// already been nil'd by callLLM's defer. Without this call the
-		// claudecode session is left in memory with pendingToolIDs set and
-		// a live CLI parked inside MCP — the next user message would route
-		// through isContinuation/continueSession and the CLI would resume
-		// the abandoned turn, never seeing the new user input. The release is
-		// warm-preserving: sessionUUID survives so the next turn --resumes warm.
-		if r.cancelLLMSession != nil {
-			r.cancelLLMSession(r.conversationID, threadID)
-		}
+		target.abortTurn(threadID)
 		return
 	}
 
@@ -814,7 +813,7 @@ func (w *ConversationWorker) handleBuildSubthreadSpecResponse(payload json.RawMe
 
 func (r *run) handleYjsSync(payload json.RawMessage) {
 	var msg YjsSyncMessage
-	if err := json.Unmarshal(payload, &msg); err != nil {
+	if !r.decodePayload("yjs-sync", payload, &msg) {
 		return
 	}
 
@@ -872,8 +871,7 @@ func (r *run) handleYjsSync(payload json.RawMessage) {
 // the vector merely tells the client not to send them back.
 func (w *ConversationWorker) handleResyncRequest(payload json.RawMessage) {
 	var msg ResyncRequestMessage
-	if err := json.Unmarshal(payload, &msg); err != nil {
-		w.log.Error("Failed to parse resync-request: %v", err)
+	if !w.decodePayload("resync-request", payload, &msg) {
 		return
 	}
 	// Targeted at the requester: only the client that reconnected asked, and its
@@ -906,8 +904,8 @@ func (w *ConversationWorker) handleResyncRequest(payload json.RawMessage) {
 // web/js/services/worker-manager-protocols.js), so a command may safely arrive
 // before the document does.
 //
-// INTERIM (Phase 0.3): superseded by the worker-driven stateless tool executor,
-// after which the engine holds no conversation state and needs no seeding.
+// The seeding exists because the engine holds conversation state and executes
+// tool-actions from it; an engine that held none would need no seeding.
 func (w *ConversationWorker) handleResyncToOrigin() {
 	if !w.initialized {
 		return
@@ -1143,8 +1141,7 @@ func (r *run) handleUndoOrRedo(fn func() bool, payload json.RawMessage) {
 	var msg struct {
 		AckID string `json:"ackId,omitempty"`
 	}
-	if err := json.Unmarshal(payload, &msg); err != nil {
-		r.log.Error("Failed to parse undo/redo message: %v", err)
+	if !r.decodePayload("undo/redo", payload, &msg) {
 		return
 	}
 	// Stop any in-flight strategy loop before we start mutating the document.
@@ -1215,10 +1212,7 @@ func (w *ConversationWorker) handleBeginUndoCoalesce() {
 // Structurally identical to the compaction merge (see MergeFromIndex); a no-op
 // when zero or one group was added. Acks so the browser can await completion.
 func (w *ConversationWorker) handleEndUndoCoalesce(payload json.RawMessage) {
-	var msg struct {
-		AckID string `json:"ackId,omitempty"`
-	}
-	_ = json.Unmarshal(payload, &msg)
+	ackID := w.ackIDOf("end-undo-coalesce", payload)
 	if w.undoCoalesceFromIdx >= 0 {
 		w.tracker.MergeFromIndex(w.undoCoalesceFromIdx)
 		w.tracker.StopCapturing()
@@ -1227,7 +1221,7 @@ func (w *ConversationWorker) handleEndUndoCoalesce(payload json.RawMessage) {
 	w.batcher.Flush()
 	w.reply(map[string]any{
 		"type":  "ack",
-		"ackId": msg.AckID,
+		"ackId": ackID,
 	})
 }
 
@@ -1251,13 +1245,7 @@ func (r *run) cancelAndWaitForIdle() bool {
 	for _, live := range runs {
 		target := r.runFor(live.t)
 		target.logCancel(cancelReasonUndoRedo)
-		target.acceptCancel()
-		if p := target.t.cancelLLM.Swap(nil); p != nil {
-			(*p)()
-		}
-		if r.cancelLLMSession != nil {
-			r.cancelLLMSession(r.conversationID, live.threadItemID)
-		}
+		target.abortTurn(live.threadItemID)
 	}
 	for _, live := range runs {
 		select {
@@ -1277,14 +1265,13 @@ func (r *run) cancelAndWaitForIdle() bool {
 // the re-arm alone is enough to guarantee the run.
 func (r *run) handleResummarizeCompactionThread(payload json.RawMessage) {
 	var msg ResummarizeCompactionThreadMessage
-	if err := json.Unmarshal(payload, &msg); err != nil {
-		r.log.Error("Failed to parse resummarize-compaction-thread message: %v", err)
+	if !r.decodePayload("resummarize-compaction-thread", payload, &msg) {
 		return
 	}
 	handled := r.isBoundedCompactionThread(msg.ThreadItemID)
 	if handled {
 		// Pressing Re-summarise is human intent, so it lifts any pause standing
-		// over this thread the way a send does (D6, §10.5). A mark left here
+		// over this thread the way a send does. A mark left here
 		// re-arms the trigger for a run that rests at its first boundary, which
 		// is the state the button exists to get out of.
 		r.dropPoliteStopsCovering(msg.ThreadItemID)
@@ -1332,8 +1319,8 @@ func (w *ConversationWorker) resetToolActionAndRedrive(toolUseID string, fields 
 	threadID, _ := w.doc.FindThreadIDForToolUseID(toolUseID)
 
 	// A retry is human intent — the user asked for this tool to run again — so it
-	// lifts the pause standing over the thread that owns it, as a send does (D6,
-	// §10.5). Without this the tool re-runs and its result lands, but the turn
+	// lifts the pause standing over the thread that owns it, as a send does.
+	// Without this the tool re-runs and its result lands, but the turn
 	// that would read it rests at the reducer's gate.
 	w.dropPoliteStopsCovering(threadID)
 
@@ -1365,7 +1352,7 @@ func (w *ConversationWorker) handleRetryToolApproval(payload json.RawMessage) {
 	var msg struct {
 		ToolUseID string `json:"toolUseId"`
 	}
-	if err := json.Unmarshal(payload, &msg); err != nil {
+	if !w.decodePayload("retry-tool-approval", payload, &msg) {
 		return
 	}
 
@@ -1388,7 +1375,7 @@ func (w *ConversationWorker) handleMoveContextItemMessageToEnd(payload json.RawM
 	var msg struct {
 		ItemID string `json:"itemId"`
 	}
-	if err := json.Unmarshal(payload, &msg); err != nil {
+	if !w.decodePayload("move-context-item-message-to-end", payload, &msg) {
 		return
 	}
 
@@ -1409,7 +1396,7 @@ func (w *ConversationWorker) handleUpdateAndRepositionToolActions(payload json.R
 		ItemID  string `json:"itemId"`
 		NewHash int    `json:"newHash"`
 	}
-	if err := json.Unmarshal(payload, &msg); err != nil {
+	if !w.decodePayload("update-and-reposition-tool-actions", payload, &msg) {
 		return
 	}
 
@@ -1449,7 +1436,7 @@ func (w *ConversationWorker) handleRetryToolAction(payload json.RawMessage) {
 	var msg struct {
 		ToolUseID string `json:"toolUseId"`
 	}
-	if err := json.Unmarshal(payload, &msg); err != nil {
+	if !w.decodePayload("retry-tool-action", payload, &msg) {
 		return
 	}
 
@@ -1482,7 +1469,7 @@ func (w *ConversationWorker) handleUpdateToolActionForRetry(payload json.RawMess
 		ApprovalOptions json.RawMessage `json:"approvalOptions"`
 		DisplayData     json.RawMessage `json:"displayData"`
 	}
-	if err := json.Unmarshal(payload, &msg); err != nil {
+	if !w.decodePayload("update-tool-action-for-retry", payload, &msg) {
 		return
 	}
 
@@ -1504,10 +1491,10 @@ func (w *ConversationWorker) handleUpdateToolActionForRetry(payload json.RawMess
 func (w *ConversationWorker) handleBackgroundTaskSnapshot(payload json.RawMessage) {
 	var snapshot BackgroundTaskSnapshot
 	var displayData map[string]any
-	if err := json.Unmarshal(payload, &snapshot); err != nil || snapshot.TaskID == "" || snapshot.ToolUseID == "" {
+	if !w.decodePayload("background-task-snapshot", payload, &snapshot) || snapshot.TaskID == "" || snapshot.ToolUseID == "" {
 		return
 	}
-	if err := json.Unmarshal(payload, &displayData); err != nil {
+	if !w.decodePayload("background-task-snapshot", payload, &displayData) {
 		return
 	}
 	if snapshot.Status != "running" && snapshot.Status != "completed" && snapshot.Status != "failed" {
@@ -1521,7 +1508,7 @@ func (w *ConversationWorker) handleRepositionContextItemPlaceholder(payload json
 	var msg struct {
 		ItemID string `json:"itemId"`
 	}
-	if err := json.Unmarshal(payload, &msg); err != nil {
+	if !w.decodePayload("reposition-context-item-placeholder", payload, &msg) {
 		return
 	}
 

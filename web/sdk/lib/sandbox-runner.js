@@ -63,9 +63,9 @@ const SANDBOX_READY_TIMEOUT_MS = 15000;
  * readiness. Cached across calls so subsequent runs reuse the same frame.
  *
  * Only a SUCCESSFUL frame is cached. Caching the promise unconditionally makes
- * one bad boot permanent: every later call would await the same rejected — or,
- * before this was bounded, the same forever-pending — promise, so a single
- * missed `sandbox-ready` disabled query_code for the life of the realm.
+ * one bad boot permanent: every later call would await the same rejected
+ * promise, so a single missed `sandbox-ready` would disable query_code for the
+ * life of the realm.
  * @returns {Promise<HTMLIFrameElement>} The ready iframe
  */
 function getSandboxFrame() {

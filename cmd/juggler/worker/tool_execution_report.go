@@ -39,7 +39,7 @@ func (w *ConversationWorker) handleToolExecutionReport(payload json.RawMessage, 
 			RunningEpoch int64  `json:"runningEpoch"`
 		} `json:"executing"`
 	}
-	if err := json.Unmarshal(payload, &msg); err != nil {
+	if !w.decodePayload("tool-execution-report", payload, &msg) {
 		return
 	}
 

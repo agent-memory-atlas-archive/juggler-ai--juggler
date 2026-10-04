@@ -102,8 +102,9 @@ export class ConversationDocument {
   }
 
   /**
-   * Re-broadcast the full doc state to the worker on demand (Guard A model
-   * self-heal). See DocumentSyncManager.broadcastFullState.
+   * Re-broadcast the full doc state to the worker on demand (the missing-model
+   * self-heal, Conversation.trySelfHealMissingModel). See
+   * DocumentSyncManager.broadcastFullState.
    */
   broadcastFullState() {
     this._syncManager.broadcastFullState();

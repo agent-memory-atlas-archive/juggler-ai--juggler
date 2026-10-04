@@ -864,7 +864,7 @@ class LLMState {
     switch (status) {
       case 'preparing': {
         // A turn was accepted, so the model divergence (if any) is resolved —
-        // re-arm Guard A's one-shot self-heal latch.
+        // re-arm the missing-model self-heal's one-shot latch.
         this._conversations.get(conversationId)?.armSelfHeal?.();
         this.start(conversationId, frame.startedAt, threadItemId);
         this.updateStatus(conversationId, 'preparing', tokenData, threadItemId);
@@ -912,9 +912,10 @@ class LLMState {
       case 'validation-error': {
         const conversation = this._conversations.get(conversationId);
 
-        // Guard A — self-heal the "no-model" divergence: the worker's doc
-        // resolved no model, yet this client is displaying a real one. The
-        // conversation owns the resync + one-shot resend (see
+        // The missing-model self-heal — recover from the "no-model"
+        // divergence: the worker's doc resolved no model, yet this client is
+        // displaying a real one. The conversation owns the resync + one-shot
+        // resend (see
         // trySelfHealMissingModel); a true return means the turn is on its way
         // again and there is nothing to warn about.
         if (conversation && frame.code === 'no-model'

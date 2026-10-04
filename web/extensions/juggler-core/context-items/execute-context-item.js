@@ -1006,7 +1006,7 @@ class ExecuteContextItem extends ContextItem {
     if (!cmdSuccess && !runError) details += `\n\nexit code: ${exitCode}`;
 
     // Generate feedback for LLM (appended by response-handler)
-    const feedbackForLLM = this._generateFeedbackForLLM(command, stdout, stderr, exitCode, runError, blocked);
+    const feedbackForLLM = this._generateFeedbackForLLM(exitCode, runError, blocked);
 
     return {
       summary,
@@ -1019,17 +1019,16 @@ class ExecuteContextItem extends ContextItem {
   }
 
   /**
-   * Generate feedback message for LLM based on command output
-   * @param {string} _command - Command that was executed (unused)
-   * @param {string} _stdout - Standard output (unused)
-   * @param {string} _stderr - Standard error (unused)
+   * Generate the feedback message for the LLM, appended to the action's summary
+   * (response-handler-actions). It reads only the outcome — whether the command
+   * ran, and how it ended — never the command or its output.
    * @param {number} exitCode - Exit code
    * @param {string} [runError] - Why the run itself did not complete, when it didn't
    * @param {boolean} [blocked] - Whether the command was refused and never ran
    * @returns {string|undefined} Feedback message or undefined
    * @private
    */
-  _generateFeedbackForLLM(_command, _stdout, _stderr, exitCode, runError, blocked) {
+  _generateFeedbackForLLM(exitCode, runError, blocked) {
     // A command that never ran has no exit code worth reporting — say what
     // stopped it, so the next move is a different command rather than the
     // same one again.

@@ -199,7 +199,7 @@ func splitCompleteLines(s string) (lines []string, rest string) {
 // any worker-internal producer can use it.
 func (r *run) handleInjectThreadMessage(payload json.RawMessage) {
 	var msg injectThreadMessageMsg
-	if err := json.Unmarshal(payload, &msg); err != nil {
+	if !r.decodePayload("inject-thread-message", payload, &msg) {
 		return
 	}
 	input := UserMessageInput{Text: msg.Text}
@@ -252,7 +252,7 @@ func (r *run) handleInjectThreadMessage(payload json.RawMessage) {
 // mark its pendingRequests entry completed (GC'd shortly after). Run() goroutine.
 func (w *ConversationWorker) handleDeliveryEnded(payload json.RawMessage) {
 	var msg deliveryEndedMsg
-	if err := json.Unmarshal(payload, &msg); err != nil {
+	if !w.decodePayload("delivery-ended", payload, &msg) {
 		return
 	}
 	delete(w.deliveryPumps, msg.EntryID)

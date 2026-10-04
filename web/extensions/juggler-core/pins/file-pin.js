@@ -8,6 +8,7 @@ import { basename } from 'juggler/item-utils';
 import { buildPickerPanel, createElement, injectStylesOnce } from 'juggler/ui';
 import { fetchLiveFile, renderLiveFileBody } from '../lib/live-file.js';
 import { absoluteFilePinPath, normalizeFilePinParameters } from '../lib/file-pin-config.js';
+import { pathPinController } from '../lib/path-pin.js';
 
 injectStylesOnce('file-pin-styles', `
 .file-pin {
@@ -191,7 +192,6 @@ class FilePin extends PinboardItemType {
    */
   mount(container, pinContext) {
     let context = pinContext;
-    let target = absoluteFilePinPath(context.pin.config, context.active);
 
     const body = createElement('div', 'file-pin');
     container.replaceChildren(body);
@@ -247,6 +247,7 @@ class FilePin extends PinboardItemType {
     };
 
     const stopWatching = context.services.files.onChange((changes) => {
+      const target = absoluteFilePinPath(context.pin.config, context.active);
       if (changes.some((change) => touches(change.path, target, context.pin.config.isDirectory === true))) {
         refresh();
       }
@@ -254,25 +255,16 @@ class FilePin extends PinboardItemType {
 
     void render();
 
-    return {
-      update: (next) => {
-        const nextTarget = absoluteFilePinPath(next.pin.config, next.active);
-        const conversationChanged = next.active?.conversation?.id !== context.active?.conversation?.id;
-        context = next;
-        if (nextTarget === target && !conversationChanged) return;
-        target = nextTarget;
-        void render();
-      },
+    return pathPinController({
+      getContext: () => context,
+      setContext: (next) => { context = next; },
+      targetOf: (c) => absoluteFilePinPath(c.pin.config, c.active),
+      render,
       teardown: () => {
         clearTimeout(pending);
         stopWatching();
       },
-      // Open, copy and reveal are the host's, offered for any pin that names a
-      // path — so this one is left with the only thing it knows how to do.
-      getActions: () => [
-        { id: 'refresh', label: 'Refresh', icon: 'refresh', primary: true, run: () => render() },
-      ],
-    };
+    });
   }
 }
 

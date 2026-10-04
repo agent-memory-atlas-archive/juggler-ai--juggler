@@ -35,8 +35,8 @@ export function createItem(json, session, conversation, messageThread) {
  *
  * This is the single place "what does the model see of this file?" is answered,
  * so every file-shaped context item (a tool read, a pin, a drop) gets the same
- * answer — including the fallback when no viewer claims the file, which is where
- * the old hardcoded binary-file warning now lives.
+ * answer — including the fallback when no viewer claims the file, which is what
+ * supplies the binary-file warning.
  *
  * Runs in the engine realm (extract's context); a viewer's heavy dependencies
  * load lazily inside its own `extract()`, so resolving costs nothing here.

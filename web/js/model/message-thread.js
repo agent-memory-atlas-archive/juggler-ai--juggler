@@ -263,8 +263,7 @@ export default class MessageThread {
       });
     } else {
       // Root: conversation metadata. No metadata-delete exists, so an empty
-      // draft is stored as the empty record (matching the prior empty-string
-      // behaviour) rather than deleted.
+      // draft is stored as the empty record rather than deleted.
       this.conversation.setMetadata('draft', empty ? { text: '', attachments: [], textFiles: [], pasteBlobs: [] } : record);
     }
   }

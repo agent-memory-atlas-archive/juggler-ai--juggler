@@ -233,10 +233,9 @@ func effectiveItems(items []ConversationItem) []ConversationItem {
 // Child threads belong in it for exactly the reason tool-actions do. A turn that
 // calls four sub-agents and a bash command is waiting on five things and is
 // finished when the LAST of them finishes — not when the last-INSERTED one does.
-// While children could only run one at a time those were the same event, because
-// the last-spawned child was necessarily the last to settle; running them side by
-// side pulls the two apart, and asking only about the final item resumes the
-// parent on whichever child happened to be quickest, discarding the rest.
+// Children run side by side, so the last-spawned child need not be the last to
+// settle, and asking only about the final item would resume the parent on
+// whichever child happened to be quickest, discarding the rest.
 func currentBatch(items []ConversationItem) []ConversationItem {
 	end := len(items)
 	start := end
@@ -494,7 +493,7 @@ func (r *run) tryReconcile() {
 	// The thread the projection names is only meaningful when an operation is in
 	// flight; when nothing is, the pass starts at the root.
 	//
-	// It is a starting point and no longer the only one. The projection describes
+	// It is a starting point, not the only one. The projection describes
 	// ONE run and a conversation may hold several, so a pass anchored on it alone
 	// spends itself inside whichever subtree it happens to name and never looks at
 	// the siblings — which is precisely the state a batch of read-only children
@@ -654,7 +653,7 @@ func (r *run) tryReconcile() {
 // rests at idle. Shared by the reducer's ActionGoIdle rest branch and the polite
 // stop (Pause) boundaries — a polite stop reaches the SAME exit a hard stop
 // reaches via finalizeCancellation's tail, so queued messages simply become
-// normal user bubbles sitting at idle with no polite-specific handling (D4).
+// normal user bubbles sitting at idle with no polite-specific handling.
 func (r *run) restPromotingQueue(threadItemID string) {
 	r.promotePendingItems(threadItemID)
 	// Release the NAMED thread's claim. An idle frame drops only the claim its
@@ -690,7 +689,7 @@ func (r *run) dispatchCallLLMOnThread(threadItemID string) {
 	// Polite stop (Pause): a mark stands over this thread, so it rests before the
 	// next LLM turn. This is the sole entry into runStrategyLoop, and the reducer
 	// only reaches ActionCallLLM once every tool in the batch is terminal — so
-	// in-flight work has already drained and committed its real results (D1, D3).
+	// in-flight work has already drained and committed its real results.
 	// Take the shared promote-and-idle exit instead of driving a fresh turn; the
 	// transcript is a clean, resumable prefix.
 	//

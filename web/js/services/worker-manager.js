@@ -1730,9 +1730,9 @@ export class WorkerManager {
    * later discards in favour of the worker's — dropping SYSTEM_1. Flushes the
    * batched sync buffer on each check so a just-arrived sync is applied
    * promptly. Bounded so a pathological worker that never ships an array can't
-   * hang conversation creation; on timeout the caller falls through to the old
-   * behaviour (ensureSystemPromptPlaceholder creates the array), which is no
-   * worse than before this wait existed.
+   * hang conversation creation; on timeout the caller proceeds anyway and
+   * ensureSystemPromptPlaceholder creates the array locally, accepting the
+   * risk above.
    * @param {import('../model/conversation.js').default} conversation
    * @param {number} [timeoutMs=2000] - Max time to wait for the array to sync.
    * @returns {Promise<boolean>} True once the items array is present, false on timeout.
@@ -1818,7 +1818,7 @@ export class WorkerManager {
         id: conversationId,
         loadFromDisk: true  // Backend will load from disk and send metadata
       };
-      // CANDIDATE FIX 2: a worker entry outlives the Conversation object that
+      // A worker entry outlives the Conversation object that
       // owns the document. Session._doLoad replaces every conversation with a
       // fresh, EMPTY one but leaves this map alone, so _spawnWorker's
       // "already exists" short-circuit would skip the init — and an init is
@@ -1839,7 +1839,7 @@ export class WorkerManager {
       }
 
       // 5. Populate stub with metadata (properties are mutable). The name
-      // lives on the on-disk folder name now, populated when the manifest
+      // comes from the on-disk folder name, populated when the manifest
       // was loaded — don't overwrite it from worker metadata.
       const metadataObj = /** @type {{ created?: string; defaultModelConfig?: any; currentStrategyId?: string }} */ (metadata);
       const defaultModelConfig = metadataObj.defaultModelConfig ?? null;
@@ -1849,7 +1849,7 @@ export class WorkerManager {
         currentStrategyId: metadataObj.currentStrategyId || 'default'
       });
 
-      // Fetch context window if model is set (fire-and-forget, matches fromJSON behavior)
+      // Fetch context window if model is set (fire-and-forget)
       if (defaultModelConfig) {
         // Use ensureContextWindow which internally calls _fetchContextWindow
         conversation.ensureContextWindow();

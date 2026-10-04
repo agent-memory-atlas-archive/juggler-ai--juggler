@@ -37,15 +37,12 @@ func (w *ConversationWorker) handleTestMessage(msg workerMessage) bool {
 }
 
 func (w *ConversationWorker) handleGetYjsState(payload json.RawMessage) {
-	var msg struct {
-		AckID string `json:"ackId,omitempty"`
-	}
-	_ = json.Unmarshal(payload, &msg)
+	ackID := w.ackIDOf("get-yjs-state", payload)
 
 	state := w.doc.ToState()
 	w.send(map[string]any{
 		"type":   "ack",
-		"ackId":  msg.AckID,
+		"ackId":  ackID,
 		"result": state,
 	})
 }
@@ -63,17 +60,14 @@ func (w *ConversationWorker) handleGetYjsState(payload json.RawMessage) {
 // undo group exactly as they would have. Tests that want adjacent
 // operations to share a group simply don't ping between them.
 func (w *ConversationWorker) handlePing(payload json.RawMessage) {
-	var msg struct {
-		AckID string `json:"ackId,omitempty"`
-	}
-	_ = json.Unmarshal(payload, &msg)
+	ackID := w.ackIDOf("ping", payload)
 
 	w.tracker.StopCapturing()
 	w.batcher.Flush()
-	if msg.AckID != "" {
+	if ackID != "" {
 		w.send(map[string]any{
 			"type":  "ack",
-			"ackId": msg.AckID,
+			"ackId": ackID,
 		})
 		return
 	}
@@ -88,8 +82,7 @@ func (w *ConversationWorker) handleSetMockResponses(payload json.RawMessage) {
 		SetMockResponsesMessage
 		AckID string `json:"ackId,omitempty"`
 	}
-	if err := json.Unmarshal(payload, &msg); err != nil {
-		jlog.Error("Failed to parse set-mock-responses: %v", err)
+	if !w.decodePayload("set-mock-responses", payload, &msg) {
 		return
 	}
 

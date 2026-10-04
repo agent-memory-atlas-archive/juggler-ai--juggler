@@ -7,8 +7,8 @@
  *
  * Rendering a stream by re-parsing the whole accumulated string on each update
  * costs O(length) per update, which over a block that arrives in many updates
- * is quadratic — the reason a long reasoning block used to make the UI stutter
- * for as long as it took to arrive. This splits the text at Markdown block
+ * is quadratic — enough to make the UI stutter for as long as a long reasoning
+ * block takes to arrive. This splits the text at Markdown block
  * boundaries instead: everything before the last boundary is SEALED (parsed
  * once, then left alone in the DOM) and only the tail after it is re-parsed as
  * it grows. Each update then costs O(tail), and a tail is one paragraph.

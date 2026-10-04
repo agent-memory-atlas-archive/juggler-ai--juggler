@@ -443,8 +443,7 @@ func (w *ConversationWorker) writeBoundedCompactionResult(threadID string, resul
 // exactly as a browser-synced fold's pickup ran synchronously inside handleYjsSync.
 func (r *run) handleCompact(payload json.RawMessage) {
 	var msg CompactMessage
-	if err := json.Unmarshal(payload, &msg); err != nil {
-		r.log.Error("Failed to parse compact message: %v", err)
+	if !r.decodePayload("compact", payload, &msg) {
 		return
 	}
 	ack := AckMessage{Type: "ack", AckID: msg.AckID}
@@ -467,7 +466,7 @@ func (r *run) handleCompact(payload json.RawMessage) {
 		return
 	}
 	// Folding the history is human intent, so it lifts any pause standing over
-	// the thread it folds, exactly as a send or Continue does (D6, §10.5). The
+	// the thread it folds, exactly as a send or Continue does. The
 	// fold commits whatever the marks say — the gate above passes, since a landed
 	// pause holds no claim — and the summarization it owes runs on a thread the
 	// mark would then cover, leaving a conversation folded into a thread that

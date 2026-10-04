@@ -18,9 +18,8 @@ import { extractErrorMessage } from '../../../sdk/lib/error-utils.js';
  * warning, so this command only adds its own message for genuine failures.
  *
  * Tab management is a Session concern, so the command reaches the session
- * through `messageThread.conversation.session`. `/compact-new` used to be
- * "duplicate then compact"; with this command that composition is just
- * `/duplicate` followed by `/compact`.
+ * through `messageThread.conversation.session`. "Duplicate then compact" is
+ * `/duplicate` followed by `/compact`; there is no combined command.
  */
 class DuplicateConversationCommandType extends CommandType {
   static MANIFEST = {

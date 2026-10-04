@@ -1151,7 +1151,7 @@ class ConversationBar extends JugglerElement {
     // The info rail is NOT reconciled from here. It measures itself off its own
     // ResizeObserver, and its height is this column's leftover space (flex: 1 1 0),
     // so laying out the tabs is exactly what makes it resize — the observer fires
-    // after layout and before paint, catching every case this call used to.
+    // after layout and before paint, catching every case a call from here would.
     // Reconciling it per render would be a poll: render() runs on every doc
     // change, and each reconcile tears down and rebuilds every card that doesn't
     // fit, so the cards would remount (and refetch) once a frame while streaming.
@@ -1184,8 +1184,8 @@ class ConversationBar extends JugglerElement {
       // The line that says the box is empty lives in the list the tabs go in,
       // and is the last thing in it. That is where it reads from, and it is
       // also what makes an empty box a place a tab can be dropped: a drag lands
-      // in front of something, and until now an empty box had nothing to be in
-      // front of.
+      // in front of something, and without this line an empty box would have
+      // nothing to be in front of.
       //
       // The "+" is the box's rather than the header's.
       // `<workspace-box-header>` shows the name and nothing else — a title, a

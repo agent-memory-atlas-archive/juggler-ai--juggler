@@ -259,7 +259,7 @@ func (c *WSClient) writeOne(msg wsMessage) bool {
 	if len(payload) > wsChunkThreshold {
 		// Worth a line every time. Chunking is the exceptional path — nothing in
 		// an ordinary session comes close to the threshold — so its arrival says
-		// a conversation has grown to a size that used to break it outright, and
+		// a conversation has grown to a size no client accepts whole, and
 		// it names which one while the evidence is still to hand.
 		jlog.Info("Splitting a %d byte %s message into %d frames for %s client %p; "+
 			"no client accepts one this large whole",
@@ -329,8 +329,8 @@ func describeWSMessage(payload []byte) string {
 // Shutdown is signalled by closing a separate `closed` channel rather than the
 // send channel itself: a sender and a closer can run on any two goroutines (a
 // broadcast racing the engine supervisor, say), and closing a channel from under
-// a concurrent send is a data race that costs a panic per send — previously
-// swallowed by a recover here, which hid the race without preventing it.
+// a concurrent send is a data race that costs a panic per send, and a recover
+// around the send would hide the race without preventing it.
 func (c *WSClient) trySend(msg wsMessage) bool {
 	// Prefer the closed signal when both are ready, so a closed client stops
 	// accepting work promptly rather than by chance.

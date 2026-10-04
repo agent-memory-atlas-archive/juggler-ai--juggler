@@ -456,7 +456,7 @@ class StrategyType {
    * phase transitions, read-only warnings). Because it writes a message into
    * the doc — which the worker re-reads each turn — the guidance reaches the
    * LLM on the production worker path, and it leaves the cached system prefix
-   * untouched (a strategy swap or phase change no longer busts the cache).
+   * untouched (so a strategy swap or phase change doesn't bust the cache).
    * @param {string} content - Guidance text
    * @param {object} [opts] - Options
    * @param {string} [opts.source] - Provenance tag (defaults to the strategy id)

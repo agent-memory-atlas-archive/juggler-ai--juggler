@@ -327,8 +327,8 @@ func (r *run) createThread(opts CreateThreadOptions) (string, error) {
 //   - Root ("") already has the full tool list; nothing to stamp.
 //   - Delegated subthreads (delegated=true) are tool-result-bound — each run
 //     settles into the caller's tool_result — so making one spawn-capable would
-//     be a nonsensical state; leave the withinDelegatedThread
-//     guard as the sole authority there (decision #3).
+//     be a nonsensical state; the withinDelegatedThread guard is the sole
+//     authority there.
 //
 // Called from handleSendMessage on the genuine-user-message path only (never the
 // parent-LLM seed insert in createThread), so the seed prompt a parent injects
@@ -344,7 +344,7 @@ func (w *ConversationWorker) promoteThreadSpawnCapable(threadItemID string) {
 		return
 	}
 	if delegated, _ := m.Get("delegated").(bool); delegated {
-		return // delegated subthread: never promote (decision #3)
+		return // delegated subthread: never promote
 	}
 	if already, _ := m.Get("canSpawnThreads").(bool); already {
 		return // already spawn-capable (e.g. a /thread-created thread)
@@ -510,13 +510,12 @@ func (r *run) executeCreateThread(toolUseID, toolName string, toolInput json.Raw
 // pending-request route instead.
 func (r *run) handleCreateThread(payload json.RawMessage) {
 	var msg CreateThreadMessage
-	if err := json.Unmarshal(payload, &msg); err != nil {
-		r.log.Error("Failed to parse create-thread message: %v", err)
+	if !r.decodePayload("create-thread", payload, &msg) {
 		return
 	}
 	// A thread the human asked for is human intent, so it lifts the pause
 	// standing over the thread it is created under, as a send into that thread
-	// does (D6, §10.5). Asked of the PARENT because the child does not exist yet,
+	// does. Asked of the PARENT because the child does not exist yet,
 	// and a mark over the parent stands over the child. This lives here rather
 	// than in createThread's ExternalDispatch branch because that flag is also
 	// worn by the pendingRequests orchestrator, which is not a human asking.

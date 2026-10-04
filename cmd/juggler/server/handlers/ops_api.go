@@ -21,8 +21,7 @@ import (
 // PathScope rather than re-extracted from the params map at each op callsite.
 //
 // WorkspaceID rides at the top level for the same reason, and names WHERE the
-// operation runs: empty is the project itself, which is what every request meant
-// before workspaces existed. It is an id rather than a root because the engine
+// operation runs: empty is the project itself. It is an id rather than a root because the engine
 // executes tool calls an LLM composed — an id only resolves to somewhere the
 // user registered through the UI, where a raw root would let a prompt-injected
 // model point its own scope anywhere.

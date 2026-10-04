@@ -782,15 +782,15 @@ function resolveDeletionTarget(text, { home, cwd, fold = (p) => p }) {
  * This is the deterministic floor beneath the auto-approve reviewer. Such a
  * deletion is the one class that must never be *silently* auto-approved, so a
  * probabilistic "this looks like scratch" allow can't delete the project — or
- * more — out from under the user (the incident: `rm -fr /home/crem/tmp/juggler/`
- * read as safe because the path contained `tmp`). It only ever ADDS a human
+ * more — out from under the user (e.g. `rm -fr /home/crem/tmp/juggler/` reading
+ * as safe because the path contains `tmp`). It only ever ADDS a human
  * prompt; a false positive costs one approval, and the human (or YOLO) can still
  * proceed.
  *
  * It is NOT a general destructive classifier. A recursive delete of a genuine
  * subdir, `node_modules`, `./build`, or any scratch tree resolves below the
- * project root, returns false, and flows through the reviewer exactly as before
- * — long unsupervised runs keep their `rm -rf` latitude. Unexpanded globs
+ * project root, returns false, and flows through the reviewer like any other
+ * command — long unsupervised runs keep their `rm -rf` latitude. Unexpanded globs
  * (`rm -rf *`) and shell expansions other than `$HOME` are left unresolved (also
  * false), by design the reviewer's job.
  * @param {string} command the command string
@@ -1057,7 +1057,7 @@ function segmentRemedies(seg, interpreters, cfg) {
  *     roots contributes its target to the same grant, so `cd ~/elsewhere && ls`
  *     offers the one folder that fixes it rather than nothing at all.
  *   - **glob patterns** (`{patterns}`) — escalating breadth, one pattern per
- *     rejected segment combined per tier, as before.
+ *     rejected segment combined per tier.
  *
  * Returns `[]` (caller should fall back to an exact whole-command rule) when:
  *   - the command already auto-approves — nothing to suggest;

@@ -163,7 +163,7 @@ const FLOW_STATES = new Set(['downloading', 'verifying', 'installing', 'ready'])
 const REACTION_STATES = new Set(['downloading', 'verifying', 'installing', 'ready', 'error', 'up-to-date']);
 
 /**
- * UpdateNotice — the update dialog. It no longer decides *when* to show: the
+ * UpdateNotice — the update dialog. It does not decide *when* to show: the
  * header <update-button> owns visibility and opens this imperatively via
  * `open(viewModel)`, passing a merged view-model of both update sources (the
  * server version notice and, when present, the in-app auto-updater). While the
