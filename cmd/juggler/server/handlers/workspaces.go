@@ -151,7 +151,7 @@ func (api *SessionAPI) HandleUnregisterWorkspace(w http.ResponseWriter, r *http.
 		WriteError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
-	WriteJSON(w, r, http.StatusOK, map[string]any{"ok": true})
+	WriteSuccess(w, r, nil)
 	api.broadcastWorkspaces()
 }
 

@@ -819,7 +819,7 @@ export class IntegrationTestHarness {
     }
 
     // Set model config (required for worker to process messages)
-    await conv.setModelConfig({ provider: 'test-provider', model: 'test-model' });
+    conv.setModelConfig({ provider: 'test-provider', model: 'test-model' });
 
     // Enable write permission for write-file operations
     conv.rootMessageThread.addRule('write-file', { kind: 'boolean', value: true });

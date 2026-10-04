@@ -20,7 +20,7 @@ composer-box composer-box-wrapper,
 reply-suggestions .reply-suggestion {
     background: var(--bubble-user-bg);
     border-radius: 1.25rem;
-    transition: background 150ms ease, box-shadow 150ms ease;
+    transition: background var(--transition-base), box-shadow var(--transition-base);
 }
 
 /* Config strip — the touch layout's home for strategy, model and permissions
@@ -211,7 +211,7 @@ composer-box .attachment-chip {
     padding: 0.1875rem 0.375rem;
     background: var(--bg-secondary);
     border: 0.0625rem solid var(--border-color);
-    border-radius: 0.375rem;
+    border-radius: var(--radius-lg);
     font-size: 0.75rem;
 }
 
@@ -223,7 +223,7 @@ composer-box .attachment-chip .attachment-thumb {
     width: 1.75rem;
     height: 1.75rem;
     object-fit: cover;
-    border-radius: 0.25rem;
+    border-radius: var(--radius-md);
     flex-shrink: 0;
     background: var(--bg-primary);
 }
@@ -335,7 +335,7 @@ composer-box .skill-button {
 }
 
 composer-box .skill-button .skill-glyph {
-    font-family: var(--font-mono, monospace);
+    font-family: var(--font-mono);
     font-size: 0.875rem;
     font-weight: 700;
     line-height: 1;
@@ -403,7 +403,7 @@ composer-box textarea.paste-mirrored {
    shadow), never padding/border/font-weight, so it can't shift layout away from
    the transparent textarea text underneath. */
 composer-box .paste-mirror .paste-token {
-    border-radius: 0.375rem;
+    border-radius: var(--radius-lg);
     color: var(--accent-blue);
     background: color-mix(in srgb, var(--accent-blue) 20%, transparent);
     box-shadow: 0 0 0 0.0625rem color-mix(in srgb, var(--accent-blue) 40%, transparent);
@@ -676,7 +676,7 @@ composer-box .schedule-send-btn .schedule-send-countdown {
     color: var(--text-primary);
     background: var(--bg-tertiary);
     border: 0.0625rem solid var(--border-color);
-    border-radius: var(--radius-md, 0.25rem);
+    border-radius: var(--radius-md);
     cursor: pointer;
 }
 
@@ -708,7 +708,7 @@ composer-box .schedule-send-btn .schedule-send-countdown {
     color: var(--text-primary);
     background: var(--bg-tertiary);
     border: 0.0625rem solid var(--border-color);
-    border-radius: var(--radius-md, 0.25rem);
+    border-radius: var(--radius-md);
     cursor: pointer;
 }
 
@@ -740,7 +740,7 @@ composer-box .schedule-send-btn .schedule-send-countdown {
     color: #fff;
     background: var(--accent-blue);
     border: none;
-    border-radius: var(--radius-md, 0.25rem);
+    border-radius: var(--radius-md);
     cursor: pointer;
 }
 
@@ -755,7 +755,7 @@ composer-box .schedule-send-btn .schedule-send-countdown {
     color: var(--text-primary);
     background: var(--bg-tertiary);
     border: 0.0625rem solid var(--border-color);
-    border-radius: var(--radius-md, 0.25rem);
+    border-radius: var(--radius-md);
     cursor: pointer;
 }
 
@@ -773,7 +773,7 @@ composer-box .schedule-send-btn .schedule-send-countdown {
     color: var(--text-primary);
     background: var(--bg-tertiary);
     border: 0.0625rem solid var(--border-color);
-    border-radius: var(--radius-md, 0.25rem);
+    border-radius: var(--radius-md);
     cursor: pointer;
 }
 
@@ -931,7 +931,7 @@ composer-box .context-cache-warning-btn .icon-warning {
 }
 
 .actions-sheet .actions-sheet-item code {
-    font-family: var(--font-mono, monospace);
+    font-family: var(--font-mono);
     font-size: 0.8125rem;
     opacity: 0.7;
     flex-shrink: 0;
@@ -1063,7 +1063,7 @@ composer-box.touch-composer .permission-btn .permission-detail {
     border-right: 0.09rem solid currentcolor;
     border-bottom: 0.09rem solid currentcolor;
     transform: rotate(-45deg);
-    transition: transform 150ms ease;
+    transition: transform var(--transition-base);
     opacity: 0.7;
 }
 

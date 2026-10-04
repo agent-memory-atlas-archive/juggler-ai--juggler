@@ -40,7 +40,7 @@
     padding: 0.1875rem 0.4375rem;
     background: var(--tooltip-bg);
     border: 1px solid var(--border-floating);
-    border-radius: 0.25rem;
+    border-radius: var(--radius-md);
     color: var(--tooltip-text);
     font-size: 0.6875rem;
     font-weight: 500;

@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"juggler/cmd/juggler/server"
+	"juggler/internal/srcroot"
 )
 
 // testServerEntry is one isolated Wails subprocess+fixture pair in the pool.
@@ -208,7 +208,7 @@ func TestMain(m *testing.M) {
 		os.Exit(m.Run())
 	}
 
-	jugglerRoot, err := server.FindProjectRoot(".")
+	jugglerRoot, err := srcroot.Find(".")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cannot find project root: %v\n", err)
 		os.Exit(1)

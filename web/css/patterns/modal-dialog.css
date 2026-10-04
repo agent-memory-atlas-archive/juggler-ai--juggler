@@ -53,7 +53,7 @@ modal-dialog .modal-input {
     padding: 0.625rem 0.875rem;
     background: var(--bg-primary);
     border: 0.0625rem solid var(--border-color);
-    border-radius: 0.375rem;
+    border-radius: var(--radius-lg);
     color: var(--text-primary);
     font-size: 0.875rem;
     font-family: inherit;
@@ -62,7 +62,7 @@ modal-dialog .modal-input {
 modal-dialog .modal-input:focus {
     outline: none;
     border-color: var(--accent-blue);
-    box-shadow: 0 0 0 0.1875rem rgb(88 166 255 / 10%);
+    box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--accent-blue) 10%, transparent);
 }
 
 modal-dialog .modal-footer {
@@ -75,10 +75,10 @@ modal-dialog .modal-footer {
 
 modal-dialog .modal-button {
     padding: 0.625rem 1.25rem;
-    border-radius: 0.375rem;
+    border-radius: var(--radius-lg);
     font-size: 0.875rem;
     cursor: pointer;
-    transition: background 150ms ease;
+    transition: background var(--transition-base);
     border: none;
 }
 
@@ -141,7 +141,7 @@ modal-dialog.is-notice .modal-container {
        behind it, so the heavy lifted shadow the modal uses is too much here. */
     background: var(--notice-bg);
     border: none;
-    border-radius: 0.5rem;
+    border-radius: var(--radius-xl);
     box-shadow: 0 0.25rem 0.75rem var(--overlay-dark-15), 0 0.0625rem 0.1875rem var(--overlay-dark-10);
     animation: modal-notice-in 0.18s ease-out;
 }
@@ -208,7 +208,7 @@ modal-dialog .modal-choice-button:hover {
 modal-dialog .modal-choice-button.focused {
     background: var(--bg-raised);
     border-color: var(--accent-blue);
-    box-shadow: 0 0 0 0.1875rem rgb(88 166 255 / 20%);
+    box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--accent-blue) 20%, transparent);
 }
 
 modal-dialog .modal-choice-button-none {
@@ -227,14 +227,14 @@ modal-dialog .modal-custom-input {
     margin-top: 0.75rem;
     background: var(--bg-primary);
     border: 0.125rem solid var(--accent-blue);
-    border-radius: 0.5rem;
+    border-radius: var(--radius-xl);
     color: var(--text-primary);
     font-size: 1rem;
 }
 
 modal-dialog .modal-custom-input:focus {
     outline: none;
-    box-shadow: 0 0 0 0.1875rem rgb(88 166 255 / 20%);
+    box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--accent-blue) 20%, transparent);
 }
 
 /* Settings panel - Get API Key link */

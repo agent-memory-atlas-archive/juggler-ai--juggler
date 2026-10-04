@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"juggler/cmd/juggler/server"
 	"juggler/internal/enginehost"
+	"juggler/internal/srcroot"
 )
 
 // TestNodeEngineHostBootsAndConnects is the node-engine-host conformance test.
@@ -53,7 +53,7 @@ func TestNodeEngineHostBootsAndConnects(t *testing.T) {
 		t.Skipf("Node %s is too old — skipping node engine-host conformance test (need Node.js %d+)", version, enginehost.MinNodeMajor)
 	}
 
-	root, err := server.FindProjectRoot(".")
+	root, err := srcroot.Find(".")
 	if err != nil {
 		t.Fatalf("find project root: %v", err)
 	}

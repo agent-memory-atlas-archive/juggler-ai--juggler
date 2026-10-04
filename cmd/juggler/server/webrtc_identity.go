@@ -40,11 +40,10 @@ func webRTCIdentityPath(projectPath string) string {
 
 // PeerIdentityFingerprint returns the SHA-256 DTLS fingerprint of this project's
 // persistent WebRTC identity, and true when one is loaded. Because the identity
-// is reused across restarts, the fingerprint is stable — so a tunnel/rendezvous
-// provider can fold it into a shareable Direct P2P link (or a remote client can
-// pin it) and the link keeps working after Juggler is stopped and started again.
-// Returns "", false when no persistent identity is available and pion is minting
-// ephemeral per-connection certificates instead.
+// is reused across restarts, the fingerprint is stable; GET /api/connectivity
+// reports it as peerIdentity so the UI can show a stable device identity and a
+// remote client can pin it. Returns "", false when no persistent identity is
+// available and pion is minting ephemeral per-connection certificates instead.
 func (s *Server) PeerIdentityFingerprint() (string, bool) {
 	if s.webrtcCert == nil {
 		return "", false

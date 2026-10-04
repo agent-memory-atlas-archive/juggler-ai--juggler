@@ -41,7 +41,7 @@ conversation-tab .conversation-tab-loading-retry {
     background: var(--accent-blue);
     color: #fff;
     border: none;
-    border-radius: 0.25rem;
+    border-radius: var(--radius-md);
     padding: 0.35rem 0.9rem;
     cursor: pointer;
     font-size: 0.85rem;

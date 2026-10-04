@@ -68,22 +68,22 @@
 
 :where(.markdown) code {
     padding: 0.1875rem 0.1rem;
-    border-radius: 0.1875rem;
-    color: var(--accent-green, #3fb950);
+    border-radius: var(--radius-sm);
+    color: var(--accent-green);
 }
 
 :where(.markdown) pre {
     background: rgb(0 0 0 / 3%);
     padding: 0.875rem;
-    border-radius: 0.25rem;
+    border-radius: var(--radius-md);
     overflow-x: auto;
     margin: 0.75rem 0;
-    border: 0.0625rem solid var(--border-color, #30363d);
+    border: 0.0625rem solid var(--border-color);
 }
 
 :where(.markdown) pre code {
     padding: 0;
-    color: var(--text-primary, #e6edf3);
+    color: var(--text-primary);
     font-family: var(--font-mono);
     font-size: 0.8125rem;
 }
@@ -111,11 +111,11 @@
     padding: 0.25rem;
     background: var(--bg-secondary);
     border: 1px solid var(--border-color);
-    border-radius: 0.25rem;
+    border-radius: var(--radius-md);
     color: var(--text-secondary);
     cursor: pointer;
     opacity: 0;
-    transition: opacity 150ms ease, background 150ms ease, color 150ms ease;
+    transition: opacity var(--transition-base), background var(--transition-base), color var(--transition-base);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -279,7 +279,7 @@
 }
 
 :where(.markdown) a {
-    color: var(--accent-blue, #58a6ff);
+    color: var(--accent-blue);
     text-decoration: none;
 }
 
@@ -294,7 +294,7 @@
 :where(.markdown) h5,
 :where(.markdown) h6 {
     margin: 1rem 0 0.5rem;
-    color: var(--text-primary, #e6edf3);
+    color: var(--text-primary);
     font-weight: 600;
 }
 
@@ -306,16 +306,16 @@
 :where(.markdown) h6 { font-size: 0.875rem; }
 
 :where(.markdown) blockquote {
-    border-left: 0.1875rem solid var(--accent-blue, #58a6ff);
+    border-left: 0.1875rem solid var(--accent-blue);
     margin: 0.75rem 0;
     padding: 0.5rem 1rem;
     background: rgb(0 0 0 / 15%);
-    color: var(--text-secondary, #8b949e);
+    color: var(--text-secondary);
 }
 
 :where(.markdown) hr {
     border: none;
-    border-top: 0.0625rem solid var(--border-divider, #30363d);
+    border-top: 0.0625rem solid var(--border-divider);
     margin: 1rem 0;
 }
 
@@ -341,7 +341,7 @@
 
 :where(.markdown) table th,
 :where(.markdown) table td {
-    border: 0.0625rem solid var(--border-color, #30363d);
+    border: 0.0625rem solid var(--border-color);
     padding: 0.5rem 0.75rem;
     text-align: left;
 }
@@ -354,5 +354,5 @@
 :where(.markdown) img {
     max-width: 100%;
     height: auto;
-    border-radius: 0.25rem;
+    border-radius: var(--radius-md);
 }

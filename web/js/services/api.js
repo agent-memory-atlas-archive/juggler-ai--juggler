@@ -20,7 +20,6 @@ import { apiUrl } from '../utils/api-url.js';
  * @property {string} projectPath - Project root directory path
  * @property {string} [platform] - Platform (darwin/linux/windows)
  * @property {string} [home] - Backend user-home directory (e.g. /Users/jules)
- * @property {object[]} [conversations] - Conversations JSON (legacy v4 format with embedded data)
  * @property {string[]} [conversationOrder] - Conversation IDs in order (v4 binary storage)
  * @property {string} activeConversationId - Active conversation ID
  * @property {{provider: string, model: string, contextWindow: number}} providerInfo - Provider information
@@ -227,17 +226,15 @@ class APIService {
    * /api/session's `conversationNames` and PATCH /session/conversations/{id}/name.
    * Conversation order is owned by POST /api/conversations (create) and POST
    * /api/session/conversations/reorder.
-   * @param {object[]} conversations
    * @param {string|null} activeConversationId
    * @param {import('../model/session.js').HistoryMessage[]} [messageHistory] - Session-level message history for input navigation
    * @param {Record<string, any>} [metadata] - General-purpose key-value store for frontend flags
    * @returns {Promise<{success: boolean}>} Success indicator
    */
-  async updateSession(conversations, activeConversationId, messageHistory, metadata) {
+  async updateSession(activeConversationId, messageHistory, metadata) {
     return await this.request('/session', {
       method: 'PUT',
       body: {
-        conversations,
         activeConversationId,
         messageHistory,
         metadata

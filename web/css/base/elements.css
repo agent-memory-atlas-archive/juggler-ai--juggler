@@ -48,7 +48,7 @@ button {
     color: inherit;
     border: none;
     padding: 0.625rem 1.25rem;
-    border-radius: 0.25rem;
+    border-radius: var(--radius-md);
     cursor: pointer;
     font-family: var(--font-ui);
     font-size: 0.875rem;
@@ -100,7 +100,7 @@ input, textarea {
     border: 0.0625rem solid var(--border-color);
     color: var(--text-primary);
     padding: 0.625rem;
-    border-radius: 0.25rem;
+    border-radius: var(--radius-md);
     font-size: 1rem;
     outline: none;
     transition: border-color 0.2s;

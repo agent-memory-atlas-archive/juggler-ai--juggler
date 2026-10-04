@@ -74,7 +74,7 @@ export const sendRefusedWhenProviderDisabledTest = {
           modelsWithContext: []
         }
       ]);
-      await conversation.setModelConfig({ provider: 'gone-co', model: 'gone-1' });
+      conversation.setModelConfig({ provider: 'gone-co', model: 'gone-1' });
 
       const sinceTurns = conversation.completedTurns;
       const result = await conversation.sendMessage('please run something');
@@ -155,7 +155,7 @@ export const sendAllowedWhenProviderAvailableTest = {
           ]
         }
       ]);
-      await conversation.setModelConfig({ provider: 'live-co', model: 'live-1', thinking: 'high' });
+      conversation.setModelConfig({ provider: 'live-co', model: 'live-1', thinking: 'high' });
       if (recorded.length !== 0) {
         throw new Error('selecting a model must not promote it before use');
       }

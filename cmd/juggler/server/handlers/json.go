@@ -6,6 +6,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"maps"
 	"net/http"
 
 	"juggler/internal/jlog"
@@ -41,6 +42,24 @@ func WriteJSON(w http.ResponseWriter, r *http.Request, status int, v any) {
 // fetching a script or an image has no JSON decoder waiting for the failure.
 func WriteError(w http.ResponseWriter, r *http.Request, status int, msg string) {
 	WriteJSON(w, r, status, map[string]string{"error": msg})
+}
+
+// WriteSuccess sends the one JSON success envelope every /api write route
+// shares, {"success": true}, with status 200. fields, when non-nil, are merged
+// into the same object for a route that reports something alongside it (the
+// preset it saved, the URL it started); a "success" key among them is
+// overwritten. A route whose answer IS a resource — a board, a workspace, a
+// settings document — writes that with WriteJSON instead and carries no flag.
+//
+// The flag is redundant with the status by construction, for the same reason
+// WriteError's shape is: a failure never reaches a caller's body. It exists so
+// that a client which does look at the body finds one spelling for "done",
+// rather than {"success": true} on one route and {"ok": true} on the next.
+func WriteSuccess(w http.ResponseWriter, r *http.Request, fields map[string]any) {
+	body := make(map[string]any, len(fields)+1)
+	maps.Copy(body, fields)
+	body["success"] = true
+	WriteJSON(w, r, 0, body)
 }
 
 // DecodeJSON decodes the request body into a fresh T. A malformed body is

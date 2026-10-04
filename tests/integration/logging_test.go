@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"juggler/cmd/juggler/server"
 	"juggler/internal/logpaths"
+	"juggler/internal/srcroot"
 )
 
 // TestServerHonorsLogFileFlagPerInstance boots two real headless servers on two
@@ -36,7 +36,7 @@ func TestServerHonorsLogFileFlagPerInstance(t *testing.T) {
 		t.Skip("spawns the juggler binary; skipped in -short mode")
 	}
 
-	root, err := server.FindProjectRoot(".")
+	root, err := srcroot.Find(".")
 	if err != nil {
 		t.Fatalf("find project root: %v", err)
 	}

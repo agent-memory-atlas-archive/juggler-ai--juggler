@@ -1592,11 +1592,11 @@ class Conversation {
    * root conversation.
    * @param {Conversation} destConversation - Destination conversation.
    * @param {import('./message-thread.js').default} sourceThread - Source thread for effective model config.
-   * @returns {Promise<void>}
+   * @returns {void}
    * @private
    */
-  async _copyNewTabState(destConversation, sourceThread) {
-    if (sourceThread.modelConfig) await destConversation.setModelConfig({ ...sourceThread.modelConfig });
+  _copyNewTabState(destConversation, sourceThread) {
+    if (sourceThread.modelConfig) destConversation.setModelConfig({ ...sourceThread.modelConfig });
     const convRules = this.getMetadata(CONVERSATION_RULES_KEY);
     const convPaths = this.getMetadata(CONVERSATION_PATHS_KEY);
     if (convRules !== undefined) {
@@ -1639,7 +1639,7 @@ class Conversation {
       arr.insert(arr.length, snapshots.map((/** @type {any} */ s) => plainToYMap(s)));
     });
 
-    await this._copyNewTabState(newConv, source);
+    this._copyNewTabState(newConv, source);
     if (options.activate) this.session.switchConversation?.(newId);
     return newId;
   }
@@ -1716,7 +1716,7 @@ class Conversation {
       arr.insert(arr.length, snapshots.map((/** @type {any} */ s) => plainToYMap(s)));
     });
 
-    await this._copyNewTabState(newConv, sourceThread);
+    this._copyNewTabState(newConv, sourceThread);
 
     if (options.activate) this.session.switchConversation?.(newId);
     return newId;
@@ -2525,8 +2525,9 @@ class Conversation {
   /**
    * Set the LLM model configuration for this conversation
    * @param {ModelConfig|null} config - Model configuration (provider and model)
+   * @returns {void}
    */
-  async setModelConfig(config) {
+  setModelConfig(config) {
     const root = this._rootMessageThread;
     const changed = root.modelConfig?.provider !== config?.provider ||
                         root.modelConfig?.model !== config?.model;

@@ -83,7 +83,7 @@ func (s *Server) handleSetLAN(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.SetPublicMode(req.Enabled)
-	handlers.WriteJSON(w, r, 0, map[string]any{"ok": true})
+	handlers.WriteSuccess(w, r, nil)
 }
 
 func (s *Server) handleSetTunnel(w http.ResponseWriter, r *http.Request) {
@@ -96,7 +96,7 @@ func (s *Server) handleSetTunnel(w http.ResponseWriter, r *http.Request) {
 	}
 	if !req.Enabled {
 		s.StopTunnel()
-		handlers.WriteJSON(w, r, 0, map[string]any{"ok": true})
+		handlers.WriteSuccess(w, r, nil)
 		return
 	}
 	// Validate against the registry: an empty mode selects the first
@@ -122,7 +122,7 @@ func (s *Server) handleSetTunnel(w http.ResponseWriter, r *http.Request) {
 	if info, ok := s.GetTunnelInfo(); ok {
 		relay = info.Relay
 	}
-	handlers.WriteJSON(w, r, 0, map[string]any{"ok": true, "tunnelURL": tunnelURL, "tunnelMode": string(mode), "relay": relay})
+	handlers.WriteSuccess(w, r, map[string]any{"tunnelURL": tunnelURL, "tunnelMode": string(mode), "relay": relay})
 }
 
 // handleQRCode serves a QR code SVG for the given ?url= query parameter.

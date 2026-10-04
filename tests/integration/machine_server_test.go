@@ -19,9 +19,9 @@ import (
 	"github.com/gorilla/websocket"
 
 	"juggler/cmd/juggler/machineserver"
-	"juggler/cmd/juggler/server"
 	"juggler/internal/apipaths"
 	"juggler/internal/ingress"
+	"juggler/internal/srcroot"
 )
 
 // TestMachineServerSessionLifecycle drives one session through the control
@@ -211,7 +211,7 @@ func TestMachineServerDrivesASessionInABrowser(t *testing.T) {
 	ms, stop := startMachineServer(t, "--test")
 	defer stop()
 
-	root, err := server.FindProjectRoot(".")
+	root, err := srcroot.Find(".")
 	if err != nil {
 		t.Fatalf("find project root: %v", err)
 	}

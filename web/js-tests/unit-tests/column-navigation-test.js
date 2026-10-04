@@ -35,6 +35,7 @@ import {
   TOOL_STATES
 } from '../../sdk/lib/message.js';
 import { ColumnSelectionState } from '../../js/utils/column-selection.js';
+import { SHEET_QUERY } from '../../js/utils/popup-surface.js';
 import '../../js/components/conversation-tab.js';
 
 /**
@@ -217,7 +218,7 @@ export async function runTests() {
     // lands on is the platform's choice of test-window width, so pin it rather
     // than test the rule on some machines and not others.
     const realMatchMedia = window.matchMedia.bind(window);
-    /** @type {any} */ (window).matchMedia = (/** @type {string} */ q) => (q === '(width <= 36rem)'
+    /** @type {any} */ (window).matchMedia = (/** @type {string} */ q) => (q === SHEET_QUERY
       ? { matches: true, media: q, addEventListener() {}, removeEventListener() {} }
       : realMatchMedia(q));
 

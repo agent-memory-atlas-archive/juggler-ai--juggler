@@ -648,6 +648,16 @@
 	"jsSetProperties": [
 		"--strategy-color",
 		"--logo-with-name-url",
-		"--workspace-tint"
+		"--workspace-tint",
+		"--dropdown-x",
+		"--dropdown-y",
+		"--popup-origin",
+		"--pinboard-width",
+		"--update-pct",
+		"--scrim-from",
+		"--js-angle",
+		"--js-phase",
+		"--line-digits",
+		"--tt-arrow-x"
 	]
 }

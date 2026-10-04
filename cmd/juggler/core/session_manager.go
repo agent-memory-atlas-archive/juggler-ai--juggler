@@ -5,7 +5,6 @@
 package core
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"slices"
@@ -1297,9 +1296,9 @@ func reanchorBoxesAt(s *Session, convID string) bool {
 	return moved
 }
 
-// removeConvIDFromSession drops convID from ConversationOrder, Conversations,
-// and clears ActiveConversationID if it pointed at convID. Shared by delete
-// and bin flows.
+// removeConvIDFromSession drops convID from ConversationOrder and clears
+// ActiveConversationID if it pointed at convID. Shared by delete and bin
+// flows.
 func removeConvIDFromSession(s *Session, convID string) {
 	// Before it leaves the order, while it still has a neighbour to hand on to.
 	reanchorBoxesAt(s, convID)
@@ -1311,17 +1310,6 @@ func removeConvIDFromSession(s *Session, convID string) {
 		}
 	}
 	s.ConversationOrder = newOrder
-
-	newConversations := make([]json.RawMessage, 0, len(s.Conversations))
-	for _, conv := range s.Conversations {
-		var obj struct {
-			ID string `json:"id"`
-		}
-		if err := json.Unmarshal(conv, &obj); err == nil && obj.ID != convID {
-			newConversations = append(newConversations, conv)
-		}
-	}
-	s.Conversations = newConversations
 	if s.ActiveConversationID == convID {
 		s.ActiveConversationID = ""
 	}

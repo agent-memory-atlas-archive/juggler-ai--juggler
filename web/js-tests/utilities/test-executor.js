@@ -88,7 +88,7 @@ async function selectDefaultProvider(conversation) {
       if (modelStr) {
         const i = modelStr.indexOf('/');
         if (i > 0 && i < modelStr.length - 1) {
-          await conversation.setModelConfig({
+          conversation.setModelConfig({
             provider: modelStr.slice(0, i),
             model: modelStr.slice(i + 1)
           });
@@ -112,7 +112,7 @@ async function selectDefaultProvider(conversation) {
                                               */
       (p) => p.available);
     if (availableProvider && availableProvider.modelsWithContext && availableProvider.modelsWithContext.length > 0) {
-      await conversation.setModelConfig({
+      conversation.setModelConfig({
         provider: availableProvider.name,
         model: availableProvider.modelsWithContext[0]?.id
       });
@@ -497,7 +497,7 @@ class TestExecutor {
 
       // Set provider and model
       const modelId = this.model || (requestedProvider.modelsWithContext && requestedProvider.modelsWithContext.length > 0 ? requestedProvider.modelsWithContext[0].id : '');
-      await this.conversation.setModelConfig({
+      this.conversation.setModelConfig({
         provider: requestedProvider.name,
         model: modelId
       });

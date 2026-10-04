@@ -51,7 +51,7 @@ const RENAME_ERROR_CODES = new Map(/** @type {const} */ ([
  * @typedef {object} ApiService
  * @property {function(): Promise<SessionData>} getSession - Get session
  * @property {function(): Promise<{active: boolean, conversationIds: string[]}>} getActiveConversations - Conversations actively running a turn (excludes approval-parked)
- * @property {function(object[], string | null, HistoryMessage[]|undefined, Record<string, any>|undefined): Promise<{success: boolean}>} updateSession - Update session state
+ * @property {function(string | null, HistoryMessage[]|undefined, Record<string, any>|undefined): Promise<{success: boolean}>} updateSession - Update session state
  * @property {function(Record<string, any>): Promise<{metadata: Record<string, any>}>} patchSessionMetadata - Patch session metadata keys
  * @property {function(string, string=, {lane?: string, duplicateFrom?: string, origin?: string, focus?: boolean, focusFrom?: string, place?: string, after?: string}=): Promise<{id: string, name: string, created: string}>} createConversation - Atomically create a new conversation (POST /api/conversations); duplicateFrom clones that conversation's files server-side before announcing; origin is a gesture label logged for create attribution; focus broadcasts a "focus" op asking viewers to switch to the new conversation, attributed to focusFrom; place is 'head', 'after' or 'end' and after names the conversation to sit behind for 'after'
  * @property {function(string, string): Promise<{name: string}>} renameConversation - Rename a conversation's on-disk folder
@@ -71,7 +71,6 @@ const RENAME_ERROR_CODES = new Map(/** @type {const} */ ([
  * @property {string} id - Session ID
  * @property {string} projectPath - Project path
  * @property {string} [platform] - Platform (darwin/linux/windows)
- * @property {object[]} [conversations] - Conversations JSON (legacy v4 format with embedded data)
  * @property {string[]} [conversationOrder] - Conversation IDs in order (v4 format with binary storage)
  * @property {string} activeConversationId - Active conversation ID
  * @property {string} [home] - Backend user-home directory (e.g. /Users/jules)
@@ -2089,62 +2088,11 @@ class Session {
     }
 
     try {
-      // Integrity check: identify corrupt conversations (duplicate itemIds)
-      // Skip corrupt conversations instead of blocking all saves
-      /** @type {Set<string>} */
-      const corruptConversationIds = new Set();
-
-      for (const conv of this.conversations.values()) {
-        // Read items directly from conversation (synced via Yjs)
-        const itemsToCheck = conv.rootItems;
-
-        const seen = new Set();
-        let isCorrupt = false;
-        for (const item of itemsToCheck) {
-          const itemId = /** @type {any} */ (item).itemId;
-          if (itemId) {
-            if (seen.has(itemId)) {
-              console.error(`[Session] Corrupt conversation ${conv.id}: duplicate itemId ${itemId} - skipping from save`);
-              isCorrupt = true;
-              break;
-            }
-            seen.add(itemId);
-          }
-        }
-
-        if (isCorrupt) {
-          corruptConversationIds.add(conv.id);
-        }
-      }
-
-      // Log summary if any conversations were skipped
-      if (corruptConversationIds.size > 0) {
-        console.warn(`[Session] Skipping ${corruptConversationIds.size} corrupt conversation(s) from save: ${Array.from(corruptConversationIds).join(', ')}`);
-      }
-
-      // Yield to let any in-flight yjs-sync WebSocket messages from recently-stopped
-      // workers land before serializing. When a worker shuts down it flushes a final
-      // yjs-sync; the browser receives it as a WebSocket macrotask that may still be
-      // queued here if terminate() was called synchronously just before this save.
-      await new Promise(resolve => setTimeout(resolve, 0));
-
-      // Serialize conversations (filter out transient, corrupt, and worker-managed conversations)
-      const conversationsJson = Array.from(this.conversations.values())
-        .filter(conv => !conv.isTransient)
-        .filter(conv => !corruptConversationIds.has(conv.id)) // Skip corrupt conversations
-        .filter(conv => {
-          // Skip conversations with active workers - they handle their own saves
-          if (workerManager.isWorkerReady(conv.id)) {
-            return false;
-          }
-          return true;
-        })
-        .map(conv => conv.toJSON());
-
-      // Names live on the on-disk folder name; conversation order is owned
-      // by POST /api/conversations and POST /api/session/conversations/reorder.
+      // Only session-level state travels here. Each conversation's content is
+      // saved by its own worker; names live on the on-disk folder name; and
+      // conversation order is owned by POST /api/conversations and POST
+      // /api/session/conversations/reorder.
       await this._apiService.updateSession(
-        conversationsJson,
         this.loadedConversationId ?? null,
         this.messageHistory,
         this.metadata

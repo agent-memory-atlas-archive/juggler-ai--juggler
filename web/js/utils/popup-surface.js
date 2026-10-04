@@ -39,7 +39,15 @@ import { attachSwipeDismiss } from './swipe-dismiss.js';
  * block: both are in layout/responsive.css.
  * @type {string}
  */
-const SHEET_QUERY = '(width <= 36rem)';
+export const SHEET_QUERY = '(width <= 36rem)';
+
+/**
+ * Media query for a touch-first device: no hover and a coarse pointer. The JS
+ * twin of the touch rules in components/composer.css and the viewport pinning
+ * in utils/viewport-fit.js.
+ * @type {string}
+ */
+export const COARSE_POINTER_QUERY = '(hover: none) and (pointer: coarse)';
 
 /**
  * Present an already-built popup surface and wire everything it needs.

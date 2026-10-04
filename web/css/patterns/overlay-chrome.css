@@ -72,7 +72,7 @@ modal-panel {
     justify-content: center;
     padding: 2rem;
     background: var(--overlay-dark-70);
-    z-index: var(--z-modal, 1000);
+    z-index: var(--z-modal);
     cursor: zoom-out;
 }
 
@@ -80,7 +80,7 @@ modal-panel {
     max-width: 90vw;
     max-height: 90vh;
     object-fit: contain;
-    border-radius: 0.5rem;
+    border-radius: var(--radius-xl);
     box-shadow: var(--popup-shadow);
 }
 
@@ -104,7 +104,7 @@ token-display .token-bar {
     width: 5rem;
     height: 0.5rem;
     background: var(--border-color);
-    border-radius: 0.25rem;
+    border-radius: var(--radius-md);
     overflow: hidden;
     display: flex;
 }
@@ -149,7 +149,7 @@ token-display.token-high   .token-fill { background: var(--accent-red); }
  * parenthetical. The total count and the bar fill are unaffected;
  * the signal is *about* the cached portion, so it lives there. */
 token-display.cache-warn .token-new {
-    color: var(--warning, #c08a00);
+    color: var(--accent-yellow);
 }
 
 /* Code Block Component */
@@ -157,7 +157,7 @@ code-block {
     position: relative;
     background: var(--bg-code-medium);
     border: 0.0625rem solid var(--border-code);
-    border-radius: 0.25rem;
+    border-radius: var(--radius-md);
     overflow: hidden;
     display: block;
 }

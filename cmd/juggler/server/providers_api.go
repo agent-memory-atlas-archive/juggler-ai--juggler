@@ -763,7 +763,7 @@ func (s *Server) handleSetCheapModel(w http.ResponseWriter, r *http.Request) {
 		handlers.WriteError(w, r, http.StatusInternalServerError, fmt.Sprintf("Couldn't save cheap model: %v", err))
 		return
 	}
-	handlers.WriteJSON(w, r, 0, map[string]any{"success": true})
+	handlers.WriteSuccess(w, r, nil)
 }
 
 // handleDefaultModel returns the concrete {provider, model, thinking?} a new
@@ -810,7 +810,7 @@ func (s *Server) handleSetDefaultModel(w http.ResponseWriter, r *http.Request) {
 		handlers.WriteError(w, r, http.StatusInternalServerError, fmt.Sprintf("Couldn't save default model: %v", err))
 		return
 	}
-	handlers.WriteJSON(w, r, 0, map[string]any{"success": true})
+	handlers.WriteSuccess(w, r, nil)
 }
 
 // handleRecentModels handles the user's recently-used concrete models.
@@ -866,7 +866,7 @@ func (s *Server) handleRecentModelsPost(w http.ResponseWriter, r *http.Request) 
 		handlers.WriteError(w, r, http.StatusInternalServerError, fmt.Sprintf("Couldn't record recent model: %v", err))
 		return
 	}
-	handlers.WriteJSON(w, r, 0, map[string]any{"success": true})
+	handlers.WriteSuccess(w, r, nil)
 }
 
 // cachedProviders returns the most recent provider list, or an empty slice
@@ -1005,8 +1005,7 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRefreshProviders(w http.ResponseWriter, r *http.Request) {
 	provider.InvalidateAutoDetect()
 	s.RefreshProviders()
-	handlers.WriteJSON(w, r, 0, map[string]any{
-		"success":   true,
+	handlers.WriteSuccess(w, r, map[string]any{
 		"providers": s.cachedProviders(),
 	})
 }

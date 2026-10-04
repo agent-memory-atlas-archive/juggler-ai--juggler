@@ -120,9 +120,7 @@ func TestWebRTCIdentityRegeneratedWhenCorrupt(t *testing.T) {
 }
 
 // TestPeerIdentityFingerprint covers the accessor both ways — no identity ->
-// ("", false); a loaded identity -> its fingerprint and true — and that the
-// tunnelHost capability handed to WAN providers reports the same value (this is
-// what a Direct P2P provider reads to build a restart-stable link).
+// ("", false); a loaded identity -> its fingerprint and true.
 func TestPeerIdentityFingerprint(t *testing.T) {
 	s := &Server{}
 	if fp, ok := s.PeerIdentityFingerprint(); ok || fp != "" {
@@ -141,10 +139,5 @@ func TestPeerIdentityFingerprint(t *testing.T) {
 	}
 	if want := fingerprintOf(t, cert); fp != want {
 		t.Fatalf("fingerprint = %q, want %q", fp, want)
-	}
-
-	// The provider-facing capability must report the identical result.
-	if hostFP, hostOK := (tunnelHost{s}).PeerIdentityFingerprint(); hostFP != fp || hostOK != ok {
-		t.Fatalf("tunnelHost (%q,%v) != server (%q,%v)", hostFP, hostOK, fp, ok)
 	}
 }

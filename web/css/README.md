@@ -124,6 +124,15 @@ Rules for using them:
   silently invalidates the whole declaration — and inside `color-mix()` it takes
   the rest of the value with it. If JS sets the property, list it in
   `manifest.json` under `jsSetProperties` so the linter knows.
+- **No fallback on a token that is always there.** A token in `scale.css`, or
+  in both themes, is defined on every element (the app sets `data-theme` before
+  first paint), so `var(--accent-red, #f85149)` writes a second copy of one
+  theme's value that can only drift. Write `var(--accent-red)`. A fallback is
+  for a property that can genuinely be absent: a one-theme token (above), a
+  property a component sets on some elements, or one JS sets.
+- **A tint of a token is `color-mix()`, not its value spelled out.**
+  `color-mix(in srgb, var(--accent-blue) 15%, transparent)` follows the theme;
+  `rgb(88 166 255 / 15%)` is the dark accent in both.
 
 ## Naming
 
@@ -175,7 +184,7 @@ it comes back with a use.
 |---|---|
 | ownership | A selector in a file that owns neither its root nor its subject. |
 | dead selectors | A class in the CSS that appears in no JS, HTML or extension, and matches no `dynamicClasses` pattern. |
-| token parity | A colour token defined for one theme only without the fallback idiom; a `var()` that resolves to nothing. |
+| token parity | A colour token defined for one theme only without the fallback idiom; a `var()` that resolves to nothing; a fallback on a token that is always defined; a fallback on a property nothing defines and JS does not set. |
 | link parity | `index.html` and `headless-test.html` disagreeing on the sheet list. |
 | layer order | A sheet whose declared layer is not its directory, or one listed out of layer order. |
 | asset url | A relative `url()` that resolves to no file. |

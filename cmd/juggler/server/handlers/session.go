@@ -210,7 +210,7 @@ func (api *SessionAPI) HandleSetWindowState(w http.ResponseWriter, r *http.Reque
 		WriteError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
-	WriteJSON(w, r, http.StatusOK, map[string]any{"ok": true})
+	WriteSuccess(w, r, nil)
 }
 
 // boardID is which of this project's boards a request is about, defaulting to
@@ -346,7 +346,7 @@ func (api *SessionAPI) HandleDeleteBoard(w http.ResponseWriter, r *http.Request)
 		WriteError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
-	WriteJSON(w, r, http.StatusOK, map[string]any{"ok": true})
+	WriteSuccess(w, r, nil)
 }
 
 // HandleRestoreBoards answers with the detached boards left over from the last
@@ -390,7 +390,7 @@ func (api *SessionAPI) HandleSetUIZoom(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
-	WriteJSON(w, r, http.StatusOK, map[string]any{"ok": true})
+	WriteSuccess(w, r, nil)
 }
 
 // HandleGetUITheme returns the UI theme mode (system|light|dark) saved for the
@@ -422,7 +422,7 @@ func (api *SessionAPI) HandleSetUITheme(w http.ResponseWriter, r *http.Request) 
 		WriteError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
-	WriteJSON(w, r, http.StatusOK, map[string]any{"ok": true})
+	WriteSuccess(w, r, nil)
 }
 
 // uiPrefScopeProject is the ?scope= value naming the realm every window of the
@@ -480,7 +480,7 @@ func (api *SessionAPI) HandleSetUIPrefs(w http.ResponseWriter, r *http.Request) 
 		WriteError(w, r, status, err.Error())
 		return
 	}
-	WriteJSON(w, r, http.StatusOK, map[string]any{"ok": true})
+	WriteSuccess(w, r, nil)
 }
 
 // HandleGetSession retrieves the session with runtime info
@@ -493,7 +493,6 @@ func (api *SessionAPI) HandleGetSession(w http.ResponseWriter, r *http.Request) 
 		"projectPath":          runtime.ProjectPath,
 		"platform":             runtime.Platform,
 		"home":                 runtime.Home,
-		"conversations":        sess.Conversations,
 		"conversationOrder":    sess.ConversationOrder,
 		"conversationNames":    api.manager().ConvNames(),
 		"activeConversationId": sess.ActiveConversationID,
@@ -512,11 +511,11 @@ func (api *SessionAPI) HandleGetSession(w http.ResponseWriter, r *http.Request) 
 	WriteJSON(w, r, 0, response)
 }
 
-// HandleUpdateSession replaces conversations/metadata for the session
-// No validation - frontend manages all structure
+// HandleUpdateSession replaces the session-level state the viewer owns: the
+// active conversation, message history and metadata. No validation — the
+// frontend manages their structure.
 func (api *SessionAPI) HandleUpdateSession(w http.ResponseWriter, r *http.Request) {
 	req, ok := DecodeJSON[struct {
-		Conversations        []json.RawMessage `json:"conversations"`
 		ActiveConversationID string            `json:"activeConversationId"`
 		MessageHistory       []json.RawMessage `json:"messageHistory"`
 		Metadata             map[string]any    `json:"metadata"`
@@ -531,10 +530,6 @@ func (api *SessionAPI) HandleUpdateSession(w http.ResponseWriter, r *http.Reques
 	if err := api.manager().Update(func(sess *core.Session) error {
 		// ConversationOrder is owned by the create / reorder / delete /
 		// archive endpoints and the on-load reconcile, not this PUT.
-		if len(req.Conversations) > 0 {
-			sess.SetConversations(req.Conversations)
-		}
-
 		sess.ActiveConversationID = req.ActiveConversationID
 
 		if req.MessageHistory != nil {

@@ -6,34 +6,8 @@ BUILD_DIR=bin
 
 # Platform detection (used to optionally bundle a macOS .app)
 UNAME_S := $(shell uname -s)
-# Host CPU arch, translated to Go's GOARCH names — the default for native Linux
-# builds below, so `make linux-binaries` targets the running machine instead of
-# silently cross-compiling (these are cgo GTK/WebKitGTK builds, so a mismatched
-# GOARCH needs a cross-gcc toolchain most machines don't have).
-UNAME_M := $(shell uname -m)
-ifeq ($(UNAME_M),x86_64)
-GOARCH_HOST := amd64
-else ifneq (,$(filter $(UNAME_M),aarch64 arm64))
-GOARCH_HOST := arm64
-else
-GOARCH_HOST := $(UNAME_M)
-endif
-# Executable suffix for native (non-cross-compiled) builds on this host. Native
-# Windows reports Windows_NT via $(OS) regardless of shell (uname -s instead
-# returns MSYS_NT-.../MINGW64_NT-... under Git Bash, inconsistent to match on).
-# This matters beyond cosmetics: `go build -o path` never auto-appends .exe when
-# given an explicit filename, but the desktop app's serverBinPath()
-# (cmd/juggler-app/server_spawn.go) looks for a sibling literally named
-# juggler.exe on Windows — without this suffix here, a native go-build silently
-# produces a server binary the app can never find, so it falls back to whatever
-# juggler.exe happens to be on PATH (e.g. a stale installed build) with no error.
-# The cross-compile targets (build-windows) hardcode .exe already, so this only
-# affects a native `make build` on Windows.
-ifeq ($(OS),Windows_NT)
-BIN_EXT := .exe
-else
-BIN_EXT :=
-endif
+# GOARCH_HOST (host CPU arch), BIN_EXT (native executable suffix) and RACE come
+# from mk/build-flags.mk, included below.
 # Extra linker args for the desktop app on a native Windows build. The app is a
 # GUI binary and must link -H windowsgui, or Windows gives it a console window
 # that sits open behind the app for its whole run (and its logging assumes no
@@ -119,11 +93,6 @@ GOTEST_RUN=$(if $(RUN),-run "$(RUN)" -v)
 # is read from PIPESTATUS[0] in the recipes, so grep selecting nothing (exit 1)
 # cannot be mistaken for a test failure.
 QUIET_UNMATCHED=$(if $(RUN),| grep --line-buffered -vE "^(testing: warning: no tests to run|PASS)$$|\[no tests to run\]$$|\[no test files\]$$")
-# The race detector needs cgo (a C compiler). CI and most Unix dev boxes have
-# one, so default -race on. A Windows dev box usually has no C toolchain, so cgo
-# can't build and `go test -race` fails outright with "requires cgo" — override
-# with `make test RACE=` there to run the suite (minus race). Empty = no race.
-RACE ?= -race
 GOGET=$(GOCMD) get
 GOFMT=$(GOCMD) fmt
 GOVET=$(GOCMD) vet
@@ -135,8 +104,9 @@ VERSION ?= $(shell cat VERSION 2>/dev/null || echo "dev")
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 
-# Shared build flags: GOBUILD/GOBUILD_RELEASE, the macOS deployment-target + CGO
-# exports, and the version-stamp LDFLAGS_BASE/LDFLAGS. Included here — after
+# Shared build flags: GOARCH_HOST/BIN_EXT/RACE, GOBUILD/GOBUILD_RELEASE, the
+# macOS deployment-target + CGO exports, and the version-stamp
+# LDFLAGS_BASE/LDFLAGS. Included here — after
 # VERSION/COMMIT/BUILD_DATE, which it references — so this build and the private
 # release/packaging build compile every binary identically. See mk/build-flags.mk.
 include mk/build-flags.mk

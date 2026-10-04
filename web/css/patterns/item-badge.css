@@ -65,7 +65,7 @@
     color: white;
     background: var(--preset-badge-bg, var(--preset-bg, var(--bg-primary)));
     padding: 0.25rem 0.5rem 0.125rem;
-    border-radius: 0.25rem;
+    border-radius: var(--radius-md);
 }
 
 /* Color presets - unified utility classes that set --preset-bg and --preset-badge-bg */

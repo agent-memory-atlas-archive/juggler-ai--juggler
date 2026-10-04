@@ -11,7 +11,7 @@ import { menuOrderedCommands, buildCommandRow, buildManageCommandsRow, buildBrow
 import { openCommandManager } from './command-editor-dialog.js';
 import { isAnyPopupOpen } from '../utils/popup-manager.js';
 import { handleEscapeKey } from '../services/escape-behaviour.js';
-import { presentPopup } from '../utils/popup-surface.js';
+import { presentPopup, COARSE_POINTER_QUERY } from '../utils/popup-surface.js';
 import { CompletionMenu } from './completion-menu.js';
 import { fileMentionProvider, extractFileMentionsAsync } from './file-mention-provider.js';
 import { slashCommandProvider } from './slash-command-provider.js';
@@ -936,7 +936,7 @@ class Composer extends HTMLElement {
     if (typeof this._touchComposerOverride === 'boolean') {
       return this._touchComposerOverride;
     }
-    return window.matchMedia?.('(hover: none) and (pointer: coarse)').matches === true;
+    return window.matchMedia?.(COARSE_POINTER_QUERY).matches === true;
   }
 
   /**
@@ -949,7 +949,7 @@ class Composer extends HTMLElement {
    */
   _watchPointerType() {
     if (this._pointerQueryCleanup || typeof window.matchMedia !== 'function') return;
-    const query = window.matchMedia('(hover: none) and (pointer: coarse)');
+    const query = window.matchMedia(COARSE_POINTER_QUERY);
     const onChange = () => this._applyConfigPlacement();
     query.addEventListener('change', onChange);
     this._pointerQueryCleanup = () => query.removeEventListener('change', onChange);

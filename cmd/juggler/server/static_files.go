@@ -21,6 +21,7 @@ import (
 
 	"juggler/cmd/juggler/core"
 	"juggler/internal/jlog"
+	"juggler/internal/srcroot"
 	"juggler/web"
 )
 
@@ -520,75 +521,9 @@ func (s *Server) serveIndex(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// FindProjectRoot finds the juggler project root by looking for a go.mod whose
-// directory also contains a web/ tree. Requiring the web/ dir makes this locate
-// the juggler root specifically rather than any enclosing Go module — important
-// when the binary is launched from inside another repo (e.g. the pro parent)
-// that has its own go.mod but no web/ assets. Exported so it can be used by the
-// testing package.
-func FindProjectRoot(startPath string) (string, error) {
-	// searchForGoMod walks upward from start, returning the first directory that
-	// holds both a go.mod and a web/ directory.
-	searchForGoMod := func(start string) (string, bool) {
-		searchPath := start
-		for {
-			if isJugglerRoot(searchPath) {
-				return searchPath, true
-			}
-
-			parent := filepath.Dir(searchPath)
-			if parent == searchPath {
-				break // Reached filesystem root
-			}
-			searchPath = parent
-		}
-		return "", false
-	}
-
-	// Strategy 1: Search from provided startPath
-	if startPath != "" {
-		if root, found := searchForGoMod(startPath); found {
-			return root, nil
-		}
-	}
-
-	// Strategy 2: Search from current working directory
-	cwd, err := os.Getwd()
-	if err == nil {
-		if root, found := searchForGoMod(cwd); found {
-			return root, nil
-		}
-	}
-
-	// Strategy 3: Search from executable's location (for --assets-from-disk from arbitrary directory)
-	exePath, err := os.Executable()
-	if err == nil {
-		// Resolve symlinks to get actual binary location
-		exePath, err = filepath.EvalSymlinks(exePath)
-		if err == nil {
-			exeDir := filepath.Dir(exePath)
-			if root, found := searchForGoMod(exeDir); found {
-				return root, nil
-			}
-		}
-	}
-
-	return "", fmt.Errorf("could not find juggler project root (no go.mod with a web/ directory found in startPath, cwd, or executable location)")
-}
-
-// isJugglerRoot reports whether dir is the juggler root: a directory holding
-// both go.mod and a web/ tree.
-func isJugglerRoot(dir string) bool {
-	if _, err := os.Stat(filepath.Join(dir, "go.mod")); err != nil {
-		return false
-	}
-	info, err := os.Stat(filepath.Join(dir, "web"))
-	return err == nil && info.IsDir()
-}
-
 // findWebDir finds the web directory for dev mode (package-level, used during server creation)
 func findWebDir() string {
-	projectRoot, err := FindProjectRoot("")
+	projectRoot, err := srcroot.Find("")
 	if err != nil {
 		return ""
 	}
@@ -609,7 +544,7 @@ func (s *Server) findStaticDir() (string, error) {
 	if root == "" {
 		root = s.bootProjectPath
 	}
-	projectRoot, err := FindProjectRoot(root)
+	projectRoot, err := srcroot.Find(root)
 	if err != nil {
 		return "", err
 	}

@@ -32,7 +32,7 @@
 }
 
 .slash-command-new .menu-item-command {
-    color: var(--accent-green, #3fb950);
+    color: var(--accent-green);
 }
 
 /* "Edit custom slash commands…" and "Browse built-in commands…" — the pair of
@@ -92,7 +92,7 @@
 .command-editor-overlay {
     position: fixed;
     inset: 0;
-    z-index: var(--z-modal, 1000);
+    z-index: var(--z-modal);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -115,8 +115,8 @@
     max-height: 90vh;
     display: flex;
     flex-direction: column;
-    background: var(--bg-raised, #1c2128);
-    border: 1px solid var(--border-floating, var(--border-color));
+    background: var(--bg-raised);
+    border: 1px solid var(--border-floating);
     border-radius: 0.6rem;
     box-shadow: var(--popup-shadow);
     overflow: hidden;
@@ -128,7 +128,7 @@
     justify-content: space-between;
     gap: 0.5rem;
     padding: 0.9rem 1.1rem;
-    border-bottom: 1px solid var(--border-divider, var(--border-color));
+    border-bottom: 1px solid var(--border-divider);
 }
 
 .command-editor-header h2 {
@@ -189,7 +189,7 @@
 }
 
 .command-editor-optional {
-    color: var(--text-tertiary, var(--text-secondary));
+    color: var(--text-tertiary);
     font-weight: normal;
 }
 
@@ -197,7 +197,7 @@
 .command-editor-textarea {
     width: 100%;
     padding: 0.4rem 0.55rem;
-    background: var(--bg-primary, #0d1117);
+    background: var(--bg-primary);
     color: var(--text-primary);
     border: 1px solid var(--border-color);
     border-radius: 0.35rem;
@@ -206,7 +206,7 @@
 }
 
 .command-editor-textarea {
-    font-family: var(--font-mono, monospace);
+    font-family: var(--font-mono);
     resize: vertical;
 }
 
@@ -216,7 +216,7 @@
 .command-editor-select {
     width: 100%;
     padding: 0.4rem 1.8rem 0.4rem 0.55rem;
-    background: var(--bg-primary, #0d1117);
+    background: var(--bg-primary);
     color: var(--text-primary);
     border: 1px solid var(--border-color);
     border-radius: 0.35rem;
@@ -227,7 +227,7 @@
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960' width='16' height='16'%3E%3Cpath fill='%238b949e' d='M480-360 280-560h400L480-360Z'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 0.5rem center;
-    transition: border-color 150ms ease, box-shadow 150ms ease;
+    transition: border-color var(--transition-base), box-shadow var(--transition-base);
 }
 
 .command-editor-select:hover {
@@ -239,7 +239,7 @@
 .command-editor-select:focus {
     outline: none;
     border-color: var(--accent-blue);
-    box-shadow: 0 0 0 0.1875rem rgb(88 166 255 / 10%);
+    box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--accent-blue) 10%, transparent);
 }
 
 .command-editor-name-row {
@@ -250,22 +250,22 @@
 
 .command-editor-slash {
     color: var(--text-secondary);
-    font-family: var(--font-mono, monospace);
+    font-family: var(--font-mono);
 }
 
 .command-editor-hint {
     font-size: 0.72rem;
-    color: var(--text-tertiary, var(--text-secondary));
+    color: var(--text-tertiary);
 }
 
 .command-editor-hint code,
 .command-editor-preview-out {
-    font-family: var(--font-mono, monospace);
+    font-family: var(--font-mono);
 }
 
 .command-editor-field-error {
     font-size: 0.72rem;
-    color: var(--accent-red, #f85149);
+    color: var(--accent-red);
     min-height: 0.9rem;
 }
 
@@ -274,7 +274,7 @@
    under the template rather than a second editor. */
 
 .command-editor-preview {
-    background: var(--bg-secondary, #161b22);
+    background: var(--bg-secondary);
     border: 1px solid var(--border-subtle);
     border-radius: 0.35rem;
     padding: 0.5rem 0.6rem;
@@ -301,7 +301,7 @@
 .command-editor-preview-out {
     margin: 0.4rem 0 0;
     padding: 0.45rem 0.5rem;
-    background: var(--bg-code-dark, #0d1117);
+    background: var(--bg-code-dark);
     border-radius: 0.3rem;
     font-size: 0.8rem;
     white-space: pre-wrap;
@@ -320,7 +320,7 @@
     flex-wrap: wrap;
     gap: 0.25rem;
     padding: 0.2rem;
-    background: var(--bg-primary, #0d1117);
+    background: var(--bg-primary);
     border: 1px solid var(--border-color);
     border-radius: 0.4rem;
     align-self: flex-start;
@@ -340,7 +340,7 @@
 }
 
 .command-editor-seg:hover {
-    background: var(--bg-tertiary, rgb(127 127 127 / 16%));
+    background: var(--bg-tertiary);
     color: var(--text-primary);
 }
 
@@ -354,7 +354,7 @@
 
 .command-editor-run-hint {
     font-size: 0.75rem;
-    color: var(--text-tertiary, var(--text-secondary));
+    color: var(--text-tertiary);
 }
 
 .command-editor-subthread {
@@ -383,7 +383,7 @@
     justify-content: space-between;
     gap: 0.75rem;
     padding: 0.8rem 1.1rem;
-    border-top: 1px solid var(--border-divider, var(--border-color));
+    border-top: 1px solid var(--border-divider);
 }
 
 /* Where the file lands: the scope choice and the path it produces, kept
@@ -398,8 +398,8 @@
 
 .command-editor-path {
     font-size: 0.72rem;
-    color: var(--text-tertiary, var(--text-secondary));
-    font-family: var(--font-mono, monospace);
+    color: var(--text-tertiary);
+    font-family: var(--font-mono);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -439,12 +439,12 @@
 }
 
 .command-manager-row.is-broken {
-    border-color: var(--accent-red, #f85149);
+    border-color: var(--accent-red);
     opacity: 0.9;
 }
 
 .command-manager-row code {
-    font-family: var(--font-mono, monospace);
+    font-family: var(--font-mono);
     color: var(--text-primary);
 }
 
@@ -455,7 +455,7 @@
 }
 
 .command-manager-row .command-manager-error {
-    color: var(--accent-red, #f85149);
+    color: var(--accent-red);
     font-size: 0.76rem;
     flex: 1;
 }
@@ -478,7 +478,7 @@
     padding: 0;
     background: transparent;
     border: none;
-    border-radius: 0.25rem;
+    border-radius: var(--radius-md);
     color: var(--text-tertiary);
     cursor: pointer;
 }

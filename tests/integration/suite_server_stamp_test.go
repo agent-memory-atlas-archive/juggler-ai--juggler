@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"juggler/cmd/juggler/core"
-	"juggler/cmd/juggler/server"
+	"juggler/internal/srcroot"
 )
 
 // TestSuiteServerReportsItselfAsATestBuild pins the one thing that separates a
@@ -29,9 +29,9 @@ func TestSuiteServerReportsItselfAsATestBuild(t *testing.T) {
 		t.Skip("runs the juggler binary; skipped in -short mode")
 	}
 
-	root, err := server.FindProjectRoot(".")
+	root, err := srcroot.Find(".")
 	if err != nil {
-		t.Fatalf("FindProjectRoot: %v", err)
+		t.Fatalf("srcroot.Find: %v", err)
 	}
 
 	binary := serverBinary(root)

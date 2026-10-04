@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"juggler/cmd/juggler/server"
+	"juggler/internal/srcroot"
 )
 
 // TestAllTestFilesRegistered checks that every JS test file in the integration-tests/
@@ -21,7 +21,7 @@ func TestAllTestFilesRegistered(t *testing.T) {
 		t.Skip("skipping test registration check in short mode")
 	}
 
-	root, err := server.FindProjectRoot(".")
+	root, err := srcroot.Find(".")
 	if err != nil {
 		t.Fatalf("cannot find project root: %v", err)
 	}

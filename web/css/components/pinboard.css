@@ -47,7 +47,7 @@ pinboard-shell {
 .pinboard-scrim {
     position: absolute;
     inset: 0;
-    background: var(--overlay-dark-25);
+    background: var(--modal-scrim);
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
@@ -299,7 +299,7 @@ pinboard-tabbar {
 /* Only while a drag is live: the rest of the time the tabs must take their new
    places instantly, or a board edit made elsewhere animates like a drag. */
 .pinboard-tabbar__list.is-dragging .pinboard-tab:not(.drag-source) {
-    transition: transform 150ms ease;
+    transition: transform var(--transition-base);
 }
 
 /* The ring goes on the wrapper, because the wrapper is the pill: the button

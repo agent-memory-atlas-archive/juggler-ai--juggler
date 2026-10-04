@@ -23,8 +23,8 @@ import (
 	"time"
 
 	"juggler/cmd/juggler/machineserver"
-	"juggler/cmd/juggler/server"
 	"juggler/internal/ingress"
+	"juggler/internal/srcroot"
 )
 
 // machineServerStartTimeout bounds how long `juggler serve` may take to print
@@ -169,7 +169,7 @@ func newIsolatedRun(t *testing.T) isolatedRun {
 	if testing.Short() {
 		t.Skip("spawns the juggler binary; skipped in -short mode")
 	}
-	root, err := server.FindProjectRoot(".")
+	root, err := srcroot.Find(".")
 	if err != nil {
 		t.Fatalf("find project root: %v", err)
 	}

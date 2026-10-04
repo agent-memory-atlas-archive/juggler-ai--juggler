@@ -740,7 +740,7 @@ export class ConnectivityTab {
         method: 'POST',
         body: { enabled: true, mode },
       });
-      if (!data?.ok) this._wanError = data?.error || 'Failed to start tunnel';
+      if (!data?.success) this._wanError = data?.error || 'Failed to start tunnel';
     } catch (e) {
       this._wanError = httpErrorText(e, 'Failed to start tunnel');
     }
@@ -758,7 +758,7 @@ export class ConnectivityTab {
         method: 'POST',
         body: { enabled: false },
       });
-      if (!data?.ok) this._wanError = data?.error || 'Failed to stop tunnel';
+      if (!data?.success) this._wanError = data?.error || 'Failed to stop tunnel';
     } catch (e) {
       this._wanError = httpErrorText(e, 'Failed to stop tunnel');
     }

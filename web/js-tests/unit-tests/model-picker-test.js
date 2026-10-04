@@ -36,6 +36,7 @@ import { assert, styledProbeFrame } from '../utilities/test-helpers.js';
 import recentModels from '../../js/services/recent-models.js';
 import { cachedUserPref, setUserPref } from '../../js/services/prefs.js';
 import usageStatsCache from '../../js/services/usage-stats-cache.js';
+import { SHEET_QUERY } from '../../js/utils/popup-surface.js';
 import { presentPopup } from '../../js/utils/popup-surface.js';
 import { registerSettingsOpener } from '../../js/services/settings-launcher.js';
 import '../../js/components/model-picker/model-picker.js';
@@ -120,7 +121,7 @@ async function presentAnchoredPicker(providerList) {
   // breakpoint a lane lands on is the platform's choice of test-window width, so
   // pin it rather than measure anchored placement on some machines and not others.
   const realMatchMedia = window.matchMedia.bind(window);
-  /** @type {any} */ (window).matchMedia = (/** @type {string} */ q) => (q === '(width <= 36rem)'
+  /** @type {any} */ (window).matchMedia = (/** @type {string} */ q) => (q === SHEET_QUERY
     ? { matches: false, media: q, addEventListener() {}, removeEventListener() {} }
     : realMatchMedia(q));
 

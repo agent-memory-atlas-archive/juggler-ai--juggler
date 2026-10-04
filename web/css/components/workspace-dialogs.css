@@ -23,7 +23,7 @@
 .workspace-move-overlay {
     position: fixed;
     inset: 0;
-    z-index: var(--z-modal, 1000);
+    z-index: var(--z-modal);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -163,7 +163,7 @@
 .workspace-create-overlay {
     position: fixed;
     inset: 0;
-    z-index: var(--z-modal, 1000);
+    z-index: var(--z-modal);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -385,7 +385,7 @@
 
 .workspace-finish-warning {
     font-size: 0.875rem;
-    color: var(--warning-color, var(--error-color));
+    color: var(--error-color);
     line-height: 1.5;
 }
 
@@ -482,7 +482,7 @@
     padding: 0.6rem 0.75rem;
     background: var(--bg-secondary);
     border: 0.0625rem solid var(--border-color);
-    border-radius: 0.5rem;
+    border-radius: var(--radius-xl);
     color: var(--text-primary);
     font: inherit;
     font-size: 0.875rem;

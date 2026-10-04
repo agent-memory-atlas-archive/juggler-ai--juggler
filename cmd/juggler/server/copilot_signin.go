@@ -32,8 +32,7 @@ func (s *Server) handleCopilotDeviceStart(w http.ResponseWriter, r *http.Request
 		handlers.WriteError(w, r, http.StatusBadGateway, err.Error())
 		return
 	}
-	handlers.WriteJSON(w, r, 0, map[string]any{
-		"success":         true,
+	handlers.WriteSuccess(w, r, map[string]any{
 		"host":            req.Host,
 		"deviceCode":      code.DeviceCode,
 		"userCode":        code.UserCode,
@@ -61,9 +60,8 @@ func (s *Server) handleCopilotDevicePoll(w http.ResponseWriter, r *http.Request)
 	if status == core.CopilotLoginAuthorized {
 		s.RefreshProviders()
 	}
-	handlers.WriteJSON(w, r, 0, map[string]any{
-		"success": true,
-		"status":  string(status),
+	handlers.WriteSuccess(w, r, map[string]any{
+		"status": string(status),
 	})
 }
 
@@ -75,15 +73,14 @@ func (s *Server) handleCopilotSignOut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.RefreshProviders()
-	handlers.WriteJSON(w, r, 0, map[string]any{"success": true})
+	handlers.WriteSuccess(w, r, nil)
 }
 
 // handleCopilotGetHost returns the GitHub host Copilot logins target (github.com
 // or the saved *.ghe.com Enterprise Cloud tenant), so the UI can prefill it.
 func (s *Server) handleCopilotGetHost(w http.ResponseWriter, r *http.Request) {
-	handlers.WriteJSON(w, r, 0, map[string]any{
-		"success": true,
-		"host":    core.CopilotHost(),
+	handlers.WriteSuccess(w, r, map[string]any{
+		"host": core.CopilotHost(),
 	})
 }
 
@@ -102,8 +99,7 @@ func (s *Server) handleCopilotSetHost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.RefreshProviders()
-	handlers.WriteJSON(w, r, 0, map[string]any{
-		"success": true,
-		"host":    core.CopilotHost(),
+	handlers.WriteSuccess(w, r, map[string]any{
+		"host": core.CopilotHost(),
 	})
 }

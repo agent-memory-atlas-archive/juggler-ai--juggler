@@ -66,7 +66,7 @@ body.hud-pointer-idle .dropdown-menu {
     color: var(--text-primary);
     font-size: 0.875rem;
     cursor: pointer;
-    transition: background 150ms ease;
+    transition: background var(--transition-base);
     display: flex;
     align-items: center;
     gap: 0.625rem;

@@ -93,18 +93,18 @@ no-project-overlay .np-actions {
 
 no-project-overlay .np-action {
     border: none;
-    border-radius: 0.375rem;
-    background: var(--bg-raised, rgb(255 255 255 / 8%));
+    border-radius: var(--radius-lg);
+    background: var(--bg-raised);
     color: var(--text-primary);
     cursor: pointer;
     font-family: inherit;
     font-size: 0.875rem;
     padding: 0.5rem 1rem;
-    transition: background 150ms ease, opacity 150ms ease;
+    transition: background var(--transition-base), opacity var(--transition-base);
 }
 
 no-project-overlay .np-action:hover {
-    background: var(--bg-tertiary, rgb(255 255 255 / 12%));
+    background: var(--bg-tertiary);
 }
 
 no-project-overlay .np-action--primary {
@@ -113,7 +113,7 @@ no-project-overlay .np-action--primary {
 }
 
 no-project-overlay .np-action--primary:hover {
-    background: var(--accent-blue-light, #79c0ff);
+    background: var(--accent-blue-light);
 }
 
 /* Shown only while a folder is actually over the window, which the native side
@@ -125,7 +125,7 @@ no-project-overlay .np-action--primary:hover {
 no-project-overlay.folder-drop-active .onboarding-panel {
     outline: 0.125rem dashed var(--accent-blue);
     outline-offset: 1rem;
-    border-radius: 0.375rem;
+    border-radius: var(--radius-lg);
 }
 
 no-project-overlay .np-drop-hint {
@@ -156,10 +156,10 @@ no-project-overlay .np-recent {
     text-align: left;
     background: transparent;
     border: none;
-    border-radius: 0.25rem;
+    border-radius: var(--radius-md);
     color: var(--text-primary);
     cursor: pointer;
-    font-family: var(--font-mono, ui-monospace, monospace);
+    font-family: var(--font-mono);
     font-size: 0.8125rem;
     overflow: hidden;
     padding: 0.3125rem 0.5rem;
@@ -169,7 +169,7 @@ no-project-overlay .np-recent {
 }
 
 no-project-overlay .np-recent:hover {
-    background: var(--bg-raised, rgb(255 255 255 / 6%));
+    background: var(--bg-raised);
 }
 
 /* The prerequisite that otherwise fails silently at the first message, so it
@@ -222,7 +222,7 @@ no-project-overlay .np-footnote {
 .onboarding-wizard {
     position: fixed;
     inset: 0;
-    z-index: var(--z-modal, 1000);
+    z-index: var(--z-modal);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -313,18 +313,18 @@ no-project-overlay .np-footnote {
 
 .onboarding-wizard .wiz-action {
     border: none;
-    border-radius: 0.375rem;
-    background: var(--bg-raised, rgb(255 255 255 / 8%));
+    border-radius: var(--radius-lg);
+    background: var(--bg-raised);
     color: var(--text-primary);
     cursor: pointer;
     font-family: inherit;
     font-size: 0.875rem;
     padding: 0.5rem 1rem;
-    transition: background 150ms ease, opacity 150ms ease;
+    transition: background var(--transition-base), opacity var(--transition-base);
 }
 
 .onboarding-wizard .wiz-action:hover:not(:disabled) {
-    background: var(--bg-tertiary, rgb(255 255 255 / 12%));
+    background: var(--bg-tertiary);
 }
 
 /* Held inert while an action that reaches the network runs, so a slow
@@ -340,7 +340,7 @@ no-project-overlay .np-footnote {
 }
 
 .onboarding-wizard .wiz-action--primary:hover:not(:disabled) {
-    background: var(--accent-blue-light, #79c0ff);
+    background: var(--accent-blue-light);
 }
 
 .onboarding-wizard .wiz-note {
@@ -358,10 +358,10 @@ no-project-overlay .np-footnote {
     display: block;
     margin: 0 0 0.75rem;
     padding: 0.5rem 0.625rem;
-    border-radius: 0.375rem;
-    background: var(--bg-raised, rgb(255 255 255 / 6%));
+    border-radius: var(--radius-lg);
+    background: var(--bg-raised);
     color: var(--text-primary);
-    font-family: var(--font-mono, ui-monospace, monospace);
+    font-family: var(--font-mono);
     font-size: 0.8125rem;
     overflow-wrap: anywhere;
     user-select: text;
@@ -380,8 +380,8 @@ no-project-overlay .np-footnote {
     display: block;
     width: 100%;
     padding: 0.625rem 0.75rem;
-    border: 0.0625rem solid var(--border-subtle, rgb(255 255 255 / 10%));
-    border-radius: 0.375rem;
+    border: 0.0625rem solid var(--border-subtle);
+    border-radius: var(--radius-lg);
     background: transparent;
     color: var(--text-primary);
     cursor: pointer;
@@ -391,8 +391,8 @@ no-project-overlay .np-footnote {
 }
 
 .onboarding-wizard .wiz-choice:hover {
-    background: var(--bg-raised, rgb(255 255 255 / 6%));
-    border-color: var(--border-strong, rgb(255 255 255 / 18%));
+    background: var(--bg-raised);
+    border-color: color-mix(in srgb, var(--text-primary) 18%, transparent);
 }
 
 .onboarding-wizard .wiz-choice-title {

@@ -15,7 +15,51 @@
 #   BUILD_DATE — RFC3339 UTC timestamp
 # These are sourced differently per repo (a nested submodule reads its own
 # VERSION file / git dir), so they stay local; only their *use* is shared here.
+#
+# It defines the host facts both builds branch on — GOARCH_HOST, BIN_EXT, RACE —
+# so anything that reads one of them at parse time (an ifeq, or a := variable)
+# must come after the include.
 # ─────────────────────────────────────────────────────────────────────────────
+
+# Host CPU arch, translated to Go's GOARCH names — the default for native Linux
+# builds, so a plain build targets the running machine instead of silently
+# cross-compiling (these are cgo GTK/WebKitGTK builds, so a mismatched GOARCH
+# needs a cross-gcc toolchain most machines don't have).
+UNAME_M := $(shell uname -m)
+ifeq ($(UNAME_M),x86_64)
+GOARCH_HOST := amd64
+else ifneq (,$(filter $(UNAME_M),aarch64 arm64))
+GOARCH_HOST := arm64
+else
+GOARCH_HOST := $(UNAME_M)
+endif
+
+# Executable suffix for native (non-cross-compiled) builds on this host. Native
+# Windows reports Windows_NT via $(OS) regardless of shell (uname -s instead
+# returns MSYS_NT-.../MINGW64_NT-... under Git Bash, inconsistent to match on).
+# This matters beyond cosmetics: `go build -o path` never auto-appends .exe when
+# given an explicit filename, and a Windows binary without it can't be found or
+# launched by what looks for it — the desktop app's serverBinPath()
+# (cmd/juggler-app/server_spawn.go) looks for a sibling literally named
+# juggler.exe, and Go's exec (which the browser suite spawns the test server
+# through) only accepts a PATHEXT extension. The cross-compile targets
+# (build-windows) hardcode .exe, so this only affects native builds on Windows.
+ifeq ($(OS),Windows_NT)
+BIN_EXT := .exe
+else
+BIN_EXT :=
+endif
+
+# The race detector needs cgo (a C compiler). CI and most Unix dev boxes have
+# one, so -race is on by default there. A Windows dev box usually has no C
+# toolchain, so cgo can't build and `go test -race` fails outright with
+# "requires cgo" — it defaults off there so the suite still runs (minus race).
+# Override either way: `make test RACE=-race` or `make test RACE=`.
+ifeq ($(OS),Windows_NT)
+RACE ?=
+else
+RACE ?= -race
+endif
 
 GOCMD ?= go
 # Default builds are test-capable: cmd/juggler/testing/ and worker test-support

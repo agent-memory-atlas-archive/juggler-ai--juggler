@@ -51,6 +51,7 @@ import (
 	"juggler/cmd/juggler/server"
 	"juggler/internal/enginehost"
 	"juggler/internal/ingress"
+	"juggler/internal/srcroot"
 	"juggler/internal/webviewenv"
 	"juggler/web"
 )
@@ -449,7 +450,7 @@ func usage() {
 // assetsFromDiskAvailable reports whether a juggler source checkout (a directory
 // tree containing web/) can be located, which --assets-from-disk requires.
 func assetsFromDiskAvailable() bool {
-	_, err := server.FindProjectRoot("")
+	_, err := srcroot.Find("")
 	return err == nil
 }
 

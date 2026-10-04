@@ -226,7 +226,7 @@ conversation-bar .conversation-box-add {
     color: var(--text-tertiary);
     transform: translateY(-50%);
     cursor: pointer;
-    transition: color 150ms ease;
+    transition: color var(--transition-base);
 }
 
 conversation-bar .conversation-box-add > svg {
@@ -269,7 +269,7 @@ conversation-bar .conversation-box-title {
     align-items: center;
     min-width: 0;
     background: var(--workspace-box-paint);
-    border-radius: 0.25rem;
+    border-radius: var(--radius-md);
 }
 
 /* The name, as the shared lozenge (patterns/item-badge.css) filled with the
@@ -457,11 +457,11 @@ conversation-bar .conversation-tab {
     position: relative;
     background-color: var(--tab-surface);
     border: 0.0625rem solid transparent;
-    border-radius: 0.5rem;
+    border-radius: var(--radius-xl);
     padding: 0.5rem 0.75rem;
     align-items: center;
     gap: 0.2rem;
-    transition: background 150ms ease, color 150ms ease;
+    transition: background var(--transition-base), color var(--transition-base);
     cursor: default;
 }
 
@@ -635,7 +635,7 @@ conversation-bar .conversation-tab.keyboard-moving {
 conversation-bar .conversation-tabs.is-dragging .conversation-tab:not(.drag-source),
 conversation-bar .conversation-tabs.is-dragging .conversation-box:not(.drag-source),
 conversation-bar .conversation-tabs.is-dragging .conversation-box-empty {
-    transition: transform 150ms ease;
+    transition: transform var(--transition-base);
 }
 
 /* The two rows that make something — the "+" at the top, the outline at the foot
@@ -653,8 +653,8 @@ conversation-bar .conversation-tabs.is-dragging .conversation-box-empty {
    moment it is asked to, as it always did. */
 conversation-bar .conversation-add-item,
 conversation-bar .conversation-box-new {
-    transition: opacity 150ms ease, display 150ms ease;
-    transition: opacity 150ms ease, display 150ms ease allow-discrete;
+    transition: opacity var(--transition-base), display var(--transition-base);
+    transition: opacity var(--transition-base), display var(--transition-base) allow-discrete;
 }
 
 /* Out of the pointer's reach from the first frame of the fade, which is what
@@ -711,10 +711,10 @@ conversation-bar .conversation-add {
     justify-content: center;
     background: transparent;
     border: 0.0625rem solid transparent;
-    border-radius: 0.5rem;
+    border-radius: var(--radius-xl);
     padding: 0.25rem 0.75rem;
     cursor: pointer;
-    transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+    transition: background var(--transition-base), border-color var(--transition-base), color var(--transition-base);
     color: var(--text-tertiary);
     font-size: 1.25rem;
     font-weight: 600;
@@ -761,7 +761,7 @@ conversation-bar > col-resize-handle {
     background: transparent;
     cursor: var(--cursor-col-resize);
     z-index: var(--z-raised);
-    transition: background 150ms ease;
+    transition: background var(--transition-base);
 }
 
 conversation-bar > col-resize-handle.hovered,
@@ -781,7 +781,7 @@ conversation-bar .conversation-tab-bin {
     align-items: center;
     justify-content: center;
     opacity: 0;
-    transition: opacity 150ms ease, background 150ms ease;
+    transition: opacity var(--transition-base), background var(--transition-base);
     line-height: 1;
     flex-shrink: 0;
     border-radius: 50%;
@@ -827,9 +827,9 @@ conversation-bar .conversation-tab-auto-name {
     color: var(--text-secondary);
     background: transparent;
     border: 0.0625rem solid var(--border-color);
-    border-radius: 0.5rem;
+    border-radius: var(--radius-xl);
     cursor: pointer;
-    transition: background 150ms ease, color 150ms ease;
+    transition: background var(--transition-base), color var(--transition-base);
 }
 
 conversation-bar .conversation-tab-auto-name:hover {
@@ -872,7 +872,7 @@ conversation-bar .conversation-bin-label {
 
 conversation-bar .conversation-bin-size {
     flex-shrink: 0;
-    color: var(--text-tertiary, var(--text-secondary, inherit));
+    color: var(--text-tertiary);
     font-size: 0.6875rem;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
@@ -888,7 +888,7 @@ conversation-bar .conversation-bin-count {
     padding: 0.0625rem 0.375rem;
     border-radius: 0.625rem;
     background: var(--bg-raised);
-    color: var(--text-secondary, inherit);
+    color: var(--text-secondary);
     font-size: 0.6875rem;
     font-variant-numeric: tabular-nums;
     text-align: center;
@@ -913,10 +913,10 @@ conversation-bar .conversation-bin-undo {
     gap: 0.375rem;
     margin: 0.25rem 0.5rem;
     padding: 0.3125rem 1rem;
-    border: 0.0625rem solid var(--accent-blue, #58a6ff);
+    border: 0.0625rem solid var(--accent-blue);
     border-radius: 1rem;
-    background: rgb(88 166 255 / 15%);
-    color: var(--accent-blue, #58a6ff);
+    background: color-mix(in srgb, var(--accent-blue) 15%, transparent);
+    color: var(--accent-blue);
     font-family: var(--font-ui);
     font-size: 0.8125rem;
     font-weight: 500;
@@ -931,7 +931,7 @@ conversation-bar .conversation-bin-undo {
 }
 
 conversation-bar .conversation-bin-undo:hover {
-    background: rgb(88 166 255 / 28%);
+    background: color-mix(in srgb, var(--accent-blue) 28%, transparent);
 }
 
 conversation-bar .conversation-bin-undo:active {
@@ -964,15 +964,15 @@ conversation-bar .conversation-bin-undo svg {
 @keyframes bin-undo-flash {
     0%,
     100% {
-        background: rgb(88 166 255 / 15%);
-        border-color: var(--accent-blue, #58a6ff);
-        box-shadow: 0 0 0 0 rgb(88 166 255 / 0%);
+        background: color-mix(in srgb, var(--accent-blue) 15%, transparent);
+        border-color: var(--accent-blue);
+        box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-blue) 0%, transparent);
     }
 
     50% {
-        background: rgb(88 166 255 / 45%);
+        background: color-mix(in srgb, var(--accent-blue) 45%, transparent);
         border-color: rgb(139 195 255);
-        box-shadow: 0 0 0.5rem 0.0625rem rgb(88 166 255 / 40%);
+        box-shadow: 0 0 0.5rem 0.0625rem color-mix(in srgb, var(--accent-blue) 40%, transparent);
     }
 }
 
@@ -1015,11 +1015,11 @@ conversation-bar .info-cards-button {
     padding: 0;
     background: transparent;
     border: none;
-    border-radius: 0.25rem;
-    color: var(--text-secondary, inherit);
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
     cursor: pointer;
     opacity: 0.7;
-    transition: opacity 150ms ease, background 150ms ease, color 150ms ease;
+    transition: opacity var(--transition-base), background var(--transition-base), color var(--transition-base);
 }
 
 conversation-bar .info-cards-button svg {
@@ -1031,7 +1031,7 @@ conversation-bar .info-cards-button:hover,
 conversation-bar .info-cards-button[aria-expanded="true"] {
     opacity: 1;
     background: var(--bg-raised);
-    color: var(--text-primary, inherit);
+    color: var(--text-primary);
 }
 
 /* The show/hide tick gutter inside the info-cards menu. The menu is a standard
@@ -1156,7 +1156,7 @@ conversation-bar .info-card__eyebrow {
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: var(--accent-green, var(--text-secondary));
+    color: var(--accent-green);
 }
 
 conversation-bar .info-card__close {
@@ -1169,26 +1169,26 @@ conversation-bar .info-card__close {
     padding: 0;
     border: none;
     background: none;
-    color: var(--text-secondary, inherit);
+    color: var(--text-secondary);
     font-size: 0.9375rem;
     line-height: 1;
     cursor: pointer;
-    border-radius: 0.25rem;
+    border-radius: var(--radius-md);
     opacity: 0.6;
-    transition: opacity 150ms ease, background 150ms ease, color 150ms ease;
+    transition: opacity var(--transition-base), background var(--transition-base), color var(--transition-base);
 }
 
 conversation-bar .info-card__close:hover {
     opacity: 1;
     background: var(--bg-tertiary);
-    color: var(--text-primary, inherit);
+    color: var(--text-primary);
 }
 
 conversation-bar .info-card__title {
     font-size: 0.8125rem;
     font-weight: 600;
     line-height: 1.5;
-    color: var(--text-primary, inherit);
+    color: var(--text-primary);
 }
 
 /* Inline keycap: inverted (panel colours swapped) so it reads as a key against
@@ -1198,7 +1198,7 @@ conversation-bar .info-card__key {
     display: inline-block;
     margin-right: 0.5rem;
     padding: 0.0625rem 0.375rem;
-    border-radius: var(--radius-md, 0.25rem);
+    border-radius: var(--radius-md);
 
     /* Softened so the chip reads as a quiet key, not a high-contrast badge. */
     background: color-mix(in srgb, var(--text-primary) 60%, transparent);
@@ -1214,14 +1214,14 @@ conversation-bar .info-card__body {
     margin: 0;
     font-size: 0.75rem;
     line-height: 1.45;
-    color: var(--text-secondary, inherit);
+    color: var(--text-secondary);
 }
 
 /* Active provider and optional plan above the shared usage meter rows. */
 conversation-bar .info-card__usage-sub {
     font-size: 0.6875rem;
     line-height: 1.35;
-    color: var(--text-secondary, inherit);
+    color: var(--text-secondary);
 }
 
 /* Git-status per-repo rows: a subtle name badge + the monospaced counts. The
@@ -1241,10 +1241,10 @@ conversation-bar .info-card__git-line {
 conversation-bar .info-card__git-repo {
     flex-shrink: 0;
     padding: 0.0625rem 0.3125rem;
-    border-radius: var(--radius-md, 0.25rem);
+    border-radius: var(--radius-md);
     background: color-mix(in srgb, var(--text-primary) 8%, transparent);
     border: 1px solid color-mix(in srgb, var(--text-primary) 12%, transparent);
-    color: var(--text-primary, inherit);
+    color: var(--text-primary);
     font-family: var(--font-mono);
     font-size: 0.6875rem;
     font-weight: 600;
@@ -1252,7 +1252,7 @@ conversation-bar .info-card__git-repo {
 }
 
 conversation-bar .info-card__git-counts {
-    color: var(--text-secondary, inherit);
+    color: var(--text-secondary);
     font-family: var(--font-mono);
     font-size: 0.75rem;
 }
@@ -1267,7 +1267,7 @@ conversation-bar .info-card__git-launch {
     margin: -0.25rem;
     padding: 0.25rem;
     border: none;
-    border-radius: var(--radius-md, 0.25rem);
+    border-radius: var(--radius-md);
     background: transparent;
     color: inherit;
     font: inherit;
@@ -1296,7 +1296,7 @@ bin-modal {
     display: none;
     position: fixed;
     inset: 0;
-    z-index: var(--z-modal, 1000);
+    z-index: var(--z-modal);
     align-items: center;
     justify-content: center;
 }
@@ -1334,7 +1334,7 @@ bin-modal .bin-close {
     line-height: 1;
     cursor: pointer;
     padding: 0.25rem 0.5rem;
-    border-radius: 0.25rem;
+    border-radius: var(--radius-md);
     opacity: 0.7;
 }
 
@@ -1351,16 +1351,16 @@ bin-modal .bin-body {
 
 bin-modal .bin-empty {
     padding: 1rem;
-    color: var(--text-secondary, inherit);
+    color: var(--text-secondary);
     text-align: center;
 }
 
 bin-modal .bin-size-notice {
     padding: 0.5rem 0.75rem;
     margin-bottom: 0.5rem;
-    border-radius: 0.375rem;
+    border-radius: var(--radius-lg);
     background: var(--bg-raised);
-    color: var(--text-secondary, inherit);
+    color: var(--text-secondary);
     font-size: 0.8125rem;
     line-height: 1.4;
 }
@@ -1399,7 +1399,7 @@ bin-modal .bin-row-name {
 
 bin-modal .bin-row-date {
     font-size: 0.7rem;
-    color: var(--text-secondary, inherit);
+    color: var(--text-secondary);
 }
 
 bin-modal .bin-row-actions {
@@ -1411,12 +1411,12 @@ bin-modal .bin-row-actions {
 bin-modal .bin-action {
     background: transparent;
     border: 0.0625rem solid var(--border-color);
-    border-radius: 0.25rem;
+    border-radius: var(--radius-md);
     padding: 0.25rem 0.625rem;
     cursor: pointer;
     color: inherit;
     font-size: 0.8125rem;
-    transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+    transition: background var(--transition-base), color var(--transition-base), border-color var(--transition-base);
 }
 
 bin-modal .bin-restore:hover {
@@ -1426,8 +1426,8 @@ bin-modal .bin-restore:hover {
 }
 
 bin-modal .bin-delete:hover {
-    background: var(--accent-red, #d33);
-    border-color: var(--accent-red, #d33);
+    background: var(--accent-red);
+    border-color: var(--accent-red);
     color: #fff;
 }
 
@@ -1441,12 +1441,12 @@ bin-modal .bin-header-actions {
 bin-modal .bin-empty-now {
     background: transparent;
     border: 0.0625rem solid var(--border-color);
-    border-radius: 0.25rem;
+    border-radius: var(--radius-md);
     padding: 0.25rem 0.625rem;
     cursor: pointer;
     color: inherit;
     font-size: 0.8125rem;
-    transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+    transition: background var(--transition-base), color var(--transition-base), border-color var(--transition-base);
 }
 
 bin-modal .bin-empty-now:disabled {
@@ -1455,8 +1455,8 @@ bin-modal .bin-empty-now:disabled {
 }
 
 bin-modal .bin-empty-now:not(:disabled):hover {
-    background: var(--accent-red, #d33);
-    border-color: var(--accent-red, #d33);
+    background: var(--accent-red);
+    border-color: var(--accent-red);
     color: #fff;
 }
 
@@ -1490,7 +1490,7 @@ conversation-bar .conversation-tabs::-webkit-scrollbar-track {
 
 conversation-bar .conversation-tabs::-webkit-scrollbar-thumb {
     background: var(--overlay-light-10);
-    border-radius: 0.1875rem;
+    border-radius: var(--radius-sm);
 }
 
 

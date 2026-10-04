@@ -14,7 +14,7 @@
     /* The active match: a stronger, opaque warm-yellow fill with near-black
        text. --notice-bg is a light yellow in both themes, so dark text stays
        readable on it either way. */
-    background-color: var(--notice-bg, #e6b93f);
+    background-color: var(--notice-bg);
     color: #1a1a1a;
 }
 
@@ -35,17 +35,17 @@
     position: absolute;
     top: 0.5rem;
     right: 1.25rem;
-    z-index: var(--z-controls, 100);
+    z-index: var(--z-controls);
     display: flex;
     align-items: center;
     gap: 0.25rem;
     max-width: calc(100% - 2rem);
     padding: 0.25rem;
     border: 0.0625rem solid var(--border-color);
-    border-radius: var(--radius-xl, 0.5rem);
-    background: var(--bg-secondary, #161b22);
-    color: var(--text-primary, #e6edf3);
-    box-shadow: var(--shadow-md, 0 0.125rem 0.5rem rgb(0 0 0 / 20%));
+    border-radius: var(--radius-xl);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    box-shadow: var(--shadow-md);
 }
 
 .find-bar__input {
@@ -53,22 +53,22 @@
     min-width: 3rem;
     padding: 0.25rem 0.5rem;
     border: 0.0625rem solid var(--border-color);
-    border-radius: var(--radius-lg, 0.375rem);
-    background: var(--bg-primary, #0d1117);
-    color: var(--text-primary, #e6edf3);
+    border-radius: var(--radius-lg);
+    background: var(--bg-primary);
+    color: var(--text-primary);
     font: inherit;
     font-size: 0.8125rem;
     outline: none;
 }
 
 .find-bar__input:focus {
-    border-color: var(--accent-blue, #58a6ff);
+    border-color: var(--accent-blue);
 }
 
 .find-bar__counter {
     min-width: 4.25rem;
     padding: 0 0.25rem;
-    color: var(--text-secondary, #8b949e);
+    color: var(--text-secondary);
     font-size: 0.75rem;
     text-align: right;
     white-space: nowrap;
@@ -76,7 +76,7 @@
 }
 
 .find-bar__counter--empty {
-    color: var(--notice-bg, #e6b93f);
+    color: var(--notice-bg);
 }
 
 .find-bar__btn {
@@ -88,9 +88,9 @@
     height: 1.5rem;
     padding: 0;
     border: 0.0625rem solid transparent;
-    border-radius: var(--radius-lg, 0.375rem);
+    border-radius: var(--radius-lg);
     background: transparent;
-    color: var(--text-secondary, #8b949e);
+    color: var(--text-secondary);
     cursor: pointer;
     font-size: 0.75rem;
     line-height: 1;
@@ -103,8 +103,8 @@
 }
 
 .find-bar__btn:hover {
-    color: var(--accent-blue, #58a6ff);
-    background: var(--bg-tertiary, #282e33);
+    color: var(--accent-blue);
+    background: var(--bg-tertiary);
 }
 
 .find-bar__toggle {
@@ -112,7 +112,7 @@
 }
 
 .find-bar__toggle.is-active {
-    color: var(--accent-blue, #58a6ff);
-    border-color: var(--accent-blue, #58a6ff);
-    background: var(--bg-tertiary, #282e33);
+    color: var(--accent-blue);
+    border-color: var(--accent-blue);
+    background: var(--bg-tertiary);
 }

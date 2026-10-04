@@ -106,7 +106,7 @@ export async function makeConversation(session, name, options = {}) {
   const id = await session.createConversation(name, options);
   const conversation = session.conversations.get(id);
   if (!conversation) throw new Error(`conversation ${id} was created but is not in the session`);
-  await conversation.setModelConfig({ provider: 'test-provider', model: 'test-model' });
+  conversation.setModelConfig({ provider: 'test-provider', model: 'test-model' });
   await waitForWorkerReady(id);
   return conversation;
 }

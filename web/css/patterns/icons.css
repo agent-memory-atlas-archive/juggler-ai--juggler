@@ -200,8 +200,8 @@
    paints it from a state variable, while `.icon-check` supplies its own via
    `currentcolor`, and a `background-color` here would overwrite the latter. */
 .tick-box-mark {
-    width: var(--tick-box-mark-size, 0.75rem);
-    height: var(--tick-box-mark-size, 0.75rem);
+    width: 0.75rem;
+    height: 0.75rem;
 }
 
 /* ===================================================================

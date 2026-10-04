@@ -16,6 +16,7 @@ import { isToolGroupingEnabled, TOOL_GROUPING_EVENT } from '../utils/tool-groupi
 import { buildDisplayItems, isGroupId, groupMemberIndices } from '../utils/item-grouping.js';
 import { isItemSelectable } from '../services/context-item-utilities.js';
 import { recordTape } from '../utils/event-tape.js';
+import { SHEET_QUERY } from '../utils/popup-surface.js';
 import keyShortcutManager from '../services/key-shortcut-manager.js';
 import JugglerElement from './juggler-element.js';
 import { handleEscapeKey } from '../services/escape-behaviour.js';
@@ -1324,7 +1325,7 @@ class ConversationTab extends JugglerElement {
       const colRect = col.getBoundingClientRect();
       // A paged viewport holds exactly one column and snaps it: there is no
       // neighbour to leave showing, and a peek would only fight the snap.
-      const paged = window.matchMedia?.('(width <= 36rem)').matches ?? false;
+      const paged = window.matchMedia?.(SHEET_QUERY).matches ?? false;
       const peek = paged ? 0 : COLUMN_PEEK_REM * rootFontSizePx();
       const delta = columnScrollDelta(colRect, containerRect, peek);
       if (delta === 0) return;
@@ -1514,7 +1515,7 @@ class ConversationTab extends JugglerElement {
     // would page the row away from the list being walked — so the keyboard
     // keeps the horizontal position, on every viewport, as it does above.
     if (origin === 'user' && !this._isKeyboardNavigating
-      && itemId && revealable && window.matchMedia?.('(width <= 36rem)').matches) {
+      && itemId && revealable && window.matchMedia?.(SHEET_QUERY).matches) {
       this._revealDetailsColumn(columnIndex);
     }
 

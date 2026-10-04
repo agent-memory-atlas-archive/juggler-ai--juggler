@@ -78,7 +78,7 @@ func (s *Server) handleProviderSwitch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.RefreshProviders()
-	handlers.WriteJSON(w, r, 0, map[string]any{"success": true, "provider": next.Provider})
+	handlers.WriteSuccess(w, r, map[string]any{"provider": next.Provider})
 }
 
 // switchProvider carries the user's setup from one provider to its successor

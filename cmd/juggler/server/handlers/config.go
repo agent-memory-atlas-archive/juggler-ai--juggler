@@ -179,7 +179,7 @@ func (c *ConfigAPI) HandleGetConfig(w http.ResponseWriter, r *http.Request) {
 		"replySuggestionsDisabled": c.credStore.GetRawKey(replySuggestionsDisabledKey) == "1",
 	}
 
-	WriteJSON(w, r, 0, response)
+	WriteSuccess(w, r, response)
 }
 
 // HandleUpdateConfig updates the configuration
@@ -349,7 +349,6 @@ func (c *ConfigAPI) HandleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := map[string]any{
-		"success": true,
 		"message": "Configuration updated successfully",
 	}
 
@@ -407,9 +406,7 @@ func (c *ConfigAPI) HandleUpdatePluginConfig(w http.ResponseWriter, r *http.Requ
 
 	c.firePluginsChanged()
 
-	WriteJSON(w, r, 0, map[string]any{
-		"success": true,
-	})
+	WriteSuccess(w, r, nil)
 }
 
 // HandleSetProviderEnabled switches a keyless or OAuth provider on or off.
@@ -449,7 +446,5 @@ func (c *ConfigAPI) HandleSetProviderEnabled(w http.ResponseWriter, r *http.Requ
 	}
 
 	c.fireCredsChanged()
-	WriteJSON(w, r, 0, map[string]any{
-		"success": true,
-	})
+	WriteSuccess(w, r, nil)
 }

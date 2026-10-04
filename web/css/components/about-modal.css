@@ -89,7 +89,7 @@ about-modal.is-closing .about-backdrop {
 about-modal .about-header {
     padding: 2rem 2rem 1rem;
     text-align: center;
-    background: linear-gradient(180deg, rgb(88 166 255 / 8%) 0%, transparent 100%);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--accent-blue) 8%, transparent) 0%, transparent 100%);
     border-radius: inherit;
 }
 
@@ -175,11 +175,11 @@ about-modal .about-footer {
 
 about-modal .about-button {
     padding: 0.625rem 1.25rem;
-    border-radius: 0.375rem;
+    border-radius: var(--radius-lg);
     font-size: 0.875rem;
     font-weight: 500;
     cursor: pointer;
-    transition: background 150ms ease;
+    transition: background var(--transition-base);
     border: none;
 }
 
@@ -194,5 +194,5 @@ about-modal .about-button.primary:hover {
 
 about-modal .about-button.primary:focus {
     outline: none;
-    box-shadow: 0 0 0 0.1875rem rgb(88 166 255 / 30%);
+    box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--accent-blue) 30%, transparent);
 }

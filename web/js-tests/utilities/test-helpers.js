@@ -304,7 +304,7 @@ export async function createTestConversation(session) {
 
   // Set a default model configuration for worker validation
   // Worker requires a model to be configured before processing messages
-  await conversation.setModelConfig({ provider: 'test-provider', model: 'test-model' });
+  conversation.setModelConfig({ provider: 'test-provider', model: 'test-model' });
 
   // Set visible conversation for the session
   session._setSelection({ kind: 'conversation', id: convId });
@@ -770,7 +770,7 @@ export async function createApprovalTestConversation(session) {
   session._setSelection({ kind: 'conversation', id: convId });
 
   // Set a default model configuration (required for worker validation)
-  await conversation.setModelConfig({ provider: 'test-provider', model: 'test-model' });
+  conversation.setModelConfig({ provider: 'test-provider', model: 'test-model' });
 
   // DO NOT set auto-approve - we want to test the approval flow
   // But do set file write permission to avoid that layer of approval

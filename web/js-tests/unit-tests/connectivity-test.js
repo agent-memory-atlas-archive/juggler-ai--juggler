@@ -160,7 +160,7 @@ export async function runTests(_ctx) {
     window.fetch = /** @type {any} */ (async (url, opts) => {
       if (typeof url === 'string' && url.startsWith('/api/connectivity/tunnel')) {
         body = JSON.parse(opts.body);
-        return /** @type {any} */ ({ ok: true, json: async () => ({ ok: true }) });
+        return /** @type {any} */ ({ ok: true, json: async () => ({ success: true }) });
       }
       // refreshConnectivity GET — keep state unchanged.
       return /** @type {any} */ ({ ok: true, json: async () => el._tabs.connectivity.connectivity });

@@ -24,7 +24,7 @@ strategy-selector {
 .strategy-dropdown .strategy-item {
     padding: 0.75rem 1rem;
     cursor: pointer;
-    transition: background 150ms ease;
+    transition: background var(--transition-base);
     border-bottom: 0.0625rem solid var(--border-divider);
     position: relative;
 }
@@ -48,7 +48,7 @@ strategy-selector {
 }
 
 .strategy-dropdown .strategy-item.active {
-    background: rgb(88 166 255 / 16%);
+    background: color-mix(in srgb, var(--accent-blue) 16%, transparent);
 }
 
 .strategy-dropdown .strategy-item.active::before {
@@ -142,7 +142,7 @@ strategy-selector {
 
 /* Commands menu - command name styling */
 .commands-menu .menu-item code {
-    font-family: var(--font-mono, monospace);
+    font-family: var(--font-mono);
     font-size: 0.8125rem;
     opacity: 0.7;
 }

@@ -105,9 +105,7 @@
     --bubble-user-bg: rgb(232 236 240 / 70%);
     --bubble-user-bg-hover: rgb(232 236 240);
     --bubble-user-text: #1f2328;
-    --bubble-assistant-bg: transparent;
     --bubble-assistant-text: #1f2328;
-    --bubble-content-bg: #f0f3f6;
 
     /* --- PLUGIN TIER variables below --- */
 
@@ -225,8 +223,6 @@
     /* Diff highlighting (light theme) */
     --diff-removed-text: #cf222e;
     --diff-added-text: #1a7f37;
-    --diff-added-bg: #dafbe1;
-    --diff-removed-bg: #ffebe9;
     --diff-neutral-text: #1f2328;
     --diff-warning-text: #9a6700;
 

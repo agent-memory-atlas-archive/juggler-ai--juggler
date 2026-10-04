@@ -6,7 +6,8 @@
  *
  *   ownership       a selector lives in the file that owns its root
  *   dead-selector   a class in the CSS is referenced by no JS, HTML or extension
- *   token-parity    every var() resolves; theme colour tokens exist in both themes
+ *   token-parity    every var() resolves; theme colour tokens exist in both themes;
+ *                   a fallback only where the token can be absent
  *   link-parity     index.html and headless-test.html link the manifest's sheets
  *   layer-order     a sheet's directory is its layer, and the list is in layer order
  *   asset-url       every relative url() resolves to a file that exists
@@ -653,11 +654,13 @@ function checkDeadSelectors(manifest, sheets, sources) {
 	return failures;
 }
 
-/** token-parity: every var() resolves, and theme colours exist in both themes. */
+/** token-parity: every var() resolves, theme colours exist in both themes, and a fallback is written only where the token can be absent. */
 function checkTokenParity(manifest, sheets, sources) {
-	const defined = new Set(manifest.jsSetProperties || []);
+	const jsSet = new Set(manifest.jsSetProperties || []);
+	const defined = new Set(jsSet);
 	const themes = { dark: new Set(), light: new Set() };
-	const usedWithFallback = new Set();
+	const rootScale = new Set();
+	const usedWithFallback = new Map();
 	const usedBare = new Map();
 
 	for (const sheet of sheets) {
@@ -665,25 +668,26 @@ function checkTokenParity(manifest, sheets, sources) {
 		for (const m of clean.matchAll(/(--[\w-]+)\s*:/g)) defined.add(m[1]);
 		// var(--x) vs var(--x, fallback)
 		for (const m of clean.matchAll(/var\(\s*(--[\w-]+)\s*([,)])/g)) {
-			if (m[2] === ',') usedWithFallback.add(m[1]);
-			else if (!usedBare.has(m[1])) usedBare.set(m[1], sheet.file);
+			const uses = m[2] === ',' ? usedWithFallback : usedBare;
+			if (!uses.has(m[1])) uses.set(m[1], sheet.file);
 		}
 	}
 
 	// Theme membership, from the blocks that carry a data-theme. A plain `:root`
 	// block belongs to neither: a token declared there has one value for both
 	// themes, which is what tokens/scale.css is, and parity is not a question
-	// you can ask of it.
+	// you can ask of it. Those bare `:root` declarations are collected
+	// separately, because a token declared there is defined everywhere.
 	for (const sheet of sheets) {
 		const clean = stripComments(sources.get(sheet.file) || '');
 		for (const rule of parseRules(clean)) {
 			const isLight = /data-theme\s*=\s*["']?light/.test(rule.selector);
 			const isDark = /data-theme\s*=\s*["']?dark/.test(rule.selector);
-			if (!isLight && !isDark) continue;
+			const isRoot = /^\s*:root\s*$/.test(rule.selector);
+			if (!isLight && !isDark && !isRoot) continue;
 			const body = blockBodyAt(clean, rule.line);
-			for (const m of body.matchAll(/(--[\w-]+)\s*:/g)) {
-				themes[isLight ? 'light' : 'dark'].add(m[1]);
-			}
+			const into = isRoot ? rootScale : themes[isLight ? 'light' : 'dark'];
+			for (const m of body.matchAll(/(--[\w-]+)\s*:/g)) into.add(m[1]);
 		}
 	}
 
@@ -691,6 +695,18 @@ function checkTokenParity(manifest, sheets, sources) {
 	for (const [name, file] of usedBare) {
 		if (!defined.has(name)) {
 			failures.push({ item: name, message: `${file} — var(${name}) has no definition and no fallback` });
+		}
+	}
+	// A fallback is only honest where the token can be absent: a one-theme
+	// token, a property a component sets on some elements, or one JS sets.
+	// Anywhere else it is either dead (the token is defined in both themes or
+	// on :root, and the app sets data-theme before first paint) or the only
+	// value the property will ever take (the token is defined nowhere).
+	for (const [name, file] of usedWithFallback) {
+		if (rootScale.has(name) || (themes.dark.has(name) && themes.light.has(name))) {
+			failures.push({ item: name, message: `${file} — var(${name}, …) has a fallback that can never apply: ${name} is always defined` });
+		} else if (!defined.has(name)) {
+			failures.push({ item: name, message: `${file} — var(${name}, …) names a property nothing defines, so the fallback is its only value (list it in jsSetProperties if JS sets it)` });
 		}
 	}
 	for (const name of themes.dark) {

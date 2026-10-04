@@ -135,7 +135,7 @@ export const rewindRestoresAttachmentsTest = {
     const prior = providersCache.get();
     try {
       pushVisionAndTextProviders(wsService);
-      await conversation.setModelConfig({ provider: 'vision-co', model: 'vis-1' });
+      conversation.setModelConfig({ provider: 'vision-co', model: 'vis-1' });
 
       const tab = /** @type {any} */ (conversation.getTabElement());
       const composer = tab?.getComposer?.();
@@ -220,7 +220,7 @@ export const rewindRestoresAttachmentsTest = {
       // 5. No client-side capability gating: restoring onto a text-only model
       //    still stages the attachment. An incapable model rejects the image at
       //    send time (provider error), rather than the UI silently dropping it.
-      await conversation.setModelConfig({ provider: 'text-co', model: 'txt-1' });
+      conversation.setModelConfig({ provider: 'text-co', model: 'txt-1' });
       const staged2 = composer.setPendingAttachments([{ ...ref }]);
       if (staged2 !== 1 || composer._pendingAttachments.length !== 1 || composer._pendingAttachments[0].id !== ref.id) {
         throw new Error(`Text-only model must still stage restored attachments; staged=${staged2}, pending=${composer._pendingAttachments.length}`);
@@ -325,7 +325,7 @@ export const imageOnlySendTest = {
     const prior = providersCache.get();
     try {
       pushVisionAndTextProviders(wsService);
-      await conversation.setModelConfig({ provider: 'vision-co', model: 'vis-1' });
+      conversation.setModelConfig({ provider: 'vision-co', model: 'vis-1' });
 
       const tab = /** @type {any} */ (conversation.getTabElement());
       const composer = tab?.getComposer?.();

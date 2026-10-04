@@ -211,7 +211,7 @@ func (s *Server) broadcastPluginChanged(path string, bustCache bool) {
 func (s *Server) handleReloadExtensions(w http.ResponseWriter, r *http.Request) {
 	jlog.Info("[PluginWatcher] Reload requested")
 	s.broadcastPluginChanged("api/extensions/reload", true)
-	handlers.WriteJSON(w, r, 0, map[string]any{"success": true})
+	handlers.WriteSuccess(w, r, nil)
 }
 
 // isExtensionEvent reports whether a filesystem event happened inside the

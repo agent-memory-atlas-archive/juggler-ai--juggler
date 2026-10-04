@@ -31,6 +31,8 @@
  * @module utils/viewport-fit
  */
 
+import { COARSE_POINTER_QUERY } from './popup-surface.js';
+
 /**
  * Begin pinning `<app-container>` to the visual viewport on touch devices.
  * No-op on non-touch devices or where `visualViewport` is unavailable.
@@ -38,7 +40,7 @@
 export function initViewportFit() {
   const vv = window.visualViewport;
   if (!vv) return;
-  if (!window.matchMedia('(hover: none) and (pointer: coarse)').matches) return;
+  if (!window.matchMedia(COARSE_POINTER_QUERY).matches) return;
 
   const container = document.querySelector('app-container');
   if (!(container instanceof HTMLElement)) return;

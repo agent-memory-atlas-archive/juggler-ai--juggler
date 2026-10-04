@@ -508,11 +508,22 @@ export class WorkerManager {
 
 
   /**
-   * Send message to a specific worker via WebSocket
-   * Waits for worker to be ready before sending
+   * Send a message to a specific worker via WebSocket, once that worker is ready.
+   *
+   * For a ready worker the message is handed to the socket synchronously, inside
+   * this call. For one still starting, it is held until the worker reports ready
+   * and then handed over; held sends go out in the order they were made, so
+   * messages to one conversation stay in call order either way.
+   *
+   * The promise says nothing about delivery: it resolves once the message has
+   * been handed to the transport — which drops it if the link is down — or
+   * immediately when no worker exists for the conversation. It rejects only when
+   * a not-yet-ready worker never becomes ready (init failure or ready timeout).
+   * Fire-and-forget callers are correct to ignore it; an ack'd request
+   * (`_sendWithAck`) is how to learn the worker acted.
    * @param {string} conversationId - Conversation ID
    * @param {{type: string, [key: string]: unknown}} message - Message to send
-   * @returns {Promise<void>}
+   * @returns {Promise<void>} Resolves on hand-off to the transport, not on delivery
    */
   async sendToWorker(conversationId, message) {
     const entry = this._workers.get(conversationId);
@@ -1494,14 +1505,16 @@ export class WorkerManager {
   /**
    * Open an undo-coalescing bracket: tell the worker to snapshot its undo-stack
    * height now, so every group added until {@link endUndoCoalescing} collapses
-   * into one. Awaited by the caller so the marker is on the wire before the
-   * bracketed mutations' yjs-sync frames (same ordered channel), guaranteeing
-   * the snapshot reflects state before the first write.
+   * into one. The marker reaches the worker ahead of the bracketed mutations'
+   * yjs-sync frames because both go through {@link sendToWorker}, which keeps
+   * one conversation's messages in call order; the snapshot therefore reflects
+   * state before the first write whether or not the caller awaits.
    * @param {string} conversationId - Conversation ID
-   * @returns {Promise<void>}
+   * @returns {Promise<void>} {@link sendToWorker}'s promise: awaiting it surfaces
+   *   a worker that never became ready, so the caller can skip the bracket.
    */
-  async beginUndoCoalescing(conversationId) {
-    await this.sendToWorker(conversationId, { type: 'begin-undo-coalesce' });
+  beginUndoCoalescing(conversationId) {
+    return this.sendToWorker(conversationId, { type: 'begin-undo-coalesce' });
   }
 
   /**

@@ -126,9 +126,7 @@
     /* The same material undimmed, for a bubble-shaped thing under the pointer. */
     --bubble-user-bg-hover: rgb(71 83 100);
     --bubble-user-text: #e6edf3;
-    --bubble-assistant-bg: transparent;
     --bubble-assistant-text: #e6edf3;
-    --bubble-content-bg: #1c2128;
 
     /* --- PLUGIN TIER variables below ---
        --ci-* variables are consumed by context-items.css and plugin-catalog.css,
@@ -212,8 +210,6 @@
     /* Diff highlighting */
     --diff-removed-text: #ffa198;
     --diff-added-text: #56d364;
-    --diff-added-bg: #aff5b4;
-    --diff-removed-bg: #ffdcd7;
     --diff-neutral-text: #c9d1d9;
     --diff-warning-text: #f0c674;
 

@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"juggler/cmd/juggler/extmanifest"
-	"juggler/cmd/juggler/server"
+	"juggler/internal/srcroot"
 	"juggler/web"
 )
 
@@ -27,7 +27,7 @@ func TestExtensionTestsDeclared(t *testing.T) {
 		t.Skip("skipping extension-test registration check in short mode")
 	}
 
-	root, err := server.FindProjectRoot(".")
+	root, err := srcroot.Find(".")
 	if err != nil {
 		t.Fatalf("cannot find project root: %v", err)
 	}

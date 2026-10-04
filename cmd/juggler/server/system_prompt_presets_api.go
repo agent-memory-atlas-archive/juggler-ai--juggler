@@ -48,7 +48,7 @@ func (s *Server) handleCreateSystemPromptPreset(w http.ResponseWriter, r *http.R
 		handlers.WriteError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
-	handlers.WriteJSON(w, r, 0, map[string]any{"success": true, "preset": preset})
+	handlers.WriteSuccess(w, r, map[string]any{"preset": preset})
 }
 
 // handleDeleteSystemPromptPreset removes a user preset by id (idempotent).
@@ -60,7 +60,7 @@ func (s *Server) handleDeleteSystemPromptPreset(w http.ResponseWriter, r *http.R
 		handlers.WriteError(w, r, http.StatusInternalServerError, fmt.Sprintf("Couldn't delete preset: %v", err))
 		return
 	}
-	handlers.WriteJSON(w, r, 0, map[string]any{"success": true})
+	handlers.WriteSuccess(w, r, nil)
 }
 
 // handleUpdateSystemPromptPreset replaces the name and content of an existing
@@ -81,7 +81,7 @@ func (s *Server) handleUpdateSystemPromptPreset(w http.ResponseWriter, r *http.R
 		handlers.WriteError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
-	handlers.WriteJSON(w, r, 0, map[string]any{"success": true, "preset": preset})
+	handlers.WriteSuccess(w, r, map[string]any{"preset": preset})
 }
 
 // handleSetDefaultSystemPromptPreset records which preset (built-in or user) new
@@ -99,5 +99,5 @@ func (s *Server) handleSetDefaultSystemPromptPreset(w http.ResponseWriter, r *ht
 		handlers.WriteError(w, r, http.StatusInternalServerError, fmt.Sprintf("Couldn't set default preset: %v", err))
 		return
 	}
-	handlers.WriteJSON(w, r, 0, map[string]any{"success": true})
+	handlers.WriteSuccess(w, r, nil)
 }

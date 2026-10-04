@@ -17,6 +17,7 @@ import (
 
 	"juggler/cmd/juggler/server/handlers"
 	"juggler/internal/apipaths"
+	"juggler/internal/srcroot"
 )
 
 const testAPIToken = "test-instance-token-abc123"
@@ -483,9 +484,9 @@ func TestServedEngineCarriesTokenForWorkerAPIFetches(t *testing.T) {
 }
 
 func TestEngineWorkerRuntimeInstallsTokenFetchShim(t *testing.T) {
-	root, err := FindProjectRoot("")
+	root, err := srcroot.Find("")
 	if err != nil {
-		t.Fatalf("FindProjectRoot: %v", err)
+		t.Fatalf("srcroot.Find: %v", err)
 	}
 	body, err := os.ReadFile(filepath.Join(root, "web", "js", "engine-worker-runtime.js"))
 	if err != nil {

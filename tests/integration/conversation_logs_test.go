@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"juggler/cmd/juggler/server"
 	"juggler/internal/jlog"
 	"juggler/internal/logpaths"
+	"juggler/internal/srcroot"
 )
 
 // TestServerWritesNestedProjectLog boots a real headless server WITHOUT
@@ -31,7 +31,7 @@ func TestServerWritesNestedProjectLog(t *testing.T) {
 		t.Skip("spawns the juggler binary; skipped in -short mode")
 	}
 
-	root, err := server.FindProjectRoot(".")
+	root, err := srcroot.Find(".")
 	if err != nil {
 		t.Fatalf("find project root: %v", err)
 	}

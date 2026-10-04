@@ -429,7 +429,7 @@
 .skills-drawer {
   position: fixed;
   inset: 0;
-  z-index: var(--z-modal, 1000);
+  z-index: var(--z-modal);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -672,7 +672,7 @@
 .skills-scope-dialog {
   position: fixed;
   inset: 0;
-  z-index: var(--z-modal, 1000);
+  z-index: var(--z-modal);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -721,7 +721,7 @@
   padding: 0.6rem 0.8rem;
   cursor: pointer;
   font: inherit;
-  transition: background 150ms ease, border-color 150ms ease;
+  transition: background var(--transition-base), border-color var(--transition-base);
 }
 
 .skills-scope-action:hover {

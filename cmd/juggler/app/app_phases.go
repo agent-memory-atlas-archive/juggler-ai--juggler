@@ -22,6 +22,7 @@ import (
 	"juggler/internal/httpx"
 	"juggler/internal/jlog"
 	"juggler/internal/logpaths"
+	"juggler/internal/srcroot"
 )
 
 // loadConfig determines the project path (from --project, cwd, or none) and
@@ -335,7 +336,7 @@ func (a *App) initServer() error {
 	}
 
 	if a.flags.testMode {
-		jugglerRoot, err := server.FindProjectRoot(a.projectPath)
+		jugglerRoot, err := srcroot.Find(a.projectPath)
 		if err != nil {
 			jlog.Error("Failed to find project root for test routes: %v", err)
 			return err

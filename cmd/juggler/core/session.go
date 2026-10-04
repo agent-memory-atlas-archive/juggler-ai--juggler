@@ -159,7 +159,6 @@ func (ws WindowState) SameFrame(other WindowState) bool {
 type Session struct {
 	Version              int                        `json:"version"`                // Schema version
 	ConversationOrder    []string                   `json:"conversationOrder"`      // Ordered list of conversation IDs (for tab ordering)
-	Conversations        []json.RawMessage          `json:"-"`                      // In-memory only, not serialized to session.json
 	ActiveConversationID string                     `json:"activeConversationId"`   // Currently selected conversation tab (persisted for refresh)
 	MessageHistory       []json.RawMessage          `json:"messageHistory"`         // Session-level history of user messages for input navigation. Opaque JSON entries: the server stores and forwards them verbatim (the client owns the shape).
 	Metadata             map[string]any             `json:"metadata,omitempty"`     // General-purpose key-value store for frontend flags
@@ -256,7 +255,6 @@ func NewSession() *Session {
 	return &Session{
 		Version:           5,
 		ConversationOrder: []string{},
-		Conversations:     []json.RawMessage{},
 		MessageHistory:    []json.RawMessage{},
 	}
 }
@@ -275,7 +273,6 @@ func (s *Session) Clone() *Session {
 	}
 	c := *s
 	c.ConversationOrder = append([]string(nil), s.ConversationOrder...)
-	c.Conversations = append([]json.RawMessage(nil), s.Conversations...)
 	c.MessageHistory = append([]json.RawMessage(nil), s.MessageHistory...)
 	c.Pinboard = append([]Pin(nil), s.Pinboard...)
 	if s.Boards != nil {
@@ -435,31 +432,6 @@ func (s *Session) hasConversation(convID string) bool {
 	return false
 }
 
-// SetConversations replaces the in-memory per-conversation metadata
-// payload. ConversationOrder is owned by CreateConversation,
-// ReorderConversations, Delete/Bin, and the on-load reconcile.
-func (s *Session) SetConversations(conversations []json.RawMessage) {
-	s.Conversations = conversations
-}
-
-// UpdateConversation updates a single conversation by ID
-// Returns error if conversation not found
-func (s *Session) UpdateConversation(convID string, updated json.RawMessage) error {
-	for i, conv := range s.Conversations {
-		var obj struct {
-			ID string `json:"id"`
-		}
-		if err := json.Unmarshal(conv, &obj); err != nil {
-			continue
-		}
-		if obj.ID == convID {
-			s.Conversations[i] = updated
-			return nil
-		}
-	}
-	return fmt.Errorf("conversation not found: %s", convID)
-}
-
 // Validate checks if the session is valid
 func (s *Session) Validate() error {
 	if s.Version != 5 {
@@ -522,12 +494,6 @@ func NewFileSessionStore(projectPath string) (*FileSessionStore, error) {
 	jugglerDir := filepath.Join(projectPath, ".juggler")
 	if err := os.MkdirAll(jugglerDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create .juggler directory: %w", err)
-	}
-
-	// Remove legacy sessions directory if it exists
-	sessionsDir := filepath.Join(jugglerDir, "sessions")
-	if _, err := os.Stat(sessionsDir); err == nil {
-		os.RemoveAll(sessionsDir)
 	}
 
 	return &FileSessionStore{
@@ -1413,7 +1379,6 @@ func (fs *FileSessionStore) Load() (*Session, error) {
 	default:
 		return nil, fmt.Errorf("failed to read session globals: %w", readErr)
 	}
-	session.Conversations = []json.RawMessage{}
 
 	// Re-check the workspace table against the world: roots that have gone
 	// since the last run, and provisions that died with the process that
